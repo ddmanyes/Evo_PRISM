@@ -1,0 +1,23 @@
+# DuckDB databases (large binary files)
+*.duckdb
+*.duckdb.wal
+
+# Parquet data files (large, regenerable from scripts)
+silver/
+gold/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large PDFs and binary documents (keep .md versions only)
+references/pdfs/
+*.pdf
+*.docx

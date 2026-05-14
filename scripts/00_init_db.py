@@ -1,0 +1,154 @@
+"""
+Phase 1 — Initialize bio_memory.duckdb
+Creates: sample_registry, analysis_history, analysis_index view
+Verifies: DuckDB VSS extension (HNSW) loads correctly
+"""
+
+import duckdb
+import sys
+from pathlib import Path
+
+DB_PATH = Path(__file__).parent.parent / "bio_memory.duckdb"
+
+
+def init_db(db_path: Path = DB_PATH) -> duckdb.DuckDBPyConnection:
+    con = duckdb.connect(str(db_path))
+    print(f"Connected: {db_path}")
+
+    # Verify VSS extension
+    try:
+        con.execute("INSTALL vss; LOAD vss;")
+        print("VSS extension loaded (HNSW available)")
+    except Exception as e:
+        print(f"WARNING: VSS extension failed: {e}")
+        print("L1 Gold HNSW index will not be available — continue anyway")
+
+    # sample_registry
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS sample_registry (
+            sample_id      VARCHAR PRIMARY KEY,
+            project        VARCHAR,
+            data_type      VARCHAR,    -- 'visium_hd', 'bulk_rnaseq', 'scrna'
+            species        VARCHAR,    -- 'mouse', 'human'
+            l3_path        VARCHAR,
+            l2_ready       BOOLEAN DEFAULT FALSE,
+            analysis_done  BOOLEAN DEFAULT FALSE,
+            added_by       VARCHAR,
+            notes          VARCHAR,
+            last_updated   TIMESTAMP DEFAULT now()
+        )
+    """)
+    print("Table: sample_registry — OK")
+
+    # analysis_history
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS analysis_history (
+            analysis_id   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            sample_id     VARCHAR REFERENCES sample_registry(sample_id),
+            analysis_type VARCHAR,    -- 'qc', 'spatial_gene', 'clustering', 'diff_expr'
+            parameters    JSON,
+            status        VARCHAR,    -- 'running', 'completed', 'failed'
+            result_path   VARCHAR,
+            l1_cache_id   UUID,
+            requested_by  VARCHAR,
+            started_at    TIMESTAMP,
+            completed_at  TIMESTAMP,
+            summary       VARCHAR     -- max 50 chars, for token-efficient search
+        )
+    """)
+    print("Table: analysis_history — OK")
+
+    # analysis_index view (0-token compact browsing)
+    con.execute("""
+        CREATE OR REPLACE VIEW analysis_index AS
+        SELECT
+            sample_id,
+            analysis_type,
+            COUNT(*)                                              AS run_count,
+            MAX(completed_at)::DATE                              AS last_run_date,
+            MIN(started_at)::DATE                                AS first_run_date,
+            STRING_AGG(DISTINCT requested_by, ', ')              AS run_by_members,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS success_count,
+            SUM(CASE WHEN status = 'failed'    THEN 1 ELSE 0 END) AS fail_count
+        FROM analysis_history
+        GROUP BY sample_id, analysis_type
+        ORDER BY last_run_date DESC
+    """)
+    print("View:  analysis_index — OK")
+
+    return con
+
+
+def populate_registry(con: duckdb.DuckDBPyConnection):
+    """Insert known samples from MASTER_LIST. Edit this list as new samples arrive."""
+    samples = [
+        # (sample_id, project, data_type, species, l3_path, notes)
+        (
+            "MQ250428-D1-D2",
+            "MQ250428",
+            "visium_hd",
+            "mouse",
+            r"I:\Bioinfo_Projects\01_Spatial_Transcriptomics\20251125_TGIA_VisiumHD\20250612_MQ250428\MQ250428-D1-D2\outs",
+            "Primary prototype; NDPI registration pending",
+        ),
+        (
+            "MQ250428-A1-M2",
+            "MQ250428",
+            "visium_hd",
+            "mouse",
+            r"I:\Bioinfo_Projects\01_Spatial_Transcriptomics\20251125_TGIA_VisiumHD\20250612_MQ250428\MQ250428-A1-M2\outs",
+            "Secondary prototype; NDPI registration pending",
+        ),
+        (
+            "Kallisto_v1",
+            "Kallisto_v1",
+            "bulk_rnaseq",
+            "mouse",
+            r"I:\BulkRNA\Kallisto_v1\results_kallisto",
+            "All conditions in results_kallisto/; t2g mapping required",
+        ),
+    ]
+
+    inserted = 0
+    skipped = 0
+    for sample_id, project, data_type, species, l3_path, notes in samples:
+        existing = con.execute(
+            "SELECT 1 FROM sample_registry WHERE sample_id = ?", [sample_id]
+        ).fetchone()
+        if existing:
+            skipped += 1
+            continue
+        con.execute(
+            """
+            INSERT INTO sample_registry
+                (sample_id, project, data_type, species, l3_path, added_by, notes)
+            VALUES (?, ?, ?, ?, ?, 'init_script', ?)
+            """,
+            [sample_id, project, data_type, species, l3_path, notes],
+        )
+        inserted += 1
+
+    print(f"sample_registry: {inserted} inserted, {skipped} already exist")
+
+
+def verify(con: duckdb.DuckDBPyConnection):
+    print("\n--- Verification ---")
+    rows = con.execute("SELECT sample_id, data_type, l3_path FROM sample_registry").fetchall()
+    for r in rows:
+        print(f"  {r[0]}  [{r[1]}]  {r[2]}")
+
+    tables = con.execute(
+        "SELECT table_name, table_type FROM information_schema.tables "
+        "WHERE table_schema = 'main' ORDER BY table_type, table_name"
+    ).fetchall()
+    print("\nSchema objects:")
+    for t in tables:
+        print(f"  {t[1]:<10} {t[0]}")
+
+
+if __name__ == "__main__":
+    con = init_db()
+    populate_registry(con)
+    verify(con)
+    con.close()
+    print("\nDone. bio_memory.duckdb initialized.")
