@@ -317,18 +317,144 @@ ORDER BY completed_at DESC
 > `memory_recent` + VSS 是**語意去重器**，攔截「問法不同但意思相同」的重複查詢（向量距離判斷，少量 token）。  
 > 兩者互補，缺一不可。
 
-### 歷史紀錄寫入時機
+### 時間紀錄管理
+
+#### 狀態機：三個狀態
 
 ```
-分析函式執行完成
+分析開始
     │
-    ├─ 1. 將結果存成 PNG / CSV / MD → result_path
-    ├─ 2. 產生 50 字摘要 → summary（例：「CD45+ 佔 23%，主要在邊緣區」）
-    ├─ 3. INSERT 一筆至 analysis_history（status = 'completed'）
-    └─ 4. 若完整報告需快取 → 寫入 memory_recent，ID 存回 analysis_history.l1_cache_id
+    ▼
+ running          ← 立刻寫入，started_at = now()
+    │
+    ├─ 成功 → completed   completed_at、result_path、summary 同步更新
+    └─ 失敗 → failed      completed_at、錯誤原因寫入 parameters
 ```
 
-分析開始時也應先寫一筆 `status = 'running'`，以便在失敗時仍有紀錄（`status = 'failed'`），不留盲點。
+**開始時就寫入的原因**：若只在完成時寫，程式崩潰或 L3 pipeline 中斷（~4 小時），這筆分析會完全沒有紀錄。`running` 狀態確保「曾經嘗試過」不會消失。
+
+#### 完整寫入流程
+
+```python
+def run_analysis(sample_id, analysis_type, params):
+    # Step 1：分析開始，立刻寫入 running
+    analysis_id = insert_history(
+        sample_id=sample_id,
+        analysis_type=analysis_type,
+        parameters=params,
+        status="running",
+        started_at=now()
+    )
+
+    try:
+        # Step 2：執行分析、生成圖表
+        result = compute(...)
+        path = save_figure(result)
+
+        # Step 3：生成文字描述（語意搜尋的基礎）
+        report_text = make_report_text(result, path)
+        summary = make_summary(result)  # 50 字以內
+
+        # Step 4：更新為 completed
+        update_history(analysis_id,
+            status="completed",
+            completed_at=now(),
+            result_path=path,
+            summary=summary
+        )
+
+        # Step 5：寫入 L1 快取
+        cache_id = insert_l1_cache(sample_id, report_text)
+        update_history(analysis_id, l1_cache_id=cache_id)
+
+    except Exception as e:
+        # 失敗也要記錄，不留盲點
+        update_history(analysis_id,
+            status="failed",
+            completed_at=now(),
+            parameters={**params, "error": str(e)}
+        )
+        raise
+```
+
+#### 重跑原則：永遠新增，不覆蓋
+
+```python
+# ❌ 錯誤：UPDATE 舊紀錄（會抹去歷史）
+UPDATE analysis_history SET status='completed' WHERE sample_id=X
+
+# ✅ 正確：永遠 INSERT 新紀錄
+INSERT INTO analysis_history (...) VALUES (...)
+# analysis_index VIEW 用 MAX(completed_at) 自動顯示最新一次
+```
+
+重跑後，`analysis_history` 保留完整歷史：
+
+```
+analysis_id  analysis_type    status     completed_at
+──────────────────────────────────────────────────────
+uuid-001     spatial_heatmap  failed    2026-05-10   ← 保留
+uuid-002     spatial_heatmap  completed 2026-05-15   ← 最新（index 顯示此筆）
+```
+
+#### 三種查詢模式（全部 0 token）
+
+```sql
+-- 模式 1：某樣本的分析狀態總覽
+SELECT analysis_type, last_run_date, success_count, fail_count
+FROM analysis_index
+WHERE sample_id = 'official_v4';
+
+-- 模式 2：確認特定分析是否已成功完成（Agent 呼叫前先確認，避免重跑）
+SELECT COUNT(*) > 0 AS already_done
+FROM analysis_history
+WHERE sample_id = 'official_v4'
+  AND analysis_type = 'spatial_heatmap'
+  AND parameters->>'gene' = 'CD8A'
+  AND status = 'completed';
+
+-- 模式 3：本週時間軸
+SELECT DATE_TRUNC('day', completed_at) AS date,
+       COUNT(*) AS analyses_done,
+       STRING_AGG(sample_id || '/' || analysis_type, ', ') AS detail
+FROM analysis_history
+WHERE completed_at >= NOW() - INTERVAL '7 days'
+  AND status = 'completed'
+GROUP BY 1 ORDER BY 1 DESC;
+```
+
+#### 清理原則
+
+| 狀態 | 清理策略 | 原因 |
+|------|---------|------|
+| `completed` | **永不刪除** | 永久帳本，歷史不可改寫 |
+| `failed` | **永不刪除** | 失敗紀錄是診斷依據 |
+| `running` 超過 24 小時 | 標記為 `stale`，定期清理 | 代表程式已崩潰，不會自行完成 |
+
+```sql
+-- 每日排程：清理殭屍任務
+UPDATE analysis_history
+SET status = 'stale'
+WHERE status = 'running'
+  AND started_at < NOW() - INTERVAL '24 hours';
+```
+
+#### L3 長時間任務（~4 小時）的進度追蹤
+
+```sql
+-- pipeline 執行中，定期更新進度百分比（寫入 parameters JSON）
+UPDATE analysis_history
+SET parameters = json_merge(parameters, '{"progress": 0.68, "stage": "alignment"}')
+WHERE analysis_id = ? AND status = 'running';
+
+-- Telegram 查詢進度 → 0 token
+SELECT parameters->>'progress' AS progress,
+       parameters->>'stage'    AS stage,
+       started_at,
+       AGE(NOW(), started_at)  AS elapsed
+FROM analysis_history
+WHERE analysis_id = ?;
+```
 
 ### 搜尋流程設計
 
