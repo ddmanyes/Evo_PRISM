@@ -715,6 +715,153 @@ async def code_generation_loop(task: str, context: dict, max_retries: int = 3) -
 
 ---
 
+#### Code Promotion 工程實作細節
+
+##### Step 1 — 資料庫追蹤重用次數
+
+重用舊程式碼時，每次都 INSERT 一筆新記錄並帶上來源標記，讓 SQL 統計次數：
+
+```sql
+-- 重用時寫入（source = code_promotion，origin_id 指向首次生成那筆）
+INSERT INTO analysis_history
+    (sample_id, analysis_type, parameters, status, requested_by, started_at, completed_at, summary)
+VALUES (
+    ?, ?,
+    json_object(
+        'source',         'code_promotion',
+        'origin_id',      '<首次生成的 analysis_id>',
+        'generated_code', '<程式碼文字>'
+    ),
+    'completed', ?, now(), now(), ?
+);
+```
+
+用 View 自動彙總候選清單（0-token，agent loop 開始時掃一眼）：
+
+```sql
+CREATE OR REPLACE VIEW promotion_candidates AS
+SELECT
+    parameters->>'origin_id'   AS origin_id,
+    analysis_type,
+    COUNT(*)                    AS reuse_count,
+    MAX(completed_at)           AS last_used
+FROM analysis_history
+WHERE parameters->>'source' = 'code_promotion'
+  AND status = 'completed'
+GROUP BY parameters->>'origin_id', analysis_type
+HAVING COUNT(*) >= 3;
+```
+
+##### Step 2 — Claude 審查通用性
+
+偵測到 `reuse_count ≥ 3` 後，把程式碼送給 Claude 做三項審查：
+
+```python
+PROMOTION_PROMPT = """
+以下程式碼已被重用 {reuse_count} 次，評估是否適合升格為永久工具：
+
+{code}
+
+請判斷：
+① 邏輯通用？（無硬編碼的 sample_id / 路徑）
+② 有清楚的輸入/輸出介面？（可包裝成 def func(sample_id, **kwargs) -> dict）
+③ 有無安全疑慮？
+
+回答 JSON：{{"promote": true/false, "reason": "...", "suggested_name": "snake_case"}}
+"""
+```
+
+不通過 → 什麼都不做，繼續留在 `analysis_history` 供重用。
+
+##### Step 3 — 生成標準化函數，存入 candidates/
+
+審查通過後，Claude 將生成程式碼重構為正式函數格式，寫入暫存區：
+
+```
+analysis/
+├── spatial_eda.py          ← 正式工具（已上線）
+├── history_query.py        ← 正式工具（已上線）
+└── candidates/             ← 待審區（Claude 自動生成，管理員確認後搬移）
+    └── morans_i_spatial.py ← 範例：Moran's I 升格草稿
+```
+
+生成的草稿格式範例：
+
+```python
+# analysis/candidates/morans_i_spatial.py
+# [AUTO-GENERATED] reuse_count=4, origin_id=abc-123, promoted_at=2026-05-15
+# [PENDING REVIEW] 管理員確認後執行 /approve morans_i_spatial
+
+def run_morans_i(sample_id: str, gene: str, **kwargs) -> dict:
+    """計算指定基因的 Moran's I 空間自相關係數。"""
+    import duckdb, numpy as np
+    # ... Claude 重構後的程式碼 ...
+    return {"gene": gene, "morans_i": value, "p_value": p}
+```
+
+Telegram 同時通知管理員：
+
+```
+[Hermes] 🔔 升格候選：morans_i_spatial
+已重用 4 次，Claude 審查通過。
+草稿已存入 analysis/candidates/morans_i_spatial.py
+回覆 /approve morans_i_spatial 或 /reject morans_i_spatial
+```
+
+##### Step 4 — 管理員確認，寫入 registry.json
+
+`BIO_TOOLS` 不寫死在程式碼中，改從 `tools/registry.json` 動態載入：
+
+```json
+[
+  {
+    "name": "plot_spatial_gene",
+    "module": "analysis.spatial_eda",
+    "function": "plot_spatial_gene",
+    "description": "繪製基因的空間表達熱圖",
+    "parameters": {"sample_id": "str", "gene": "str"}
+  },
+  {
+    "name": "morans_i_spatial",
+    "module": "analysis.morans_i_spatial",
+    "function": "run_morans_i",
+    "description": "計算基因的 Moran's I 空間自相關係數",
+    "parameters": {"sample_id": "str", "gene": "str"}
+  }
+]
+```
+
+`/approve morans_i_spatial` 執行三個動作：
+1. `candidates/morans_i_spatial.py` → `analysis/morans_i_spatial.py`
+2. 在 `registry.json` 新增一筆記錄
+3. Agent 重啟（或 hot-reload）後新工具立即可用
+
+##### 完整升格流程圖
+
+```
+Mode 2 Code Gen 成功
+    │
+    ├── 程式碼 → analysis_history.parameters["generated_code"]
+    │
+    │   [每次重用]
+    ├── INSERT analysis_history（source=code_promotion, origin_id=首次 ID）
+    │
+    │   [promotion_candidates VIEW 偵測 reuse_count ≥ 3]
+    ├── Claude 審查（通用性 / 介面 / 安全）
+    │       └─ 不通過 → 繼續重用，不升格
+    │       └─ 通過 →
+    │           ├── Claude 重構 → analysis/candidates/<name>.py
+    │           ├── Telegram 通知管理員
+    │           └── 管理員 /approve
+    │                   ├── 搬移至 analysis/<name>.py
+    │                   ├── 寫入 tools/registry.json
+    │                   └── Agent hot-reload → 正式加入 BIO_TOOLS ✅
+    │
+    └── [不通過或 /reject] → 繼續存在 analysis_history 供重用
+```
+
+---
+
 ## 第一階段 — 環境建置與 Schema 設計
 
 - [x] 安裝 Python 套件：`duckdb`、`anndata`、`pandas`、`pyarrow`、`scipy`（pyproject.toml 完成）
