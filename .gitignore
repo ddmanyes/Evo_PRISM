@@ -12,10 +12,30 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+dist/
+build/
+
+# 環境變數（含 API keys，絕不 commit）
+.env
+
+# 測試覆蓋率
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
 
 # OS
 .DS_Store
 Thumbs.db
+# macOS resource forks（ExFAT 產生）
+._*
+
+# 大型數據目錄（L3 原始數據，不進 git）
+crc_visium_data/
+results_ana/
+data_ana/
 
 # Large PDFs and binary documents (keep .md versions only)
 references/pdfs/
