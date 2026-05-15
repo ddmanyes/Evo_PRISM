@@ -41,8 +41,9 @@ def _insert_record(db_path: Path, *, expired: bool = False) -> str:
     now = datetime.now(timezone.utc)
     expires_at = now - timedelta(days=1) if expired else now + timedelta(days=7)
 
-    # Fake 1536-dim embedding (all zeros)
-    embedding = [0.0] * 1536
+    # Fake embedding matching current EMBEDDING_DIM
+    from config.settings import EMBEDDING_DIM
+    embedding = [0.0] * EMBEDDING_DIM
 
     con = duckdb.connect(str(db_path))
     # Must load VSS before modifying tables with HNSW index
@@ -101,14 +102,15 @@ class TestInitL1Cache:
         assert v["row_count"] == 0
 
     def test_embedding_dim(self, l1_db):
-        con = duckdb.connect(str(l1_db))  # read-write so DuckDB can load extensions
+        from config.settings import EMBEDDING_DIM
+        con = duckdb.connect(str(l1_db))
         row = con.execute(
             "SELECT data_type FROM information_schema.columns "
             "WHERE table_name = 'memory_recent' AND column_name = 'embedding'"
         ).fetchone()
         con.close()
         assert row is not None
-        assert "1536" in row[0]
+        assert str(EMBEDDING_DIM) in row[0]
 
     def test_idempotent_reinit(self, l1_db):
         import importlib.util
