@@ -1,15 +1,21 @@
 """
 Tests for scripts/00_init_db.py — verifies schema creation.
 """
+import importlib.util
 import sys
 from pathlib import Path
+
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Load 00_init_db.py by path (numeric prefix prevents normal import)
+_script_path = Path(__file__).parent.parent / "scripts" / "00_init_db.py"
+_spec = importlib.util.spec_from_file_location("init_db_module", _script_path)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+init_db = _mod.init_db
 
 
 def test_sample_registry_schema(tmp_db):
-    from scripts.init_db import init_db
     init_db(tmp_db)
 
     result = tmp_db.execute(
@@ -22,10 +28,11 @@ def test_sample_registry_schema(tmp_db):
     assert "l3_path" in columns
     assert "l2_ready" in columns
     assert "analysis_done" in columns
+    assert "platform" in columns
+    assert "tissue" in columns
 
 
 def test_analysis_history_schema(tmp_db):
-    from scripts.init_db import init_db
     init_db(tmp_db)
 
     result = tmp_db.execute(
@@ -41,7 +48,6 @@ def test_analysis_history_schema(tmp_db):
 
 
 def test_analysis_index_view_exists(tmp_db):
-    from scripts.init_db import init_db
     init_db(tmp_db)
 
     views = tmp_db.execute(
@@ -53,7 +59,6 @@ def test_analysis_index_view_exists(tmp_db):
 
 
 def test_no_data_in_clean_db(tmp_db):
-    from scripts.init_db import init_db
     init_db(tmp_db)
 
     count = tmp_db.execute("SELECT COUNT(*) FROM sample_registry").fetchone()[0]

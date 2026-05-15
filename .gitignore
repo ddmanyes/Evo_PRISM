@@ -41,3 +41,10 @@ data_ana/
 references/pdfs/
 *.pdf
 *.docx
+
+# uv lock file and venv symlink
+uv.lock
+.venv
+
+# Temp / scratch files
+file_info_input.md
