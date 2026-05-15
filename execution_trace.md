@@ -161,14 +161,75 @@
 
 ---
 
-## 下一步：Phase 3.5 + Phase 4
+---
 
-### Phase 3.5：Google Embedding 接入（需 GOOGLE_API_KEY）
-1. `cp .env.example .env` → 填入 `GOOGLE_API_KEY`
-2. `uv sync --extra anthropic --extra embedding-google`
-3. 實作 `analysis/embed.py`（呼叫 gemini-embedding-001）
-4. 實作 `analysis/l1_cache.py`（write_to_l1_cache + semantic_search）
+## 2026-05-15 — Phase 3.5 執行記錄（本機 Embedding 接入）
 
-### Phase 4：MCP Server
-5. `server/bio_memory_server.py`（`bio_history_*` 工具）
-6. `.claude/settings.json` mcpServers 設定
+### 決策變更
+- 原計畫：Google gemini-embedding-001（1536-dim）
+- **最終採用**：本機 llama.cpp bge-m3-Q8_0（1024-dim）
+  - 理由：使用者已有 `~/llama.cpp/`，免費、無 API 費用、離線可用
+  - 影響：`gold/hermes_cache.duckdb` schema 改為 `FLOAT[1024]`
+
+### analysis/embed.py
+- **結果**：✅ 成功
+- **Provider**：llamacpp / openai / google 三路由，由 `.env` EMBEDDING_PROVIDER 控制
+- **預設**：llamacpp（llama-server port 8081，OpenAI-compatible `/v1/embeddings`）
+- **驗證**：`bge-m3-Q8_0.gguf`（605MB）下載完成，1024-dim 輸出驗證 ✅
+
+### analysis/l1_cache.py
+- **結果**：✅ 成功
+- **write_to_l1_cache()**：embed_text → INSERT → CHECKPOINT
+- **semantic_search()**：array_cosine_similarity(embedding, ?::FLOAT[1024])
+- **E2E 驗證**：寫入 PTPRC 記錄，搜尋 "CD8A T cell" → score=0.63（語意相關）✅
+- **關鍵修正**：SQL cast 必須 `::FLOAT[{_DIM}]`，不能用 `::FLOAT[]`
+
+### 文件補充
+- `docs/launchd_embedding_server.plist.example`：launchd 開機自動啟動 llama-server
+- `docs/launchd_cleanup_l1.plist.example`、`docs/launchd_rebuild_hnsw.plist.example`
+- `CLAUDE.md §4`：Embedding Server 啟動說明
+
+---
+
+## 2026-05-15 — Phase 4 執行記錄（MCP Server）
+
+### 4.0 mcp 套件安裝
+- **結果**：✅ `mcp` 安裝至 `~/.venvs/hermes-bio-memory`（Python SDK）
+
+### 4.1 server/bio_memory_server.py
+- **結果**：✅ 成功，7 個 MCP 工具：
+
+| 工具 | Token | 說明 |
+|------|-------|------|
+| `bio_history_lookup` | 0 | 樣本分析歷史表 |
+| `bio_history_timeline` | 0 | 最近 N 天時間軸 |
+| `bio_history_check` | 0 | 是否已有完成存檔 |
+| `bio_history_search` | 少量 | L1 HNSW 語意搜尋（只傳 summary） |
+| `bio_memory_query` | 少量 | L1 完整報告查詢 |
+| `bio_memory_write` | 0 | 寫入 L1 快取 |
+| `bio_register_sample` | 0 | 樣本登記 |
+
+- **Bug 修正**：`history_query.recent_analyses()` 回傳 pandas DataFrame（非 list），需用 `.empty` 和 `.to_dict("records")`
+
+### 4.2 tests/test_phase4.py
+- **結果**：✅ 19/19 PASSED（0.97 秒）
+- **修正**：`analysis.history_query.DUCKDB_PATH` 需同時 monkeypatch（模組層級綁定）
+- **全套測試**：54/55（test_crc_8um_exists 既有問題，不相關）
+
+### 4.3 .mcp.json 設定
+- **位置**：`bio_DB/.mcp.json`（gitignore 排除，含本機絕對路徑）
+- **Command**：`~/.venvs/hermes-bio-memory/bin/python server/bio_memory_server.py`
+- **PYTHONPATH**：`/Volumes/NO NAME/bio_DB`
+
+---
+
+## Commit 記錄（完整）
+
+| Hash | 內容 |
+|------|------|
+| _(待 commit)_ | feat: Phase 3.5 + Phase 4 complete |
+| `8ae83d1` | feat: Phase 3 L1 cache + Phase 2B analysis layer |
+| `f761800` | docs/chore: reinforce project constitution |
+| `277dd9a` | feat: Phase 2B complete |
+| `ce6fab8` | feat: Phase 2A |
+| `bc84ef9` | feat: Phase 1 complete |
