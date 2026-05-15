@@ -862,6 +862,117 @@ Mode 2 Code Gen 成功
 
 ---
 
+#### 工具版本管理：規模擴展路徑
+
+##### 現階段（工具 < 20 個）：registry.json
+
+`tools/registry.json` 記錄當前版本與 metadata，`analysis_history.parameters` 內嵌版本字串：
+
+```json
+{ "tool_name": "morans_i_spatial", "tool_version": "1.0.0", "gene": "PTPRC" }
+```
+
+簡單夠用，無需額外基礎設施。
+
+> **現在就該做的一件事**：`analysis_history` 預留 `tool_id UUID` 欄位（允許 NULL），等規模到了直接填入，不需改 schema。
+
+---
+
+##### 規模擴展後（工具 ≥ 20 個）：tools 資料表
+
+`registry.json` 在工具增多後面臨三個無法解決的問題：
+- 無法跨版本查詢（「哪些分析用了 deprecated 的舊版？」）
+- 無法做影響分析（「改 morans_i v1.0 會影響幾筆歷史？」）
+- 多人 `/approve` 並發時 JSON 檔案互相覆蓋
+
+此時在 `bio_memory.duckdb` 新增 `tools` 表：
+
+```sql
+CREATE TABLE tools (
+    tool_id       UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    tool_name     VARCHAR NOT NULL,           -- 'morans_i_spatial'
+    version       VARCHAR NOT NULL,           -- semver '1.2.0'
+    module_path   VARCHAR NOT NULL,           -- 'analysis.morans_i_spatial'
+    function_name VARCHAR NOT NULL,           -- 'run_morans_i'
+    description   VARCHAR,
+    parameters    JSON,                       -- 輸入 schema
+    status        VARCHAR DEFAULT 'active',   -- 'candidate' | 'active' | 'deprecated'
+    origin_id     UUID,                       -- FK → analysis_history（從哪次生成升格）
+    promoted_by   VARCHAR,
+    git_commit    VARCHAR,                    -- 升格當下的 git commit hash（重現性）
+    created_at    TIMESTAMP DEFAULT now(),
+    deprecated_at TIMESTAMP,
+
+    UNIQUE (tool_name, version)
+);
+```
+
+`analysis_history.tool_id` 外鍵直接指向 `tools`，解鎖跨表查詢：
+
+```sql
+-- 哪些分析用了已 deprecated 的工具版本？
+SELECT h.analysis_id, h.sample_id, h.completed_at,
+       t.tool_name, t.version, t.deprecated_at
+FROM analysis_history h
+JOIN tools t USING (tool_id)
+WHERE t.status = 'deprecated';
+
+-- 改 morans_i 前先確認影響範圍
+SELECT t.version, COUNT(*) AS run_count
+FROM analysis_history h
+JOIN tools t USING (tool_id)
+WHERE t.tool_name = 'morans_i_spatial'
+GROUP BY t.version;
+
+-- 時間旅行查詢：某日期當下哪些工具可用？
+SELECT * FROM tools
+WHERE created_at <= '2026-03-01'
+  AND (deprecated_at IS NULL OR deprecated_at > '2026-03-01')
+  AND status = 'active';
+```
+
+##### 工具版本生命週期
+
+```
+candidate   ← /approve 前，Claude 生成的草稿（存於 analysis/candidates/）
+    │
+    └─► active      ← 管理員 /approve，寫入 tools 表，加入 BIO_TOOLS
+            │
+            └─► deprecated   ← 發現 bug 或新版取代
+                    ├── 舊 analysis_history 記錄完整保留（tool_id 仍有效）
+                    └── 新分析自動路由到最新 active 版本
+```
+
+##### BIO_TOOLS 動態載入（取代 registry.json）
+
+```python
+def load_bio_tools(con: duckdb.DuckDBPyConnection) -> list[dict]:
+    rows = con.execute(
+        "SELECT tool_name, module_path, function_name, description, parameters "
+        "FROM tools WHERE status = 'active' ORDER BY tool_name"
+    ).fetchall()
+    tools = []
+    for name, module, func, desc, params in rows:
+        mod = importlib.import_module(module)
+        tools.append({
+            "name": name,
+            "function": getattr(mod, func),
+            "description": desc,
+            "input_schema": json.loads(params or "{}"),
+        })
+    return tools
+```
+
+##### 擴展時機判斷
+
+| 工具數量 | 方案 | 說明 |
+|---------|------|------|
+| < 20 個 | `registry.json` + `parameters->>'tool_version'` | 目前階段，夠用 |
+| 20–100 個 | `tools` 表 + `tool_id` 外鍵（同一個 `bio_memory.duckdb`） | 多人協作時升級 |
+| > 100 個 | 獨立 `tools.duckdb` 或搬至 PostgreSQL | 實驗室規模不太會到這層 |
+
+---
+
 ## 第一階段 — 環境建置與 Schema 設計
 
 - [x] 安裝 Python 套件：`duckdb`、`anndata`、`pandas`、`pyarrow`、`scipy`（pyproject.toml 完成）
