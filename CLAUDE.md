@@ -50,17 +50,21 @@ bio_DB/
 │   ├── 02_spatial_to_parquet.py← ✅ L3 Visium HD → L2 Parquet（已驗證：416 MB / 215M nonzero）
 │   └── msseg/                  ← MSseg 相關工具腳本
 │
-├── analysis/               ← 可重複使用的分析函數（Agent 呼叫，Phase 2B 進行中）
-│   ├── spatial_eda.py
-│   ├── bulk_eda.py
-│   ├── report_generator.py
-│   └── history_query.py
+├── analysis/               ← 可重複使用的分析函數（Agent 呼叫）
+│   ├── spatial_eda.py          ← ✅ 基因空間圖、QC 統計
+│   ├── history_query.py        ← ✅ 0-token 歷史查詢
+│   ├── report_generator.py     ← ✅ EDA 報告 + ≤50 字摘要
+│   ├── embed.py                ← ✅ Embedding 封裝（llamacpp/openai/google）
+│   ├── l1_cache.py             ← ✅ L1 快取寫入 + 語意搜尋
+│   └── bulk_eda.py             ← Phase 後續實作
 │
 ├── server/                 ← MCP Server（Phase 5，尚未實作）
 │   └── bio_memory_server.py
 │
 ├── scheduler/              ← 排程任務
-│   └── backup_db.py            ← ✅ 每日 EXPORT DATABASE 備份（~/bio_db_backups/，保留 7 天）
+│   ├── backup_db.py            ← ✅ 每日 02:00 EXPORT DATABASE 備份（已啟用 launchd）
+│   ├── cleanup_l1_cache.py     ← ✅ 每日 03:30 清理 L1 TTL 過期記錄
+│   └── rebuild_hnsw.py         ← ✅ 每週日 03:00 重建 HNSW 索引
 │
 ├── tests/                  ← 測試套件
 │   ├── conftest.py
@@ -117,6 +121,37 @@ uv run pytest tests/ -v
 # 環境變數
 cp .env.example .env  # 填入 API keys
 ```
+
+### Embedding Server（分析前必須啟動）
+
+**所有呼叫 `analysis/embed.py`、`analysis/l1_cache.py` 的操作都需要 embedding server 在線。**
+Server 提供本機 OpenAI-compatible `/v1/embeddings` API（port 8081）。
+
+```bash
+# 手動啟動（背景執行）
+~/llama.cpp/build/bin/llama-server \
+  -m ~/llama.cpp/models/bge-m3-Q8_0.gguf \
+  --embedding --port 8081 --ctx-size 8192 --n-gpu-layers 99 &
+
+# 確認在線
+curl http://localhost:8081/health          # → {"status":"ok"}
+~/.venvs/hermes-bio-memory/bin/python -c "
+from analysis.embed import server_health; print(server_health())"
+
+# 停止
+pkill -f "llama-server.*8081"
+```
+
+**自動啟動（推薦）**：安裝 launchd plist，開機自動啟動、自動重啟：
+```bash
+cp docs/launchd_embedding_server.plist.example \
+   ~/Library/LaunchAgents/com.hermes.embedding_server.plist
+launchctl load ~/Library/LaunchAgents/com.hermes.embedding_server.plist
+```
+
+模型：`~/llama.cpp/models/bge-m3-Q8_0.gguf`（605 MB，1024-dim，BAAI bge-m3，多語含中文）
+
+---
 
 ### 備份與健檢
 
