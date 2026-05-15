@@ -138,7 +138,9 @@ find . -name "._*" -delete && find . -name ".DS_Store" -delete
 
 ```sql
 -- 樣本登記（bio_memory.duckdb）
-sample_registry(sample_id PK, project, data_type, species, l3_path,
+-- data_type 大類: visium_hd | visium | scrna | bulk_rnaseq | multiome | atac | proteomics | imaging | other
+-- platform  具體工具: 10x_visium_hd | cellranger | kallisto | salmon | cellranger_arc | ...
+sample_registry(sample_id PK, project, data_type, platform, species, tissue, l3_path,
                 l2_ready BOOL, analysis_done BOOL, added_by, notes, last_updated)
 
 -- 分析歷史（永久保存）

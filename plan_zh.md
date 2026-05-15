@@ -546,16 +546,37 @@ result = duckdb.query("""
 CREATE TABLE sample_registry (
     sample_id      VARCHAR PRIMARY KEY,
     project        VARCHAR,       -- 'MQ250428'、'Kallisto_v1'
-    data_type      VARCHAR,       -- 'visium_hd'、'bulk_rnaseq'、'scrna'
-    species        VARCHAR,       -- 'mouse'、'human'
-    l3_path        VARCHAR,       -- 原始數據路徑（Linux 伺服器）
+
+    -- 資料類型（兩層分類）
+    data_type      VARCHAR,       -- 大類：見下方對照表
+    platform       VARCHAR,       -- 具體平台/工具：'10x_visium_hd'、'kallisto'、'cellranger'、'salmon' 等
+
+    species        VARCHAR,       -- 'mouse'、'human'、'rat'
+    tissue         VARCHAR,       -- 'colon'、'lung'、'pancreas' 等（方便跨樣本查詢）
+    l3_path        VARCHAR,       -- 原始數據路徑
     l2_ready       BOOLEAN DEFAULT FALSE,
     analysis_done  BOOLEAN DEFAULT FALSE,
-    added_by       VARCHAR,       -- 新增者
+    added_by       VARCHAR,
     notes          VARCHAR,
-    last_updated   TIMESTAMP
+    last_updated   TIMESTAMP DEFAULT now()
 );
 ```
+
+**data_type 對照表：**
+
+| data_type | 說明 | 常見 platform |
+|-----------|------|--------------|
+| `visium_hd` | 10x Visium HD 空間轉錄體 | `10x_visium_hd` |
+| `visium` | 10x Visium 標準版 | `10x_visium` |
+| `scrna` | 單細胞 RNA-seq | `cellranger`、`starsolo`、`kallisto_kb` |
+| `bulk_rnaseq` | Bulk RNA-seq | `kallisto`、`salmon`、`star_rsem` |
+| `multiome` | 同時測 RNA + ATAC | `cellranger_arc` |
+| `atac` | ATAC-seq / scATAC-seq | `cellranger_atac`、`snapatac2` |
+| `proteomics` | 蛋白質體學 | `maxquant`、`fragpipe` |
+| `imaging` | 純影像（無定序） | `cellpose`、`stardist` |
+| `other` | 不屬於以上類型 | 自由填寫 platform |
+
+> **設計原則**：`data_type` 是固定的大類（方便 SQL GROUP BY），`platform` 記錄具體工具（方便追蹤版本差異）。新資料類型直接加入對照表，不需修改 schema。
 
 > `analysis_history` 與 `analysis_index` 的詳細設計見上方「分析歷史設計與省 Token 搜尋策略」章節。
 
