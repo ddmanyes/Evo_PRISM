@@ -600,6 +600,99 @@ Anthropic Prompt Cache 讓重複的 prefix 只計算一次：
 
 ---
 
+### 雙模式分析：預定義工具 vs 動態程式碼生成
+
+Agent 面對兩類需求，採用不同執行路徑：
+
+```
+使用者需求
+    │
+    ├─► 標準分析（QC、基因表達、clustering）
+    │       └─► Mode 1：呼叫預定義工具（`analysis/` 模組）
+    │               → 穩定、可重現、速度快
+    │
+    └─► 非標準分析（「幫我算 D1 和 D2 樣本的 Moran's I 空間自相關」）
+            └─► Mode 2：動態程式碼生成 + 沙盒執行
+                    → Claude 寫程式碼 → Python 執行 → 錯誤回饋 → 修正重試
+```
+
+#### Mode 2：動態 Code Generation Loop
+
+```python
+# server/code_executor.py
+
+ALLOWED_IMPORTS = {
+    "duckdb", "pandas", "numpy", "scipy", "scanpy",
+    "anndata", "matplotlib", "seaborn", "squidpy"
+}
+BLOCKED_PATTERNS = ["os.system", "subprocess", "eval(", "exec(", "__import__", "open("]
+
+async def code_generation_loop(task: str, context: dict, max_retries: int = 3) -> dict:
+    """
+    Claude 寫程式碼 → 沙盒執行 → 如果有錯 → Claude 讀 traceback → 修正
+    成功後：結果存入 analysis_history，程式碼存入 parameters
+    """
+    messages = [{"role": "user", "content": CODE_GEN_PROMPT.format(task=task, context=context)}]
+
+    for attempt in range(max_retries):
+        response = claude.messages.create(model="claude-sonnet-4-6", messages=messages)
+        code = extract_code(response)
+
+        if not is_safe(code):          # 安全檢查：禁止危險 import / pattern
+            raise SecurityError(code)
+
+        result = sandbox_exec(code)    # 受限 Python 環境執行
+
+        if result.success:
+            return {"code": code, "output": result.output, "attempt": attempt + 1}
+
+        # 失敗：把 traceback 餵回 Claude 讓它自己修正
+        messages += [
+            {"role": "assistant", "content": response.content},
+            {"role": "user",      "content": f"執行錯誤：\n{result.traceback}\n請修正程式碼。"}
+        ]
+
+    raise MaxRetriesExceeded(task)
+```
+
+#### ⭐ Code Promotion：程式碼升格為永久工具
+
+**問題**：相同分析邏輯若每次都重新生成，不只浪費 token，還可能產出不一致的結果。
+
+**解法**：成功的程式碼存入 `analysis_history.parameters`，Claude 在下次接到類似需求時判斷是否可重用。當某段程式碼被重複呼叫 N 次後，由 Claude 評估是否值得升格為正式工具。
+
+```
+一次性分析成功
+    │
+    ├─► 程式碼存入 analysis_history.parameters["generated_code"]
+    │
+    ├─► 下次類似需求：Claude 先查 analysis_history → 找到舊程式碼 → 直接重用
+    │       SQL：SELECT parameters->>'generated_code'
+    │            FROM analysis_history
+    │            WHERE analysis_type = ? AND status = 'completed'
+    │            ORDER BY completed_at DESC LIMIT 1
+    │
+    └─► 重用次數 ≥ 3 次後：Claude 評估是否升格
+            評估標準：
+            ① 邏輯通用（不依賴特定樣本 ID）
+            ② 有明確輸入/輸出介面
+            ③ 本人（管理員）確認
+            → 通過 → 移入 analysis/ 成為正式工具
+            → 不通過 → 繼續存在 analysis_history 供重用
+```
+
+**三層程式碼生命週期**：
+
+| 層級 | 位置 | 狀態 | 描述 |
+|------|------|------|------|
+| L0 草稿 | 記憶體（當次對話） | 一次性 | Claude 剛生成、未驗證 |
+| L1 歷史 | `analysis_history.parameters` | 可重用 | 執行成功、有 traceback 記錄 |
+| L2 工具 | `analysis/` 模組 | 永久工具 | 泛化後移入，加入 `BIO_TOOLS` |
+
+> 這個設計讓系統的工具庫隨使用自然成長——不需要人工預設所有分析場景，實際用到的才會被固化。
+
+---
+
 ## 第一階段 — 環境建置與 Schema 設計
 
 - [x] 安裝 Python 套件：`duckdb`、`anndata`、`pandas`、`pyarrow`、`scipy`（pyproject.toml 完成）
