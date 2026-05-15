@@ -105,26 +105,48 @@
 ```
 使用者提問
     │
-    ├─[Step 1] bio_history_check()         ← 0 token，SQL 確認是否已有存檔
-    │   已存檔且結果有效？
-    │   └─ 是 → 直接回傳存檔路徑或摘要（< 1 秒，0 token）
+    ├─[Step 1] bio_history_check()              ← 0 token，SQL 精確比對
+    │   analysis_history 已有相同 sample+type？
+    │   └─ 是 → 直接回傳存檔路徑 / 摘要（< 1 秒，0 token）
     │   └─ 否 → 繼續 Step 2
     │
-    ├─[Step 2] L1 語意搜尋                 ← 少量 token，HNSW cosine ≥ 0.88
-    │   快取命中？
+    ├─[Step 2] L1 語意搜尋                      ← HNSW cosine ≥ 0.88
+    │   memory_recent 有語意相似的過去報告？
     │   └─ 是 → 回傳快取報告（< 1 秒）
     │   └─ 否 → 繼續 Step 3
     │
-    ├─[Step 3] L2 特徵查詢                 ← 有特徵數據則輕量分析（~30 秒）
-    │   有 Parquet 數據？
-    │   └─ 是 → 分析 → 寫入 L1 + analysis_history → 回傳報告
+    ├─[Step 3] L2 特徵查詢 + 工具選擇           ← ~30 秒
+    │   silver/ 有對應 Parquet？
     │   └─ 否 → 繼續 Step 4
+    │   └─ 是 → 判斷工具路徑：
+    │       │
+    │       ├─ [3A] 標準分析（QC / 空間基因圖 / clustering）？
+    │       │         → Mode 1：呼叫 analysis/ 預定義工具
+    │       │         → 結果寫入 L1 + analysis_history → 回傳
+    │       │
+    │       ├─ [3B] 曾生成過類似程式碼？        ← Code Promotion 重用路徑
+    │       │         SQL: SELECT parameters->>'generated_code'
+    │       │              FROM analysis_history
+    │       │              WHERE analysis_type LIKE ? AND status = 'completed'
+    │       │              ORDER BY completed_at DESC LIMIT 1
+    │       │         → 找到 → 直接重用（節省生成 token）
+    │       │         → 重用次數 ≥ 3 → 評估是否升格為 analysis/ 正式工具
+    │       │         → 結果寫入 L1 + analysis_history（reuse_count +1）→ 回傳
+    │       │
+    │       └─ [3C] 全新分析，無既有程式碼？    ← Code Generation Loop
+    │                 Mode 2：Claude 生成程式碼
+    │                 → 安全檢查（ALLOWED_IMPORTS / BLOCKED_PATTERNS）
+    │                 → 沙盒執行 → 失敗則餵 traceback 給 Claude 修正（≤ 3 次）
+    │                 → 成功 → 程式碼存入 analysis_history.parameters["generated_code"]
+    │                 → 結果寫入 L1 → 回傳
     │
-    └─[Step 4] L3 Pipeline 排程            ← 耗時（~4 小時）
-        有原始數據？
-        └─ 是 → 排程 SpaceRanger / Kallisto → 完成後寫 L2 → L1 → 回傳
+    └─[Step 4] L3 Pipeline 排程                 ← ~4 小時
+        有原始數據（crc_visium_data/ 或 /mnt/space4/）？
+        └─ 是 → 排程 SpaceRanger / Kallisto → 完成後依序寫入 L2 → L1 → 回傳
         └─ 否 → 通知使用者需上傳原始數據
 ```
+
+> **工具生命週期小結**：3A（永久）→ 3C 生成後存入 3B（可重用）→ 重用 ≥3 次後升格回 3A。
 
 ---
 
