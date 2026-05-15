@@ -23,9 +23,11 @@ DUCKDB_PATH    = Path(os.getenv("DUCKDB_PATH",   BIO_DB_ROOT / "bio_memory.duckd
 L1_CACHE_PATH  = Path(os.getenv("L1_CACHE_PATH", L1_ROOT / "hermes_cache.duckdb"))
 
 # ── Embedding ──────────────────────────────────────────────
-EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai")  # "openai" | "local"
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "google")  # "google" | "openai" | "local"
+GOOGLE_API_KEY     = os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
-EMBEDDING_DIM      = 1536 if EMBEDDING_PROVIDER == "openai" else 768
+EMBEDDING_MODEL    = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+EMBEDDING_DIM      = int(os.getenv("EMBEDDING_DIM", "1536"))
 
 # ── L1 快取參數 ────────────────────────────────────────────
 L1_COSINE_THRESHOLD = 0.88

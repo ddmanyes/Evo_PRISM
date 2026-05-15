@@ -120,22 +120,33 @@ if h5:
 
 ---
 
-## Phase 3 — L1 語意快取（待實作）
+## Phase 3 — L1 語意快取（基礎設施完成，embedding 待接入）
 
-### [ ] 3.0 啟用 launchd 排程
-```bash
-launchctl load ~/Library/LaunchAgents/com.hermes.backup.plist
-```
+### [x] 3.0 啟用 launchd 排程（✅ 完成）
+- com.hermes.backup：每日 02:00（已 load）
+- com.hermes.cleanup_l1：每日 03:30（plist 備妥，待 load）
+- com.hermes.rebuild_hnsw：每週日 03:00（plist 備妥，待 load）
 
-### [ ] 3.1 建立 gold/hermes_cache.duckdb + memory_recent + HNSW 索引
+### [x] 3.1 scripts/03_init_l1_cache.py（✅ 完成）
+- gold/hermes_cache.duckdb 建立，memory_recent schema + HNSW 索引（cosine）
+- 修正：需要 hnsw_enable_experimental_persistence=true 才能持久化索引
+- 修正：每次新連線都需要 LOAD vss 才能操作有 HNSW 索引的表
 
-### [ ] 3.2 接入 Google gemini-embedding-001
+### [x] 3.2 scheduler/cleanup_l1_cache.py（✅ 完成）
+- 每日刪除 expires_at < now() 的記錄，支援 --dry-run
+
+### [x] 3.3 scheduler/rebuild_hnsw.py（✅ 完成）
+- DROP + CREATE HNSW 索引，支援 --force
+
+### [x] 3.4 tests/test_phase3.py（✅ 完成）
+- 15/15 PASSED
+
+### [ ] 3.5 Google embedding 接入（待 GOOGLE_API_KEY）
 ```bash
 uv sync --extra anthropic --extra embedding-google
-# 填入 .env: GOOGLE_API_KEY=...
+# cp .env.example .env && 填入 GOOGLE_API_KEY
+# 實作 analysis/embed.py + write_to_l1_cache()
 ```
-
-### [ ] 3.3 cleanup_l1_cache.py + rebuild_hnsw.py
 
 ---
 
