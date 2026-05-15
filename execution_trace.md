@@ -115,10 +115,60 @@
 
 ---
 
-## 下一步：Phase 3 — L1 語意快取
+---
 
-1. `launchctl load ~/Library/LaunchAgents/com.hermes.backup.plist`（啟用每日備份排程）
-2. `uv sync --extra anthropic --extra embedding-google`（安裝 Google embedding SDK）
-3. 填入 `.env`：`GOOGLE_API_KEY=...`
-4. 建立 `gold/hermes_cache.duckdb` + `memory_recent` 表 + HNSW 索引
-5. `scheduler/cleanup_l1_cache.py` + `scheduler/rebuild_hnsw.py`
+## 2026-05-15 — Phase 3 執行記錄
+
+### 3.0 launchd 排程啟用
+- **結果**：✅ com.hermes.backup 已 `launchctl load`（每日 02:00）
+- **備妥**：com.hermes.cleanup_l1（每日 03:30）、com.hermes.rebuild_hnsw（每週日 03:00）plist 已放置於 docs/，待個別 load
+
+### 3.1 scripts/03_init_l1_cache.py
+- **結果**：✅ 成功
+- **輸出**：`gold/hermes_cache.duckdb`，memory_recent 9 欄，HNSW 索引 idx_memory_hnsw（cosine）
+- **關鍵修正**：
+  - `hnsw_enable_experimental_persistence = true`（檔案型 DB 建 HNSW 必須）
+  - 每次新連線都需 `LOAD vss` 才能操作有 HNSW 索引的表
+  - `information_schema.columns` 用 `data_type`（非 `column_type`）
+  - `init_l1_cache()` 新增 `cache_path` 參數供測試注入
+
+### 3.2 scheduler/cleanup_l1_cache.py
+- **結果**：✅ 成功
+- **功能**：DELETE expires_at < now()、--dry-run 模式、stats()
+
+### 3.3 scheduler/rebuild_hnsw.py
+- **結果**：✅ 成功
+- **功能**：DROP + CREATE HNSW、--force 強制重建、index_exists() 驗證
+
+### 3.4 tests/test_phase3.py
+- **結果**：✅ 15/15 PASSED（0.88 秒）
+  - 4 TestInitL1Cache
+  - 6 TestCleanupL1Cache
+  - 5 TestRebuildHnsw
+- **全套測試**：35/36（test_crc_8um_exists 為既有路徑問題，與本 Phase 無關）
+
+---
+
+## Commit 記錄（更新）
+
+| Hash | 內容 |
+|------|------|
+| _(待 commit)_ | feat: Phase 3 L1 cache infra |
+| `f761800` | docs/chore: reinforce project constitution |
+| `277dd9a` | feat: Phase 2B complete |
+| `ce6fab8` | feat: Phase 2A |
+| `bc84ef9` | feat: Phase 1 complete |
+
+---
+
+## 下一步：Phase 3.5 + Phase 4
+
+### Phase 3.5：Google Embedding 接入（需 GOOGLE_API_KEY）
+1. `cp .env.example .env` → 填入 `GOOGLE_API_KEY`
+2. `uv sync --extra anthropic --extra embedding-google`
+3. 實作 `analysis/embed.py`（呼叫 gemini-embedding-001）
+4. 實作 `analysis/l1_cache.py`（write_to_l1_cache + semantic_search）
+
+### Phase 4：MCP Server
+5. `server/bio_memory_server.py`（`bio_history_*` 工具）
+6. `.claude/settings.json` mcpServers 設定

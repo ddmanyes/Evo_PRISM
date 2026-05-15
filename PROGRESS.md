@@ -65,22 +65,33 @@
 
 ---
 
+## ✅ Phase 3 基礎設施完成（2026-05-15）
+
+- [x] launchd 每日備份排程已啟用（com.hermes.backup）
+- [x] `scripts/03_init_l1_cache.py` — gold/hermes_cache.duckdb + memory_recent + HNSW（cosine）
+- [x] `scheduler/cleanup_l1_cache.py` — TTL 清理（每日 03:30）
+- [x] `scheduler/rebuild_hnsw.py` — HNSW 重建（每週日 03:00）
+- [x] `tests/test_phase3.py` — 15/15 PASSED
+- [ ] Phase 3.5：Google embedding 接入（待 GOOGLE_API_KEY + `uv sync --extra embedding-google`）
+
+---
+
 ## ⏭️ 下一步（按優先順序）
 
-### Phase 3：L1 語意快取
-4. 啟用 launchd 排程（`launchctl load ~/Library/LaunchAgents/com.hermes.backup.plist`）
-5. 建立 `gold/hermes_cache.duckdb` + `memory_recent` 表 + HNSW 索引
-6. 接入 Google `gemini-embedding-001`（已決定，待 GOOGLE_API_KEY 填入 .env）
-7. `scheduler/cleanup_l1_cache.py` + `scheduler/rebuild_hnsw.py`
+### Phase 3.5：Google Embedding 接入（本週）
+1. `cp .env.example .env` → 填入 `GOOGLE_API_KEY`
+2. `uv sync --extra anthropic --extra embedding-google`
+3. `analysis/embed.py`（gemini-embedding-001 封裝）
+4. `analysis/l1_cache.py`（write_to_l1_cache + semantic_search）
 
 ### Phase 4：MCP Server
-8. 實作 `server/bio_memory_server.py`（含 `bio_history_*` 工具）
-9. 設定 `.claude/settings.json` 的 mcpServers
+5. `server/bio_memory_server.py`（`bio_history_*` 工具）
+6. `.claude/settings.json` mcpServers 設定
 
 ### Phase 5+：Agent + Telegram + 部署
-10. 自製 Agent Loop（Claude API + tool use）
-11. Telegram Bot 介接 + 白名單
-12. Linux 伺服器遷移（見 plan_zh.md 的 checklist）
+7. 自製 Agent Loop（Claude API + tool use）
+8. Telegram Bot 介接 + 白名單
+9. Linux 伺服器遷移（見 plan_zh.md 的 checklist）
 
 ---
 
@@ -89,7 +100,7 @@
 | 問題 | 狀態 | 說明 |
 |------|------|------|
 | 訊息平台未確認 | 待決定 | Telegram / LINE / Slack — 影響 Phase 0 |
-| launchd 排程未啟用 | 待處理 | plist 範本已備妥，待 `launchctl load` |
+| launchd cleanup/rebuild 排程 | 待處理 | plist 已在 docs/，待 `launchctl load` × 2 |
 | Linux 伺服器權限 | 待確認 | `/mnt/space4/` 空間與寫入權限 |
 | MQ250422-A1-D1 缺失 web_summary | 既有問題 | 以 D1-D2 為主要原型 |
 | NDPI 配準 | 待處理 | 影響空間圖組織影像疊加 |
@@ -109,6 +120,7 @@
 | 2026-05-15 | 資料庫安全完成 | 備份還原 round-trip 驗證通過 |
 | 2026-05-15 | 設計補強完成 | embedding=Google、沙盒策略、HNSW 維護、Linux 遷移 checklist |
 | 2026-05-15 | Phase 2B 完成 | analysis 三模組 + 14/14 tests；CRC EDA 報告 + 50 字摘要生成成功 |
+| 2026-05-15 | Phase 3 基礎設施完成 | L1 cache schema + HNSW + cleanup + rebuild + 15/15 tests |
 
 ---
 
