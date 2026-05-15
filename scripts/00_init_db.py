@@ -24,12 +24,18 @@ def init_db(db_path: Path = DB_PATH) -> duckdb.DuckDBPyConnection:
         print("L1 Gold HNSW index will not be available — continue anyway")
 
     # sample_registry
+    # data_type 大類: visium_hd | visium | scrna | bulk_rnaseq |
+    #                 multiome | atac | proteomics | imaging | other
+    # platform    具體工具: 10x_visium_hd | cellranger | kallisto |
+    #                       salmon | cellranger_arc | snapatac2 | maxquant | ...
     con.execute("""
         CREATE TABLE IF NOT EXISTS sample_registry (
             sample_id      VARCHAR PRIMARY KEY,
             project        VARCHAR,
-            data_type      VARCHAR,    -- 'visium_hd', 'bulk_rnaseq', 'scrna'
-            species        VARCHAR,    -- 'mouse', 'human'
+            data_type      VARCHAR,
+            platform       VARCHAR,
+            species        VARCHAR,    -- 'mouse', 'human', 'rat'
+            tissue         VARCHAR,    -- 'colon', 'lung', 'pancreas' ...
             l3_path        VARCHAR,
             l2_ready       BOOLEAN DEFAULT FALSE,
             analysis_done  BOOLEAN DEFAULT FALSE,
@@ -80,38 +86,59 @@ def init_db(db_path: Path = DB_PATH) -> duckdb.DuckDBPyConnection:
 
 
 def populate_registry(con: duckdb.DuckDBPyConnection):
-    """Insert known samples from MASTER_LIST. Edit this list as new samples arrive."""
+    """Insert known samples. Edit this list as new samples arrive.
+
+    data_type choices:
+        visium_hd | visium | scrna | bulk_rnaseq |
+        multiome  | atac   | proteomics | imaging | other
+    """
     samples = [
-        # (sample_id, project, data_type, species, l3_path, notes)
+        # (sample_id, project, data_type, platform, species, tissue, l3_path, notes)
+        (
+            "crc_official_v4",
+            "CRC_official",
+            "visium_hd",
+            "10x_visium_hd",
+            "human",
+            "colon",
+            "/Volumes/NO NAME/bio_DB/crc_visium_data/official_v4",
+            "Official 10x CRC demo dataset; test prototype for L2 pipeline",
+        ),
         (
             "MQ250428-D1-D2",
             "MQ250428",
             "visium_hd",
+            "10x_visium_hd",
             "mouse",
-            r"I:\Bioinfo_Projects\01_Spatial_Transcriptomics\20251125_TGIA_VisiumHD\20250612_MQ250428\MQ250428-D1-D2\outs",
-            "Primary prototype; NDPI registration pending",
+            "unknown",
+            "/mnt/space4/MQ250428-D1-D2/outs",
+            "Primary lab prototype; NDPI registration pending",
         ),
         (
             "MQ250428-A1-M2",
             "MQ250428",
             "visium_hd",
+            "10x_visium_hd",
             "mouse",
-            r"I:\Bioinfo_Projects\01_Spatial_Transcriptomics\20251125_TGIA_VisiumHD\20250612_MQ250428\MQ250428-A1-M2\outs",
-            "Secondary prototype; NDPI registration pending",
+            "unknown",
+            "/mnt/space4/MQ250428-A1-M2/outs",
+            "Secondary lab prototype; NDPI registration pending",
         ),
         (
             "Kallisto_v1",
             "Kallisto_v1",
             "bulk_rnaseq",
+            "kallisto",
             "mouse",
-            r"I:\BulkRNA\Kallisto_v1\results_kallisto",
+            "unknown",
+            "/mnt/space4/BulkRNA/Kallisto_v1/results_kallisto",
             "All conditions in results_kallisto/; t2g mapping required",
         ),
     ]
 
     inserted = 0
     skipped = 0
-    for sample_id, project, data_type, species, l3_path, notes in samples:
+    for sample_id, project, data_type, platform, species, tissue, l3_path, notes in samples:
         existing = con.execute(
             "SELECT 1 FROM sample_registry WHERE sample_id = ?", [sample_id]
         ).fetchone()
@@ -121,10 +148,12 @@ def populate_registry(con: duckdb.DuckDBPyConnection):
         con.execute(
             """
             INSERT INTO sample_registry
-                (sample_id, project, data_type, species, l3_path, added_by, notes)
-            VALUES (?, ?, ?, ?, ?, 'init_script', ?)
+                (sample_id, project, data_type, platform,
+                 species, tissue, l3_path, added_by, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'init_script', ?)
             """,
-            [sample_id, project, data_type, species, l3_path, notes],
+            [sample_id, project, data_type, platform,
+             species, tissue, l3_path, notes],
         )
         inserted += 1
 
@@ -133,9 +162,11 @@ def populate_registry(con: duckdb.DuckDBPyConnection):
 
 def verify(con: duckdb.DuckDBPyConnection):
     print("\n--- Verification ---")
-    rows = con.execute("SELECT sample_id, data_type, l3_path FROM sample_registry").fetchall()
+    rows = con.execute(
+        "SELECT sample_id, data_type, platform, species, tissue FROM sample_registry"
+    ).fetchall()
     for r in rows:
-        print(f"  {r[0]}  [{r[1]}]  {r[2]}")
+        print(f"  {r[0]}  [{r[1]}/{r[2]}]  {r[3]} / {r[4]}")
 
     tables = con.execute(
         "SELECT table_name, table_type FROM information_schema.tables "
