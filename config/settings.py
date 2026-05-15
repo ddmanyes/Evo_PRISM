@@ -28,6 +28,7 @@ EMBEDDING_MODEL      = os.getenv("EMBEDDING_MODEL", "bge-m3-Q8_0")
 EMBEDDING_DIM        = int(os.getenv("EMBEDDING_DIM", "1024"))
 LLAMACPP_BASE_URL    = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
 LLAMACPP_MODEL_PATH  = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
+ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 GOOGLE_API_KEY       = os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 

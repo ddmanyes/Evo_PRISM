@@ -227,7 +227,8 @@
 
 | Hash | 內容 |
 |------|------|
-| _(待 commit)_ | feat: Phase 3.5 + Phase 4 complete |
+| _(待 commit)_ | feat: Phase 5 WIP — code_executor + agent loop |
+| `e8b8e1c` | feat: Phase 4 complete — Bio-Memory MCP Server |
 | `8ae83d1` | feat: Phase 3 L1 cache + Phase 2B analysis layer |
 | `f761800` | docs/chore: reinforce project constitution |
 | `277dd9a` | feat: Phase 2B complete |
