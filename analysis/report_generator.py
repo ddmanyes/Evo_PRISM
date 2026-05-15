@@ -1,0 +1,368 @@
+"""
+Phase 2B — 分析報告生成器（含 50 字中文摘要）。
+
+50 字摘要是 L1 語意搜尋的品質上限：
+    嵌入向量的語意品質直接決定了搜尋召回率，因此摘要越精準，
+    未來 Agent 「這個問題之前分析過嗎？」的命中率就越高。
+
+主要函數：
+    generate_eda_report()    — 彙整 QC + 基因統計，生成 Markdown 報告
+    generate_summary()       — 將報告壓縮成 ≤50 字的中文摘要（規則式，不呼叫 LLM）
+    write_report_to_history() — 將報告 + 摘要寫入 analysis_history
+    run_full_eda_report()    — 一鍵執行 EDA → 報告 → 歷史記錄
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+import duckdb
+import pandas as pd
+
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.settings import BIO_DB_ROOT, DUCKDB_PATH
+from config.db_utils import safe_write
+
+logger = logging.getLogger(__name__)
+
+# ── 報告樣板 ──────────────────────────────────────────────────────────────────
+
+_REPORT_TEMPLATE = """\
+# {sample_id} — 空間轉錄體 EDA 報告
+
+**生成時間**：{timestamp}
+**樣本 ID**：{sample_id}
+**資料來源**：L2 Silver Parquet（8µm bins）
+
+---
+
+## 1. 資料概覽
+
+| 指標 | 數值 |
+|------|------|
+| 有效 bins 數量 | {n_bins:,} |
+| 偵測基因數（unique） | {n_genes:,} |
+| 非零表達量（entries） | {n_nonzero:,} |
+| 矩陣稀疏度 | {sparsity:.2%} |
+
+---
+
+## 2. QC 統計（per bin）
+
+| 指標 | 數值 |
+|------|------|
+| 中位 genes/bin | {median_genes:.0f} |
+| 中位 UMI/bin | {median_umi:.0f} |
+| 平均 genes/bin | {mean_genes:.1f} |
+| 平均 UMI/bin | {mean_umi:.1f} |
+| bins with 0 genes | {zero_bins:,} ({zero_pct:.1%}) |
+
+---
+
+## 3. 前 20 高表達基因
+
+{top_genes_table}
+
+---
+
+## 4. 空間覆蓋率
+
+| 指標 | 數值 |
+|------|------|
+| array_row 範圍 | {row_min} – {row_max} |
+| array_col 範圍 | {col_min} – {col_max} |
+| 有效 bin 密度 | {valid_density:.2%}（有表達 / 總 bins） |
+
+---
+
+## 5. 結論摘要
+
+{summary}
+
+---
+
+*由 Hermes Bio-Memory `report_generator.py` 自動生成。*
+"""
+
+
+# ── 內部工具 ──────────────────────────────────────────────────────────────────
+
+
+def _l2_expr_glob(sample_id: str) -> str:
+    from config.settings import L2_ROOT
+    return str(L2_ROOT / sample_id / "expression" / "*.parquet")
+
+
+def _l2_obs_path(sample_id: str) -> str:
+    from config.settings import L2_ROOT
+    return str(L2_ROOT / sample_id / "obs_metadata.parquet")
+
+
+def _results_dir(sample_id: str) -> Path:
+    d = BIO_DB_ROOT / "results" / sample_id / "report"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _collect_stats(sample_id: str, db_path: Path) -> dict:
+    """從 L2 Parquet 收集統計數字（純 DuckDB，0-token）。"""
+    expr_glob = _l2_expr_glob(sample_id)
+    obs_path = _l2_obs_path(sample_id)
+
+    with duckdb.connect(str(db_path), read_only=True) as con:
+        n_bins = con.execute(
+            f"SELECT COUNT(*) FROM read_parquet('{obs_path}')"
+        ).fetchone()[0]
+
+        n_genes = con.execute(
+            f"SELECT COUNT(DISTINCT gene_name) FROM read_parquet('{expr_glob}')"
+        ).fetchone()[0]
+
+        n_nonzero = con.execute(
+            f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')"
+        ).fetchone()[0]
+
+        top_df = con.execute(
+            f"""
+            SELECT gene_name,
+                   SUM(count)::BIGINT AS total_umi,
+                   COUNT(*)::BIGINT   AS n_bins
+            FROM   read_parquet('{expr_glob}')
+            GROUP BY gene_name
+            ORDER BY total_umi DESC
+            LIMIT 20
+            """
+        ).fetchdf()
+
+        qc_df = con.execute(
+            f"""
+            SELECT o.barcode,
+                   o.array_row_8um,
+                   o.array_col_8um,
+                   COUNT(e.gene_name)        AS n_genes,
+                   COALESCE(SUM(e.count), 0) AS total_counts
+            FROM   read_parquet('{obs_path}') AS o
+            LEFT JOIN read_parquet('{expr_glob}') AS e USING (barcode)
+            GROUP BY o.barcode, o.array_row_8um, o.array_col_8um
+            """
+        ).fetchdf()
+
+    sparsity = 1 - (n_nonzero / (n_bins * n_genes)) if n_bins * n_genes > 0 else 1.0
+    zero_bins = int((qc_df["n_genes"] == 0).sum())
+
+    return {
+        "n_bins": n_bins,
+        "n_genes": n_genes,
+        "n_nonzero": n_nonzero,
+        "sparsity": sparsity,
+        "median_genes": float(qc_df["n_genes"].median()),
+        "median_umi": float(qc_df["total_counts"].median()),
+        "mean_genes": float(qc_df["n_genes"].mean()),
+        "mean_umi": float(qc_df["total_counts"].mean()),
+        "zero_bins": zero_bins,
+        "zero_pct": zero_bins / n_bins if n_bins > 0 else 0,
+        "row_min": int(qc_df["array_row_8um"].min()),
+        "row_max": int(qc_df["array_row_8um"].max()),
+        "col_min": int(qc_df["array_col_8um"].min()),
+        "col_max": int(qc_df["array_col_8um"].max()),
+        "valid_density": float((qc_df["n_genes"] > 0).mean()),
+        "top_genes": top_df,
+    }
+
+
+# ── 公開 API ──────────────────────────────────────────────────────────────────
+
+
+def generate_summary(stats: dict, sample_id: str) -> str:
+    """
+    從統計數字生成 ≤50 字的中文摘要（規則式，不呼叫 LLM）。
+
+    摘要格式：
+        「{sample_id} EDA：{n_bins}萬bins，{n_genes}基因，
+         中位{median_genes}基因/bin，{valid_density}有效覆蓋率，
+         前三高表達基因為{top3}。」
+
+    這是語意搜尋向量的核心語料，精準比流暢更重要。
+    """
+    top3 = "、".join(stats["top_genes"]["gene_name"].head(3).tolist())
+    n_bins_w = stats["n_bins"] / 10000  # 萬
+
+    summary = (
+        f"{sample_id} EDA：{n_bins_w:.1f}萬bins，{stats['n_genes']:,}基因，"
+        f"中位{stats['median_genes']:.0f}基因/bin，"
+        f"{stats['valid_density']:.1%}有效覆蓋，"
+        f"前三高：{top3}。"
+    )
+
+    # 硬截斷至 50 字（中文字符計算）
+    if len(summary) > 50:
+        summary = summary[:49] + "…"
+
+    return summary
+
+
+def generate_eda_report(
+    sample_id: str,
+    *,
+    db_path: Optional[Path] = None,
+) -> tuple[str, str, dict]:
+    """
+    生成完整 Markdown EDA 報告與 50 字摘要。
+
+    Returns:
+        (report_text, summary_text, stats_dict)
+    """
+    db_path = db_path or DUCKDB_PATH
+    stats = _collect_stats(sample_id, db_path)
+
+    tg = stats["top_genes"]
+    top_genes_table = "| gene_name | total_umi | n_bins |\n|-----------|-----------|--------|\n"
+    for _, row in tg.iterrows():
+        top_genes_table += f"| {row['gene_name']} | {int(row['total_umi']):,} | {int(row['n_bins']):,} |\n"
+
+    summary = generate_summary(stats, sample_id)
+
+    report = _REPORT_TEMPLATE.format(
+        sample_id=sample_id,
+        timestamp=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        n_bins=stats["n_bins"],
+        n_genes=stats["n_genes"],
+        n_nonzero=stats["n_nonzero"],
+        sparsity=stats["sparsity"],
+        median_genes=stats["median_genes"],
+        median_umi=stats["median_umi"],
+        mean_genes=stats["mean_genes"],
+        mean_umi=stats["mean_umi"],
+        zero_bins=stats["zero_bins"],
+        zero_pct=stats["zero_pct"],
+        top_genes_table=top_genes_table,
+        row_min=stats["row_min"],
+        row_max=stats["row_max"],
+        col_min=stats["col_min"],
+        col_max=stats["col_max"],
+        valid_density=stats["valid_density"],
+        summary=summary,
+    )
+
+    return report, summary, stats
+
+
+def write_report_to_history(
+    sample_id: str,
+    report_text: str,
+    summary: str,
+    *,
+    db_path: Optional[Path] = None,
+    save_file: bool = True,
+) -> str:
+    """
+    將報告存檔並寫入 analysis_history。
+
+    Returns:
+        analysis_id（UUID str）
+    """
+    db_path = db_path or DUCKDB_PATH
+    analysis_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+
+    result_path = ""
+    if save_file:
+        out_dir = _results_dir(sample_id)
+        fname = f"eda_report_{now.strftime('%Y%m%d_%H%M%S')}.md"
+        result_path = str(out_dir / fname)
+        Path(result_path).write_text(report_text, encoding="utf-8")
+        logger.info("Report saved: %s", result_path)
+
+    with duckdb.connect(str(db_path)) as con:
+        safe_write(
+            con,
+            """
+            INSERT INTO analysis_history
+                (analysis_id, sample_id, analysis_type, parameters, status,
+                 result_path, requested_by, started_at, completed_at, summary)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                analysis_id,
+                sample_id,
+                "eda_report",
+                json.dumps({"format": "markdown"}),
+                "completed",
+                result_path,
+                "report_generator",
+                now,
+                now,
+                summary,
+            ],
+        )
+
+    return analysis_id
+
+
+def run_full_eda_report(
+    sample_id: str,
+    *,
+    db_path: Optional[Path] = None,
+    save_file: bool = True,
+    verbose: bool = True,
+) -> dict:
+    """
+    一鍵執行：收集統計 → 生成報告 → 寫入歷史。
+
+    Returns:
+        {
+            "analysis_id": str,
+            "summary": str,          # 50 字摘要
+            "report_path": str,      # 儲存路徑（save_file=False 時為空）
+            "stats": dict,           # 原始統計數字
+        }
+    """
+    db_path = db_path or DUCKDB_PATH
+
+    if verbose:
+        print(f"[report_generator] Collecting stats for '{sample_id}'...")
+    report, summary, stats = generate_eda_report(sample_id, db_path=db_path)
+
+    if verbose:
+        print(f"[report_generator] Summary ({len(summary)} chars): {summary}")
+
+    analysis_id = write_report_to_history(
+        sample_id, report, summary, db_path=db_path, save_file=save_file
+    )
+
+    report_path = ""
+    if save_file:
+        # 取回剛寫入的 result_path
+        with duckdb.connect(str(db_path), read_only=True) as con:
+            row = con.execute(
+                "SELECT result_path FROM analysis_history WHERE analysis_id = ?",
+                [analysis_id],
+            ).fetchone()
+            report_path = row[0] if row else ""
+
+    if verbose:
+        print(f"[report_generator] Done. analysis_id={analysis_id}")
+
+    return {
+        "analysis_id": analysis_id,
+        "summary": summary,
+        "report_path": report_path,
+        "stats": stats,
+    }
+
+
+if __name__ == "__main__":
+    result = run_full_eda_report("crc_official_v4")
+    print("\n=== Result ===")
+    print(f"  analysis_id : {result['analysis_id']}")
+    print(f"  summary     : {result['summary']}")
+    print(f"  report_path : {result['report_path']}")
+    print(f"  n_bins      : {result['stats']['n_bins']:,}")

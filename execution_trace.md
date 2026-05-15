@@ -71,8 +71,54 @@
 
 ---
 
-## 下一步：Phase 2B — 分析層
+---
 
-- [ ] `analysis/spatial_eda.py` — 基礎探索函數（基因空間圖、QC 統計）
-- [ ] `analysis/history_query.py` — 0-token 歷史查詢
-- [ ] `analysis/report_generator.py` — 報告 + 50 字摘要（⭐ 語意搜尋品質上限）
+## 2026-05-15 — Phase 2B 執行記錄
+
+### 2B.1 analysis/spatial_eda.py
+- **結果**：✅ 成功
+- **函數**：`gene_spatial_map()` / `qc_stats()` / `top_genes()` / `gene_coexpression()`
+- **Smoke test**：crc_official_v4 top_genes 10筆 PASSED；qc_stats 516K bins PASSED
+- **輸出路徑**：`results/{sample_id}/spatial_eda/`
+
+### 2B.2 analysis/history_query.py
+- **結果**：✅ 成功
+- **特色**：所有查詢 0-token（純 DuckDB SQL），read_only=True 平行安全
+- **測試**：7/7 unit tests PASSED（含空結果、missing sample、search_summaries）
+
+### 2B.3 analysis/report_generator.py
+- **結果**：✅ 成功
+- **真實數據驗證**：
+  - n_bins = 516,880（51.7萬）
+  - n_genes = 18,118
+  - 摘要（50 字）：`crc_official_v4 EDA：51.7萬bins，18,118基因，中位329基因/bi…`
+  - 報告儲存：`results/crc_official_v4/report/eda_report_20260515_*.md`
+  - analysis_id 寫入 bio_memory.duckdb ✅
+- **修正**：`to_markdown()` 需要 `tabulate` 套件 → 改用手工 Markdown 表格格式
+
+### 2B.4 tests/test_phase2b.py
+- **結果**：✅ 14/14 PASSED（2.08 秒）
+  - 7 TestHistoryQuery
+  - 5 TestReportGenerator
+  - 2 TestSpatialEdaSmoke（真實 CRC 數據）
+
+---
+
+## Commit 記錄（更新）
+
+| Hash | 內容 |
+|------|------|
+| _(待 commit)_ | feat: Phase 2B complete — analysis layer |
+| `ce6fab8` | feat: 02_spatial_to_parquet.py Phase 2A |
+| `bc84ef9` | feat: Phase 1 complete |
+| `3b6043c` | docs: code generation design |
+
+---
+
+## 下一步：Phase 3 — L1 語意快取
+
+1. `launchctl load ~/Library/LaunchAgents/com.hermes.backup.plist`（啟用每日備份排程）
+2. `uv sync --extra anthropic --extra embedding-google`（安裝 Google embedding SDK）
+3. 填入 `.env`：`GOOGLE_API_KEY=...`
+4. 建立 `gold/hermes_cache.duckdb` + `memory_recent` 表 + HNSW 索引
+5. `scheduler/cleanup_l1_cache.py` + `scheduler/rebuild_hnsw.py`
