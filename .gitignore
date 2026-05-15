@@ -39,6 +39,9 @@ data_ana/
 
 # Large PDFs and binary documents (keep .md versions only)
 references/pdfs/
+reports/*.pdf
+reports/*.docx
+reports/*.tex
 *.pdf
 *.docx
 

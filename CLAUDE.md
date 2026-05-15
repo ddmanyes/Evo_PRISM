@@ -65,6 +65,9 @@ bio_DB/
 ├── silver/                 ← L2：Parquet 特徵存儲（由腳本寫入）
 ├── gold/                   ← L1：語意快取（由分析函數寫入）
 │
+├── docs/                   ← 專案操作文件（指南、索引）
+├── reports/                ← 學術作業報告（PartA/PartB，gitignored .pdf/.docx）
+│
 ├── crc_visium_data/        ← L3 測試數據（~39GB，唯讀）
 ├── data_ana/               ← 參考分析中間數據（唯讀，來自 MSseg 專案）
 ├── results_ana/            ← 參考分析結果（唯讀，來自 MSseg 專案）
@@ -72,7 +75,7 @@ bio_DB/
 ├── backend_msseg/          ← MSseg FastAPI 後端（參考用）
 ├── msseg_docs/             ← MSseg 文件（參考用）
 │
-└── references/             ← 技術論文摘要
+└── references/             ← 技術論文摘要（.md）+ pdfs/（PDF 原文，gitignored）
 ```
 
 ---
