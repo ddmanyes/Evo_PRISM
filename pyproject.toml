@@ -28,6 +28,7 @@ dependencies = [
     "rich>=13.0.0",
     "tqdm>=4.65.0",
     "requests>=2.34.2",
+    "anthropic>=0.102.0",
 ]
 
 [project.optional-dependencies]

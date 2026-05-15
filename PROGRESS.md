@@ -89,12 +89,32 @@
 
 ---
 
+## 🔄 Phase 5 進行中（2026-05-15）
+
+- [x] `anthropic` 套件安裝（v0.102.0）
+- [x] `server/code_executor.py` — macOS 沙盒執行器
+  - ALLOWED_IMPORTS 白名單（duckdb, pandas, numpy, scipy, anndata, scanpy…）
+  - BLOCKED_PATTERNS 黑名單（os.system, subprocess, eval, exec, open()…）
+  - `is_safe(code)` → (bool, reason)；`sandbox_exec(code, timeout=60)` → ExecResult
+- [x] `server/agent.py` — Claude API Agent Loop
+  - BIO_TOOLS：8 個工具定義（bio_history_* + bio_memory_* + bio_run_* + bio_execute_code）
+  - `handle_message(user_msg, history=[])` → AgentResponse（含 tool_calls + token 統計）
+  - `execute_tool(name, input)` → str（分發至 Python 工具執行）
+  - `run_cli()` 互動式 CLI（本機測試用）
+  - `config/settings.py` 新增 ANTHROPIC_API_KEY
+- [ ] `tests/test_phase5.py`（待撰寫）
+
+---
+
 ## ⏭️ 下一步（按優先順序）
 
-### Phase 5+：Agent + Telegram + 部署
-1. 自製 Agent Loop（Claude API + tool use + bio-memory MCP）
-2. Telegram Bot 介接 + 白名單
-3. Linux 伺服器遷移（見 plan_zh.md checklist）
+### Phase 5（續）
+1. `tests/test_phase5.py` — Unit tests（mock Claude API）
+2. `.env` 填入 `ANTHROPIC_API_KEY`
+
+### Phase 5+：Telegram + 部署
+3. `server/telegram_bot.py` — Telegram Bot 介接（需申請 Bot token）
+4. Linux 伺服器遷移（見 plan_zh.md checklist）
 
 ### Phase 5+：Agent + Telegram + 部署
 7. 自製 Agent Loop（Claude API + tool use）
