@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd 排程：每日 02:00 自動備份 bio_memory.duckdb
+
+  安裝步驟：
+    1. 複製此檔到 ~/Library/LaunchAgents/com.hermes.backup.plist
+    2. 確認路徑與你的環境一致（python 路徑、bio_DB 路徑）
+    3. launchctl load ~/Library/LaunchAgents/com.hermes.backup.plist
+    4. 驗證：launchctl list | grep hermes
+
+  手動觸發測試：
+    launchctl start com.hermes.backup
+
+  移除排程：
+    launchctl unload ~/Library/LaunchAgents/com.hermes.backup.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhanqiru/.venvs/hermes-bio-memory/bin/python</string>
+        <string>/Volumes/NO NAME/bio_DB/scheduler/backup_db.py</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/backup.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/backup_err.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

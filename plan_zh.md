@@ -973,6 +973,109 @@ def load_bio_tools(con: duckdb.DuckDBPyConnection) -> list[dict]:
 
 ---
 
+## 資料庫安全：備份與崩潰預防
+
+### 風險評估
+
+DuckDB 本身有 WAL + ACID 事務，一般寫入中斷會自動回滾。真實風險來自本專案的特殊情境：
+
+| 風險 | 來源 | 對策 |
+|------|------|------|
+| ExFAT 無日誌，斷電可能損壞 .duckdb | `/Volumes/NO NAME/` 是 ExFAT | CHECKPOINT + 每日備份 |
+| 分析程序 crash，`.wal` 殘留鎖住 DB | Python 程序被 kill | 啟動時自動清理 |
+| `analysis_history` 卡在 `running` | 程序中途中斷 | 殭屍狀態清理（> 24h → stale） |
+| 多程序同時寫入衝突 | 多人使用 Telegram Bot | DuckDB 單寫者，同一時間只有一個連線寫入 |
+
+不需要做：Read replica、主從複製、Connection pool 中介層（實驗室規模過度設計）。
+
+### 三個必要機制
+
+#### 1. 每日備份（scheduler/backup_db.py）
+
+`analysis_history` 是永久帳本，丟失無法重建。每晚備份至本機 APFS（不同於 ExFAT）：
+
+```python
+# scheduler/backup_db.py
+# 執行：uv run python scheduler/backup_db.py
+# 排程：launchd（macOS）或 cron（Linux 伺服器）每日 02:00 執行
+
+BACKUP_ROOT = Path.home() / "bio_db_backups"   # APFS，有日誌保護
+KEEP_DAYS   = 7
+
+def backup():
+    today = datetime.now().strftime("%Y%m%d_%H%M")
+    dest  = BACKUP_ROOT / today
+    dest.mkdir(parents=True, exist_ok=True)
+
+    con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
+    con.execute(f"EXPORT DATABASE '{dest}'")   # DuckDB 原生一致性快照
+    con.close()
+
+    # 清理 7 天前的備份
+    for old in sorted(BACKUP_ROOT.iterdir())[:-KEEP_DAYS]:
+        shutil.rmtree(old)
+```
+
+#### 2. 關鍵寫入後 CHECKPOINT（config/db_utils.py）
+
+ExFAT 無日誌，`CHECKPOINT` 強制把 WAL 刷入主檔，縮小斷電損壞視窗：
+
+```python
+# config/db_utils.py
+
+def safe_write(con: duckdb.DuckDBPyConnection, sql: str, params: list = None):
+    """執行寫入並立即 CHECKPOINT，適用於 analysis_history 等關鍵表。"""
+    con.execute(sql, params or [])
+    con.execute("CHECKPOINT")
+```
+
+> 一般 L1 快取寫入（memory_recent）不需要 CHECKPOINT，只有 analysis_history 和 sample_registry 的寫入才呼叫。
+
+#### 3. 殭屍狀態清理（config/db_utils.py）
+
+Agent 每次啟動時呼叫，把 > 24 小時的 `running` 標為 `stale`：
+
+```python
+def cleanup_stale_runs(con: duckdb.DuckDBPyConnection) -> int:
+    """清理因程序中斷而卡住的 running 狀態，回傳清理筆數。"""
+    result = con.execute("""
+        UPDATE analysis_history
+        SET    status = 'stale'
+        WHERE  status  = 'running'
+          AND  started_at < now() - INTERVAL '24 hours'
+    """)
+    return result.rowcount
+```
+
+### 目錄與排程
+
+```
+scheduler/
+├── backup_db.py        ← 每日備份（launchd / cron）
+└── cleanup_stale.py    ← 可獨立執行，也在 agent 啟動時自動呼叫
+
+config/
+└── db_utils.py         ← safe_write() + cleanup_stale_runs()
+```
+
+**macOS launchd 排程範例**（每日 02:00）：
+
+```xml
+<!-- ~/Library/LaunchAgents/com.hermes.backup.plist -->
+<key>StartCalendarInterval</key>
+<dict>
+    <key>Hour</key><integer>2</integer>
+    <key>Minute</key><integer>0</integer>
+</dict>
+<key>ProgramArguments</key>
+<array>
+    <string>/Users/zhanqiru/.venvs/hermes-bio-memory/bin/python</string>
+    <string>/Volumes/NO NAME/bio_DB/scheduler/backup_db.py</string>
+</array>
+```
+
+---
+
 ## 第一階段 — 環境建置與 Schema 設計
 
 - [x] 安裝 Python 套件：`duckdb`、`anndata`、`pandas`、`pyarrow`、`scipy`（pyproject.toml 完成）
