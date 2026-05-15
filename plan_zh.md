@@ -483,6 +483,64 @@ condition VARCHAR, replicate INTEGER
 
 ---
 
+## DuckDB + VSS 技術選型說明
+
+> 本節說明為何選擇 DuckDB + VSS 作為 L1 Gold 層的核心引擎，以及它在系統中扮演的角色。
+
+### 三大核心特色
+
+| 特色 | 說明 |
+|------|------|
+| **輕量進程內資料庫** | 無需獨立伺服器（不同於 PostgreSQL/pgvector 或 Milvus），直接以函式庫形式嵌入 Python，零基礎建設成本 |
+| **HNSW 高速向量索引** | VSS 擴充底層使用 Hierarchical Navigable Small World 演算法，多維度向量檢索延遲 < 1 秒，適合即時語意相似度比對 |
+| **Parquet 原生整合** | DuckDB 可直接查詢 `silver/` 下的 Parquet 檔案，L1 快取層與 L2 特徵層共用同一個查詢引擎，無需額外 ETL |
+
+### 在 Hermes 中的角色：系統的第二道防線
+
+查詢決策流程中，L1 語意快取是**繼 0-token SQL 歷史查詢之後的第二道防線**：
+
+```
+使用者查詢
+    │
+    ├─ [第一道] bio_history_check()  ← 0 token，SQL 精確比對 analysis_history
+    │   命中 → 直接回傳存檔路徑（< 1 秒，0 token）
+    │   未命中 ↓
+    │
+    ├─ [第二道] L1 HNSW 語意搜尋    ← 本層（DuckDB VSS）
+    │   Cosine ≥ 0.88 命中 → 回傳快取報告（< 1 秒）
+    │   未命中 ↓
+    │
+    ├─ [第三道] L2 Parquet 特徵查詢  ← ~30 秒
+    └─ [第四道] L3 Pipeline 排程    ← ~4 小時
+```
+
+### 具體運作機制
+
+**當使用者送出查詢（例如：「整理 CRC 樣本的免疫細胞分布差異」）：**
+
+1. **向量化**：將查詢文字送入 Embedding API，轉為 `FLOAT[1536]` 向量
+2. **HNSW 搜尋**：對 `memory_recent` 表執行 Cosine Similarity 比對
+3. **命中閾值**：相似度 ≥ 0.88 → 視為「過去已分析過相同意圖」
+4. **快取命中**：直接回傳 L1 存放的完整文字報告，**完全不觸及 L2/L3**
+
+**快取寫入（分析完成後）：**
+- 分析結果報告 + 向量嵌入 → 寫入 `memory_recent`
+- TTL 設定 7 天（近期記憶）
+- 同時將 50 字摘要 + `l1_cache_id` 寫回 `analysis_history`
+
+### 效益總結
+
+| 指標 | 數值 | 機制 |
+|------|------|------|
+| 快取命中回應時間 | < 1 秒 | HNSW 索引直接查向量 |
+| 重複查詢節省率 | ≥ 70% | L1 命中不觸及 L2/L3 |
+| Token 消耗（L1 命中） | 0（報告直接回傳）| 不經過 LLM |
+| Token 消耗（語意搜尋本身） | 少量（僅 embedding API）| 只傳 50 字 summary 給 LLM |
+
+> **類比**：DuckDB + VSS 構成了 Hermes AI 的「海馬迴（近期語意記憶區）」——高成本的生資查詢在此被攔截，實現「用自然語言找過往分析報告」的超快速捷徑。
+
+---
+
 ## 第四階段 — L1 金層：語意快取
 
 *在第二、三階段穩定後建立。*
