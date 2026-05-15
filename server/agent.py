@@ -201,8 +201,7 @@ def _exec_bio_history_check(args: dict) -> str:
     from config.settings import DUCKDB_PATH
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
-    con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-    try:
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         row = con.execute(
             """
             SELECT analysis_id, completed_at, result_path, summary
@@ -212,8 +211,6 @@ def _exec_bio_history_check(args: dict) -> str:
             """,
             [sample_id, analysis_type],
         ).fetchone()
-    finally:
-        con.close()
     if row:
         analysis_id, completed_at, result_path, summary = row
         return (
@@ -250,20 +247,17 @@ def _exec_bio_history_timeline(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
     n_days = int(args.get("n_days", 7))
-    con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-    try:
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         rows = con.execute(
             """
             SELECT sample_id, analysis_type, status,
                    strftime(completed_at,'%Y-%m-%d %H:%M') AS completed_at, summary
             FROM   analysis_history
-            WHERE  completed_at >= now() - INTERVAL (? || ' days')::INTERVAL
+            WHERE  completed_at >= now() - (? * INTERVAL '1 day')
             ORDER  BY completed_at DESC LIMIT 30
             """,
-            [str(n_days)],
+            [n_days],
         ).fetchall()
-    finally:
-        con.close()
     if not rows:
         return f"最近 {n_days} 天無分析記錄。"
     lines = [f"最近 {n_days} 天時間軸（{len(rows)} 筆）"]
@@ -300,10 +294,13 @@ def _exec_bio_memory_query(args: dict) -> str:
     if not results:
         return f"L1 cache miss（threshold={args.get('threshold', L1_COSINE_THRESHOLD)}）。建議執行 bio_run_spatial_eda。"
     r = results[0]
+    report = r["report_text"]
+    if len(report) > 2000:
+        report = report[:2000] + "\n…（報告過長，已截斷，完整內容見 result_path）"
     return (
         f"L1 cache hit（score={r['score']:.4f}）\n"
         f"summary: {r['summary']}\ncreated_at: {str(r['created_at'])[:16]}\n\n"
-        f"--- 完整報告 ---\n{r['report_text']}"
+        f"--- 完整報告 ---\n{report}"
     )
 
 
@@ -317,7 +314,7 @@ def _exec_bio_run_spatial_eda(args: dict) -> str:
             f"EDA 完成。\n"
             f"analysis_id: {result.get('analysis_id', '(無)')}\n"
             f"summary: {result.get('summary', '')}\n"
-            f"result_path: {result.get('result_path', '(無)')}"
+            f"report_path: {result.get('report_path', '(無)')}"
         )
     except Exception as e:
         return f"EDA 執行失敗：{e}"
@@ -328,9 +325,11 @@ def _exec_bio_register_sample(args: dict) -> str:
     from config.db_utils import safe_write
     from config.settings import DUCKDB_PATH
     from datetime import datetime, timezone
+    import re
     sample_id = args["sample_id"]
-    con = duckdb.connect(str(DUCKDB_PATH))
-    try:
+    if not re.match(r'^[a-z0-9_-]+$', sample_id):
+        return f"樣本 ID {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號。"
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
         if con.execute("SELECT 1 FROM sample_registry WHERE sample_id=?", [sample_id]).fetchone():
             return f"樣本 {sample_id!r} 已存在，跳過。"
         safe_write(
@@ -348,8 +347,6 @@ def _exec_bio_register_sample(args: dict) -> str:
                 "agent", args.get("notes",""), datetime.now(timezone.utc),
             ],
         )
-    finally:
-        con.close()
     return f"樣本 {sample_id!r} 已登記。data_type={args['data_type']!r}"
 
 
@@ -400,6 +397,7 @@ class AgentResponse:
     tool_calls: list[dict] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    messages: list[dict] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
@@ -459,11 +457,13 @@ def handle_message(
                 (b.text for b in response.content if hasattr(b, "text")),
                 "（無文字回覆）",
             )
+            messages.append({"role": "assistant", "content": text})
             return AgentResponse(
                 text=text,
                 tool_calls=all_tool_calls,
                 input_tokens=total_input,
                 output_tokens=total_output,
+                messages=messages,
             )
 
         # 收集本輪工具呼叫
@@ -490,6 +490,7 @@ def handle_message(
         tool_calls=all_tool_calls,
         input_tokens=total_input,
         output_tokens=total_output,
+        messages=messages,
     )
 
 
@@ -518,11 +519,9 @@ def run_cli() -> None:
         print(f"\nHermes：{result.text}")
         print(f"  [tokens: in={result.input_tokens} out={result.output_tokens} | tools={len(result.tool_calls)}]")
 
-        # 更新對話歷史（只保留最近 6 輪，避免 context 過長）
-        history.append({"role": "user", "content": user_msg})
-        history.append({"role": "assistant", "content": result.text})
-        if len(history) > 12:
-            history = history[-12:]
+        # 使用 handle_message 回傳的完整 messages（含 tool 輪次），確保 API 合規
+        if result.text:
+            history = result.messages[-12:]
 
 
 if __name__ == "__main__":

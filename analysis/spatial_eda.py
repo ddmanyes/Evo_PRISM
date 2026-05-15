@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 
 matplotlib.use("Agg")  # 無 display 環境
 
+import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,6 +34,19 @@ from config.db_utils import safe_write
 logger = logging.getLogger(__name__)
 
 # ── 內部工具 ──────────────────────────────────────────────────────────────────
+
+_SAMPLE_ID_RE = re.compile(r'^[a-z0-9_-]+$')
+_GENE_NAME_RE = re.compile(r'^[A-Za-z0-9_.+-]+$')
+
+
+def _validate_sample_id(sample_id: str) -> None:
+    if not _SAMPLE_ID_RE.match(sample_id):
+        raise ValueError(f"Invalid sample_id {sample_id!r}: only a-z, 0-9, _ and - are allowed")
+
+
+def _validate_gene_name(name: str) -> None:
+    if not _GENE_NAME_RE.match(name):
+        raise ValueError(f"Invalid gene name {name!r}")
 
 
 def _l2_expr_glob(sample_id: str) -> str:
@@ -102,26 +116,27 @@ def gene_spatial_map(
     Returns:
         (fig, output_path) — matplotlib Figure 與儲存路徑（save=False 時路徑為空字串）
     """
+    _validate_sample_id(sample_id)
+    _validate_gene_name(gene_name)
     db_path = db_path or DUCKDB_PATH
     expr_glob = _l2_expr_glob(sample_id)
     obs_path = _l2_obs_path(sample_id)
 
-    con = duckdb.connect(str(db_path))
-    df = con.execute(
-        f"""
-        SELECT o.array_row_8um AS row,
-               o.array_col_8um AS col,
-               COALESCE(e.count, 0) AS expr
-        FROM   read_parquet('{obs_path}') AS o
-        LEFT JOIN (
-            SELECT barcode, count
-            FROM   read_parquet('{expr_glob}')
-            WHERE  gene_name = ?
-        ) AS e USING (barcode)
-        """,
-        [gene_name],
-    ).fetchdf()
-    con.close()
+    with duckdb.connect(str(db_path), read_only=True) as con:
+        df = con.execute(
+            f"""
+            SELECT o.array_row_8um AS row,
+                   o.array_col_8um AS col,
+                   COALESCE(e.count, 0) AS expr
+            FROM   read_parquet('{obs_path}') AS o
+            LEFT JOIN (
+                SELECT barcode, count
+                FROM   read_parquet('{expr_glob}')
+                WHERE  gene_name = ?
+            ) AS e USING (barcode)
+            """,
+            [gene_name],
+        ).fetchdf()
 
     if df.empty:
         raise ValueError(f"No spatial data found for sample '{sample_id}'")
@@ -144,17 +159,16 @@ def gene_spatial_map(
         fig.savefig(out_path, dpi=150)
         logger.info("Saved: %s", out_path)
 
-        write_con = duckdb.connect(str(db_path))
         n_expr = int((df["expr"] > 0).sum())
-        _record_analysis(
-            write_con,
-            sample_id,
-            "spatial_gene_map",
-            {"gene": gene_name, "vmax_pct": vmax_pct},
-            out_path,
-            f"{gene_name} 空間圖：{n_expr:,} bins 有表達，vmax={vmax:.1f}",
-        )
-        write_con.close()
+        with duckdb.connect(str(db_path)) as write_con:
+            _record_analysis(
+                write_con,
+                sample_id,
+                "spatial_gene_map",
+                {"gene": gene_name, "vmax_pct": vmax_pct},
+                out_path,
+                f"{gene_name} 空間圖：{n_expr:,} bins 有表達，vmax={vmax:.1f}",
+            )
 
     return fig, out_path
 
@@ -172,25 +186,25 @@ def qc_stats(
         DataFrame with columns: barcode, array_row_8um, array_col_8um,
                                  n_genes, total_counts
     """
+    _validate_sample_id(sample_id)
     db_path = db_path or DUCKDB_PATH
     expr_glob = _l2_expr_glob(sample_id)
     obs_path = _l2_obs_path(sample_id)
 
-    con = duckdb.connect(str(db_path))
-    df = con.execute(
-        f"""
-        SELECT o.barcode,
-               o.array_row_8um,
-               o.array_col_8um,
-               COUNT(e.gene_name)    AS n_genes,
-               COALESCE(SUM(e.count), 0) AS total_counts
-        FROM   read_parquet('{obs_path}') AS o
-        LEFT JOIN read_parquet('{expr_glob}') AS e USING (barcode)
-        GROUP BY o.barcode, o.array_row_8um, o.array_col_8um
-        ORDER BY total_counts DESC
-        """
-    ).fetchdf()
-    con.close()
+    with duckdb.connect(str(db_path), read_only=True) as con:
+        df = con.execute(
+            f"""
+            SELECT o.barcode,
+                   o.array_row_8um,
+                   o.array_col_8um,
+                   COUNT(e.gene_name)    AS n_genes,
+                   COALESCE(SUM(e.count), 0) AS total_counts
+            FROM   read_parquet('{obs_path}') AS o
+            LEFT JOIN read_parquet('{expr_glob}') AS e USING (barcode)
+            GROUP BY o.barcode, o.array_row_8um, o.array_col_8um
+            ORDER BY total_counts DESC
+            """
+        ).fetchdf()
 
     if save:
         out_dir = _results_dir(sample_id, "spatial_eda")
@@ -214,18 +228,17 @@ def qc_stats(
         fig.savefig(fig_path, dpi=150)
         plt.close(fig)
 
-        write_con = duckdb.connect(str(db_path))
         median_genes = float(df["n_genes"].median())
         median_umi = float(df["total_counts"].median())
-        _record_analysis(
-            write_con,
-            sample_id,
-            "qc_stats",
-            {},
-            out_path,
-            f"QC：中位 genes/bin={median_genes:.0f}，中位 UMI/bin={median_umi:.0f}，共 {len(df):,} bins",
-        )
-        write_con.close()
+        with duckdb.connect(str(db_path)) as write_con:
+            _record_analysis(
+                write_con,
+                sample_id,
+                "qc_stats",
+                {},
+                out_path,
+                f"QC：中位 genes/bin={median_genes:.0f}，中位 UMI/bin={median_umi:.0f}，共 {len(df):,} bins",
+            )
 
     return df
 
@@ -242,23 +255,23 @@ def top_genes(
     Returns:
         DataFrame with columns: gene_name, total_counts, n_bins
     """
+    _validate_sample_id(sample_id)
     db_path = db_path or DUCKDB_PATH
     expr_glob = _l2_expr_glob(sample_id)
 
-    con = duckdb.connect(str(db_path))
-    df = con.execute(
-        f"""
-        SELECT gene_name,
-               SUM(count)   AS total_counts,
-               COUNT(*)     AS n_bins
-        FROM   read_parquet('{expr_glob}')
-        GROUP BY gene_name
-        ORDER BY total_counts DESC
-        LIMIT ?
-        """,
-        [n],
-    ).fetchdf()
-    con.close()
+    with duckdb.connect(str(db_path), read_only=True) as con:
+        df = con.execute(
+            f"""
+            SELECT gene_name,
+                   SUM(count)   AS total_counts,
+                   COUNT(*)     AS n_bins
+            FROM   read_parquet('{expr_glob}')
+            GROUP BY gene_name
+            ORDER BY total_counts DESC
+            LIMIT ?
+            """,
+            [n],
+        ).fetchdf()
     return df
 
 
@@ -277,22 +290,24 @@ def gene_coexpression(
     Returns:
         (fig, output_path)
     """
+    _validate_sample_id(sample_id)
+    _validate_gene_name(gene_a)
+    _validate_gene_name(gene_b)
     db_path = db_path or DUCKDB_PATH
     expr_glob = _l2_expr_glob(sample_id)
 
-    con = duckdb.connect(str(db_path))
-    df = con.execute(
-        f"""
-        SELECT barcode,
-               MAX(CASE WHEN gene_name = ? THEN count ELSE 0 END) AS gene_a,
-               MAX(CASE WHEN gene_name = ? THEN count ELSE 0 END) AS gene_b
-        FROM   read_parquet('{expr_glob}')
-        WHERE  gene_name IN (?, ?)
-        GROUP BY barcode
-        """,
-        [gene_a, gene_b, gene_a, gene_b],
-    ).fetchdf()
-    con.close()
+    with duckdb.connect(str(db_path), read_only=True) as con:
+        df = con.execute(
+            f"""
+            SELECT barcode,
+                   MAX(CASE WHEN gene_name = ? THEN count ELSE 0 END) AS gene_a,
+                   MAX(CASE WHEN gene_name = ? THEN count ELSE 0 END) AS gene_b
+            FROM   read_parquet('{expr_glob}')
+            WHERE  gene_name IN (?, ?)
+            GROUP BY barcode
+            """,
+            [gene_a, gene_b, gene_a, gene_b],
+        ).fetchdf()
 
     fig, ax = plt.subplots(figsize=figsize)
     ax.scatter(df["gene_a"], df["gene_b"], alpha=0.3, s=3, linewidths=0)

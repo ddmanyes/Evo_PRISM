@@ -11,6 +11,7 @@
 保留策略：最近 7 天，超過自動刪除。
 """
 
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -30,11 +31,8 @@ def backup() -> Path:
     dest  = BACKUP_ROOT / today
     dest.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-    try:
-        con.execute(f"EXPORT DATABASE '{dest}'")
-    finally:
-        con.close()
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        con.execute("EXPORT DATABASE ?", [str(dest)])
 
     size_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / 1024**2
     print(f"[backup] {dest.name}  {size_mb:.1f} MB")
@@ -52,18 +50,26 @@ def prune_old_backups():
 
 
 def restore(backup_dir: Path):
-    """緊急還原：從備份目錄匯入至 bio_memory.duckdb。"""
-    con = duckdb.connect(str(DUCKDB_PATH))
-    try:
-        con.execute(f"IMPORT DATABASE '{backup_dir}'")
-        print(f"[restore] done from {backup_dir}")
-    finally:
-        con.close()
+    """緊急還原：從備份目錄匯入至 bio_memory.duckdb。還原前自動備份現有 DB。"""
+    # 還原前先把現有 DB 備份，避免誤操作覆蓋
+    if DUCKDB_PATH.exists():
+        pre = BACKUP_ROOT / f"pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        pre.mkdir(parents=True, exist_ok=True)
+        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as _con:
+            _con.execute("EXPORT DATABASE ?", [str(pre)])
+        print(f"[restore] pre-restore backup saved to {pre.name}")
+
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
+        con.execute("IMPORT DATABASE ?", [str(backup_dir)])
+    print(f"[restore] done from {backup_dir}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--restore":
-        dirs = sorted(BACKUP_ROOT.iterdir())
+        dirs = sorted(
+            d for d in BACKUP_ROOT.iterdir()
+            if d.is_dir() and re.match(r'^\d{8}_\d{4}$', d.name)
+        )
         if not dirs:
             print("No backups found.")
             sys.exit(1)

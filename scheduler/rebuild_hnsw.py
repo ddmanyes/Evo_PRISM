@@ -52,55 +52,51 @@ def rebuild_hnsw(
     if not path.exists():
         return {"status": "skipped", "reason": f"Cache not found: {path}"}
 
-    con = duckdb.connect(str(path))
-    try:
-        con.execute("LOAD vss")
-    except Exception:
+    with duckdb.connect(str(path)) as con:
         try:
-            con.execute("INSTALL vss; LOAD vss")
+            con.execute("LOAD vss")
+        except Exception:
+            try:
+                con.execute("INSTALL vss; LOAD vss")
+            except Exception as e:
+                return {"status": "error", "error": f"Cannot load VSS: {e}"}
+
+        try:
+            row_count = con.execute(
+                "SELECT COUNT(*) FROM memory_recent"
+            ).fetchone()[0]
+
+            if row_count == 0 and not force:
+                print(f"[rebuild_hnsw] Skipped — memory_recent is empty (use --force to override)")
+                return {"status": "skipped", "reason": "empty table", "row_count": 0}
+
+            print(f"[rebuild_hnsw] Rebuilding HNSW index ({row_count:,} rows)...")
+            t0 = time.time()
+
+            con.execute("SET hnsw_enable_experimental_persistence = true")
+            con.execute("DROP INDEX IF EXISTS idx_memory_hnsw")
+            con.execute(
+                """
+                CREATE INDEX idx_memory_hnsw
+                ON memory_recent
+                USING HNSW (embedding)
+                WITH (metric = 'cosine')
+                """
+            )
+            con.execute("CHECKPOINT")
+
+            elapsed = time.time() - t0
+            ts = datetime.now(timezone.utc).isoformat()
+            print(f"[rebuild_hnsw] Done in {elapsed:.1f}s  [{ts}]")
+
+            return {
+                "status": "ok",
+                "row_count": row_count,
+                "elapsed_sec": round(elapsed, 2),
+                "timestamp": ts,
+            }
         except Exception as e:
-            con.close()
-            return {"status": "error", "error": f"Cannot load VSS: {e}"}
-
-    try:
-        row_count = con.execute(
-            "SELECT COUNT(*) FROM memory_recent"
-        ).fetchone()[0]
-
-        if row_count == 0 and not force:
-            con.close()
-            print(f"[rebuild_hnsw] Skipped — memory_recent is empty (use --force to override)")
-            return {"status": "skipped", "reason": "empty table", "row_count": 0}
-
-        print(f"[rebuild_hnsw] Rebuilding HNSW index ({row_count:,} rows)...")
-        t0 = time.time()
-
-        con.execute("SET hnsw_enable_experimental_persistence = true")
-        con.execute("DROP INDEX IF EXISTS idx_memory_hnsw")
-        con.execute(
-            """
-            CREATE INDEX idx_memory_hnsw
-            ON memory_recent
-            USING HNSW (embedding)
-            WITH (metric = 'cosine')
-            """
-        )
-        con.execute("CHECKPOINT")
-
-        elapsed = time.time() - t0
-        ts = datetime.now(timezone.utc).isoformat()
-        print(f"[rebuild_hnsw] Done in {elapsed:.1f}s  [{ts}]")
-
-        return {
-            "status": "ok",
-            "row_count": row_count,
-            "elapsed_sec": round(elapsed, 2),
-            "timestamp": ts,
-        }
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-    finally:
-        con.close()
+            return {"status": "error", "error": str(e)}
 
 
 def index_exists(cache_path: Path | None = None) -> bool:
@@ -108,21 +104,18 @@ def index_exists(cache_path: Path | None = None) -> bool:
     path = cache_path or L1_CACHE_PATH
     if not path.exists():
         return False
-    con = duckdb.connect(str(path))
-    try:
-        con.execute("LOAD vss")
-    except Exception:
-        pass
-    try:
-        # DuckDB 1.5 可從 duckdb_indexes() 查詢
-        rows = con.execute(
-            "SELECT index_name FROM duckdb_indexes() WHERE index_name = 'idx_memory_hnsw'"
-        ).fetchall()
-        return len(rows) > 0
-    except Exception:
-        return False
-    finally:
-        con.close()
+    with duckdb.connect(str(path)) as con:
+        try:
+            con.execute("LOAD vss")
+        except Exception:
+            pass
+        try:
+            rows = con.execute(
+                "SELECT index_name FROM duckdb_indexes() WHERE index_name = 'idx_memory_hnsw'"
+            ).fetchall()
+            return len(rows) > 0
+        except Exception:
+            return False
 
 
 if __name__ == "__main__":
