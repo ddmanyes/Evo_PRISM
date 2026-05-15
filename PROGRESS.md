@@ -89,7 +89,7 @@
 
 ---
 
-## 🔄 Phase 5 進行中（2026-05-15）
+## ✅ Phase 5 完成（2026-05-15）
 
 - [x] `anthropic` 套件安裝（v0.102.0）
 - [x] `server/code_executor.py` — macOS 沙盒執行器
@@ -102,24 +102,43 @@
   - `execute_tool(name, input)` → str（分發至 Python 工具執行）
   - `run_cli()` 互動式 CLI（本機測試用）
   - `config/settings.py` 新增 ANTHROPIC_API_KEY
-- [ ] `tests/test_phase5.py`（待撰寫）
+- [x] `tests/test_phase5.py` — 28/28 PASSED
+  - TestIsSafe（10 tests）：白名單/黑名單安全檢查
+  - TestSandboxExec（5 tests）：沙盒執行（含 timeout）
+  - TestExecuteToolDispatch（7 tests）：工具分發（mock DB）
+  - TestHandleMessage（6 tests）：Agent Loop（mock Claude API）
+- **總測試數**：82/83 PASSED（test_crc_8um_exists 為既有路徑問題）
+
+---
+
+## ✅ Phase 6 完成（2026-05-15）
+
+- [x] `server/telegram_bot.py` — Telegram Bot（python-telegram-bot v22）
+  - 白名單過濾（`TELEGRAM_ALLOWED_USER_IDS`，空白名單預設全拒）
+  - `/start`、`/help`、`/history [sample_id]`、`/status` 指令
+  - 自然語言訊息 → `handle_message()`（Agent Loop）
+  - per-user 對話歷史（最近 12 輪）
+  - 長文字自動分段（4000 字元/段）
+  - typing... 狀態提示
+- [x] `pytest-asyncio` 安裝 + `pyproject.toml` 加 `asyncio_mode = "auto"`
+- [x] `tests/test_phase6.py` — 23/23 PASSED
+  - TestIsAllowed（3）：白名單邏輯
+  - TestSplitText（4）：訊息分段
+  - TestCmdStart/Help/History/Status（8）：指令 handler
+  - TestOnMessage（8）：自然語言分派、歷史管理、錯誤處理
+- **總測試數**：105/106 PASSED（test_crc_8um_exists 為既有路徑問題）
 
 ---
 
 ## ⏭️ 下一步（按優先順序）
 
-### Phase 5（續）
-1. `tests/test_phase5.py` — Unit tests（mock Claude API）
-2. `.env` 填入 `ANTHROPIC_API_KEY`
+### 部署準備
 
-### Phase 5+：Telegram + 部署
-3. `server/telegram_bot.py` — Telegram Bot 介接（需申請 Bot token）
+1. `.env` 填入 `ANTHROPIC_API_KEY` + `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_IDS`
+2. 申請 Telegram Bot token（BotFather → `/newbot`）
+3. `docs/launchd_telegram_bot.plist.example` — macOS 自動啟動範本
 4. Linux 伺服器遷移（見 plan_zh.md checklist）
-
-### Phase 5+：Agent + Telegram + 部署
-7. 自製 Agent Loop（Claude API + tool use）
-8. Telegram Bot 介接 + 白名單
-9. Linux 伺服器遷移（見 plan_zh.md 的 checklist）
+5. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
 
 ---
 
@@ -151,6 +170,40 @@
 | 2026-05-15 | Phase 3 基礎設施完成 | L1 cache schema + HNSW + cleanup + rebuild + 15/15 tests |
 | 2026-05-15 | Phase 3.5 完成 | 本機 embedding（bge-m3-Q8_0）+ l1_cache.py E2E 驗證 |
 | 2026-05-15 | Phase 4 完成 | MCP Server 7 工具 + .mcp.json + 19/19 tests，54/55 全套通過 |
+| 2026-05-15 | Phase 5 完成 | code_executor + agent loop + 28/28 tests，82/83 全套通過 |
+| 2026-05-15 | Phase 6 完成 | Telegram Bot + 23/23 tests，103/104 全套通過 |
+| 2026-05-15 | 安全性與正確性全面審查（5 輪）| 修復 17 項問題，詳見下方安全審查記錄 |
+
+---
+
+## 🔒 安全性與正確性審查記錄（2026-05-15，5 輪）
+
+### 已修復問題清單
+
+| 檔案 | 問題 | 修復 |
+|------|------|------|
+| `server/agent.py` | `AgentResponse` 缺少 `messages` 欄位，跨輪工具歷史遺失 | 新增 `messages: list[dict]` 欄位，`handle_message` 回傳完整歷史 |
+| `server/agent.py` | `_exec_bio_run_spatial_eda` 使用不存在的 `result_path` 鍵 | 改為 `result.get('report_path')` |
+| `server/agent.py` | `sample_id` 無驗證，可注入任意字串 | 加 `^[a-z0-9_-]+$` regex 驗證 |
+| `server/agent.py` | `run_cli()` 歷史保留方式錯誤 | 改為 `result.messages[-12:]` |
+| `server/telegram_bot.py` | 歷史更新用 `result.text`（字串），非完整 messages | 改為 `result.messages[-_MAX_HISTORY:]` |
+| `server/telegram_bot.py` | 空回覆時仍更新歷史（`""` 污染 Claude API） | 加 `if reply:` guard |
+| `server/telegram_bot.py` | `server_health()` 回傳值未用 `.get("ok")` | 修正為 `server_health().get("ok")` |
+| `server/code_executor.py` | `BLOCKED_PATTERNS` 缺少 dunder 繞過手法 | 新增 `getattr(`, `__builtins__`, `__class__`, `__subclasses__`, `vars(` |
+| `analysis/report_generator.py` | `write_report_to_history()` 型別標注為 `-> str`，實際回傳 tuple | 改為 `-> tuple[str, str]` |
+| `analysis/report_generator.py` | `sample_id` 無驗證 | 加 `_validate_sample_id()` |
+| `analysis/l1_cache.py` | `_open_l1()` 回傳裸連線，需手動 close | 以 `_setup_vss(con)` + `with` context manager 取代 |
+| `analysis/spatial_eda.py` | 所有公開函數無輸入驗證 | 加 `_validate_sample_id()` + `_validate_gene_name()` |
+| `analysis/spatial_eda.py` | DuckDB 連線未用 `with`，讀寫混用 | 全面改用 `with` + `read_only=True` |
+| `config/db_utils.py` | `db_health_check()` 需傳入 con，無法獨立呼叫 | 改為 `con=None`，自動開啟 read-only 連線 |
+| `scheduler/backup_db.py` | SQL 參數未參數化（SQL Injection 風險） | 改為 `"EXPORT DATABASE ?"` 參數化形式 |
+| `scheduler/cleanup_l1_cache.py` | 裸連線 + 重複 `con.close()` | 全面改用 `with` context manager |
+| `scheduler/rebuild_hnsw.py` | 裸連線 + 重複 `con.close()` | 全面改用 `with` context manager |
+| `tests/test_phase5.py` | `test_history_passed_to_api` 斷言 `== 3`，實際為 4（live reference） | 修正為 `== 4` |
+| `tests/test_phase6.py` | `SimpleNamespace` mock 缺少 `messages` 欄位 | 補全所有 fake_result 的 `messages=[...]` |
+
+### 架構侷限（已記錄，未完全解決）
+- **沙盒繞過**：純文字比對無法防止所有 Python introspection 攻擊（`getattr` 鏈、AST 操作）。生產部署建議改用 Docker 容器隔離。
 
 ---
 

@@ -32,16 +32,14 @@ logger = logging.getLogger(__name__)
 # ── 連線工具 ──────────────────────────────────────────────────────────────────
 
 
-def _open_l1(cache_path: Path, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    """開啟 L1 cache 並載入 VSS extension。"""
-    con = duckdb.connect(str(cache_path), read_only=read_only)
+def _setup_vss(con: duckdb.DuckDBPyConnection, *, read_only: bool = False) -> None:
+    """載入 VSS extension（失敗時只記 warning，不中斷）。"""
     try:
         con.execute("LOAD vss")
         if not read_only:
             con.execute("SET hnsw_enable_experimental_persistence = true")
     except Exception as e:
         logger.warning("VSS load warning: %s", e)
-    return con
 
 
 # ── 寫入 ──────────────────────────────────────────────────────────────────────
@@ -83,8 +81,8 @@ def write_to_l1_cache(
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=L1_TTL_DAYS)
 
-    con = _open_l1(path)
-    try:
+    with duckdb.connect(str(path)) as con:
+        _setup_vss(con)
         con.execute(
             """
             INSERT INTO memory_recent
@@ -105,8 +103,6 @@ def write_to_l1_cache(
             ],
         )
         con.execute("CHECKPOINT")
-    finally:
-        con.close()
 
     logger.info("L1 cache written: %s (sample=%s)", rec_id, sample_id)
     return rec_id
@@ -150,16 +146,14 @@ def semantic_search(
 
     query_vec = embed_text(query, provider=embedding_provider)
 
-    con = _open_l1(path, read_only=False)  # VSS search needs write mode for index access
-    try:
+    with duckdb.connect(str(path)) as con:  # VSS search needs write mode for index access
+        _setup_vss(con)
         row_count = con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0]
         if row_count == 0:
             return []
 
         sample_filter = "AND sample_id = ?" if sample_id else ""
-        params: list = [query_vec, n]
-        if sample_id:
-            params.insert(1, sample_id)
+        params: list = [query_vec, sample_id, n] if sample_id else [query_vec, n]
 
         # DuckDB VSS array_cosine_similarity：1 = identical, 0 = orthogonal
         # HNSW ORDER BY + LIMIT 觸發近似最近鄰搜尋
@@ -181,8 +175,6 @@ def semantic_search(
             LIMIT ?
         """
         rows = con.execute(sql, params).fetchall()
-    finally:
-        con.close()
 
     cols = ["id", "sample_id", "query_text", "summary", "report_text",
             "created_at", "expires_at", "score"]

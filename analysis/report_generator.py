@@ -95,6 +95,13 @@ _REPORT_TEMPLATE = """\
 
 # ── 內部工具 ──────────────────────────────────────────────────────────────────
 
+_SAMPLE_ID_RE = re.compile(r'^[a-z0-9_-]+$')
+
+
+def _validate_sample_id(sample_id: str) -> None:
+    if not _SAMPLE_ID_RE.match(sample_id):
+        raise ValueError(f"Invalid sample_id {sample_id!r}: only a-z, 0-9, _ and - are allowed")
+
 
 def _l2_expr_glob(sample_id: str) -> str:
     from config.settings import L2_ROOT
@@ -114,6 +121,7 @@ def _results_dir(sample_id: str) -> Path:
 
 def _collect_stats(sample_id: str, db_path: Path) -> dict:
     """從 L2 Parquet 收集統計數字（純 DuckDB，0-token）。"""
+    _validate_sample_id(sample_id)
     expr_glob = _l2_expr_glob(sample_id)
     obs_path = _l2_obs_path(sample_id)
 
@@ -262,12 +270,13 @@ def write_report_to_history(
     *,
     db_path: Optional[Path] = None,
     save_file: bool = True,
-) -> str:
+    requested_by: str = "report_generator",
+) -> tuple[str, str]:
     """
     將報告存檔並寫入 analysis_history。
 
     Returns:
-        analysis_id（UUID str）
+        (analysis_id, result_path) — UUID str 與儲存路徑（save_file=False 時路徑為空）
     """
     db_path = db_path or DUCKDB_PATH
     analysis_id = str(uuid.uuid4())
@@ -297,14 +306,14 @@ def write_report_to_history(
                 json.dumps({"format": "markdown"}),
                 "completed",
                 result_path,
-                "report_generator",
+                requested_by,
                 now,
                 now,
                 summary,
             ],
         )
 
-    return analysis_id
+    return analysis_id, result_path
 
 
 def run_full_eda_report(
@@ -313,6 +322,7 @@ def run_full_eda_report(
     db_path: Optional[Path] = None,
     save_file: bool = True,
     verbose: bool = True,
+    requested_by: str = "report_generator",
 ) -> dict:
     """
     一鍵執行：收集統計 → 生成報告 → 寫入歷史。
@@ -334,19 +344,24 @@ def run_full_eda_report(
     if verbose:
         print(f"[report_generator] Summary ({len(summary)} chars): {summary}")
 
-    analysis_id = write_report_to_history(
-        sample_id, report, summary, db_path=db_path, save_file=save_file
+    analysis_id, report_path = write_report_to_history(
+        sample_id, report, summary, db_path=db_path, save_file=save_file,
+        requested_by=requested_by,
     )
 
-    report_path = ""
-    if save_file:
-        # 取回剛寫入的 result_path
-        with duckdb.connect(str(db_path), read_only=True) as con:
-            row = con.execute(
-                "SELECT result_path FROM analysis_history WHERE analysis_id = ?",
-                [analysis_id],
-            ).fetchone()
-            report_path = row[0] if row else ""
+    try:
+        from analysis.l1_cache import write_to_l1_cache
+        write_to_l1_cache(
+            sample_id=sample_id,
+            query_text=f"{sample_id} 空間轉錄體 EDA 分析",
+            report_text=report,
+            summary=summary,
+            analysis_id=analysis_id,
+        )
+        if verbose:
+            print(f"[report_generator] L1 cache written.")
+    except Exception as e:
+        logger.warning("L1 cache write skipped (embedding server offline?): %s", e)
 
     if verbose:
         print(f"[report_generator] Done. analysis_id={analysis_id}")

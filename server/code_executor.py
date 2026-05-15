@@ -42,8 +42,8 @@ ALLOWED_IMPORTS = {
     "anndata", "scanpy", "squidpy",
     # 專案模組
     "analysis", "config",
-    # 標準庫（安全子集）
-    "pathlib", "json", "re", "math", "datetime", "collections",
+    # 標準庫（安全子集；pathlib 移除：Path.read_text() 可繞過 open() 封鎖）
+    "json", "re", "math", "datetime", "collections",
     "itertools", "functools", "typing", "dataclasses",
 }
 
@@ -59,6 +59,8 @@ BLOCKED_PATTERNS = [
     "shutil.rmtree", "shutil.move",
     "pathlib.Path.unlink", "pathlib.Path.rmdir",
     "importlib",
+    # 防止 builtin 繞過：getattr(__builtins__, "open") 等手法
+    "getattr(", "__builtins__", "__class__", "__subclasses__", "vars(",
 ]
 
 SANDBOX_CWD = str(BIO_DB_ROOT)
@@ -87,8 +89,8 @@ def _check_imports(code: str) -> list[str]:
     violations: list[str] = []
     try:
         tree = ast.parse(code)
-    except SyntaxError:
-        return []  # 語法錯誤留給執行期處理
+    except SyntaxError as e:
+        raise SecurityError(f"語法錯誤，拒絕執行：{e}") from e
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -142,25 +144,30 @@ def sandbox_exec(code: str, timeout: int = 60) -> ExecResult:
     if not ok:
         raise SecurityError(reason)
 
-    # 以暫存檔方式執行（避免 exec() 的作用域問題）
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8"
-    ) as f:
-        f.write(code)
-        tmp_path = f.name
+    # 最小化環境：不繼承 os.environ，避免洩漏 API 金鑰
+    _safe_env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(Path.home()),
+        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+        "PYTHONPATH": SANDBOX_CWD,  # 讓 import analysis.* 可用
+    }
 
+    tmp_path: str | None = None
     t0 = time.time()
     try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(code)
+            tmp_path = f.name
+
         r = subprocess.run(
             [sys.executable, tmp_path],
             cwd=SANDBOX_CWD,
             timeout=timeout,
             capture_output=True,
             text=True,
-            env={
-                **os.environ,
-                "PYTHONPATH": SANDBOX_CWD,  # 讓 import analysis.* 可用
-            },
+            env=_safe_env,
         )
         elapsed = time.time() - t0
         return ExecResult(
@@ -177,7 +184,8 @@ def sandbox_exec(code: str, timeout: int = 60) -> ExecResult:
             duration_sec=float(timeout),
         )
     finally:
-        os.unlink(tmp_path)
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 if __name__ == "__main__":

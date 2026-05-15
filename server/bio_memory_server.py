@@ -306,8 +306,7 @@ async def _handle_bio_history_timeline(args: dict) -> str:
     from config.settings import DUCKDB_PATH
 
     n_days = int(args.get("n_days", 7))
-    con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-    try:
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         rows = con.execute(
             """
             SELECT sample_id,
@@ -317,16 +316,14 @@ async def _handle_bio_history_timeline(args: dict) -> str:
                    strftime(completed_at, '%Y-%m-%d %H:%M') AS completed_at,
                    summary
             FROM   analysis_history
-            WHERE  completed_at >= now() - INTERVAL (? || ' days')::INTERVAL
+            WHERE  completed_at >= now() - (? * INTERVAL '1 day')
             ORDER  BY completed_at DESC
             LIMIT  50
             """,
-            [str(n_days)],
+            [n_days],
         ).fetchall()
         cols = ["sample_id", "analysis_type", "status", "requested_by", "completed_at", "summary"]
         result_rows = [dict(zip(cols, r)) for r in rows]
-    finally:
-        con.close()
 
     if not result_rows:
         return f"最近 {n_days} 天無分析記錄。"
@@ -351,8 +348,7 @@ async def _handle_bio_history_check(args: dict) -> str:
 
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
-    con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-    try:
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         row = con.execute(
             """
             SELECT analysis_id, completed_at, result_path, summary
@@ -363,8 +359,6 @@ async def _handle_bio_history_check(args: dict) -> str:
             """,
             [sample_id, analysis_type],
         ).fetchone()
-    finally:
-        con.close()
 
     if row:
         analysis_id, completed_at, result_path, summary = row
@@ -442,9 +436,12 @@ async def _handle_bio_register_sample(args: dict) -> str:
     from config.settings import DUCKDB_PATH
     from datetime import datetime, timezone
 
+    import re
     sample_id = args["sample_id"]
-    con = duckdb.connect(str(DUCKDB_PATH))
-    try:
+    if not re.match(r'^[a-z0-9_-]+$', sample_id):
+        return f"樣本 ID {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號。"
+
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
         existing = con.execute(
             "SELECT sample_id FROM sample_registry WHERE sample_id = ?", [sample_id]
         ).fetchone()
@@ -472,8 +469,6 @@ async def _handle_bio_register_sample(args: dict) -> str:
                 datetime.now(timezone.utc),
             ],
         )
-    finally:
-        con.close()
 
     return f"樣本 {sample_id!r} 已登記至 sample_registry。\ndata_type: {args['data_type']}\nl3_path: {args['l3_path']}"
 

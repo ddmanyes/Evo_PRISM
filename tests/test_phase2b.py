@@ -217,7 +217,7 @@ class TestReportGenerator:
 
         from analysis.report_generator import write_report_to_history
 
-        analysis_id = write_report_to_history(
+        analysis_id, result_path = write_report_to_history(
             SAMPLE_ID,
             "# Test Report",
             "測試摘要：10bins，2基因。",

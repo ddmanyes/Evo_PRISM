@@ -51,22 +51,25 @@ def cleanup_stale_runs(con: duckdb.DuckDBPyConnection, hours: int = 24) -> int:
     Returns:
         清理筆數
     """
+    hours = int(hours)
     cleaned = con.execute(
-        f"""
+        """
         SELECT COUNT(*) FROM analysis_history
         WHERE status = 'running'
-          AND started_at < now() - INTERVAL '{hours} hours'
-        """
+          AND started_at < now() - (? * INTERVAL '1 hour')
+        """,
+        [hours],
     ).fetchone()[0]
 
     if cleaned:
         con.execute(
-            f"""
+            """
             UPDATE analysis_history
             SET    status = 'stale'
             WHERE  status  = 'running'
-              AND  started_at < now() - INTERVAL '{hours} hours'
-            """
+              AND  started_at < now() - (? * INTERVAL '1 hour')
+            """,
+            [hours],
         )
     if cleaned:
         con.execute("CHECKPOINT")
@@ -74,34 +77,35 @@ def cleanup_stale_runs(con: duckdb.DuckDBPyConnection, hours: int = 24) -> int:
     return cleaned
 
 
-def db_health_check(con: duckdb.DuckDBPyConnection) -> dict:
+def db_health_check(con: duckdb.DuckDBPyConnection | None = None) -> dict:
     """
     快速健康檢查，回傳各表筆數與殭屍狀態統計。
-    Agent 啟動時可選擇性呼叫。
+    Agent 啟動時可選擇性呼叫。con 可選：未傳入時自動開啟 read_only 連線。
     """
-    result = {}
+    def _run(c: duckdb.DuckDBPyConnection) -> dict:
+        result = {}
+        result["sample_count"] = c.execute(
+            "SELECT COUNT(*) FROM sample_registry"
+        ).fetchone()[0]
+        result["history_count"] = c.execute(
+            "SELECT COUNT(*) FROM analysis_history"
+        ).fetchone()[0]
+        result["stale_count"] = c.execute(
+            "SELECT COUNT(*) FROM analysis_history WHERE status = 'stale'"
+        ).fetchone()[0]
+        result["running_count"] = c.execute(
+            "SELECT COUNT(*) FROM analysis_history WHERE status = 'running'"
+        ).fetchone()[0]
+        result["l2_ready_count"] = c.execute(
+            "SELECT COUNT(*) FROM sample_registry WHERE l2_ready = TRUE"
+        ).fetchone()[0]
+        return result
 
-    result["sample_count"] = con.execute(
-        "SELECT COUNT(*) FROM sample_registry"
-    ).fetchone()[0]
+    if con is not None:
+        return _run(con)
 
-    result["history_count"] = con.execute(
-        "SELECT COUNT(*) FROM analysis_history"
-    ).fetchone()[0]
-
-    result["stale_count"] = con.execute(
-        "SELECT COUNT(*) FROM analysis_history WHERE status = 'stale'"
-    ).fetchone()[0]
-
-    result["running_count"] = con.execute(
-        "SELECT COUNT(*) FROM analysis_history WHERE status = 'running'"
-    ).fetchone()[0]
-
-    result["l2_ready_count"] = con.execute(
-        "SELECT COUNT(*) FROM sample_registry WHERE l2_ready = TRUE"
-    ).fetchone()[0]
-
-    return result
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as _con:
+        return _run(_con)
 
 
 if __name__ == "__main__":

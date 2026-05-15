@@ -47,26 +47,23 @@ def cleanup_expired(
         print(f"[cleanup_l1] Cache not found: {path}")
         return 0
 
-    con = duckdb.connect(str(path))
-    try:
-        con.execute("LOAD vss")
-        con.execute("SET hnsw_enable_experimental_persistence = true")
-    except Exception:
-        pass  # VSS 不影響刪除的邏輯，但需要 LOAD 才能操作有 HNSW 索引的表
+    with duckdb.connect(str(path)) as con:
+        try:
+            con.execute("LOAD vss")
+            con.execute("SET hnsw_enable_experimental_persistence = true")
+        except Exception:
+            pass  # VSS 不影響刪除的邏輯，但需要 LOAD 才能操作有 HNSW 索引的表
 
-    try:
         expired_count = con.execute(
             "SELECT COUNT(*) FROM memory_recent WHERE expires_at < now()"
         ).fetchone()[0]
 
         if expired_count == 0:
             print(f"[cleanup_l1] Nothing to clean ({datetime.now(timezone.utc).date()})")
-            con.close()
             return 0
 
         if dry_run:
             print(f"[cleanup_l1] DRY-RUN: would delete {expired_count} expired records")
-            con.close()
             return expired_count
 
         con.execute("DELETE FROM memory_recent WHERE expires_at < now()")
@@ -76,8 +73,6 @@ def cleanup_expired(
             f"({datetime.now(timezone.utc).date()})"
         )
         return expired_count
-    finally:
-        con.close()
 
 
 def stats(cache_path: Path | None = None) -> dict:
@@ -87,8 +82,7 @@ def stats(cache_path: Path | None = None) -> dict:
     if not path.exists():
         return {"exists": False}
 
-    con = duckdb.connect(str(path), read_only=True)
-    try:
+    with duckdb.connect(str(path), read_only=True) as con:
         row = con.execute(
             """
             SELECT COUNT(*),
@@ -97,8 +91,6 @@ def stats(cache_path: Path | None = None) -> dict:
             FROM memory_recent
             """
         ).fetchone()
-    finally:
-        con.close()
 
     return {
         "exists": True,
