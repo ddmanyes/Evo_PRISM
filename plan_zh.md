@@ -44,7 +44,7 @@
 |------|------|------|
 | AI Agent 框架 | 輕量自製 Agent 或 Hermes Agent | 接收訊息、呼叫工具、管理排程 |
 | 使用者介面 | Telegram Bot（或 LINE / Slack） | 依實驗室實際使用習慣決定 |
-| 數據倉儲引擎 | DuckDB + Apache Parquet | L2 特徵儲存與所有結構化查詢的核心 |
+| 數據倉儲引擎 | DuckDB + Apache Parquet | L2 特徵儲存；SQL 直接查詢 Parquet，把百萬行矩陣壓縮成摘要後才傳給 LLM，節省 token 的關鍵機制 |
 | 向量語意搜尋 | DuckDB VSS（HNSW 索引） | L1 語意快取的命中機制 |
 | 分析歷史追蹤 | DuckDB（`analysis_history` + `analysis_index`） | 帶時間軸的分析紀錄，0 token 可查 |
 | 系統介面協定 | MCP（Model Context Protocol） | Agent 與資料庫之間的標準工具介面 |
@@ -493,7 +493,7 @@ condition VARCHAR, replicate INTEGER
 |------|------|
 | **輕量進程內資料庫** | 無需獨立伺服器（不同於 PostgreSQL/pgvector 或 Milvus），直接以函式庫形式嵌入 Python，零基礎建設成本 |
 | **HNSW 高速向量索引** | VSS 擴充底層使用 Hierarchical Navigable Small World 演算法，多維度向量檢索延遲 < 1 秒，適合即時語意相似度比對 |
-| **Parquet 原生整合** | DuckDB 可直接查詢 `silver/` 下的 Parquet 檔案，L1 快取層與 L2 特徵層共用同一個查詢引擎，無需額外 ETL |
+| **Parquet 原生整合 → L2 節省 token 的核心** | DuckDB 直接對 `silver/` 的 Parquet 執行 SQL 聚合，把「100K bins × 30K genes」的巨大矩陣壓縮成幾十行摘要後才傳給 LLM。**節省 token 的不是 Parquet 格式本身，而是 SQL 先過濾這個動作；DuckDB + Parquet 讓這件事在生資規模下變得實際可行**（傳統 DB 需先匯入耗時數小時，pandas 直接讀則記憶體爆炸）|
 
 ### 在 Hermes 中的角色：系統的第二道防線
 
@@ -513,6 +513,39 @@ condition VARCHAR, replicate INTEGER
     ├─ [第三道] L2 Parquet 特徵查詢  ← ~30 秒
     └─ [第四道] L3 Pipeline 排程    ← ~4 小時
 ```
+
+### L2 Parquet 查詢如何節省 token
+
+**問題根源**：Visium HD 原始矩陣根本無法傳給 LLM：
+
+```
+raw Parquet（L2 silver）
+→ 100,000 bins × 30,000 genes = 30 億個數字
+→ 不可能傳給 LLM
+```
+
+**解法：DuckDB SQL 先壓縮，LLM 只看結果**：
+
+```sql
+-- 只傳這個 SQL 的結果（20 行）給 LLM，而非原始矩陣
+SELECT gene_name, AVG(count) AS avg_expr
+FROM 'silver/spatial_counts_crc_8um.parquet'
+WHERE sample_id = 'official_v4'
+  AND in_tissue = TRUE
+GROUP BY gene_name
+ORDER BY avg_expr DESC
+LIMIT 20
+```
+
+| 方式 | LLM 看到的資料量 | Token 消耗 |
+|------|----------------|-----------|
+| 原始矩陣直接傳 | 30 億數字 | 不可能 |
+| pandas 處理後傳 | 可行，但讀入 RAM 需 ~12 GB | 正常 |
+| **DuckDB SQL 壓縮** | **20 行摘要** | **極少** |
+
+> **關鍵理解**：token 節省的來源是「SQL 聚合」，DuckDB + Parquet 的貢獻是讓這個聚合在生資規模下**不需匯入、不爆記憶體、直接可用**。
+
+---
 
 ### 具體運作機制
 
