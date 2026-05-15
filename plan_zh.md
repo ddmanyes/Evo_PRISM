@@ -760,6 +760,7 @@ WITH (metric = 'cosine');
 | `references/mcp_protocol.md` | MCP Server 骨架 | 第 5 階段 |
 | `references/anndata_scanpy.md` | 讀取 Visium HD 數據 | 第 2 階段 |
 | `references/memgpt.md` | 分層記憶模型（概念參考） | 第 4 階段 |
+| `references/deepseek_ocr.md` | ~~長期記憶壓縮~~（對本專案不適用，見未來擴充討論區） | 不適用 |
 
 ---
 
@@ -784,20 +785,22 @@ memory_midterm (TTL 90天, LLMLingua 壓縮文字, embedding FLOAT[1536])
 
 ---
 
-### B. DeepSeek-OCR — 長期記憶視覺壓縮
-**論文：** DeepSeek-AI, arXiv:2510.18234（見 `references/deepseek_ocr.md`）
+### B. DeepSeek-OCR — 對本專案幾乎無用，暫不考慮
 
-針對超過 90 天的歷史報告與圖表，可透過 DeepSeek-OCR 將文字與圖表共同編碼為極少量的 vision token（100 tokens 可重建 800+ 文字 token，精度 96.8%），作為永久索引層。
+> **結論：此工具對本專案的問題不成立，不建議引入。**
 
-- **壓縮率：** 8.5×，適合圖表密集的生資報告
-- **適用情境：** 實驗室長期運行、歷史報告累積量龐大、需要索引但不需要完整內容時
-- **安裝成本：** 需要 GPU 伺服器，模型較重
-- **引入時機：** 系統運行超過 1 年，歷史報告量超過數千份，且有索引搜尋需求時
+DeepSeek-OCR 設計用來把舊報告 + 圖表壓縮成極少量 vision token 作為永久索引。但本架構已經把它試圖解決的問題覆蓋了：
 
-```sql
--- 引入後新增的資料表
-memory_longterm (永久, DeepSeek-OCR 視覺摘要, embedding FLOAT[1536])
-```
+| DeepSeek-OCR 想解決的 | 本架構的實際情況 |
+|----------------------|----------------|
+| 舊報告過期後找不回來 | `analysis_history` 永久保存 `result_path`，圖檔永遠在磁碟 |
+| 無法語意搜尋舊圖表 | CLIP 可做圖像向量搜尋，不需 OCR |
+| 重新分析成本高 | L2 Parquet 永久存著，~30 秒可重生成任何圖表 |
+| 大量報告需壓縮 | 實驗室規模一年幾百筆，遠低於需要壓縮的門檻 |
+
+額外代價：需要 GPU 伺服器 + 重量級模型，維護成本高。
+
+**唯一值得重新評估的條件**：系統運行 > 3 年、分析筆數 > 10,000 筆、且伺服器儲存空間成為瓶頸。目前不成立。論文參考見 `references/deepseek_ocr.md`。
 
 ---
 
