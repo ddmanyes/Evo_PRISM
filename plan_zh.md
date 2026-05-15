@@ -267,19 +267,55 @@ GROUP BY sample_id, analysis_type
 ORDER BY last_run_date DESC;
 ```
 
-### analysis_history vs. memory_recent — 兩者的差異
+### analysis_history vs. memory_recent — 兩個工具，兩個用途
 
-| 比較項目 | `analysis_history`（L2） | `memory_recent`（L1） |
-|---------|------------------------|----------------------|
-| **用途** | 追蹤「做了什麼」——誰在何時做了哪種分析 | 快速回答「這個問題的答案是什麼」 |
+> ⚠️ **常見誤解**：VSS（向量搜尋）不是用來查時間紀錄的。時間紀錄由 `analysis_history` + SQL 負責，兩者解決完全不同的問題。
+
+#### 核心差異
+
+| 比較項目 | `analysis_history` + SQL（L2） | `memory_recent` + VSS（L1） |
+|---------|-------------------------------|----------------------------|
+| **查的是** | 「有沒有**做過**這件事」 | 「有沒有**問過類似**的問題」 |
+| **比對方式** | 精確比對（sample_id、analysis_type） | 語意相似度（向量距離 cosine ≥ 0.88） |
+| **時間紀錄** | ✅ 有（started_at、completed_at） | ❌ 無（只有 TTL 到期時間） |
+| **token 消耗** | **0 token**（純 SQL） | 少量（需 embedding API） |
 | **儲存內容** | 元數據（樣本、類型、時間、狀態、路徑、50字摘要） | 完整報告文字 + 向量嵌入（FLOAT[1536]） |
 | **壽命** | **永久**（不刪除） | **TTL 7 天**（到期自動清除） |
-| **查詢方式** | SQL（0 token） | HNSW 向量搜尋（少量 token） |
-| **回答的問題** | 「有沒有做過？誰做的？結果在哪？」 | 「這個分析問題有沒有現成答案？」 |
+| **回答的問題** | 「CRC 樣本做過 QC 嗎？誰做的？什麼時候？」 | 「有沒有問過和免疫細胞分布有關的問題？」 |
 
-> `analysis_history` 是**永久帳本**，記下每次分析的事實。  
-> `memory_recent` 是**短期答案庫**，加速重複語意問題的回應。  
-> 兩者互補：帳本確認「有做過」，答案庫直接給「答案內容」。
+#### VSS 真正解決的問題：語意去重
+
+SQL 精確比對無法處理「同一個意思，不同文字」的情況：
+
+```
+使用者 A 問：「CRC 樣本裡 CD8+ T 細胞在哪裡？」
+使用者 B 問：「腸癌組織的細胞毒性 T 淋巴球分布？」
+
+→ 意思一樣，文字完全不同
+→ SQL 精確比對：找不到重複 ✗
+→ VSS cosine 相似度：0.91 ≥ 0.88，命中快取 ✅  不需重跑分析
+```
+
+**VSS 做的事**：把過去的分析報告轉成向量存起來，新問題進來時用向量距離判斷「這個問題的答案我之前算過了嗎？」—— 即使問法完全不同。
+
+#### 時間紀錄是誰的責任？
+
+時間紀錄完全在 `analysis_history`（SQL，0 token），與 VSS 無關：
+
+```sql
+-- 「這週做了哪些分析？」→ SQL 直接回答，完全不需要 VSS
+SELECT sample_id, analysis_type, completed_at, requested_by
+FROM analysis_history
+WHERE completed_at >= NOW() - INTERVAL '7 days'
+  AND status = 'completed'
+ORDER BY completed_at DESC
+```
+
+#### 一句話總結
+
+> `analysis_history` 是**永久帳本**，記下「誰、何時、做了什麼」的事實（SQL 精確查，0 token）。  
+> `memory_recent` + VSS 是**語意去重器**，攔截「問法不同但意思相同」的重複查詢（向量距離判斷，少量 token）。  
+> 兩者互補，缺一不可。
 
 ### 歷史紀錄寫入時機
 
