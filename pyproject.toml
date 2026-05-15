@@ -42,12 +42,21 @@ dev = [
     "ipykernel>=6.0.0",
 ]
 
+embedding-google = [
+    "google-genai>=0.3.0",
+]
+
 embedding-openai = [
     "openai>=1.0.0",
 ]
 
 embedding-local = [
     "sentence-transformers>=3.0.0",
+]
+
+# === Agent 大腦 ===
+anthropic = [
+    "anthropic>=0.39.0",
 ]
 
 [build-system]

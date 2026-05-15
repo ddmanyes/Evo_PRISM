@@ -49,5 +49,11 @@ reports/*.tex
 uv.lock
 .venv
 
+# 分析產出圖檔（路徑記錄於 analysis_history.result_path，圖檔本身不進 git）
+results/
+
+# Backup 目錄（家目錄已存，避免誤建在專案內）
+bio_db_backups/
+
 # Temp / scratch files
 file_info_input.md
