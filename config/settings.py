@@ -23,11 +23,13 @@ DUCKDB_PATH    = Path(os.getenv("DUCKDB_PATH",   BIO_DB_ROOT / "bio_memory.duckd
 L1_CACHE_PATH  = Path(os.getenv("L1_CACHE_PATH", L1_ROOT / "hermes_cache.duckdb"))
 
 # ── Embedding ──────────────────────────────────────────────
-EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "google")  # "google" | "openai" | "local"
-GOOGLE_API_KEY     = os.getenv("GOOGLE_API_KEY", "")
-OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
-EMBEDDING_MODEL    = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
-EMBEDDING_DIM      = int(os.getenv("EMBEDDING_DIM", "1536"))
+EMBEDDING_PROVIDER   = os.getenv("EMBEDDING_PROVIDER", "llamacpp")  # "llamacpp" | "google" | "openai"
+EMBEDDING_MODEL      = os.getenv("EMBEDDING_MODEL", "bge-m3-Q8_0")
+EMBEDDING_DIM        = int(os.getenv("EMBEDDING_DIM", "1024"))
+LLAMACPP_BASE_URL    = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
+LLAMACPP_MODEL_PATH  = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
+GOOGLE_API_KEY       = os.getenv("GOOGLE_API_KEY", "")
+OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 
 # ── L1 快取參數 ────────────────────────────────────────────
 L1_COSINE_THRESHOLD = 0.88
