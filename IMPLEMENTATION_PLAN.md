@@ -141,12 +141,30 @@ if h5:
 ### [x] 3.4 tests/test_phase3.py（✅ 完成）
 - 15/15 PASSED
 
-### [ ] 3.5 Google embedding 接入（待 GOOGLE_API_KEY）
-```bash
-uv sync --extra anthropic --extra embedding-google
-# cp .env.example .env && 填入 GOOGLE_API_KEY
-# 實作 analysis/embed.py + write_to_l1_cache()
-```
+### [x] 3.5 本機 Embedding 接入（✅ 完成）
+- 決策改為 llamacpp + bge-m3-Q8_0（1024-dim），免費離線
+- `analysis/embed.py`：llamacpp / openai / google 三 provider
+- `analysis/l1_cache.py`：write_to_l1_cache() + semantic_search()
+- `docs/launchd_embedding_server.plist.example`：開機自動啟動 llama-server
+- E2E 驗證：寫入 PTPRC 記錄，搜尋 "CD8A T cell" → score=0.63 ✅
+
+---
+
+## Phase 4 — MCP Server（完成）
+
+### [x] 4.0 mcp 套件安裝（✅ 完成）
+- `uv add mcp --no-install-project`
+
+### [x] 4.1 server/bio_memory_server.py（✅ 完成）
+**7 個 MCP 工具**：bio_history_lookup / bio_history_timeline / bio_history_check /
+bio_history_search / bio_memory_query / bio_memory_write / bio_register_sample
+
+### [x] 4.2 tests/test_phase4.py（✅ 完成）
+- 19/19 PASSED（0.97 秒）
+
+### [x] 4.3 .mcp.json 設定（✅ 完成）
+- `bio_DB/.mcp.json`（.gitignore 排除）
+- Claude Code 重新啟動後可呼叫 bio-memory MCP 工具
 
 ---
 

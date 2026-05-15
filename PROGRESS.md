@@ -65,28 +65,36 @@
 
 ---
 
-## ✅ Phase 3 基礎設施完成（2026-05-15）
+## ✅ Phase 3 + 3.5 完成（2026-05-15）
 
 - [x] launchd 每日備份排程已啟用（com.hermes.backup）
 - [x] `scripts/03_init_l1_cache.py` — gold/hermes_cache.duckdb + memory_recent + HNSW（cosine）
 - [x] `scheduler/cleanup_l1_cache.py` — TTL 清理（每日 03:30）
 - [x] `scheduler/rebuild_hnsw.py` — HNSW 重建（每週日 03:00）
 - [x] `tests/test_phase3.py` — 15/15 PASSED
-- [ ] Phase 3.5：Google embedding 接入（待 GOOGLE_API_KEY + `uv sync --extra embedding-google`）
+- [x] Phase 3.5：**本機 embedding 接入**（llamacpp bge-m3-Q8_0，1024-dim）
+  - `analysis/embed.py` — llamacpp/openai/google 三 provider
+  - `analysis/l1_cache.py` — write_to_l1_cache() + semantic_search()
+  - E2E 驗證通過：score=0.63 for CD8A query
+
+---
+
+## ✅ Phase 4 完成（2026-05-15）
+
+- [x] `mcp` 套件安裝至 venv
+- [x] `server/bio_memory_server.py` — 7 個 MCP 工具（bio_history_* + bio_memory_* + bio_register_sample）
+- [x] `tests/test_phase4.py` — 19/19 PASSED（0.97 秒）
+- [x] `bio_DB/.mcp.json` — Claude Code MCP Server 設定（gitignored）
+- **總測試數**：54/55 PASSED（test_crc_8um_exists 為既有路徑問題）
 
 ---
 
 ## ⏭️ 下一步（按優先順序）
 
-### Phase 3.5：Google Embedding 接入（本週）
-1. `cp .env.example .env` → 填入 `GOOGLE_API_KEY`
-2. `uv sync --extra anthropic --extra embedding-google`
-3. `analysis/embed.py`（gemini-embedding-001 封裝）
-4. `analysis/l1_cache.py`（write_to_l1_cache + semantic_search）
-
-### Phase 4：MCP Server
-5. `server/bio_memory_server.py`（`bio_history_*` 工具）
-6. `.claude/settings.json` mcpServers 設定
+### Phase 5+：Agent + Telegram + 部署
+1. 自製 Agent Loop（Claude API + tool use + bio-memory MCP）
+2. Telegram Bot 介接 + 白名單
+3. Linux 伺服器遷移（見 plan_zh.md checklist）
 
 ### Phase 5+：Agent + Telegram + 部署
 7. 自製 Agent Loop（Claude API + tool use）
@@ -121,6 +129,8 @@
 | 2026-05-15 | 設計補強完成 | embedding=Google、沙盒策略、HNSW 維護、Linux 遷移 checklist |
 | 2026-05-15 | Phase 2B 完成 | analysis 三模組 + 14/14 tests；CRC EDA 報告 + 50 字摘要生成成功 |
 | 2026-05-15 | Phase 3 基礎設施完成 | L1 cache schema + HNSW + cleanup + rebuild + 15/15 tests |
+| 2026-05-15 | Phase 3.5 完成 | 本機 embedding（bge-m3-Q8_0）+ l1_cache.py E2E 驗證 |
+| 2026-05-15 | Phase 4 完成 | MCP Server 7 工具 + .mcp.json + 19/19 tests，54/55 全套通過 |
 
 ---
 
@@ -128,6 +138,7 @@
 
 | 決策 | 結論 | 理由 |
 |------|------|------|
+| Embedding 實作 | llamacpp bge-m3-Q8_0（1024-dim）取代 Google | 使用者已有 llama.cpp，免費離線，無 API 費用 |
 | L2 解析度 | 8µm bins | 2µm 全圖 >100 萬 bins，L2 儲存成本過高 |
 | L2 儲存格式 | Long-format Parquet（nonzero only） | 99.4% 稀疏，dense 會爆炸 |
 | 測試數據選擇 | CRC 官方 Visium HD | 含完整 binned + segmented outputs |
