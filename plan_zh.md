@@ -506,10 +506,46 @@ condition VARCHAR, replicate INTEGER
 - `gene_query(gene_name)` — 特定基因在所有樣本的表現
 
 ### report_generator.py
+
+> ⭐ **這是整個系統裡最需要用心設計的模組。**  
+> 每個分析函數生成圖表時，`report_generator` 同步產出的文字描述品質，決定了未來所有語意搜尋的天花板——描述越精準，`memory_recent` 的命中率越高。
+
+**每個產圖函數必須同時完成兩件事：**
+
+```python
+def plot_spatial(sample_id, gene, df):
+    # ✅ 第一件事：畫圖存檔（一般都有做）
+    path = f"results/{sample_id}/spatial_heatmap/{timestamp}_{gene}.png"
+    fig.savefig(path)
+
+    # ⭐ 第二件事：生成文字描述（這才是搜尋的基礎，經常被忽略）
+    report_text = make_spatial_report(sample_id, gene, df, path)
+    #   → 含：基因名、樣本、高表現區域、覆蓋面積、圖檔路徑
+    #   → 這段文字的 embedding 寫入 memory_recent
+    #   → 未來「免疫細胞浸潤相關分析？」能命中，靠的就是這段文字
+```
+
+**壞的描述 vs 好的描述：**
+
+```
+❌ 壞（搜尋命中率極差）：
+   "spatial heatmap saved"
+
+✅ 好（搜尋命中率高）：
+   "基因：CD8A，樣本：official_v4，解析度：8µm
+    結果：CD8A 高表現集中於腫瘤邊緣，佔組織面積 18%
+    模式：腫瘤核心低表現（藍），邊緣高表現（紅）
+    圖檔：results/official_v4/spatial_heatmap/20260515_CD8A.png"
+```
+
+**函數列表：**
+- `make_spatial_report(sample_id, gene, df, path)` — ⭐ 空間熱圖完整描述（含定量結果）
+- `make_clustering_report(sample_id, adata, path)` — ⭐ 聚類結果描述（含群集數、代表基因）
 - `make_text_report(result)` — 產生 Markdown 摘要（適合 Telegram 訊息）
 - `make_image_report(fig)` — matplotlib 圖表 → PNG（供 Telegram 傳送）
 - `make_qc_report(sample_id)` — 標準 QC 報告（reads 數、基因數、組織覆蓋率）
-- `make_summary(result, max_chars=50)` — 產生 50 字以內的結果摘要（寫入 analysis_history.summary，供省 token 搜尋）
+- `make_summary(result, max_chars=50)` — 50 字摘要 → 寫入 `analysis_history.summary`
+- `make_report_text(result, path)` — 完整文字描述 → 寫入 `memory_recent.report_text`（語意搜尋的核心輸入）
 
 ### history_query.py（分析歷史查詢，全部 0 token）
 - `what_analyzed(sample_id)` — 查詢某樣本所有歷史分析（精確，0 token）
@@ -545,19 +581,36 @@ CLIP 對生資圖表效果差，原因：
 - 能識別「這是有顏色的圖」，但無法區分「CD8 熱圖」vs「CD45 熱圖」（視覺相似）
 - 無法連結「免疫細胞浸潤」→ 特定空間表現模式
 
-**正確做法：存圖時同時寫精準的文字描述，用文字 embedding 搜尋**
+**正確做法：產圖時同步呼叫 `report_generator`，寫入精準文字描述**
 
 ```python
-# 每次生成圖表，report_text 同步寫入足夠的文字資訊
-report_text = """
-基因：CD8A，樣本：official_v4，解析度：8µm
-結果：CD8A 高表現集中於腫瘤邊緣，佔組織面積 18%
-模式：腫瘤核心低表現（藍），邊緣高表現（紅）
-圖檔：results/official_v4/spatial_heatmap/20260515_CD8A.png
-"""
-# report_text 的 embedding → memory_recent
-# 搜尋精確度遠高於 CLIP 看圖猜意思
+# analysis/spatial_eda.py 內，每個產圖函數的標準結構
+def plot_spatial(sample_id, gene, df):
+    # 1. 畫圖
+    fig, ax = plt.subplots()
+    ...
+    path = f"results/{sample_id}/spatial_heatmap/{timestamp}_{gene}.png"
+    fig.savefig(path)
+
+    # 2. ⭐ 生成文字描述（語意搜尋的基礎）
+    report_text = make_report_text(
+        sample_id=sample_id,
+        gene=gene,
+        high_expr_region=compute_high_region(df),   # 定量：高表現在哪
+        coverage_pct=compute_coverage(df),           # 定量：面積百分比
+        path=path
+    )
+    # report_text 範例：
+    # "基因：CD8A，樣本：official_v4，解析度：8µm
+    #  結果：CD8A 高表現集中於腫瘤邊緣，佔組織面積 18%
+    #  圖檔：results/official_v4/spatial_heatmap/20260515_CD8A.png"
+
+    # 3. 同步寫入 analysis_history + memory_recent
+    insert_history(sample_id, "spatial_heatmap", path, make_summary(report_text))
+    insert_l1_cache(sample_id, f"{gene} 空間分布", report_text)
 ```
+
+> **關鍵**：`report_text` 含有定量結果（面積、區域、模式），未來搜尋「免疫細胞浸潤」能命中，靠的就是這段文字——而不是圖片本身。
 
 ### 搜尋精確度比較
 
