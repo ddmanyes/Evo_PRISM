@@ -2,6 +2,21 @@
 
 ---
 
+## 🗺️ 當前狀態（2026-05-15）
+
+| 項目 | 狀態 |
+|------|------|
+| 平台 | macOS `/Volumes/NO NAME/bio_DB/`（ExFAT，測試階段） |
+| 目標平台 | Linux `/mnt/space4/bio_lab_db/`（生產部署） |
+| 測試數據 | CRC Visium HD 官方數據（~39GB）+ MSseg 分析結果（5.5GB） |
+| 完成項目 | 計畫文件、00_init_db.py、L3 數據就位、CLAUDE.md |
+| 當前進行 | 環境建置（pyproject.toml + uv sync） |
+| 下一步 | 執行 00_init_db.py → 02_spatial_to_parquet.py（CRC 數據） |
+
+> 詳細進度見 [PROGRESS.md](PROGRESS.md)，操作規範見 [CLAUDE.md](CLAUDE.md)。
+
+---
+
 ## 計畫摘要
 
 ### 背景與動機
@@ -33,7 +48,7 @@
 | 向量語意搜尋 | DuckDB VSS（HNSW 索引） | L1 語意快取的命中機制 |
 | 分析歷史追蹤 | DuckDB（`analysis_history` + `analysis_index`） | 帶時間軸的分析紀錄，0 token 可查 |
 | 系統介面協定 | MCP（Model Context Protocol） | Agent 與資料庫之間的標準工具介面 |
-| 部署環境 | Linux 伺服器（`/mnt/space4/`） | 全天候運行；現階段先在 Windows 本機開發 |
+| 部署環境 | Linux 伺服器（`/mnt/space4/`） | 全天候運行；現階段先在 macOS 本機測試 |
 
 ### 預期效益
 
@@ -116,10 +131,14 @@
 ## 專案目錄結構
 
 ```
-現階段（Windows 本機開發）
-I:\bio_DB\
+現階段（macOS 本機測試）
+/Volumes/NO NAME/bio_DB/
+├── CLAUDE.md                     ← 專案憲法（規範 + 架構 + 路徑）
+├── PROGRESS.md                   ← 進度封存（每次里程碑更新）
 ├── plan_zh.md                    ← 本計畫文件
 ├── plan.md                       ← 英文版
+├── pyproject.toml                ← Python 依賴管理（uv）
+├── .env.example                  ← 環境變數範本
 ├── bio_memory.duckdb             ← DuckDB 主入口（含所有結構化表）
 │
 ├── silver\                       ← L2：Parquet 特徵儲存
@@ -130,25 +149,41 @@ I:\bio_DB\
 ├── gold\                         ← L1：語意快取
 │   └── hermes_cache.duckdb       ← memory_recent + HNSW 索引
 │
-├── scripts\                      ← 一次性資料轉換工具
-│   ├── 00_init_db.py             ← 建立所有表（含 analysis_history）
-│   ├── 01_spatial_to_parquet.py
-│   └── 02_kallisto_to_parquet.py
+├── config/                       ← 集中路徑與設定
+│   └── settings.py
 │
-├── analysis\                     ← 分析函式庫（持續擴充）
+├── scripts/                      ← 一次性資料轉換工具
+│   ├── 00_init_db.py             ← ✅ 建立所有表（含 analysis_history）
+│   ├── 01_register_sample.py     ← 自動掃描 + 登記 L3 樣本
+│   ├── 02_spatial_to_parquet.py  ← L3 Visium HD → L2 Parquet
+│   └── msseg/                    ← MSseg 工具腳本
+│
+├── analysis/                     ← 分析函式庫（持續擴充）
 │   ├── spatial_eda.py
 │   ├── bulk_eda.py
 │   ├── report_generator.py       ← 報告格式化 + 50 字摘要產生
 │   └── history_query.py          ← 分析歷史查詢（0 token SQL 介面）
 │
-├── server\                       ← MCP Server
+├── server/                       ← MCP Server
 │   └── bio_memory_server.py      ← 含 bio_history_* 工具
 │
-├── scheduler\                    ← 排程任務（cron 驅動）
+├── scheduler/                    ← 排程任務（cron 驅動）
 │   ├── daily_qc.py
 │   └── sample_watcher.py
 │
-└── references\                   ← 技術參考文獻與論文
+├── tests/                        ← 測試套件
+│   ├── conftest.py
+│   ├── test_init_db.py
+│   └── test_spatial_ingest.py
+│
+├── crc_visium_data/              ← ✅ L3 測試數據（~39GB，唯讀）
+├── data_ana/                     ← ✅ 參考分析中間數據（唯讀）
+├── results_ana/                  ← ✅ 參考分析結果（唯讀）
+├── analysis_msseg/               ← ✅ MSseg 分析程式碼（參考用）
+├── backend_msseg/                ← ✅ MSseg FastAPI 後端（參考用）
+├── msseg_docs/                   ← ✅ MSseg 文件（參考用）
+│
+└── references/                   ← 技術參考文獻與論文
 
 未來轉移目標（Linux 伺服器，架構完全相同）
 /mnt/space4/bio_lab_db/
@@ -334,14 +369,15 @@ result = duckdb.query("""
 
 ## 第一階段 — 環境建置與 Schema 設計
 
-- [ ] 安裝 Python 套件：`duckdb`、`anndata`、`pandas`、`pyarrow`、`scipy`
-- [ ] 建立目錄骨架：`silver/`、`gold/`、`scripts/`、`analysis/`、`server/`、`scheduler/`
-- [ ] 撰寫 `scripts/00_init_db.py`：
+- [x] 安裝 Python 套件：`duckdb`、`anndata`、`pandas`、`pyarrow`、`scipy`（pyproject.toml 完成）
+- [x] 建立目錄骨架：`silver/`、`gold/`、`scripts/`、`analysis/`、`server/`、`scheduler/`、`config/`、`tests/`
+- [x] 撰寫 `scripts/00_init_db.py`：
   - 初始化 `bio_memory.duckdb`
   - 驗證 VSS 擴充可載入（`INSTALL vss; LOAD vss;`）
   - 建立 `sample_registry` 資料表
-- [ ] 根據 MASTER_LIST.md 填入所有已知樣本至 `sample_registry`
-- [ ] 建立 `analysis_history` 主表與 `analysis_index` 視圖
+- [ ] **執行** `uv run python scripts/00_init_db.py` 驗證 Schema 實際可建立
+- [ ] 填入 CRC 官方數據至 `sample_registry`（測試樣本：`official_v4`）
+- [x] 建立 `analysis_history` 主表與 `analysis_index` 視圖（在 00_init_db.py 中）
 
 **sample_registry 欄位設計：**
 ```sql
@@ -367,22 +403,23 @@ CREATE TABLE sample_registry (
 
 ### 2-A  空間轉錄體（Visium HD）
 
-主要原型：**MQ250428-D1-D2**
+**測試原型（本機）**：CRC 官方 Visium HD 數據（`crc_visium_data/official_v4/`）  
+**實驗室原型（伺服器）**：MQ250428-D1-D2（待部署 Linux 後處理）
 
-L3 來源：
+L3 來源（測試）：
 ```
-.../MQ250428-D1-D2/outs/
-    binned_outputs/square_008um/  ← 主要（8µm，~14萬 bins，分析解析度）
-    binned_outputs/square_016um/  ← 次要（16µm，~3.6萬 bins，總覽）
-    spatial/                      ← tissue_positions.parquet（座標）
-    filtered_feature_bc_matrix/   ← 2µm 全解析度（按需從 L3 載入，不入 L2）
+crc_visium_data/official_v4/
+    binned_outputs/square_008um/    ← 主要（8µm，分析解析度）
+    binned_outputs/square_016um/    ← 次要（16µm，總覽）
+    segmented_outputs/              ← 細胞分割結果（此數據獨有）
+    spatial/                        ← 空間座標
 ```
 
-- [ ] 撰寫 `scripts/01_spatial_to_parquet.py`
-- [ ] 輸出：`silver/spatial_counts_MQ250428-D1-D2_8um.parquet`
-- [ ] 輸出：`silver/spatial_meta_MQ250428-D1-D2.parquet`
+- [ ] 撰寫 `scripts/02_spatial_to_parquet.py`（使用 CRC 官方數據測試）
+- [ ] 輸出：`silver/spatial_counts_crc_official_v4_8um.parquet`
+- [ ] 輸出：`silver/spatial_meta_crc_official_v4.parquet`
 - [ ] 驗證 DuckDB 可依基因名稱與空間座標查詢
-- [ ] D1-D2 確認後，依序處理其他 Visium HD 樣本
+- [ ] 測試通過後，相同腳本套用至 MQ250428-D1-D2（伺服器部署後）
 
 **spatial_counts 欄位：**
 ```sql
@@ -568,20 +605,20 @@ WITH (metric = 'cosine');
                                第七階段（驗證調校）
                                           │
                                           ▼
-                               【伺服器部署】Windows → Linux
+                               【伺服器部署】macOS 本機 → Linux
 ```
 
 ---
 
 ## 關鍵檔案路徑
 
-| 項目 | 現階段（Windows） | 未來（Linux） |
+| 項目 | 現階段（macOS 測試） | 未來（Linux） |
 |------|----------------|-------------|
-| 主要原型 | `I:\...\MQ250428-D1-D2\outs\` | `/mnt/space4/.../MQ250428-D1-D2/outs/` |
-| Bulk RNA | `I:\BulkRNA\Kallisto_v1\results_kallisto\` | `/mnt/space4/.../results_kallisto/` |
-| 主 DuckDB | `I:\bio_DB\bio_memory.duckdb` | `/mnt/space4/bio_lab_db/bio_memory.duckdb` |
-| L1 快取 | `I:\bio_DB\gold\hermes_cache.duckdb` | `/mnt/space4/bio_lab_db/gold/` |
-| L2 Parquet | `I:\bio_DB\silver\` | `/mnt/space4/bio_lab_db/silver/` |
+| 測試原型（CRC） | `/Volumes/NO NAME/bio_DB/crc_visium_data/official_v4/` | `/mnt/space4/raw_data/crc_official/` |
+| 實驗室原型 | TBD（伺服器上的 MQ250428 等） | `/mnt/space4/.../MQ250428-D1-D2/outs/` |
+| 主 DuckDB | `/Volumes/NO NAME/bio_DB/bio_memory.duckdb` | `/mnt/space4/bio_lab_db/bio_memory.duckdb` |
+| L1 快取 | `/Volumes/NO NAME/bio_DB/gold/hermes_cache.duckdb` | `/mnt/space4/bio_lab_db/gold/` |
+| L2 Parquet | `/Volumes/NO NAME/bio_DB/silver/` | `/mnt/space4/bio_lab_db/silver/` |
 
 ---
 
