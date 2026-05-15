@@ -63,9 +63,15 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
             requested_by  VARCHAR,
             started_at    TIMESTAMP,
             completed_at  TIMESTAMP,
-            summary       VARCHAR     -- max 50 chars, for token-efficient search
+            summary       VARCHAR,    -- max 50 chars, for token-efficient search
+            tool_id       UUID        -- reserved: FK to future tools table (NULL until scale-out)
         )
     """)
+    # Idempotent migration: add tool_id column to pre-existing DBs (DuckDB ≥ 0.9)
+    try:
+        con.execute("ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS tool_id UUID")
+    except Exception as e:
+        print(f"WARNING: could not ensure tool_id column: {e}")
     print("Table: analysis_history — OK")
 
     # analysis_index view (0-token compact browsing)

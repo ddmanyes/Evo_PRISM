@@ -37,16 +37,20 @@ bio_DB/
 ├── .env.example            ← 環境變數範本
 ├── bio_memory.duckdb       ← 主 DuckDB（sample_registry + analysis_history）
 │
-├── config/                 ← 集中設定（路徑、常數）
-│   └── settings.py
+├── IMPLEMENTATION_PLAN.md  ← Phase 執行計畫（/sp-executing-plans 維護）
+├── execution_trace.md     ← 各 Phase 執行紀錄（含驗收結果與 commit hash）
+│
+├── config/                 ← 集中設定（路徑、常數、寫入工具）
+│   ├── settings.py
+│   └── db_utils.py             ← ✅ safe_write() / cleanup_stale_runs() / db_health_check()
 │
 ├── scripts/                ← 一次性資料轉換工具（每個樣本跑一次）
-│   ├── 00_init_db.py           ← 建立 Schema（已完成）
+│   ├── 00_init_db.py           ← ✅ 建立 Schema（已完成）
 │   ├── 01_register_sample.py   ← 自動掃描 + 登記 L3 樣本
-│   ├── 02_spatial_to_parquet.py← L3 Visium HD → L2 Parquet
+│   ├── 02_spatial_to_parquet.py← ✅ L3 Visium HD → L2 Parquet（已驗證：416 MB / 215M nonzero）
 │   └── msseg/                  ← MSseg 相關工具腳本
 │
-├── analysis/               ← 可重複使用的分析函數（Agent 呼叫）
+├── analysis/               ← 可重複使用的分析函數（Agent 呼叫，Phase 2B 進行中）
 │   ├── spatial_eda.py
 │   ├── bulk_eda.py
 │   ├── report_generator.py
@@ -55,7 +59,8 @@ bio_DB/
 ├── server/                 ← MCP Server（Phase 5，尚未實作）
 │   └── bio_memory_server.py
 │
-├── scheduler/              ← 排程任務（Phase 6，尚未實作）
+├── scheduler/              ← 排程任務
+│   └── backup_db.py            ← ✅ 每日 EXPORT DATABASE 備份（~/bio_db_backups/，保留 7 天）
 │
 ├── tests/                  ← 測試套件
 │   ├── conftest.py
@@ -82,11 +87,26 @@ bio_DB/
 
 ## 4. 開發環境
 
+### ExFAT 限制與 venv 安排
+
+`/Volumes/NO NAME/` 為 ExFAT，**不能直接在此建立 venv**（symlink/權限會壞）。
+正確做法：venv 建在 APFS（家目錄），再以 symlink 接回專案目錄。
+
 ```bash
-# Python 環境（使用 uv，禁用 pip）
-uv sync                           # 安裝依賴
+# 一次性建置（首次使用）
+python3 -m venv ~/.venvs/hermes-bio-memory
+ln -s ~/.venvs/hermes-bio-memory "/Volumes/NO NAME/bio_DB/.venv"
+
+# 直接以 venv 的 python 執行（不需 uv run）
+~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
+```
+
+### uv 指令
+
+```bash
+# 安裝依賴（無 package 目錄，必須加 --no-install-project，否則 hatchling build 失敗）
+uv sync --no-install-project
 uv add <package>                  # 新增套件
-uv run python scripts/00_init_db.py  # 執行腳本
 
 # 初始化資料庫（第一次使用）
 uv run python scripts/00_init_db.py
@@ -96,6 +116,19 @@ uv run pytest tests/ -v
 
 # 環境變數
 cp .env.example .env  # 填入 API keys
+```
+
+### 備份與健檢
+
+```bash
+# 手動備份（launchd 每日 02:00 自動跑，見 docs/launchd_backup.plist.example）
+uv run python scheduler/backup_db.py
+
+# 緊急還原（從最新備份）
+uv run python scheduler/backup_db.py --restore
+
+# 健檢（顯示 sample / history / stale / l2_ready 數量）
+uv run python config/db_utils.py
 ```
 
 ---
@@ -121,6 +154,15 @@ cp .env.example .env  # 填入 API keys
 1. 將結果存至 `result_path`
 2. INSERT 一筆至 `analysis_history`（status = 'completed'）
 3. 若完整報告需快取 → 同時寫入 `memory_recent`
+
+### 寫入關鍵表必須走 safe_write()
+`analysis_history` 與 `sample_registry` 的所有寫入都應透過 `config.db_utils.safe_write()`，
+它會在寫入後立即 `CHECKPOINT`，把 WAL 刷入主檔——ExFAT 無日誌，這是縮小斷電損壞視窗的關鍵。
+L1 `memory_recent` 等快取寫入因頻率高、丟失可重建，不需呼叫（效能考量）。
+
+### Agent 啟動時清理殭屍狀態
+任何長駐程序（Agent / MCP Server / Telegram Bot）啟動時呼叫 `cleanup_stale_runs(con)`，
+把 > 24 小時仍為 `running` 的紀錄標為 `stale`。
 
 ### 禁止在腳本內硬編碼路徑
 所有路徑從 `config/settings.py` 的 `Settings` class 取得。
@@ -149,7 +191,8 @@ sample_registry(sample_id PK, project, data_type, platform, species, tissue, l3_
 -- 分析歷史（永久保存）
 analysis_history(analysis_id UUID PK, sample_id FK, analysis_type,
                  parameters JSON, status, result_path, l1_cache_id UUID,
-                 requested_by, started_at, completed_at, summary VARCHAR)
+                 requested_by, started_at, completed_at, summary VARCHAR,
+                 tool_id UUID)  -- 預留：未來 tools 表 FK，目前皆為 NULL
 
 -- 精簡索引 View（0 token 查詢）
 analysis_index VIEW: GROUP BY sample_id + analysis_type, 顯示 run_count、last_run_date
@@ -178,8 +221,11 @@ memory_recent(id UUID, sample_id, query_text, report_text,
 | 文件 | 內容 |
 |------|------|
 | [PROGRESS.md](PROGRESS.md) | 當前進度、完成里程碑、待辦事項 |
+| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | 當前 Phase 執行計畫（含驗收標準） |
+| [execution_trace.md](execution_trace.md) | Phase 執行紀錄（結果與 commit hash） |
 | [plan_zh.md](plan_zh.md) | 完整七階段系統設計（中文） |
 | [plan.md](plan.md) | 完整系統設計（英文） |
-| [L3_DATA_INGEST_GUIDE.md](L3_DATA_INGEST_GUIDE.md) | 新增樣本到 L3 的操作指南 |
-| [TEST_DATABASE_INDEX.md](TEST_DATABASE_INDEX.md) | 測試資料庫總覽（數據位置、大小） |
+| [docs/L3_DATA_INGEST_GUIDE.md](docs/L3_DATA_INGEST_GUIDE.md) | 新增樣本到 L3 的操作指南 |
+| [docs/TEST_DATABASE_INDEX.md](docs/TEST_DATABASE_INDEX.md) | 測試資料庫總覽（數據位置、大小） |
+| [docs/launchd_backup.plist.example](docs/launchd_backup.plist.example) | macOS 每日備份排程範本 |
 | [msseg_docs/CLAUDE.md](msseg_docs/CLAUDE.md) | MSseg 子專案開發規範 |
