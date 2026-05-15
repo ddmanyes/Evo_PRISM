@@ -37,6 +37,10 @@ crc_visium_data/
 results_ana/
 data_ana/
 
+# Bulk RNA — 數據不進 git（L2 結果與 QC 報告體積大，以路徑記錄即可）
+bulk_rna_data/
+references/genome/
+
 # Large PDFs and binary documents (keep .md versions only)
 references/pdfs/
 reports/*.pdf
