@@ -80,12 +80,62 @@ if h5:
 
 ---
 
-## Phase 2A — L2 Parquet 轉換
+## Phase 2A — L2 Parquet 轉換（完成）
 
-### [ ] 2.0 建立 scripts/02_spatial_to_parquet.py
+### [x] 2.0 建立 scripts/02_spatial_to_parquet.py（✅ 完成）
 
-**目標**：CRC 8µm binned → silver/crc_official_v4.parquet  
-**依賴**：Phase 1.1, 1.3 完成  
+**結果**：silver/crc_official_v4/（104 parts, 416 MB, 215M nonzero, 103 秒）
+
+---
+
+## Phase 2B — 分析層
+
+### [x] 2B.1 analysis/spatial_eda.py（✅ 完成）
+
+**目標**：基因空間圖、QC 統計、top_genes、共表達散點圖  
+**函數**：`gene_spatial_map()` / `qc_stats()` / `top_genes()` / `gene_coexpression()`  
+**驗收**：smoke test on crc_official_v4 PASSED  
+
+---
+
+### [x] 2B.2 analysis/history_query.py（✅ 完成）
+
+**目標**：0-token DuckDB 查詢，不呼叫 LLM  
+**函數**：`recent_analyses()` / `sample_summary()` / `find_by_type()` / `get_analysis()` / `analysis_index()` / `search_summaries()`  
+**驗收**：7/7 unit tests PASSED  
+
+---
+
+### [x] 2B.3 analysis/report_generator.py（✅ 完成）
+
+**目標**：生成 Markdown EDA 報告 + ≤50 字中文摘要（語意搜尋語料核心）  
+**函數**：`generate_eda_report()` / `generate_summary()` / `write_report_to_history()` / `run_full_eda_report()`  
+**驗收**：7/7 unit tests PASSED；真實數據 crc_official_v4 生成摘要 50 字 ✅  
+
+---
+
+### [x] 2B.4 tests/test_phase2b.py（✅ 完成）
+
+**驗收**：14/14 PASSED（7 history_query + 7 report_generator + 2 smoke tests）
+
+---
+
+## Phase 3 — L1 語意快取（待實作）
+
+### [ ] 3.0 啟用 launchd 排程
+```bash
+launchctl load ~/Library/LaunchAgents/com.hermes.backup.plist
+```
+
+### [ ] 3.1 建立 gold/hermes_cache.duckdb + memory_recent + HNSW 索引
+
+### [ ] 3.2 接入 Google gemini-embedding-001
+```bash
+uv sync --extra anthropic --extra embedding-google
+# 填入 .env: GOOGLE_API_KEY=...
+```
+
+### [ ] 3.3 cleanup_l1_cache.py + rebuild_hnsw.py
 
 ---
 
