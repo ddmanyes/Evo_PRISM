@@ -1,118 +1,116 @@
 #!/usr/bin/env python3
-"""Produce integer raw counts matrix and a colData template for DESeq2/edgeR.
+"""產出整數 raw counts 矩陣與 colData 模板，供 DESeq2/edgeR 直接使用。
 
-Usage: python3 export_deseq2_counts.py [input_counts.tsv]
-If input is omitted, uses results_kallisto/gene_counts_mapped_symbol.tsv if exists,
-otherwise results_kallisto/gene_counts_ensembl.tsv or results_kallisto/gene_counts.tsv.
+使用方式：
+    python3 export_deseq2_counts.py [input_counts.tsv]
+
+若未指定輸入，依序嘗試：
+    gene_counts_mapped_symbol.tsv → gene_counts_ensembl.tsv → gene_counts.tsv
 """
-import os
-import sys
+from __future__ import annotations
+
 import csv
-from math import isclose
+import logging
+import sys
+from pathlib import Path
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-RESULTS_DIR = os.path.join(ROOT, 'results_kallisto')
-DEFAULTS = [
-    os.path.join(RESULTS_DIR, 'gene_counts_mapped_symbol.tsv'),
-    os.path.join(RESULTS_DIR, 'gene_counts_ensembl.tsv'),
-    os.path.join(RESULTS_DIR, 'gene_counts.tsv'),
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from config.settings import BIO_DB_ROOT
+
+logger = logging.getLogger(__name__)
+
+RESULTS_DIR    = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
+DEFAULTS       = [
+    RESULTS_DIR / "gene_counts_mapped_symbol.tsv",
+    RESULTS_DIR / "gene_counts_ensembl.tsv",
+    RESULTS_DIR / "gene_counts.tsv",
 ]
+OUT_COUNTS     = RESULTS_DIR / "deseq2_counts.tsv"
+OUT_COUNTS_CSV = RESULTS_DIR / "deseq2_counts.csv"
+OUT_COLDATA    = RESULTS_DIR / "deseq2_coldata.tsv"
 
-OUT_COUNTS = os.path.join(RESULTS_DIR, 'deseq2_counts.tsv')
-OUT_COUNTS_CSV = os.path.join(RESULTS_DIR, 'deseq2_counts.csv')
-OUT_COLDATA = os.path.join(RESULTS_DIR, 'deseq2_coldata.tsv')
 
-
-def choose_input():
+def choose_input() -> Path:
     if len(sys.argv) > 1:
-        path = sys.argv[1]
-        if os.path.exists(path):
+        path = Path(sys.argv[1])
+        if path.exists():
             return path
-        else:
-            print('Provided input not found:', path)
-            sys.exit(1)
+        logger.error("Provided input not found: %s", path)
+        sys.exit(1)
     for p in DEFAULTS:
-        if os.path.exists(p):
+        if p.exists():
             return p
-    print('No default counts file found. Expected one of:', ','.join(DEFAULTS))
+    logger.error(
+        "No default counts file found. Expected one of: %s",
+        ", ".join(str(p) for p in DEFAULTS),
+    )
     sys.exit(1)
 
 
-def read_counts(path):
-    with open(path, 'r') as f:
-        reader = csv.reader(f, delimiter='\t')
+def read_counts(path: Path) -> tuple[list[str], list[str], list[list[float]]]:
+    with open(path, encoding="utf-8") as f:
+        reader = csv.reader(f, delimiter="\t")
         header = next(reader)
         samples = header[1:]
-        genes = []
-        mat = []
+        genes: list[str] = []
+        mat: list[list[float]] = []
         for row in reader:
             if not row:
                 continue
             genes.append(row[0])
-            vals = [float(x) if x != '' else 0.0 for x in row[1:]]
-            mat.append(vals)
+            mat.append([float(x) if x else 0.0 for x in row[1:]])
     return genes, samples, mat
 
 
-def to_integer_matrix(genes, samples, mat):
-    # DESeq2/edgeR require integer counts. If values are floats, round to nearest int.
-    int_mat = []
-    for row in mat:
-        int_row = []
-        for v in row:
-            # if already integer-like, cast; else round
-            if isclose(v, round(v), rel_tol=1e-9, abs_tol=1e-9):
-                int_row.append(int(round(v)))
-            else:
-                int_row.append(int(round(v)))
-        int_mat.append(int_row)
-    return int_mat
+def to_integer_matrix(mat: list[list[float]]) -> list[list[int]]:
+    """DESeq2/edgeR 需要整數 counts，對 Kallisto 的浮點估計值四捨五入。"""
+    return [[int(round(v)) for v in row] for row in mat]
 
 
-def write_tsv(path, genes, samples, mat):
-    with open(path, 'w') as fo:
-        fo.write('gene\t' + '\t'.join(samples) + '\n')
+def write_tsv(path: Path, genes: list[str], samples: list[str], mat: list[list[int]]) -> None:
+    with open(path, "w", encoding="utf-8") as fo:
+        fo.write("gene\t" + "\t".join(samples) + "\n")
         for g, row in zip(genes, mat):
-            fo.write(g + '\t' + '\t'.join(str(x) for x in row) + '\n')
+            fo.write(g + "\t" + "\t".join(str(x) for x in row) + "\n")
 
 
-def write_csv(path, genes, samples, mat):
-    import csv
-    with open(path, 'w', newline='') as fo:
+def write_csv(path: Path, genes: list[str], samples: list[str], mat: list[list[int]]) -> None:
+    with open(path, "w", newline="", encoding="utf-8") as fo:
         w = csv.writer(fo)
-        w.writerow(['gene'] + samples)
+        w.writerow(["gene"] + samples)
         for g, row in zip(genes, mat):
             w.writerow([g] + row)
 
 
-def infer_coldata(samples):
-    # Simple heuristic: split sample name by '_' and take the first token as group
-    rows = []
-    for s in samples:
-        group = s.split('_')[0] if '_' in s else s
-        rows.append((s, group))
-    return rows
+def infer_coldata(samples: list[str]) -> list[tuple[str, str]]:
+    """以樣本名稱首段（`_` 分隔）推斷 group，僅作為初始模板，請人工確認。"""
+    return [(s, s.split("_")[0] if "_" in s else s) for s in samples]
 
 
-def write_coldata(path, rows):
-    with open(path, 'w') as fo:
-        fo.write('sample\tgroup\n')
+def write_coldata(path: Path, rows: list[tuple[str, str]]) -> None:
+    with open(path, "w", encoding="utf-8") as fo:
+        fo.write("sample\tgroup\n")
         for s, g in rows:
             fo.write(f"{s}\t{g}\n")
 
 
-def main():
+def main() -> None:
     inp = choose_input()
+    logger.info("Using input: %s", inp)
     genes, samples, mat = read_counts(inp)
-    int_mat = to_integer_matrix(genes, samples, mat)
+    int_mat = to_integer_matrix(mat)
     write_tsv(OUT_COUNTS, genes, samples, int_mat)
+    logger.info("Wrote counts TSV: %s", OUT_COUNTS)
     write_csv(OUT_COUNTS_CSV, genes, samples, int_mat)
+    logger.info("Wrote counts CSV: %s", OUT_COUNTS_CSV)
     coldata = infer_coldata(samples)
     write_coldata(OUT_COLDATA, coldata)
-    print('Wrote counts TSV:', OUT_COUNTS)
-    print('Wrote counts CSV:', OUT_COUNTS_CSV)
-    print('Wrote colData template:', OUT_COLDATA)
+    logger.info("Wrote colData template: %s  (please verify group assignments)", OUT_COLDATA)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    )
     main()

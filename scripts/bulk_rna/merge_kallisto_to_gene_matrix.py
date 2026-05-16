@@ -1,42 +1,48 @@
 #!/usr/bin/env python3
-import os
-import glob
+"""合併所有樣本的 Kallisto abundance.tsv → gene_counts.tsv + gene_tpm.tsv（以基因符號為主鍵）。"""
+from __future__ import annotations
+
 import csv
-from collections import defaultdict, OrderedDict
+import logging
+import sys
+from collections import defaultdict
+from pathlib import Path
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-RESULTS_DIR = os.path.join(ROOT, 'results_kallisto')
-OUT_COUNTS = os.path.join(RESULTS_DIR, 'gene_counts.tsv')
-OUT_TPM = os.path.join(RESULTS_DIR, 'gene_tpm.tsv')
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from config.settings import BIO_DB_ROOT
+
+logger = logging.getLogger(__name__)
+
+RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
+OUT_COUNTS  = RESULTS_DIR / "gene_counts.tsv"
+OUT_TPM     = RESULTS_DIR / "gene_tpm.tsv"
 
 
-def parse_abundance(path):
-    """Return dict gene -> (counts_sum, tpm_sum) from an abundance.tsv"""
-    gene_counts = defaultdict(float)
-    gene_tpm = defaultdict(float)
-    with open(path, 'r') as f:
-        reader = csv.DictReader(f, delimiter='\t')
+def parse_abundance(path: Path) -> tuple[dict[str, float], dict[str, float]]:
+    """從單一 abundance.tsv 解析 gene→counts 與 gene→tpm。"""
+    gene_counts: dict[str, float] = defaultdict(float)
+    gene_tpm:    dict[str, float] = defaultdict(float)
+    with open(path, encoding="utf-8") as f:
+        reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
-            target = row.get('target_id') or row.get('target')
+            target = row.get("target_id") or row.get("target", "")
             if not target:
                 continue
-            # target_id fields are pipe-separated; gene symbol appears around token index 5
-            parts = target.split('|')
-            gene = None
+            parts = target.split("|")
             if len(parts) >= 6 and parts[5].strip():
                 gene = parts[5].strip()
-            elif len(parts) >= 2 and parts[1].startswith('ENSMUSG'):
+            elif len(parts) >= 2 and parts[1].startswith("ENSMUSG"):
                 gene = parts[1].strip()
             else:
-                gene = parts[0].split('-')[0]
+                gene = parts[0].split("-")[0]
 
             try:
-                counts = float(row.get('est_counts', 0))
-            except:
+                counts = float(row.get("est_counts", 0))
+            except (ValueError, TypeError):
                 counts = 0.0
             try:
-                tpm = float(row.get('tpm', 0))
-            except:
+                tpm = float(row.get("tpm", 0))
+            except (ValueError, TypeError):
                 tpm = 0.0
 
             gene_counts[gene] += counts
@@ -45,47 +51,51 @@ def parse_abundance(path):
     return gene_counts, gene_tpm
 
 
-def main():
-    # find all abundance.tsv files under results_kallisto/*/abundance.tsv
-    pattern = os.path.join(RESULTS_DIR, '*', 'abundance.tsv')
-    files = sorted(glob.glob(pattern))
-    if not files:
-        print('No abundance.tsv files found under', RESULTS_DIR)
-        return
+def _format_count(v: float) -> str:
+    return str(int(v)) if v == int(v) else str(v)
 
-    samples = []
-    gene_set = set()
-    per_sample_counts = OrderedDict()
-    per_sample_tpm = OrderedDict()
+
+def main() -> None:
+    files = sorted(RESULTS_DIR.glob("*/abundance.tsv"))
+    if not files:
+        logger.error("No abundance.tsv files found under %s", RESULTS_DIR)
+        sys.exit(1)
+
+    samples: list[str] = []
+    gene_set: set[str] = set()
+    per_sample_counts: dict[str, dict[str, float]] = {}
+    per_sample_tpm:    dict[str, dict[str, float]] = {}
 
     for path in files:
-        sample = os.path.basename(os.path.dirname(path))
+        sample = path.parent.name
         samples.append(sample)
         counts, tpm = parse_abundance(path)
         per_sample_counts[sample] = counts
         per_sample_tpm[sample] = tpm
-        gene_set.update(counts.keys())
-        gene_set.update(tpm.keys())
+        gene_set.update(counts)
+        gene_set.update(tpm)
 
     genes = sorted(gene_set)
 
-    # write counts matrix
-    with open(OUT_COUNTS, 'w') as fo:
-        fo.write('gene\t' + '\t'.join(samples) + '\n')
+    with open(OUT_COUNTS, "w", encoding="utf-8") as fo:
+        fo.write("gene\t" + "\t".join(samples) + "\n")
         for g in genes:
-            row = [str(int(per_sample_counts[s].get(g, 0))) if per_sample_counts[s].get(g, 0).is_integer() else str(per_sample_counts[s].get(g, 0)) for s in samples]
-            fo.write(g + '\t' + '\t'.join(row) + '\n')
+            row = [_format_count(per_sample_counts[s].get(g, 0.0)) for s in samples]
+            fo.write(g + "\t" + "\t".join(row) + "\n")
 
-    # write tpm matrix
-    with open(OUT_TPM, 'w') as fo:
-        fo.write('gene\t' + '\t'.join(samples) + '\n')
+    with open(OUT_TPM, "w", encoding="utf-8") as fo:
+        fo.write("gene\t" + "\t".join(samples) + "\n")
         for g in genes:
             row = [str(per_sample_tpm[s].get(g, 0.0)) for s in samples]
-            fo.write(g + '\t' + '\t'.join(row) + '\n')
+            fo.write(g + "\t" + "\t".join(row) + "\n")
 
-    print('Wrote:', OUT_COUNTS)
-    print('Wrote:', OUT_TPM)
+    logger.info("Wrote %s", OUT_COUNTS)
+    logger.info("Wrote %s", OUT_TPM)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    )
     main()
