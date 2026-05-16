@@ -9,35 +9,41 @@
 | 測試平台 | macOS `/Volumes/NO NAME/bio_DB/`（ExFAT 外接硬碟） |
 | 目標平台 | Linux `/mnt/space4/bio_lab_db/`（生產部署） |
 | 測試數據 | CRC Visium HD 官方數據（~39 GB）+ Bulk RNA Kallisto（84 樣本）+ sHG Proteomics |
+| 推理引擎 | 本機 llama.cpp Gemma 4 Vision（port 8080）/ Claude API（可切換） |
+| 前端介面 | FastAPI Web UI（`server/web_app.py`，port 8000） |
+| 測試覆蓋 | 105/106 PASSED（1 個既有路徑問題，非程式碼問題） |
 
 ### 已完成項目
 
 | 類別 | 完成項目 |
 |------|---------|
-| 基礎建設 | `00_init_db.py`（Schema）、`config/settings.py`、`config/db_utils.py`（safe_write / cleanup_stale_runs）、`.env.example` |
+| 基礎建設 | `00_init_db.py`（Schema）、`config/settings.py`（含 INFERENCE_BACKEND / CLAUDE_MODEL）、`config/db_utils.py`、`.env.example`、`pyrightconfig.json` |
 | L3 → L2 | `02_spatial_to_parquet.py`（CRC Visium HD → 416 MB Parquet）、Bulk RNA L2 pipeline（5 支腳本）、`01_register_sample.py`（自動掃描登記） |
-| 分析函式庫 | `analysis/bulk_eda.py`（兩階段寫入）、`analysis/report_generator.py`（兩階段寫入）、`analysis/bulk_timeseries.py`、`analysis/pathway_scoring.py`（ssGSEA/Z-score）、`analysis/multiomics_integration.py`（RNA-Protein）、`analysis/history_query.py` |
+| 分析函式庫 | `analysis/bulk_eda.py`、`analysis/report_generator.py`（QC 圖 base64 嵌入）、`analysis/bulk_timeseries.py`、`analysis/pathway_scoring.py`（ssGSEA/Z-score）、`analysis/multiomics_integration.py`（RNA-Protein）、`analysis/history_query.py` |
 | 多組學 | Proteomics 數據整合（sHG Perseus log2）、`gene_sets/hair_follicle.yaml`（OxPhos/TCA/FAO/Glycolysis/Cell_Cycle） |
-| Agent | `server/agent.py`（10 個工具，含 `bio_check_l2_sufficiency`） |
+| Agent | `server/agent.py`（10 個工具，雙後端 local/claude，圖片視覺分析，lazy client 初始化） |
+| Web UI | `server/web_app.py`（FastAPI SSE、session TTL、圖片 API）、`server/static/index.html`（圖片上傳/回傳/下載）、`server/static/history.html`（縮圖預覽） |
+| 啟動腳本 | `start_hermes.sh`（一鍵啟動 llama-server + FastAPI，ctx-size 16384） |
 | Code Promotion | `analysis/code_promoter.py`、`promotion_candidates` VIEW、`tools/registry.json`、`analysis/candidates/` |
 | 排程 | `scheduler/backup_db.py`（每日 02:00）、`scheduler/cleanup_l1_cache.py`（每日 03:30）、`scheduler/rebuild_hnsw.py`（每週日）、`scheduler/scan_new_samples.py`（每 30 分鐘） |
+| 測試 | 105/106 PASSED：`test_init_db`(4)、`test_phase2b`(14)、`test_phase3`(15)、`test_phase4`(19)、`test_phase5`(28, openai mock)、`test_phase6`(23) |
 | 文件 | `CLAUDE.md`、`docs/DATA_INTEGRATION_GUIDE.md`、所有 launchd plist 範本 |
 
 ### 下一步優先順序
 
 ```
 現在可做（本機）
-    ├── 啟用 launchd_scan_samples.plist 排程（5 分鐘）
-    ├── 跑 run_integration() 驗證 RNA-Protein 整合結果
-    └── Agent CLI 整合測試（server/agent.py）
+    ├── 端對端測試：Claude API 切換驗證（填入 ANTHROPIC_API_KEY）
+    └── 啟用 launchd_scan_samples.plist 排程
 
 接著（需 Telegram Token）
-    └── 第零階段：Telegram Bot 骨架
+    └── Telegram Bot 正式啟用（骨架已完成於 server/telegram_bot.py）
 
 之後（需 Linux 伺服器）
-    ├── Phase 6-B：FASTQ 自動 Kallisto 觸發
-    ├── Phase 6-C：分析完成 Telegram 推送
-    └── 第七階段：5 位成員實際使用驗證
+    ├── 路徑設定遷移（config/settings.py）
+    ├── Docker 沙盒替換 code_executor.py
+    ├── FASTQ 自動 Kallisto 觸發
+    └── 5 位成員實際使用驗證
 ```
 
 > 操作規範見 [CLAUDE.md](CLAUDE.md)，進度封存見 [PROGRESS.md](PROGRESS.md)，整合決策見 [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md)。
@@ -59,10 +65,11 @@
 
 以 **AI Agent + 三層數據倉儲** 建立實驗室智慧分析平台：
 
-- 成員透過 **Telegram** 自然語言查詢，無需任何程式能力
+- 成員透過 **Web UI 或 Telegram** 自然語言查詢，無需任何程式能力
 - 每次分析自動寫入時間軸資料庫，可隨時追溯
 - **多層防線**：SQL 精確查（0 token）→ 語意搜尋（少量 token），避免重複運算
 - 所有樣本、分析、報告統一累積，形成可持續增值的**實驗室知識資產**
+- **多模態**：支援圖片上傳讓 Gemma 4 Vision 視覺分析，分析結果圖直接顯示於聊天框
 
 ---
 
@@ -129,10 +136,11 @@ L1 金層（Gold）── 語意快取（近期記憶）
     │   │       → 重用 ≥ 3 次 → 觸發 scan_candidates() 評估升格
     │   │
     │   └─[3C] 全新分析（Code Generation Loop）
-    │           Claude 生成程式碼
+    │           LLM 生成程式碼
     │           → 安全檢查（ALLOWED_IMPORTS / BLOCKED_PATTERNS）
     │           → 沙盒執行（sandbox_exec，timeout=60s）
-    │           → 失敗 → 餵 traceback 給 Claude 修正（≤ 3 次）
+    │           → plt.show() hook 自動捕獲 matplotlib 圖 → base64 回傳聊天框
+    │           → 失敗 → 餵 traceback 給 LLM 修正（≤ 3 次）
     │           → 成功 → 存入 analysis_history.parameters["generated_code"]
     │           → 結果寫入 L1 → 回傳
     │
@@ -296,13 +304,13 @@ GROUP BY gene_name ORDER BY avg_expr DESC LIMIT 20
     │
     │   [promotion_candidates VIEW 偵測 reuse_count ≥ 3]
     ├── code_promoter.review_candidate()
-    │       Claude Haiku 審查：通用性 / 介面清晰 / 安全性
+    │       LLM 審查：通用性 / 介面清晰 / 安全性
     │       程式碼以 <untrusted_code> 標籤隔離（防 prompt injection）
     │       └─ 不通過 → 繼續存在 analysis_history 供重用
     │       └─ 通過 →
     │           ├── code_promoter.write_draft()
     │           │       → analysis/candidates/<name>.py
-    │           ├── Telegram 通知管理員
+    │           ├── 通知管理員（Web UI / Telegram）
     │           └── 管理員 /approve
     │                   → code_promoter.approve_candidate()
     │                       ├── candidates/<name>.py → analysis/<name>.py
@@ -379,7 +387,8 @@ CREATE TABLE tools (
 | ExFAT 斷電損壞 | `/Volumes/NO NAME/` 無日誌 | `safe_write()` 每次寫入後立即 CHECKPOINT |
 | `.wal` 殘留鎖住 DB | Python 程序被 kill | Agent 啟動時 `cleanup_stale_runs()` |
 | `running` 殭屍狀態 | 程序中途中斷 | > 24h → 標為 `stale` |
-| 多程序寫入衝突 | 多人 Telegram Bot | `asyncio.Lock` 序列化所有寫入 |
+| 多程序寫入衝突 | 多人同時查詢 | `asyncio.Lock` 序列化所有寫入 |
+| Session 記憶體洩漏 | Web UI 長期運行 | TTL 24h 自動清理，每小時執行 |
 
 ### safe_write()
 
@@ -404,7 +413,41 @@ scheduler/
 
 ---
 
-## 九、Agent 工具清單（BIO_TOOLS）
+## 九、推理引擎架構
+
+### 雙後端設計
+
+- **local**（預設）：Gemma 4 26B Vision IQ2_M，port 8080，離線/隱私/多模態圖片分析
+- **claude**：claude-sonnet-4-6（可設定），需 `ANTHROPIC_API_KEY`，更強推理時切換
+
+切換方式：Web UI sidebar「本機 / Claude」按鈕，即時生效，存 localStorage。
+
+### 工具呼叫格式轉換
+
+```
+BIO_TOOLS（Anthropic input_schema 格式）
+    │
+    ├─ local backend → _to_openai_tools() → OpenAI function calling
+    │                   → llama.cpp /v1/chat/completions
+    │
+    └─ claude backend → 直接使用 BIO_TOOLS + _convert_content()（image_url → Anthropic base64）
+                        → anthropic.Anthropic().messages.create()
+```
+
+### 視覺分析（多模態）
+
+```
+用戶貼圖（附件按鈕 / Ctrl+V 貼上）
+    → base64 data URI → ChatRequest.image_base64
+    → handle_message() 組裝 image_url content block
+    → Gemma 4 Vision 分析 → 工具呼叫
+    → 分析圖（matplotlib）plt.show() hook 捕獲
+    → SSE images[] 回傳聊天框 → img-card + ⬇ 下載
+```
+
+---
+
+## 十、Agent 工具清單（BIO_TOOLS）
 
 | 工具 | 用途 | Token |
 |------|------|-------|
@@ -414,17 +457,59 @@ scheduler/
 | `bio_history_search` | 語意搜尋 L1 快取（只傳 summary） | 少量 |
 | `bio_memory_query` | 從 L1 取回完整報告 | 少量 |
 | `bio_check_l2_sufficiency` | 確認 l2_ready=true（spatial_eda 前必呼叫） | **0** |
-| `bio_run_spatial_eda` | 執行空間轉錄體 EDA（需 l2_ready） | 正常 |
+| `bio_run_spatial_eda` | 執行空間轉錄體 EDA（需 l2_ready，含 QC 圖） | 正常 |
 | `bio_run_bulk_eda` | 執行 Bulk RNA-seq EDA | 正常 |
 | `bio_register_sample` | 登記新樣本至 sample_registry | **0** |
-| `bio_execute_code` | 沙盒執行動態生成 Python（3C 路徑） | 正常 |
+| `bio_execute_code` | 沙盒執行動態生成 Python（plt.show() 自動捕獲圖） | 正常 |
 
 **呼叫順序原則**：
 `bio_history_check` → `bio_history_search` → `bio_memory_query` → `bio_check_l2_sufficiency`（需 spatial 時）→ 分析工具 → `bio_execute_code`（最後手段）
 
 ---
 
-## 十、分析函式庫（analysis/）
+## 十一、Web UI 架構
+
+```
+瀏覽器
+    ├── GET  /                        → index.html（聊天介面）
+    ├── GET  /history                 → history.html（分析歷史 + 縮圖預覽）
+    ├── GET  /results/{id}            → 報告 HTML（含 base64 圖）
+    ├── POST /api/chat                → SSE 串流（text/event-stream）
+    │       events: status/ping/tool_calls/tokens/message/error/done
+    │       message: { text, report_link, images[] }
+    ├── GET  /api/history             → 歷史查詢 JSON
+    ├── GET  /api/results/{id}/csv    → 下載 top_genes CSV
+    ├── GET  /api/results/{id}/images → 取回報告圖片清單
+    ├── GET  /api/backend             → 查詢推理後端狀態
+    └── GET  /health                  → DB 健檢
+```
+
+### 圖片流向
+
+```
+分析工具執行
+    └─ report_generator → QC 圖 base64 嵌入 .md 報告（result_path）
+    └─ bio_execute_code → plt.show() hook → PNG → base64 嵌入工具結果
+         │
+         ▼ （executor thread，不阻塞 event loop）
+web_app._extract_images_from_tool_calls()
+    → 從 result_path .md 抽出 base64（regex: [A-Za-z0-9+/=\r\n]）
+    → SSE message event images[]
+         │
+         ▼
+前端 appendMsg() → img-card（圖片 + 檔名 + ⬇ 下載按鈕）
+history.html → GET /api/results/{id}/images → 縮圖預覽列
+```
+
+### Session 管理
+
+- 每個 tab UUID session_id，存 localStorage
+- 每個 session 保留最近 12 輪（24 messages）含 tool 輪次完整歷史
+- TTL 24h：每小時自動清理非活躍 session
+
+---
+
+## 十二、分析函式庫（analysis/）
 
 | 模組 | 主要函數 | 狀態 |
 |------|---------|------|
@@ -455,7 +540,7 @@ scheduler/
 
 ---
 
-## 十一、目錄結構
+## 十三、目錄結構
 
 ```
 /Volumes/NO NAME/bio_DB/
@@ -464,11 +549,13 @@ scheduler/
 ├── PROGRESS.md                     ← 進度封存
 ├── plan_zh.md                      ← 本文件
 ├── pyproject.toml                  ← 依賴管理（uv）
+├── pyrightconfig.json              ← ✅ Pyright 靜態分析設定
 ├── .env.example                    ← 環境變數範本
 ├── bio_memory.duckdb               ← 主 DuckDB（sample_registry + analysis_history + Views）
+├── start_hermes.sh                 ← ✅ 一鍵啟動 llama-server（port 8080）+ FastAPI
 │
 ├── config/
-│   ├── settings.py                 ← 集中路徑與 API key（BIO_DB_ROOT、DUCKDB_PATH 等）
+│   ├── settings.py                 ← 集中路徑與 API key（含 INFERENCE_BACKEND / CLAUDE_MODEL）
 │   └── db_utils.py                 ← ✅ safe_write / cleanup_stale_runs / db_health_check
 │
 ├── scripts/                        ← 一次性 L3→L2 轉換工具
@@ -483,11 +570,11 @@ scheduler/
 │   ├── bulk_timeseries.py          ← ✅ 時序均值 + log2FC
 │   ├── pathway_scoring.py          ← ✅ ssGSEA / Z-score（YAML 驅動）
 │   ├── multiomics_integration.py   ← ✅ RNA-Protein 整合 + Spearman + 滯後
-│   ├── report_generator.py         ← ✅ 兩階段寫入 + ≤50 字摘要
+│   ├── report_generator.py         ← ✅ 兩階段寫入 + ≤50 字摘要 + QC 圖 base64 嵌入
 │   ├── history_query.py            ← ✅ 0-token SQL 查詢
 │   ├── embed.py                    ← ✅ bge-m3 本機 embedding
 │   ├── l1_cache.py                 ← ✅ L1 快取讀寫
-│   ├── code_promoter.py            ← ✅ Code Promotion 框架
+│   ├── code_promoter.py            ← ✅ Code Promotion：掃描/審查/升格/拒絕
 │   └── candidates/                 ← 升格候選草稿暫存區
 │
 ├── tools/
@@ -497,8 +584,14 @@ scheduler/
 │   └── hair_follicle.yaml          ← ✅ OxPhos/TCA/FAO/Glycolysis/Cell_Cycle（小鼠）
 │
 ├── server/
-│   ├── agent.py                    ← ✅ Agent Loop + 10 個 BIO_TOOLS
-│   └── code_executor.py            ← 沙盒執行（sandbox_exec + SecurityError）
+│   ├── agent.py                    ← ✅ Agent Loop + 10 個 BIO_TOOLS + 雙後端 + 視覺分析
+│   ├── web_app.py                  ← ✅ FastAPI SSE + session TTL + 圖片 API
+│   ├── code_executor.py            ← ✅ 沙盒執行（sandbox_exec + SecurityError）
+│   ├── telegram_bot.py             ← 骨架已建（待 Telegram Token 正式啟用）
+│   ├── bio_memory_server.py        ← MCP Server 骨架（Phase 9+）
+│   └── static/
+│       ├── index.html              ← ✅ 聊天介面（圖片上傳/回傳/下載）
+│       └── history.html            ← ✅ 分析歷史 + 縮圖預覽
 │
 ├── scheduler/
 │   ├── backup_db.py                ← ✅ 每日 02:00
@@ -514,10 +607,14 @@ scheduler/
 │
 ├── tests/
 │   ├── conftest.py
-│   ├── test_init_db.py
-│   ├── test_spatial_ingest.py
-│   └── test_phase2b.py
+│   ├── test_init_db.py             ← 4 tests ✅
+│   ├── test_phase2b.py             ← 14 tests ✅
+│   ├── test_phase3.py              ← 15 tests ✅
+│   ├── test_phase4.py              ← 19 tests ✅
+│   ├── test_phase5.py              ← 28 tests ✅（openai SDK mock）
+│   └── test_phase6.py              ← 23 tests ✅
 │
+├── results/                        ← 分析結果（含 .md 報告 + base64 QC 圖）
 ├── silver/                         ← L2 Parquet（scripts/ 寫入，analysis/ 唯讀）
 ├── gold/                           ← L1 快取 DuckDB（analysis/ 寫入）
 │   └── hermes_cache.duckdb
@@ -530,7 +627,7 @@ scheduler/
 
 ---
 
-## 十二、資料庫 Schema 總覽
+## 十四、資料庫 Schema 總覽
 
 ### sample_registry
 
@@ -576,7 +673,7 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ---
 
-## 十三、跨專案整合規則
+## 十五、跨專案整合規則
 
 將其他專案的數據或分析方法併入 bio_DB 時，依下列優先順序：
 
@@ -589,37 +686,42 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ---
 
-## 十四、實作階段進度
+## 十六、實作階段進度
 
 | 階段 | 名稱 | 狀態 |
 |------|------|------|
-| 第零階段 | Telegram Bot 骨架 | ⏳ 待實作 |
 | 第一階段 | 環境建置 + Schema | ✅ 完成 |
-| 第二階段 A | Visium HD → L2 Parquet | ✅ 完成（CRC 測試集） |
-| 第二階段 B | Bulk RNA-seq → L2 | ✅ TSV 完成；Parquet 轉換待補 |
+| 第二階段 A | Visium HD → L2 Parquet | ✅ 完成（CRC 測試集，416 MB） |
+| 第二階段 B | Bulk RNA-seq → L2 | ✅ TSV 完成（84 樣本）；Parquet 轉換待補 |
 | 第二階段 C | Proteomics 整合 | ✅ 完成（sHG Perseus log2） |
-| 第三階段 | 分析工具層 + 報告產生 | ✅ 完成（10 個 Agent 工具） |
+| 第三階段 | 分析工具層 + 報告產生 | ✅ 完成（10 個 Agent 工具 + report_generator QC 圖） |
 | 第三階段＋ | Code Promotion 框架 | ✅ 完成 |
-| 第四階段 | L1 語意快取 | ✅ 完成（bge-m3 本機） |
-| 第五階段 | MCP Server + Telegram 整合 | ⏳ 待實作 |
-| 第六階段 | 排程系統 | ✅ 4 個排程（Phase B/C 待實作） |
-| 第七階段 | 驗證與調校 | ⏳ 待實作 |
+| 第四階段 | L1 語意快取 | ✅ 完成（bge-m3 本機，1024-dim） |
+| 第五階段 | Agent + 測試套件 | ✅ 完成（105/106 PASSED，openai SDK mock） |
+| 第六階段 | 排程系統 | ✅ 4 個排程，launchd plist 範本齊備 |
+| 第七階段 | 推理引擎雙後端 | ✅ 完成（local llama.cpp + Claude API 可切換） |
+| 第八階段 | Web UI + 多模態 | ✅ 完成（圖片上傳/回傳/下載，SSE 串流，session TTL） |
+| 第九階段 | 端對端驗證 | ⏳ 進行中（Claude API 切換驗證、launchd 排程啟用） |
+| 第十階段 | Telegram Bot 正式啟用 | ⏳ 待 Telegram Token（骨架已完成） |
+| 第十一階段 | Linux 部署 | ⏳ 待伺服器（路徑遷移、Docker 沙盒替換） |
 
 ---
 
-## 十五、技術選型說明
+## 十七、技術選型說明
 
-### Agent 框架：自製輕量 Agent + Claude API
+### Agent 框架：自製輕量 Agent + 雙推理後端
 
-不採用 Hermes（需 ~40 GB VRAM GPU 自架）。實驗室規模（月百次查詢）下 Claude API 費用極低，Prompt Cache 後更省，推理與工具呼叫能力更強。
+- **local**（預設）：Gemma 4 26B Vision IQ2_M，本機 llama.cpp port 8080，零費用、離線、多模態
+- **claude**：claude-sonnet-4-6，需 `ANTHROPIC_API_KEY`，推理更強時切換
 
-| 任務 | Claude API | Python 工具 |
-|------|-----------|------------|
-| 理解使用者意圖 | ✅ | — |
-| 資料寫入（DuckDB、Parquet） | 決定呼叫哪個工具 | ✅ 實際寫入 |
-| 檔案分析（.h5ad、.parquet） | 處理 Python 回傳的摘要 | ✅ 讀取計算 |
-| 圖表生成（matplotlib） | 決定畫什麼 | ✅ 畫圖存檔 |
-| 分析歷史管理 | 呼叫 `bio_history_*` | ✅ 執行 SQL |
+實驗室規模（月百次查詢）下 Claude API 費用極低，Prompt Cache 後更省。工具呼叫格式於 `agent.py` 自動轉換（Anthropic input_schema ↔ OpenAI function calling）。
+
+- **理解使用者意圖**：LLM 負責
+- **資料寫入**（DuckDB、Parquet）：LLM 決定呼叫哪個工具，Python 實際寫入
+- **檔案分析**（.h5ad、.parquet）：Python 讀取計算，LLM 處理摘要
+- **圖表生成**（matplotlib）：LLM 決定畫什麼，Python 畫圖 + plt.show() 自動捕獲
+- **視覺分析**（圖片輸入）：Gemma 4 Vision / Claude 直接處理
+- **分析歷史管理**：LLM 呼叫 `bio_history_*`，Python 執行 SQL
 
 ### Embedding：bge-m3 本機（llama.cpp）
 
@@ -640,7 +742,7 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ---
 
-## 十六、關鍵路徑對照
+## 十八、關鍵路徑對照
 
 | 項目 | macOS 測試 | Linux 生產 |
 |------|-----------|-----------|
@@ -654,7 +756,7 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ---
 
-## 十七、參考文獻索引
+## 十九、參考文獻索引
 
 | 文件 | 內容 | 對應章節 |
 |------|------|---------|
