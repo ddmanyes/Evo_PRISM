@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd 排程：每 30 分鐘自動掃描 results_kallisto/ 並登記新樣本
+
+  安裝步驟：
+    1. 複製此檔到 ~/Library/LaunchAgents/com.hermes.scan_samples.plist
+    2. 確認路徑與你的環境一致（python 路徑、bio_DB 路徑）
+    3. launchctl load ~/Library/LaunchAgents/com.hermes.scan_samples.plist
+    4. 驗證：launchctl list | grep hermes
+
+  手動觸發測試：
+    launchctl start com.hermes.scan_samples
+
+  移除排程：
+    launchctl unload ~/Library/LaunchAgents/com.hermes.scan_samples.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.scan_samples</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhanqiru/.venvs/hermes-bio-memory/bin/python</string>
+        <string>/Volumes/NO NAME/bio_DB/scheduler/scan_new_samples.py</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/scan_samples.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/scan_samples_err.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
