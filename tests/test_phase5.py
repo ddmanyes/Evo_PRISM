@@ -390,7 +390,7 @@ class TestHandleMessage:
              patch("config.settings.ANTHROPIC_API_KEY", "sk-test"):
             result = handle_message("無限工具", max_tool_rounds=3)
 
-        assert "超過最大工具呼叫輪數" in result.text
+        assert "分析步驟較多" in result.text
         assert len(result.tool_calls) == 3
 
     def test_agent_response_total_tokens(self):

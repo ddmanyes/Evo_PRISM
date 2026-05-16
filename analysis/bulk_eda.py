@@ -207,59 +207,79 @@ def generate_bulk_report(
     """
     _validate_sample_id(sample_id)
 
-    counts = load_counts(counts_path)
-    qc     = qc_stats(counts)
-    top    = top_genes(counts, n=20)
-    corr   = sample_correlation(counts)
-
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    ts      = datetime.now().strftime("%Y%m%d_%H%M%S")
-    pca_out = REPORTS_DIR / f"pca_{sample_id}_{ts}.png"
-
-    try:
-        pca_path = str(pca_plot(counts, output_path=pca_out))
-    except Exception:
-        logger.warning("PCA 生成失敗（可能缺 scikit-learn），跳過", exc_info=True)
-        pca_path = "(PCA 圖生成失敗)"
-
-    report_text = _REPORT_TEMPLATE.format(
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        sample_id=sample_id,
-        n_samples=counts.shape[1],
-        n_genes=counts.shape[0],
-        qc_table=qc.to_markdown(floatfmt=".1f"),
-        n_top=20,
-        top_table=top.to_markdown(floatfmt=".1f"),
-        corr_table=corr.to_markdown(floatfmt=".3f"),
-        pca_path=pca_path,
-    )
-
-    report_path = REPORTS_DIR / f"bulk_eda_{sample_id}_{ts}.md"
-    report_path.write_text(report_text, encoding="utf-8")
-    logger.info("報告儲存至 %s", report_path)
-
-    avg_total = qc["total_counts"].mean()
-    avg_genes = int(qc["n_genes"].mean())
-    n_samples = counts.shape[1]
-    summary   = (
-        f"Bulk RNA {sample_id}：{n_samples} 樣本，"
-        f"均 {avg_genes:,} 基因，均 total counts {avg_total:,.0f}。"
-    )[:50]
-
     analysis_id = str(uuid.uuid4())
-    now         = datetime.now(timezone.utc)
+    started_at  = datetime.now(timezone.utc)
+    params_json = json.dumps({"counts_path": str(counts_path or "auto")})
 
     with duckdb.connect(str(DUCKDB_PATH)) as con:
         safe_write(
             con,
             """INSERT INTO analysis_history
                    (analysis_id, sample_id, analysis_type, parameters, status,
-                    result_path, requested_by, started_at, completed_at, summary)
-               VALUES (?, ?, 'bulk_eda', ?, 'completed', ?, ?, ?, ?, ?)""",
-            [analysis_id, sample_id,
-             json.dumps({"counts_path": str(counts_path or "auto")}),
-             str(report_path), requested_by, now, now, summary],
+                    requested_by, started_at)
+               VALUES (?, ?, 'bulk_eda', ?, 'running', ?, ?)""",
+            [analysis_id, sample_id, params_json, requested_by, started_at],
         )
+
+    try:
+        counts = load_counts(counts_path)
+        qc     = qc_stats(counts)
+        top    = top_genes(counts, n=20)
+        corr   = sample_correlation(counts)
+
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        ts      = started_at.strftime("%Y%m%d_%H%M%S")
+        pca_out = REPORTS_DIR / f"pca_{sample_id}_{ts}.png"
+
+        try:
+            pca_path = str(pca_plot(counts, output_path=pca_out))
+        except Exception:
+            logger.warning("PCA 生成失敗（可能缺 scikit-learn），跳過", exc_info=True)
+            pca_path = "(PCA 圖生成失敗)"
+
+        report_text = _REPORT_TEMPLATE.format(
+            timestamp=started_at.isoformat(),
+            sample_id=sample_id,
+            n_samples=counts.shape[1],
+            n_genes=counts.shape[0],
+            qc_table=qc.to_markdown(floatfmt=".1f"),
+            n_top=20,
+            top_table=top.to_markdown(floatfmt=".1f"),
+            corr_table=corr.to_markdown(floatfmt=".3f"),
+            pca_path=pca_path,
+        )
+
+        report_path = REPORTS_DIR / f"bulk_eda_{sample_id}_{ts}.md"
+        report_path.write_text(report_text, encoding="utf-8")
+        logger.info("報告儲存至 %s", report_path)
+
+        avg_total = qc["total_counts"].mean()
+        avg_genes = int(qc["n_genes"].mean())
+        n_samples = counts.shape[1]
+        summary   = (
+            f"Bulk RNA {sample_id}：{n_samples} 樣本，"
+            f"均 {avg_genes:,} 基因，均 total counts {avg_total:,.0f}。"
+        )[:50]
+
+        completed_at = datetime.now(timezone.utc)
+        with duckdb.connect(str(DUCKDB_PATH)) as con:
+            safe_write(
+                con,
+                """UPDATE analysis_history
+                      SET status='completed', result_path=?, completed_at=?, summary=?
+                    WHERE analysis_id=?""",
+                [str(report_path), completed_at, summary, analysis_id],
+            )
+
+    except Exception:
+        logger.exception("bulk_eda 分析失敗  analysis_id=%s", analysis_id)
+        with duckdb.connect(str(DUCKDB_PATH)) as con:
+            safe_write(
+                con,
+                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
+                [datetime.now(timezone.utc), analysis_id],
+            )
+        raise
 
     logger.info("analysis_history 寫入完成  analysis_id=%s", analysis_id)
     return analysis_id, str(report_path)

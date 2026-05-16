@@ -268,6 +268,7 @@ def write_report_to_history(
     report_text: str,
     summary: str,
     *,
+    analysis_id: Optional[str] = None,
     db_path: Optional[Path] = None,
     save_file: bool = True,
     requested_by: str = "report_generator",
@@ -275,11 +276,13 @@ def write_report_to_history(
     """
     將報告存檔並寫入 analysis_history。
 
+    若傳入 analysis_id（已 INSERT running），則 UPDATE 為 completed；
+    否則直接 INSERT completed（向後相容舊呼叫方式）。
+
     Returns:
         (analysis_id, result_path) — UUID str 與儲存路徑（save_file=False 時路徑為空）
     """
     db_path = db_path or DUCKDB_PATH
-    analysis_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
 
     result_path = ""
@@ -290,28 +293,28 @@ def write_report_to_history(
         Path(result_path).write_text(report_text, encoding="utf-8")
         logger.info("Report saved: %s", result_path)
 
-    with duckdb.connect(str(db_path)) as con:
-        safe_write(
-            con,
-            """
-            INSERT INTO analysis_history
-                (analysis_id, sample_id, analysis_type, parameters, status,
-                 result_path, requested_by, started_at, completed_at, summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                analysis_id,
-                sample_id,
-                "eda_report",
-                json.dumps({"format": "markdown"}),
-                "completed",
-                result_path,
-                requested_by,
-                now,
-                now,
-                summary,
-            ],
-        )
+    if analysis_id is None:
+        analysis_id = str(uuid.uuid4())
+        with duckdb.connect(str(db_path)) as con:
+            safe_write(
+                con,
+                """INSERT INTO analysis_history
+                       (analysis_id, sample_id, analysis_type, parameters, status,
+                        result_path, requested_by, started_at, completed_at, summary)
+                   VALUES (?, ?, 'eda_report', ?, 'completed', ?, ?, ?, ?, ?)""",
+                [analysis_id, sample_id, json.dumps({"format": "markdown"}),
+                 result_path, requested_by, now, now, summary],
+            )
+    else:
+        completed_at = datetime.now(timezone.utc)
+        with duckdb.connect(str(db_path)) as con:
+            safe_write(
+                con,
+                """UPDATE analysis_history
+                      SET status='completed', result_path=?, completed_at=?, summary=?
+                    WHERE analysis_id=?""",
+                [result_path, completed_at, summary, analysis_id],
+            )
 
     return analysis_id, result_path
 
@@ -321,7 +324,6 @@ def run_full_eda_report(
     *,
     db_path: Optional[Path] = None,
     save_file: bool = True,
-    verbose: bool = True,
     requested_by: str = "report_generator",
 ) -> dict:
     """
@@ -337,17 +339,38 @@ def run_full_eda_report(
     """
     db_path = db_path or DUCKDB_PATH
 
-    if verbose:
-        print(f"[report_generator] Collecting stats for '{sample_id}'...")
-    report, summary, stats = generate_eda_report(sample_id, db_path=db_path)
+    analysis_id = str(uuid.uuid4())
+    started_at  = datetime.now(timezone.utc)
+    with duckdb.connect(str(db_path)) as con:
+        safe_write(
+            con,
+            """INSERT INTO analysis_history
+                   (analysis_id, sample_id, analysis_type, parameters, status,
+                    requested_by, started_at)
+               VALUES (?, ?, 'eda_report', ?, 'running', ?, ?)""",
+            [analysis_id, sample_id, json.dumps({"format": "markdown"}),
+             requested_by, started_at],
+        )
 
-    if verbose:
-        print(f"[report_generator] Summary ({len(summary)} chars): {summary}")
+    try:
+        logger.info("Collecting stats for '%s'...", sample_id)
+        report, summary, stats = generate_eda_report(sample_id, db_path=db_path)
+        logger.info("Summary (%d chars): %s", len(summary), summary)
 
-    analysis_id, report_path = write_report_to_history(
-        sample_id, report, summary, db_path=db_path, save_file=save_file,
-        requested_by=requested_by,
-    )
+        analysis_id, report_path = write_report_to_history(
+            sample_id, report, summary,
+            analysis_id=analysis_id, db_path=db_path, save_file=save_file,
+            requested_by=requested_by,
+        )
+    except Exception:
+        logger.exception("eda_report 分析失敗  analysis_id=%s", analysis_id)
+        with duckdb.connect(str(db_path)) as con:
+            safe_write(
+                con,
+                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
+                [datetime.now(timezone.utc), analysis_id],
+            )
+        raise
 
     try:
         from analysis.l1_cache import write_to_l1_cache
@@ -358,13 +381,11 @@ def run_full_eda_report(
             summary=summary,
             analysis_id=analysis_id,
         )
-        if verbose:
-            print(f"[report_generator] L1 cache written.")
+        logger.info("L1 cache written.")
     except Exception as e:
         logger.warning("L1 cache write skipped (embedding server offline?): %s", e)
 
-    if verbose:
-        print(f"[report_generator] Done. analysis_id={analysis_id}")
+    logger.info("Done. analysis_id=%s", analysis_id)
 
     return {
         "analysis_id": analysis_id,
