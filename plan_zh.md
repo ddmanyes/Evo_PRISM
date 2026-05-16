@@ -770,7 +770,147 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ---
 
-## 附錄 A：未來擴充（暫不在主計畫內）
+## 附錄 A：設計決策與文獻依據
+
+每個核心設計決策均有明確的文獻或技術來源，避免「憑感覺設計」。
+
+### A1. 三層 Bronze / Silver / Gold 架構
+
+**來源**：Medallion Architecture（Databricks Lake House）概念；結構感知資料湖 LakeHarbor（ICDE 2024，`references/lakeharbor_icde2024.md`）
+
+**截取想法**：
+
+- 原始數據不可變（Bronze），確保可重現性
+- Silver 層做結構化轉換，集中計算一次而非每次查詢時重算
+- Gold 層作為熱快取，用於低延遲存取
+
+**本系統的調整**：Gold 層改用 HNSW 向量索引做語意搜尋（非傳統 BI Cube），適應自然語言查詢場景。
+
+---
+
+### A2. HNSW 向量語意搜尋
+
+**來源**：DuckDB VSS 擴充（`references/duckdb_vss.md`）；Malkov & Yashunin (2018) "Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs"
+
+**截取想法**：
+
+- HNSW 在高維向量（1024-dim）的 ANN 搜尋中兼顧速度（O(log N)）與精度
+- cosine similarity 比 L2 distance 更適合語意相似度比較
+- DuckDB 原生整合免去外部向量資料庫（Pinecone、Weaviate）的部署成本
+
+**本系統的調整**：TTL 7 天 + 每週日完整重建索引（HNSW 不支援增量更新），以防索引碎片化。
+
+---
+
+### A3. Agent-First 查詢架構 + Token 省策
+
+**來源**：Agent-First Data Systems（2025，`references/agent_first_data_systems.md`）；MemGPT 分層記憶模型（`references/memgpt.md`）
+
+**截取想法**：
+
+- Agent 不應每次都「暴力傳全量資料給 LLM」，應先讓資料庫回答結構化問題
+- MemGPT 的「主記憶 / 外部儲存 / 歸檔」分層概念 → 對應本系統的 L1 / L2 / L3
+
+**本系統的調整**：把 MemGPT 的「記憶分頁換入換出」簡化為「SQL 精確查（0 token）→ 語意搜尋（少量 token）→ 完整報告（正常 token）」三段防線，更適合生資批次分析場景（非對話連續性場景）。
+
+---
+
+### A4. 兩階段寫入 + 狀態機
+
+**來源**：資料庫可靠性設計通例（WAL / crash recovery）；長時間批次作業的 saga pattern
+
+**截取想法**：
+
+- 長時間任務（SpaceRanger ~4 小時）若只在完成時寫入，崩潰後記錄消失
+- 「先寫 running，完成再更新」確保任何崩潰都留下痕跡
+
+**本系統的調整**：加入 `stale` 狀態（> 24h running 自動標記），並以 `safe_write()` 在 ExFAT 無日誌環境下保護每次寫入。
+
+---
+
+### A5. Code Promotion 自動升格框架
+
+**來源**：無直接文獻對應；靈感來自 A/B 測試逐步推廣（progressive rollout）與函數式程式設計中的 memoization
+
+**截取想法**：
+
+- 動態生成的程式碼不應永遠停留在「不可信任」狀態
+- 重用 ≥ 3 次代表社群驗證（類似 GitHub star 的隱性信號）
+- LLM 審查 + 管理員人工核准 = 雙重把關，確保自動化不失控
+
+**本系統的原創設計**：`promotion_candidates` VIEW 自動偵測重用次數，觸發升格流程，無需人工追蹤。
+
+---
+
+### A6. 多模態視覺分析
+
+**來源**：Gemma 4 Vision（Google DeepMind，2025）；llama.cpp OpenAI-compatible API（`/v1/chat/completions`）
+
+**截取想法**：
+
+- 本機 Vision LLM 可在不上傳敏感實驗圖到雲端的前提下做視覺分析
+- OpenAI `image_url` content block 格式已成事實標準，llama.cpp 原生支援
+
+**本系統的調整**：`plt.show()` hook 自動捕獲 matplotlib 圖並回傳聊天框，解決「分析結果圖無法直接顯示於對話」的問題。
+
+---
+
+## 附錄 B：驗收標準與驗證方法
+
+系統設計有四個核心目標（源自第二章「問題」）。每個目標對應可量測的驗收指標。
+
+### B1. 消除重複運算
+
+**設計目標**：相同樣本的相同分析不重複執行。
+
+- **L1 命中率 ≥ 80%**（穩定使用後）：查詢 `SELECT COUNT(*) FROM memory_recent WHERE created_at > NOW() - INTERVAL '7 days'`
+- **`bio_history_check` 正確攔截**：`tests/test_phase5.py::test_history_check_returns_done`
+- **重複查詢不觸發新 running**：查詢後確認 `analysis_history` 筆數未增加
+
+---
+
+### B2. Token 消耗可控
+
+**設計目標**：結構化問題由 SQL 回答（0 token），LLM 只處理無法 SQL 化的部分。
+
+- **`bio_history_check/lookup/timeline` 不呼叫 LLM**：單元測試確認工具函數直接回傳 SQL 結果
+- **傳給 LLM 的資料 ≤ 50 行**：`report_generator.py` 輸出格式審查
+- **月 Token 消耗在預算內**：部署後 Anthropic Dashboard 監控
+
+---
+
+### B3. 分析可追溯
+
+**設計目標**：每次分析都有完整記錄，可追溯由誰、何時、對哪個樣本做了什麼。
+
+- **每次分析後 `analysis_history` 有記錄**：`tests/test_phase5.py::test_history_written_after_analysis`
+- **`analysis_index` VIEW 正確彙總**：`tests/test_init_db.py` View 正確性測試
+- **崩潰後 running → stale**：`tests/test_phase2b.py::test_cleanup_stale_runs`
+
+---
+
+### B4. 使用門檻低
+
+**設計目標**：實驗室成員不需懂命令列，透過自然語言即可取得分析結果。
+
+- **全程無需 CLI**：端對端手動測試（index.html → SSE → img-card 收到結果圖）
+- **圖片上傳可觸發視覺分析**：上傳 QC 圖，確認 Gemma 4 Vision 回應（附件按鈕 / Ctrl+V 貼上）
+- **歷史縮圖預覽**：history.html → 點擊「預覽」按鈕顯示縮圖列
+- **5 位成員可自行使用**：部署後使用者調查（定性）
+
+---
+
+### B5. 數據安全（ExFAT 環境）
+
+**設計目標**：斷電或程序崩潰後資料庫不損壞，分析歷史不遺失。
+
+- **`safe_write()` 每次寫入後 CHECKPOINT**：`config/db_utils.py` 程式碼審查
+- **每日備份成功**：執行後確認 `~/bio_db_backups/` 有新檔（APFS 分區）
+- **備份還原後筆數一致**：`python scheduler/backup_db.py --restore` 後查詢比對
+
+---
+
+## 附錄 C：未來擴充（暫不在主計畫內）
 
 ### LLMLingua — 中期記憶壓縮
 
