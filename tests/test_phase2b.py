@@ -247,7 +247,7 @@ class TestReportGenerator:
 
         from analysis.report_generator import run_full_eda_report
 
-        result = run_full_eda_report(SAMPLE_ID, db_path=db_path, save_file=True, verbose=False)
+        result = run_full_eda_report(SAMPLE_ID, db_path=db_path, save_file=True)
 
         assert "analysis_id" in result
         assert "summary" in result
