@@ -77,6 +77,7 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     backend: str = ""  # "local" | "claude" | ""（空字串讀 INFERENCE_BACKEND env）
+    image_base64: str = ""  # data:image/png;base64,... 或純 base64
 
 
 # ── HTML 工具 ─────────────────────────────────────────────────────────────────
@@ -307,7 +308,11 @@ async def chat(req: ChatRequest):
         history_snapshot = list(history_deque)
         future = loop.run_in_executor(
             None,
-            lambda: handle_message(req.message, history_snapshot, backend=req.backend),
+            lambda: handle_message(
+                req.message, history_snapshot,
+                backend=req.backend,
+                image_base64=req.image_base64,
+            ),
         )
 
         try:

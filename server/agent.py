@@ -539,13 +539,36 @@ def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list,
     system_msg = next((m["content"] for m in messages if m["role"] == "system"), SYSTEM_PROMPT)
     non_system = [m for m in messages if m["role"] != "system"]
 
-    # 將 OpenAI tool 格式轉回 Anthropic 格式傳給 Claude
+    # 將 openai image_url content 轉為 Anthropic base64 image block
+    def _convert_content(content):
+        if not isinstance(content, list):
+            return content
+        out = []
+        for block in content:
+            if block.get("type") == "image_url":
+                url = block["image_url"]["url"]
+                if url.startswith("data:"):
+                    media, b64 = url.split(",", 1)
+                    media_type = media.split(";")[0].replace("data:", "")
+                    out.append({"type": "image", "source": {
+                        "type": "base64", "media_type": media_type, "data": b64,
+                    }})
+                else:
+                    out.append({"type": "image", "source": {"type": "url", "url": url}})
+            else:
+                out.append(block)
+        return out
+
+    converted = [
+        {**m, "content": _convert_content(m["content"])} for m in non_system
+    ]
+
     resp = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=max_tokens,
         system=system_msg,
         tools=BIO_TOOLS,
-        messages=non_system,
+        messages=converted,
     )
     return resp.stop_reason, resp.content, resp.usage.input_tokens, resp.usage.output_tokens
 
@@ -572,6 +595,7 @@ def handle_message(
     model: str = "",
     max_tokens: int = 8192,
     max_tool_rounds: int = 15,
+    image_base64: str = "",
 ) -> AgentResponse:
     """
     處理一則使用者訊息，支援本機 llama.cpp 或 Claude API 兩種推理後端。
@@ -596,7 +620,18 @@ def handle_message(
     for m in (history or []):
         if m.get("role") in _HISTORY_ROLES and m.get("role") != "system":
             messages.append(m)
-    messages.append({"role": "user", "content": user_msg})
+
+    if image_base64:
+        # 確保帶 data URI prefix（llama.cpp openai-compatible 格式）
+        if not image_base64.startswith("data:"):
+            image_base64 = "data:image/png;base64," + image_base64
+        user_content: list[dict] = [
+            {"type": "text", "text": user_msg or "請描述並分析這張圖片。"},
+            {"type": "image_url", "image_url": {"url": image_base64}},
+        ]
+        messages.append({"role": "user", "content": user_content})
+    else:
+        messages.append({"role": "user", "content": user_msg})
 
     all_tool_calls: list[dict] = []
     total_input = 0
