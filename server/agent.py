@@ -634,11 +634,6 @@ def handle_message(
             total_input  += usage.prompt_tokens or 0
             total_output += usage.completion_tokens or 0
 
-        usage = response.usage
-        if usage:
-            total_input  += usage.prompt_tokens or 0
-            total_output += usage.completion_tokens or 0
-
         choice = response.choices[0]
         msg = choice.message
 
