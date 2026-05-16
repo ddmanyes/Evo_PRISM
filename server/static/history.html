@@ -71,6 +71,22 @@
 
   .empty   { text-align: center; padding: 60px 0; color: var(--muted); }
   .loading { text-align: center; padding: 40px 0; color: var(--muted); font-size: 14px; }
+
+  .preview-btn { padding: 3px 8px; border-radius: 5px; border: 1px solid #7c3aed;
+                 color: #7c3aed; background: white; font-size: 11px; cursor: pointer;
+                 margin-left: 6px; white-space: nowrap; }
+  .preview-btn:hover { background: #7c3aed; color: white; }
+  .thumb-row { display: none; background: #faf5ff; border-bottom: 1px solid var(--border); }
+  .thumb-row.open { display: table-row; }
+  .thumb-row td { padding: 10px 14px; }
+  .thumb-strip { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .thumb-card { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .thumb-card img { max-height: 80px; max-width: 120px; border-radius: 4px;
+                    border: 1px solid var(--border); cursor: pointer; object-fit: contain; }
+  .thumb-card a { font-size: 10px; color: var(--accent); text-decoration: none; }
+  .thumb-card a:hover { text-decoration: underline; }
+  .thumb-loading { color: var(--muted); font-size: 12px; }
+  .thumb-empty   { color: var(--muted); font-size: 12px; font-style: italic; }
 </style>
 </head>
 <body>
@@ -172,10 +188,14 @@ function renderTable(data) {
     return;
   }
   const rows = data.map(r => {
+    const aid = escHtml(r.analysis_id);
+    const previewBtn = r.has_report
+      ? '<button class="preview-btn" onclick="fetchThumbs(\'' + aid + '\', this)">🖼 預覽</button>'
+      : '';
     const viewBtn = r.has_report
-      ? '<a href="/results/' + r.analysis_id + '" target="_blank" class="view-btn">查看報告</a>'
+      ? '<a href="/results/' + aid + '" target="_blank" class="view-btn">查看報告</a>' + previewBtn
       : '<span class="no-report">—</span>';
-    return '<tr>' +
+    const dataRow = '<tr>' +
       '<td>' + escHtml(r.sample_id || '—') + '</td>' +
       '<td><code>' + escHtml(r.analysis_type || '—') + '</code></td>' +
       '<td>' + badgeHtml(r.status) + '</td>' +
@@ -183,11 +203,56 @@ function renderTable(data) {
       '<td class="summary-cell" title="' + escHtml(r.summary || '') + '">' + escHtml(r.summary || '—') + '</td>' +
       '<td>' + viewBtn + '</td>' +
       '</tr>';
+    const thumbRow = '<tr class="thumb-row" id="thumb-' + aid + '">' +
+      '<td colspan="6"><div class="thumb-strip thumb-loading">載入中…</div></td>' +
+      '</tr>';
+    return dataRow + (r.has_report ? thumbRow : '');
   }).join('');
 
   container.innerHTML = '<table>' +
     '<thead><tr><th>樣本 ID</th><th>分析類型</th><th>狀態</th><th>完成時間</th><th>摘要</th><th>報告</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table>';
+}
+
+async function fetchThumbs(analysisId, btnEl) {
+  const thumbRow = document.getElementById('thumb-' + analysisId);
+  if (!thumbRow) return;
+
+  // Toggle: if already open, close it
+  if (thumbRow.classList.contains('open')) {
+    thumbRow.classList.remove('open');
+    btnEl.textContent = '🖼 預覽';
+    return;
+  }
+
+  thumbRow.classList.add('open');
+  btnEl.textContent = '▲ 關閉';
+
+  // Only fetch once (strip replaces the loading placeholder)
+  const strip = thumbRow.querySelector('.thumb-strip');
+  if (!strip || !strip.classList.contains('thumb-loading')) return;
+
+  try {
+    const resp = await fetch('/api/results/' + analysisId + '/images');
+    const images = await resp.json();
+    if (!Array.isArray(images) || images.length === 0) {
+      strip.className = 'thumb-strip thumb-empty';
+      strip.textContent = '此報告沒有圖片';
+      return;
+    }
+    strip.className = 'thumb-strip';
+    strip.innerHTML = images.map(img => {
+      const fname = escHtml(img.filename);
+      return '<div class="thumb-card">' +
+        '<img src="' + img.data_uri + '" alt="' + fname + '" title="' + fname + '" ' +
+             'onclick="window.open(this.src)">' +
+        '<a href="' + img.data_uri + '" download="' + fname + '">⬇ ' + fname + '</a>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    strip.className = 'thumb-strip thumb-empty';
+    strip.textContent = '圖片載入失敗：' + escHtml(e.message);
+  }
 }
 
 function filterData() {

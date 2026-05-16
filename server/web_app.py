@@ -49,6 +49,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def _start_session_cleanup():
+    async def _cleanup_loop():
+        while True:
+            await asyncio.sleep(3600)  # every hour
+            _cleanup_old_sessions()
+    asyncio.create_task(_cleanup_loop())
+
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -69,6 +77,23 @@ def _get_session(session_id: str) -> tuple[collections.deque, threading.Lock]:
         _session_locks[session_id] = threading.Lock()
     _sessions_meta[session_id] = datetime.now(timezone.utc)
     return _sessions[session_id], _session_locks[session_id]
+
+
+_SESSION_TTL_HOURS = 24
+
+def _cleanup_old_sessions() -> None:
+    """Remove sessions inactive for more than _SESSION_TTL_HOURS hours."""
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None)
+    expired = [
+        sid for sid, last in _sessions_meta.items()
+        if (cutoff - last.replace(tzinfo=None)).total_seconds() > _SESSION_TTL_HOURS * 3600
+    ]
+    for sid in expired:
+        _sessions.pop(sid, None)
+        _session_locks.pop(sid, None)
+        _sessions_meta.pop(sid, None)
+    if expired:
+        logger.info("Cleaned up %d expired sessions", len(expired))
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -295,6 +320,46 @@ async def download_csv(analysis_id: str):
     )
 
 
+@app.get("/api/results/{analysis_id}/images")
+async def result_images(analysis_id: str):
+    """回傳分析報告中的圖片清單（filename + data_uri）。"""
+    import re
+
+    import duckdb
+
+    from config.settings import DUCKDB_PATH
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        row = con.execute(
+            "SELECT result_path FROM analysis_history WHERE analysis_id=?",
+            [analysis_id],
+        ).fetchone()
+    if not row or not row[0]:
+        return []
+    # Reuse existing _extract_images_from_tool_calls logic by reading the md directly
+    md_path = Path(row[0])
+    if not md_path.exists() or md_path.suffix != ".md":
+        return []
+    try:
+        md_text = md_path.read_text(encoding="utf-8")
+    except Exception:
+        return []
+    images: list[dict] = []
+    seen: set[str] = set()
+    for i, m in enumerate(re.finditer(
+        r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)', md_text
+    )):
+        alt, img_type, b64_raw = m.group(1), m.group(3), m.group(4)
+        b64_hash = b64_raw[:32]
+        if b64_hash in seen:
+            continue
+        seen.add(b64_hash)
+        data_uri = f"data:image/{img_type};base64," + b64_raw.replace("\n", "").replace("\r", "")
+        filename = (alt.strip().replace(" ", "_") or f"image_{i}") + "." + img_type
+        images.append({"filename": filename, "data_uri": data_uri})
+    return images
+
+
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     from server.agent import handle_message
@@ -337,7 +402,9 @@ async def chat(req: ChatRequest):
             })
 
             report_link = _extract_report_link(result.tool_calls)
-            images = _extract_images_from_tool_calls(result.tool_calls)
+            images = await loop.run_in_executor(
+                None, _extract_images_from_tool_calls, result.tool_calls
+            )
             yield _sse("message", {"text": result.text, "report_link": report_link, "images": images})
 
             with lock:
@@ -389,12 +456,14 @@ def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
 
         # 抽出所有 ![alt](data:image/...;base64,...) 區塊
         for i, m in enumerate(re.finditer(
-            r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([^)]{100,}))\)', md_text
+            r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)', md_text
         )):
-            alt, data_uri, img_type, _ = m.group(1), m.group(2), m.group(3), m.group(4)
-            if data_uri in seen:
+            alt, data_uri, img_type, b64_raw = m.group(1), m.group(2), m.group(3), m.group(4)
+            data_uri = f"data:image/{img_type};base64," + b64_raw.replace("\n", "").replace("\r", "")
+            b64_hash = b64_raw[:32]  # use prefix as dedup key
+            if b64_hash in seen:
                 continue
-            seen.add(data_uri)
+            seen.add(b64_hash)
             filename = (alt.strip().replace(" ", "_") or f"image_{i}") + "." + img_type
             images.append({"filename": filename, "data_uri": data_uri})
 
