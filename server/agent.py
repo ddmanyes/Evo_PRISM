@@ -444,15 +444,53 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
 
 def _exec_bio_execute_code(args: dict) -> str:
     from server.code_executor import sandbox_exec, SecurityError
+    import tempfile, os, base64
+    from pathlib import Path as _Path
+
     code = args["code"]
     timeout = int(args.get("timeout", 60))
+
+    # Inject figure-save hook: any plt.show() → save to temp file
+    fig_dir = tempfile.mkdtemp(prefix="hermes_fig_")
+    preamble = f"""
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as _plt_orig
+_hermes_fig_dir = {fig_dir!r}
+_hermes_fig_idx = [0]
+_orig_show = _plt_orig.show
+def _hermes_show(*a, **kw):
+    idx = _hermes_fig_idx[0]
+    _plt_orig.savefig(f"{{_hermes_fig_dir}}/fig_{{idx:02d}}.png", dpi=120, bbox_inches="tight")
+    _hermes_fig_idx[0] += 1
+    _plt_orig.close("all")
+_plt_orig.show = _hermes_show
+"""
+    augmented_code = preamble + "\n" + code
+
     try:
-        result = sandbox_exec(code, timeout=timeout)
+        result = sandbox_exec(augmented_code, timeout=timeout)
     except SecurityError as e:
         return f"[SecurityError] 程式碼違反安全規則：{e}"
+
+    # Collect any saved figures as base64
+    fig_paths = sorted(_Path(fig_dir).glob("fig_*.png"))
+    fig_md = ""
+    for fp in fig_paths:
+        b64 = base64.b64encode(fp.read_bytes()).decode()
+        fig_md += f"\n![figure](data:image/png;base64,{b64})\n"
+        try:
+            fp.unlink()
+        except Exception:
+            pass
+    try:
+        os.rmdir(fig_dir)
+    except Exception:
+        pass
+
     if result.success:
         out = result.output[:2000] if len(result.output) > 2000 else result.output
-        return f"執行成功（{result.duration_sec}s）\n{out}"
+        return f"執行成功（{result.duration_sec}s）\n{out}{fig_md}"
     return f"執行失敗（{result.duration_sec}s）\n{result.traceback[:1000]}"
 
 
@@ -524,7 +562,13 @@ LLAMA_BASE_URL = "http://localhost:8080/v1"
 LLAMA_MODEL    = "gemma-4"
 
 from openai import OpenAI as _OpenAI
-_local_client = _OpenAI(base_url=LLAMA_BASE_URL, api_key="not-needed")
+_local_client: Optional[_OpenAI] = None
+
+def _get_local_client() -> _OpenAI:
+    global _local_client
+    if _local_client is None:
+        _local_client = _OpenAI(base_url=LLAMA_BASE_URL, api_key="not-needed")
+    return _local_client
 
 _HISTORY_ROLES = {"user", "assistant", "tool", "system"}
 
@@ -575,7 +619,7 @@ def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list,
 
 def _make_local_call(messages: list[dict], model: str, max_tokens: int):
     """呼叫本機 llama.cpp，回傳 chat completion response。"""
-    return _local_client.chat.completions.create(
+    return _get_local_client().chat.completions.create(
         model=model,
         max_tokens=max_tokens,
         tools=_OPENAI_TOOLS,

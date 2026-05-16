@@ -7,10 +7,10 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：本機推理引擎切換（llama.cpp Gemma 4 Vision）；一鍵啟動腳本完成
+**里程碑**：Phase 8 — 圖片上傳/回傳 + 穩健性修復
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-16
-**commit**：71eee34（待新 commit）
+**commit**：76bb8fd → (latest)
 
 ---
 
@@ -166,12 +166,40 @@
 
 ---
 
+## ✅ Phase 8 完成（2026-05-16）
+
+- [x] `server/static/index.html` — 圖片上傳功能
+  - 附件按鈕（🖼）+ 剪貼簿 Ctrl+V 貼圖
+  - 圖片預覽條（送出前可清除）
+  - 用戶訊息泡泡顯示縮圖
+- [x] `server/agent.py` — 視覺分析支援
+  - `handle_message(image_base64=)` 參數，組裝 openai `image_url` content block
+  - Claude backend：自動轉為 Anthropic `base64 image` block
+  - 延遲初始化 `_local_client`（`_get_local_client()`），避免 import 時連線
+- [x] `server/web_app.py` — 圖片 SSE 傳遞
+  - `_extract_images_from_tool_calls()` 從 result_path .md 抽出 base64 圖片
+  - `message` SSE event 附帶 `images[]`（filename + data_uri）
+  - 圖片讀取移至 executor thread，不阻塞 event loop
+  - Session TTL 清理（24h，每小時自動執行）
+  - `GET /api/results/{id}/images` 端點供歷史頁使用
+- [x] `server/static/index.html` — Bot 回覆圖片卡片
+  - `img-card` 樣式：圖片預覽 + 檔名 + ⬇ 下載按鈕
+- [x] `server/static/history.html` — 歷史記錄圖片預覽
+  - 每筆有報告的分析記錄可展開圖片縮圖列
+- [x] `analysis/report_generator.py` — QC 圖嵌入報告（已於 Phase 7 完成）
+- [x] `server/agent.py` — `bio_execute_code` matplotlib 圖自動捕獲
+  - plt.show() hook → 存 PNG → base64 嵌入工具結果
+- [x] `tests/test_phase5.py` — mock 從 anthropic 改為 openai（28/28 PASSED）
+- [x] regex 修正：base64 抽取改用字符類 `[A-Za-z0-9+/=]` 避免 `)` 截斷
+
+---
+
 ## ⏭️ 下一步（按優先順序）
 
-1. `test_phase5.py` 更新：mock 從 anthropic 改為 openai
-2. 端對端測試：Claude API 切換驗證（填入 `ANTHROPIC_API_KEY`）
-3. Linux 伺服器遷移（見 plan_zh.md checklist）
-4. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
+1. 端對端測試：Claude API 切換驗證（填入 `ANTHROPIC_API_KEY`）
+2. Linux 伺服器遷移（見 plan_zh.md checklist）
+3. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
+4. Telegram Bot token 申請（Phase 0 正式啟用）
 
 ---
 
@@ -206,6 +234,7 @@
 | 2026-05-15 | Phase 5 完成 | code_executor + agent loop + 28/28 tests，82/83 全套通過 |
 | 2026-05-15 | Phase 6 完成 | Telegram Bot + 23/23 tests，103/104 全套通過 |
 | 2026-05-15 | 安全性與正確性全面審查（5 輪）| 修復 17 項問題，詳見下方安全審查記錄 |
+| 2026-05-16 | Phase 8 完成 | 圖片上傳/回傳/下載 + session TTL + lazy client + matplotlib 捕獲 |
 
 ---
 
