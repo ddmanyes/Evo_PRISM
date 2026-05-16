@@ -1,7 +1,8 @@
 """
 Phase 5 — Hermes Bio-Memory Agent Loop。
 
-Claude API 為核心推理引擎，透過 BIO_TOOLS 工具清單驅動：
+推理引擎：llama.cpp OpenAI-compatible API（port 8080，本機 Gemma 4 Vision）
+工具呼叫格式：OpenAI function calling
 
     使用者查詢
         │
@@ -44,12 +45,14 @@ SYSTEM_PROMPT = """你是 Hermes Bio-Memory，一個專為實驗室生物資訊�
 3C. **bio_run_bulk_eda**：Bulk RNA-seq EDA（QC + top genes + PCA），需先執行 pipeline 腳本產生計數矩陣。
 4. **bio_execute_code**：非標準分析，動態生成並沙盒執行 Python 程式碼。
 
-## 回答原則
+## 回答原則（非常重要）
 
-- 回答使用繁體中文
+- **每次工具呼叫完成後，必須用繁體中文輸出總結給使用者**，不可沉默結束
+- 若工具回傳數字/列表結果，直接在回答中列出，不要只說「已完成」
 - 分析結果簡潔摘要，不複製整份報告
 - 明確指出結果路徑（result_path）供使用者自行查閱完整報告
 - 若需新分析，先說明預計步驟再執行
+- **禁止回傳空白回覆**：即使工具已執行，也必須用文字說明結果
 
 ## 資料說明
 
@@ -495,6 +498,69 @@ class AgentResponse:
         return self.input_tokens + self.output_tokens
 
 
+# ── BIO_TOOLS → OpenAI function calling 格式 ─────────────────────────────────
+
+def _to_openai_tools(tools: list[dict]) -> list[dict]:
+    """將 Anthropic tool schema 轉為 OpenAI function calling 格式。"""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            },
+        }
+        for t in tools
+    ]
+
+
+_OPENAI_TOOLS = _to_openai_tools(BIO_TOOLS)
+
+
+# ── 推理後端 ─────────────────────────────────────────────────────────────────
+
+LLAMA_BASE_URL = "http://localhost:8080/v1"
+LLAMA_MODEL    = "gemma-4"
+
+from openai import OpenAI as _OpenAI
+_local_client = _OpenAI(base_url=LLAMA_BASE_URL, api_key="not-needed")
+
+_HISTORY_ROLES = {"user", "assistant", "tool", "system"}
+
+
+def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list, int, int]:
+    """呼叫 Claude API，回傳 (stop_reason, content_blocks, input_tokens, output_tokens)。"""
+    import anthropic
+    from config.settings import ANTHROPIC_API_KEY, CLAUDE_MODEL
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    # Claude API 的 system 從 messages 中分離
+    system_msg = next((m["content"] for m in messages if m["role"] == "system"), SYSTEM_PROMPT)
+    non_system = [m for m in messages if m["role"] != "system"]
+
+    # 將 OpenAI tool 格式轉回 Anthropic 格式傳給 Claude
+    resp = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=max_tokens,
+        system=system_msg,
+        tools=BIO_TOOLS,
+        messages=non_system,
+    )
+    return resp.stop_reason, resp.content, resp.usage.input_tokens, resp.usage.output_tokens
+
+
+def _make_local_call(messages: list[dict], model: str, max_tokens: int):
+    """呼叫本機 llama.cpp，回傳 chat completion response。"""
+    return _local_client.chat.completions.create(
+        model=model,
+        max_tokens=max_tokens,
+        tools=_OPENAI_TOOLS,
+        tool_choice="auto",
+        messages=messages,
+    )
+
+
 # ── 核心 Agent Loop ───────────────────────────────────────────────────────────
 
 
@@ -502,29 +568,34 @@ def handle_message(
     user_msg: str,
     history: Optional[list[dict]] = None,
     *,
-    model: str = "claude-sonnet-4-6",
-    max_tokens: int = 4096,
+    backend: str = "",
+    model: str = "",
+    max_tokens: int = 8192,
     max_tool_rounds: int = 15,
 ) -> AgentResponse:
     """
-    處理一則使用者訊息，驅動 Claude API 工具呼叫迴圈。
+    處理一則使用者訊息，支援本機 llama.cpp 或 Claude API 兩種推理後端。
 
     Args:
-        user_msg:       使用者自然語言訊息
-        history:        對話歷史（list of {'role': ..., 'content': ...}）
-        model:          Claude 模型 ID
-        max_tokens:     最大回覆 token 數
+        user_msg:        使用者自然語言訊息
+        history:         對話歷史（AgentResponse.messages 格式，含 tool 輪次）
+        backend:         "local" | "claude"（空字串則讀 INFERENCE_BACKEND env）
+        model:           模型名稱（空字串則依 backend 自動選擇）
+        max_tokens:      最大回覆 token 數
         max_tool_rounds: 最多幾輪工具呼叫（防無限迴圈）
 
     Returns:
-        AgentResponse(text, tool_calls, input_tokens, output_tokens)
+        AgentResponse(text, tool_calls, input_tokens, output_tokens, messages)
     """
-    import anthropic
-    from config.settings import ANTHROPIC_API_KEY
+    from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL
+    resolved_backend = backend or INFERENCE_BACKEND
+    resolved_model   = model or (CLAUDE_MODEL if resolved_backend == "claude" else LLAMA_MODEL)
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    messages = list(history or [])
+    # 組裝 messages：system + history（完整結構，含 tool 輪次）+ 新訊息
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for m in (history or []):
+        if m.get("role") in _HISTORY_ROLES and m.get("role") != "system":
+            messages.append(m)
     messages.append({"role": "user", "content": user_msg})
 
     all_tool_calls: list[dict] = []
@@ -532,53 +603,100 @@ def handle_message(
     total_output = 0
 
     for _round in range(max_tool_rounds):
-        response = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
-            tools=BIO_TOOLS,
+        if resolved_backend == "claude":
+            stop_reason, content_blocks, in_tok, out_tok = _make_claude_call(messages, max_tokens)
+            total_input  += in_tok
+            total_output += out_tok
+
+            if stop_reason != "tool_use":
+                text = next((b.text for b in content_blocks if hasattr(b, "text")), "（無文字回覆）")
+                messages.append({"role": "assistant", "content": text})
+                return AgentResponse(text=text, tool_calls=all_tool_calls,
+                                     input_tokens=total_input, output_tokens=total_output,
+                                     messages=messages)
+
+            tool_results = []
+            for block in content_blocks:
+                if block.type != "tool_use":
+                    continue
+                tool_result = execute_tool(block.name, block.input)
+                logger.info("Tool %r called: %s…", block.name, str(tool_result)[:60])
+                all_tool_calls.append({"name": block.name, "input": block.input, "result": tool_result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": tool_result})
+            messages.append({"role": "assistant", "content": content_blocks})
+            messages.append({"role": "user", "content": tool_results})
+            continue
+
+        # ── local backend (llama.cpp OpenAI-compatible) ───────────────────────
+        response = _make_local_call(messages, resolved_model, max_tokens)
+        usage = response.usage
+        if usage:
+            total_input  += usage.prompt_tokens or 0
+            total_output += usage.completion_tokens or 0
+
+        usage = response.usage
+        if usage:
+            total_input  += usage.prompt_tokens or 0
+            total_output += usage.completion_tokens or 0
+
+        choice = response.choices[0]
+        msg = choice.message
+
+        if msg.tool_calls:
+            # 明確建構 assistant 訊息，確保 tool_calls 不因 exclude_unset 被丟棄
+            assistant_msg: dict = {"role": "assistant", "content": msg.content}
+            assistant_msg["tool_calls"] = [tc.model_dump() for tc in msg.tool_calls]
+            messages.append(assistant_msg)
+
+            for tc in msg.tool_calls:
+                fn_name = tc.function.name
+                try:
+                    fn_args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError as exc:
+                    logger.warning("Tool %r: malformed arguments JSON: %s", fn_name, exc)
+                    tool_result = f"[Error] JSON decode failed for {fn_name}: {exc}"
+                    all_tool_calls.append({"name": fn_name, "input": {}, "result": tool_result})
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_result})
+                    continue
+
+                tool_result = execute_tool(fn_name, fn_args)
+                logger.info("Tool %r called: %s…", fn_name, str(tool_result)[:60])
+                all_tool_calls.append({"name": fn_name, "input": fn_args, "result": tool_result})
+                # 截斷過長的工具結果，避免撐爆 8192 context window
+                tool_msg = tool_result if len(tool_result) <= 800 else tool_result[:800] + "\n…（已截斷，完整內容見 result_path）"
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_msg})
+
+            continue
+
+        text = (msg.content or "").strip()
+
+        # Gemma 4 有時工具呼叫結束後不輸出文字；若有工具結果則自動彙整
+        if not text and all_tool_calls:
+            last_result = all_tool_calls[-1]["result"]
+            text = last_result if len(last_result) <= 2000 else last_result[:2000] + "\n…（已截斷）"
+
+        if not text:
+            text = "（無文字回覆）"
+
+        messages.append({"role": "assistant", "content": text})
+        return AgentResponse(
+            text=text,
+            tool_calls=all_tool_calls,
+            input_tokens=total_input,
+            output_tokens=total_output,
             messages=messages,
         )
-        total_input += response.usage.input_tokens
-        total_output += response.usage.output_tokens
 
-        if response.stop_reason != "tool_use":
-            # 最終文字回覆
-            text = next(
-                (b.text for b in response.content if hasattr(b, "text")),
-                "（無文字回覆）",
-            )
-            messages.append({"role": "assistant", "content": text})
-            return AgentResponse(
-                text=text,
-                tool_calls=all_tool_calls,
-                input_tokens=total_input,
-                output_tokens=total_output,
-                messages=messages,
-            )
-
-        # 收集本輪工具呼叫
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            tool_result = execute_tool(block.name, block.input)
-            logger.info("Tool %r called: %s…", block.name, str(tool_result)[:60])
-            all_tool_calls.append({"name": block.name, "input": block.input, "result": tool_result})
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": tool_result,
-            })
-
-        # 把工具結果還給 Claude
-        messages.append({"role": "assistant", "content": response.content})
-        messages.append({"role": "user", "content": tool_results})
-
-    # 超過 max_tool_rounds
+    # 超過 max_tool_rounds — 補上 closing assistant 訊息避免下一輪 messages 序列不合法
     executed = ", ".join(c["name"] for c in all_tool_calls) or "（無）"
+    exhaustion_text = (
+        f"[警告] 分析步驟較多，已執行 {len(all_tool_calls)} 個工具仍未完成。\n"
+        f"已呼叫：{executed}\n"
+        "請嘗試拆分查詢，例如先問「樣本基本資訊」再問「前 20 高表達基因」。"
+    )
+    messages.append({"role": "assistant", "content": exhaustion_text})
     return AgentResponse(
-        text=f"[警告] 分析步驟較多，已執行 {len(all_tool_calls)} 個工具仍未完成。\n已呼叫：{executed}\n請嘗試拆分查詢，例如先問「樣本基本資訊」再問「前 20 高表達基因」。",
+        text=exhaustion_text,
         tool_calls=all_tool_calls,
         input_tokens=total_input,
         output_tokens=total_output,

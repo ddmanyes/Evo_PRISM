@@ -29,9 +29,12 @@ EMBEDDING_DIM        = int(os.getenv("EMBEDDING_DIM", "1024"))
 LLAMACPP_BASE_URL    = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
 LLAMACPP_MODEL_PATH  = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
-if not ANTHROPIC_API_KEY:
-    import warnings
-    warnings.warn("ANTHROPIC_API_KEY 未設定 — Agent 功能將無法使用", stacklevel=1)
+
+# ── 推理後端 ───────────────────────────────────────────────
+# "local"  → llama.cpp port 8080（本機 Gemma 4，免費）
+# "claude" → Anthropic Claude API（需 ANTHROPIC_API_KEY）
+INFERENCE_BACKEND = os.getenv("INFERENCE_BACKEND", "local")
+CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 GOOGLE_API_KEY       = os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 

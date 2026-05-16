@@ -65,6 +65,8 @@ _REPORT_TEMPLATE = """\
 | 平均 UMI/bin | {mean_umi:.1f} |
 | bins with 0 genes | {zero_bins:,} ({zero_pct:.1%}) |
 
+{qc_figure}
+
 ---
 
 ## 3. 前 20 高表達基因
@@ -183,6 +185,7 @@ def _collect_stats(sample_id: str, db_path: Path) -> dict:
         "col_max": int(qc_df["array_col_8um"].max()),
         "valid_density": float((qc_df["n_genes"] > 0).mean()),
         "top_genes": top_df,
+        "obs_df": qc_df,  # 供 _generate_qc_figure_b64 使用
     }
 
 
@@ -237,6 +240,7 @@ def generate_eda_report(
         top_genes_table += f"| {row['gene_name']} | {int(row['total_umi']):,} | {int(row['n_bins']):,} |\n"
 
     summary = generate_summary(stats, sample_id)
+    qc_figure = _generate_qc_figure_b64(stats)
 
     report = _REPORT_TEMPLATE.format(
         sample_id=sample_id,
@@ -258,9 +262,45 @@ def generate_eda_report(
         col_max=stats["col_max"],
         valid_density=stats["valid_density"],
         summary=summary,
+        qc_figure=qc_figure,
     )
 
     return report, summary, stats
+
+
+def _generate_qc_figure_b64(stats: dict) -> str:
+    """產生 QC 分布圖，回傳 Markdown 內嵌 base64 字串。失敗時回傳空字串。"""
+    import base64
+    import io
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        obs = stats.get("obs_df")
+        if obs is None or obs.empty:
+            return ""
+
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+        axes[0].hist(obs["n_genes"].dropna(), bins=60, color="#2563eb", edgecolor="none", alpha=.8)
+        axes[0].set_title("Genes per bin", fontsize=12)
+        axes[0].set_xlabel("# genes")
+        axes[0].set_ylabel("# bins")
+
+        axes[1].hist(obs["total_counts"].dropna(), bins=60, color="#16a34a", edgecolor="none", alpha=.8)
+        axes[1].set_title("UMI per bin", fontsize=12)
+        axes[1].set_xlabel("total UMI")
+        axes[1].set_ylabel("# bins")
+
+        plt.tight_layout()
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=120)
+        plt.close(fig)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"\n![QC distributions](data:image/png;base64,{b64})\n"
+    except Exception as exc:
+        logger.warning("QC figure generation failed: %s", exc)
+        return ""
 
 
 def write_report_to_history(
