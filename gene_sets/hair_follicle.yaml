@@ -1,0 +1,113 @@
+# 毛囊幹細胞（sHG）分析基因集
+# 用於 analysis/pathway_scoring.py 的 ssGSEA 路徑評分
+#
+# 格式：
+#   pathway_name:
+#     description: 路徑說明
+#     genes: [Gene1, Gene2, ...]
+#
+# 基因名稱使用 Mouse gene symbol（首字母大寫，如 Sdha）
+# 來源：requlon 專案 scripts/03_multiomics_integration.py + scripts/21_ssgsea_pathway_scoring.py
+
+OxPhos:
+  description: 氧化磷酸化（電子傳遞鏈 + ATP 合酶）
+  genes:
+    # Complex I (NADH dehydrogenase)
+    - Ndufb5
+    - Ndufa4
+    - Ndufv1
+    - Ndufs2
+    - Ndufa9
+    - Ndufa12
+    - Ndufb8
+    # Complex II (Succinate dehydrogenase)
+    - Sdha
+    - Sdhb
+    - Sdhc
+    - Sdhd
+    # Complex III (Ubiquinol-cytochrome c reductase)
+    - Uqcrb
+    - Uqcrc1
+    - Uqcrc2
+    - Uqcrq
+    # Complex IV (Cytochrome c oxidase)
+    - Cox4i1
+    - Cox5b
+    - Cox6c
+    - Cox7a2
+    - Cox7c
+    # Complex V (ATP synthase)
+    - Atp5a1
+    - Atp5b
+    - Atp5c1
+    - Atp5f1
+    - Atp5pb
+    # Electron carriers
+    - Cycs
+
+TCA:
+  description: 三羧酸循環（TCA cycle / Krebs cycle）
+  genes:
+    - Cs       # Citrate synthase
+    - Aco2     # Aconitase
+    - Idh2     # Isocitrate dehydrogenase
+    - Idh3a
+    - Ogdh     # Alpha-ketoglutarate dehydrogenase
+    - Sucla2   # Succinyl-CoA ligase
+    - Sdha     # Succinate dehydrogenase (shared with OxPhos)
+    - Fh1      # Fumarate hydratase
+    - Mdh2     # Malate dehydrogenase
+    - Dlst     # Dihydrolipoamide S-succinyltransferase
+    - Dlat     # Dihydrolipoamide acetyltransferase
+    - Pdha1    # Pyruvate dehydrogenase
+
+FAO:
+  description: 脂肪酸氧化（Fatty acid oxidation / beta-oxidation）
+  genes:
+    - Acadm    # Medium-chain acyl-CoA dehydrogenase
+    - Acadl    # Long-chain acyl-CoA dehydrogenase
+    - Acadvl   # Very long-chain acyl-CoA dehydrogenase
+    - Hadha    # Trifunctional protein alpha
+    - Hadhb    # Trifunctional protein beta
+    - Echs1    # Enoyl-CoA hydratase
+    - Hadh     # Hydroxyacyl-CoA dehydrogenase
+    - Acaa2    # Acetyl-CoA acyltransferase
+    - Cpt1a    # Carnitine palmitoyltransferase 1a
+    - Cpt2     # Carnitine palmitoyltransferase 2
+    - Slc25a20 # Carnitine-acylcarnitine translocase
+
+Glycolysis:
+  description: 糖解作用
+  genes:
+    - Hk1      # Hexokinase 1
+    - Hk2      # Hexokinase 2
+    - Gpi1     # Glucose-6-phosphate isomerase
+    - Pfkl     # Phosphofructokinase L
+    - Pfkm
+    - Aldoa    # Aldolase A
+    - Tpi1     # Triosephosphate isomerase
+    - Gapdh    # Glyceraldehyde-3-phosphate dehydrogenase
+    - Pgk1     # Phosphoglycerate kinase
+    - Pgam1    # Phosphoglycerate mutase
+    - Eno1     # Enolase 1
+    - Pkm      # Pyruvate kinase M
+    - Ldha     # Lactate dehydrogenase A
+
+Cell_Cycle:
+  description: 細胞週期（E2F/Myc 驅動，用於過濾增殖偏差）
+  genes:
+    - E2f1
+    - E2f2
+    - E2f3
+    - Myc
+    - Ccnd1    # Cyclin D1
+    - Ccne1    # Cyclin E1
+    - Ccna2    # Cyclin A2
+    - Ccnb1    # Cyclin B1
+    - Cdk1
+    - Cdk2
+    - Cdk4
+    - Cdk6
+    - Pcna
+    - Mki67
+    - Top2a
