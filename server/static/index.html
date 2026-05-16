@@ -104,12 +104,31 @@
              font-size: 14px; font-family: inherit; resize: none; outline: none;
              max-height: 140px; line-height: 1.5; background: var(--bg); }
   textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  .attach-btn { width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border);
+                cursor: pointer; background: var(--bg); color: var(--muted); font-size: 18px;
+                flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+                transition: background .15s; }
+  .attach-btn:hover { background: var(--border); }
   .send-btn { width: 42px; height: 42px; border-radius: 10px; border: none; cursor: pointer;
               background: var(--accent); color: white; font-size: 18px; flex-shrink: 0;
               display: flex; align-items: center; justify-content: center; transition: background .15s; }
   .send-btn:hover { background: #1d4ed8; }
   .send-btn:disabled { background: #93c5fd; cursor: not-allowed; }
   .hint { font-size: 11px; color: var(--muted); text-align: center; margin-top: 6px; }
+
+  /* Image preview strip */
+  .img-preview-wrap { max-width: 860px; margin: 0 auto 8px; display: none; }
+  .img-preview-inner { display: flex; align-items: center; gap: 8px; background: var(--bg);
+                        border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; }
+  .img-preview-inner img { height: 56px; border-radius: 6px; object-fit: cover; }
+  .img-clear { background: none; border: none; cursor: pointer; color: var(--muted);
+               font-size: 16px; line-height: 1; padding: 0 4px; }
+  .img-clear:hover { color: #ef4444; }
+  .img-name { font-size: 12px; color: var(--muted); flex: 1; overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Inline images in chat bubbles */
+  .bubble img { max-width: 100%; border-radius: 8px; margin: 6px 0; display: block; }
 </style>
 </head>
 <body>
@@ -155,7 +174,16 @@
   </div>
 
   <div class="input-area">
+    <div class="img-preview-wrap" id="img-preview-wrap">
+      <div class="img-preview-inner">
+        <img id="img-preview-thumb" src="" alt="preview">
+        <span class="img-name" id="img-preview-name"></span>
+        <button class="img-clear" id="img-clear-btn" title="移除圖片">✕</button>
+      </div>
+    </div>
     <div class="input-row">
+      <input type="file" id="file-input" accept="image/*" style="display:none">
+      <button class="attach-btn" id="attach-btn" title="附加圖片">🖼</button>
       <textarea id="input" placeholder="輸入問題，Enter 送出，Shift+Enter 換行…"
                 rows="1" autofocus></textarea>
       <button class="send-btn" id="send-btn" title="送出">&#10148;</button>
@@ -190,11 +218,57 @@ fetch('/api/backend').then(r => r.json()).then(d => {
 
 marked.setOptions({ breaks: true, gfm: true });
 
-const messagesEl = document.getElementById('messages');
-const inputEl    = document.getElementById('input');
-const sendBtn    = document.getElementById('send-btn');
-const tokenEl    = document.getElementById('token-counter');
+const messagesEl   = document.getElementById('messages');
+const inputEl      = document.getElementById('input');
+const sendBtn      = document.getElementById('send-btn');
+const tokenEl      = document.getElementById('token-counter');
+const fileInput    = document.getElementById('file-input');
+const attachBtn    = document.getElementById('attach-btn');
+const previewWrap  = document.getElementById('img-preview-wrap');
+const previewThumb = document.getElementById('img-preview-thumb');
+const previewName  = document.getElementById('img-preview-name');
+const clearBtn     = document.getElementById('img-clear-btn');
 let totalIn = 0, totalOut = 0;
+let pendingImageB64 = '';  // base64 data URI of image to send
+
+// Image attach
+attachBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    pendingImageB64 = e.target.result; // data:image/...;base64,...
+    previewThumb.src = pendingImageB64;
+    previewName.textContent = file.name;
+    previewWrap.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+  fileInput.value = '';
+});
+clearBtn.addEventListener('click', clearImage);
+function clearImage() {
+  pendingImageB64 = '';
+  previewWrap.style.display = 'none';
+  previewThumb.src = '';
+  previewName.textContent = '';
+}
+
+// Paste image from clipboard
+document.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (!item) return;
+  const file = item.getAsFile();
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    pendingImageB64 = ev.target.result;
+    previewThumb.src = pendingImageB64;
+    previewName.textContent = '貼上的圖片';
+    previewWrap.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
 
 // Auto-resize textarea
 inputEl.addEventListener('input', () => {
@@ -231,13 +305,23 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function appendMsg(role, html, toolCalls, reportLink) {
+function appendMsg(role, html, toolCalls, reportLink, imageB64) {
   const msg = document.createElement('div');
   msg.className = 'msg ' + role;
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.innerHTML = html;
+  // 若有附圖（用戶端預覽）則先插縮圖
+  if (imageB64) {
+    const img = document.createElement('img');
+    img.src = imageB64;
+    img.style.maxHeight = '180px';
+    bubble.appendChild(img);
+    const br = document.createElement('div');
+    br.style.marginTop = '6px';
+    bubble.appendChild(br);
+  }
+  bubble.innerHTML += html;
   msg.appendChild(bubble);
 
   if (toolCalls && toolCalls.length > 0) {
@@ -279,14 +363,16 @@ let _sending = false;
 async function sendMessage() {
   if (_sending) return;
   const text = inputEl.value.trim();
-  if (!text) return;
+  if (!text && !pendingImageB64) return;
 
   _sending = true;
+  const imageToSend = pendingImageB64;
   inputEl.value = '';
   inputEl.style.height = 'auto';
   sendBtn.disabled = true;
+  clearImage();
 
-  appendMsg('user', escHtml(text));
+  appendMsg('user', escHtml(text || '（圖片）'), [], null, imageToSend);
   const thinkingEl = appendThinking();
 
   let toolCalls = [];
@@ -296,7 +382,7 @@ async function sendMessage() {
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-      body: JSON.stringify({ session_id: sessionId, message: text, backend: currentBackend }),
+      body: JSON.stringify({ session_id: sessionId, message: text, backend: currentBackend, image_base64: imageToSend }),
     });
 
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
