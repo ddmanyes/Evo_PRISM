@@ -144,7 +144,7 @@ def pca_plot(
     ax.legend(handles=handles, fontsize=8, title="condition")
     ax.set_xlabel(f"PC1 ({explained[0]:.1f}%)", fontsize=11)
     ax.set_ylabel(f"PC2 ({explained[1]:.1f}%)" if len(explained) > 1 else "PC2", fontsize=11)
-    ax.set_title("Bulk RNA-seq PCA（log1p counts）", fontsize=13)
+    ax.set_title("Bulk RNA-seq PCA (log1p counts)", fontsize=13)
     ax.grid(True, linestyle="--", alpha=0.4)
     fig.tight_layout()
 

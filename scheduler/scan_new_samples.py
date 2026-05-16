@@ -12,11 +12,20 @@ import sys
 import time
 from pathlib import Path
 
+import importlib.util
+
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DUCKDB_PATH
-from scripts.register_sample import scan_bulk_rna
+
+_spec = importlib.util.spec_from_file_location(
+    "register_sample",
+    Path(__file__).parent.parent / "scripts" / "01_register_sample.py",
+)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+scan_bulk_rna = _mod.scan_bulk_rna
 
 logging.basicConfig(
     level=logging.INFO,

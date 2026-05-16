@@ -9,9 +9,9 @@
 | 平台 | macOS `/Volumes/NO NAME/bio_DB/`（ExFAT，測試階段） |
 | 目標平台 | Linux `/mnt/space4/bio_lab_db/`（生產部署） |
 | 測試數據 | CRC Visium HD 官方數據（~39GB）+ Bulk RNA Kallisto L2 數據（從 KINGSTON 複製） |
-| 完成項目 | 計畫文件、CLAUDE.md、`00_init_db.py`、`02_spatial_to_parquet.py`（L2 416 MB）、`scheduler/backup_db.py`、`config/db_utils.py`、`docs/launchd_backup.plist.example`、Bulk RNA L2 pipeline（5 支腳本）、`01_register_sample.py`（自動掃描 + 登記）、`analysis/bulk_eda.py`（PCA / QC / DESeq2 輸出）、Agent `bio_run_bulk_eda` 工具、`scheduler/scan_new_samples.py`（每 30 分鐘自動掃描） |
-| 當前進行 | Bulk RNA 分析流程整合完成；Spatial 分析層仍為測試資料狀態 |
-| 下一步 | 啟用 launchd scan 排程 → FASTQ 自動 Kallisto 觸發（Phase B）→ Telegram 通知整合（Phase C） |
+| 完成項目 | 計畫文件、CLAUDE.md、`00_init_db.py`、`02_spatial_to_parquet.py`（L2 416 MB）、`scheduler/backup_db.py`、`config/db_utils.py`、Bulk RNA L2 pipeline（5 支腳本）、`01_register_sample.py`、`analysis/bulk_eda.py`、Agent `bio_run_bulk_eda`、`scheduler/scan_new_samples.py`、**Proteomics 數據整合**（sHG_log2intensity_0804.csv → sample_registry）、`analysis/bulk_timeseries.py`（時序 FC）、`analysis/pathway_scoring.py`（ssGSEA/Z-score）、`analysis/multiomics_integration.py`（RNA-Protein 整合）、`gene_sets/hair_follicle.yaml`、`docs/DATA_INTEGRATION_GUIDE.md` |
+| 當前進行 | Bulk RNA + Proteomics 多組學分析框架完成；Spatial 分析層仍為測試資料狀態 |
+| 下一步 | 啟用 launchd scan 排程 → 跑 `run_integration()` 驗證 RNA-Protein 整合 → FASTQ 自動 Kallisto 觸發（Phase B） |
 
 > 詳細進度見 [PROGRESS.md](PROGRESS.md)，操作規範見 [CLAUDE.md](CLAUDE.md)。
 
