@@ -7,9 +7,10 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 1 + Phase 2A 完成，準備進入 Phase 2B 分析層
+**里程碑**：Web UI 上線（取代 Telegram Bot）；Code Promotion 框架；兩階段寫入全面修復
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
-**最後更新**：2026-05-15
+**最後更新**：2026-05-16
+**commit**：71eee34
 
 ---
 
