@@ -129,6 +129,21 @@
 
   /* Inline images in chat bubbles */
   .bubble img { max-width: 100%; border-radius: 8px; margin: 6px 0; display: block; }
+
+  /* Analysis image cards */
+  .img-cards { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .img-card { border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+              background: var(--tool-bg); }
+  .img-card img { width: 100%; display: block; }
+  .img-card-footer { padding: 6px 10px; display: flex; align-items: center;
+                     justify-content: space-between; gap: 8px; }
+  .img-card-name { font-size: 12px; color: var(--muted); overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+  .img-dl-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+                background: var(--card); color: var(--accent); font-size: 12px;
+                cursor: pointer; text-decoration: none; white-space: nowrap;
+                display: inline-flex; align-items: center; gap: 4px; }
+  .img-dl-btn:hover { background: var(--accent-light); }
 </style>
 </head>
 <body>
@@ -305,7 +320,7 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function appendMsg(role, html, toolCalls, reportLink, imageB64) {
+function appendMsg(role, html, toolCalls, reportLink, imageB64, images) {
   const msg = document.createElement('div');
   msg.className = 'msg ' + role;
 
@@ -342,6 +357,34 @@ function appendMsg(role, html, toolCalls, reportLink, imageB64) {
     rl.className = 'report-link';
     rl.innerHTML = '<a href="' + reportLink + '" target="_blank">📄 查看完整報告</a>';
     msg.appendChild(rl);
+  }
+
+  if (images && images.length > 0) {
+    const cards = document.createElement('div');
+    cards.className = 'img-cards';
+    images.forEach(img => {
+      const card = document.createElement('div');
+      card.className = 'img-card';
+      const im = document.createElement('img');
+      im.src = img.data_uri;
+      im.alt = img.filename;
+      card.appendChild(im);
+      const footer = document.createElement('div');
+      footer.className = 'img-card-footer';
+      const name = document.createElement('span');
+      name.className = 'img-card-name';
+      name.textContent = img.filename;
+      const dl = document.createElement('a');
+      dl.className = 'img-dl-btn';
+      dl.href = img.data_uri;
+      dl.download = img.filename;
+      dl.textContent = '⬇ 下載';
+      footer.appendChild(name);
+      footer.appendChild(dl);
+      card.appendChild(footer);
+      cards.appendChild(card);
+    });
+    msg.appendChild(cards);
   }
 
   messagesEl.appendChild(msg);
@@ -425,8 +468,9 @@ async function sendMessage() {
           }
         } else if (eventType === 'message') {
           reportLink = data.report_link || null;
+          const images = data.images || [];
           thinkingEl.remove();
-          appendMsg('bot', marked.parse(data.text || ''), toolCalls, reportLink);
+          appendMsg('bot', marked.parse(data.text || ''), toolCalls, reportLink, null, images);
         } else if (eventType === 'error') {
           thinkingEl.remove();
           appendMsg('bot', '<span style="color:#ef4444">⚠ ' + escHtml(data.message || '未知錯誤') + '</span>');

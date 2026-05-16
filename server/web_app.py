@@ -337,7 +337,8 @@ async def chat(req: ChatRequest):
             })
 
             report_link = _extract_report_link(result.tool_calls)
-            yield _sse("message", {"text": result.text, "report_link": report_link})
+            images = _extract_images_from_tool_calls(result.tool_calls)
+            yield _sse("message", {"text": result.text, "report_link": report_link, "images": images})
 
             with lock:
                 history_deque.append({"role": "user", "content": req.message})
@@ -358,6 +359,46 @@ async def chat(req: ChatRequest):
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
+    """從工具呼叫結果的 result_path 讀取 .md，抽出所有 base64 圖片。
+    回傳 [{"filename": "qc.png", "data_uri": "data:image/png;base64,..."}, ...]
+    """
+    import re
+    images: list[dict] = []
+    seen: set[str] = set()
+
+    for call in tool_calls:
+        result = call.get("result", "")
+        if not isinstance(result, str):
+            continue
+
+        # 從工具結果文字中取出 result_path / report_path
+        match = re.search(r'(?:result_path|report_path):\s*(\S+)', result)
+        if not match:
+            continue
+        md_path = Path(match.group(1))
+        if not md_path.exists() or md_path.suffix != ".md":
+            continue
+
+        try:
+            md_text = md_path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        # 抽出所有 ![alt](data:image/...;base64,...) 區塊
+        for i, m in enumerate(re.finditer(
+            r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([^)]{100,}))\)', md_text
+        )):
+            alt, data_uri, img_type, _ = m.group(1), m.group(2), m.group(3), m.group(4)
+            if data_uri in seen:
+                continue
+            seen.add(data_uri)
+            filename = (alt.strip().replace(" ", "_") or f"image_{i}") + "." + img_type
+            images.append({"filename": filename, "data_uri": data_uri})
+
+    return images
 
 
 def _extract_report_link(tool_calls: list) -> Optional[str]:
