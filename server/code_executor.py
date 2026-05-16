@@ -45,6 +45,7 @@ ALLOWED_IMPORTS = {
     # 標準庫（安全子集；pathlib 移除：Path.read_text() 可繞過 open() 封鎖）
     "json", "re", "math", "datetime", "collections",
     "itertools", "functools", "typing", "dataclasses",
+    "glob",  # 路徑 pattern 展開（唯讀，無寫入風險）
 }
 
 BLOCKED_PATTERNS = [

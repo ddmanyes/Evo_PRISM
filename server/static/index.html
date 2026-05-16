@@ -32,6 +32,13 @@
                 display: inline-block; margin-right: 6px; }
   .health-dot.ok { background: #22c55e; }
   .health-dot.err { background: #ef4444; }
+  .backend-switcher { padding: 8px 12px; border-top: 1px solid #334155; margin-top: 8px; }
+  .backend-label { color: #64748b; font-size: 11px; text-transform: uppercase;
+                   letter-spacing: .05em; margin-bottom: 6px; }
+  .backend-toggle { display: flex; background: #0f172a; border-radius: 6px; padding: 2px; gap: 2px; }
+  .backend-btn { flex: 1; padding: 5px 0; border: none; border-radius: 4px; font-size: 12px;
+                 cursor: pointer; background: transparent; color: #64748b; transition: all .15s; }
+  .backend-btn.active { background: #334155; color: #fff; font-weight: 600; }
 
   /* Main */
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -112,6 +119,13 @@
   <a href="/" class="sidebar-link active">💬 聊天</a>
   <a href="/history" class="sidebar-link">📋 分析歷史</a>
   <div class="sidebar-bottom">
+    <div class="backend-switcher">
+      <div class="backend-label">推理引擎</div>
+      <div class="backend-toggle">
+        <button class="backend-btn active" id="btn-local" onclick="setBackend('local')">本機</button>
+        <button class="backend-btn" id="btn-claude" onclick="setBackend('claude')">Claude</button>
+      </div>
+    </div>
     <div class="sidebar-link" id="health-status">
       <span class="health-dot" id="health-dot"></span>
       <span id="health-text">檢查中…</span>
@@ -157,6 +171,22 @@ if (!sessionId) {
   sessionId = crypto.randomUUID();
   localStorage.setItem('hermes_sid', sessionId);
 }
+
+// Backend selection
+let currentBackend = localStorage.getItem('hermes_backend') || 'local';
+
+function setBackend(b) {
+  currentBackend = b;
+  localStorage.setItem('hermes_backend', b);
+  document.getElementById('btn-local').classList.toggle('active', b === 'local');
+  document.getElementById('btn-claude').classList.toggle('active', b === 'claude');
+}
+
+// Init backend from server default, then apply saved preference
+fetch('/api/backend').then(r => r.json()).then(d => {
+  if (!localStorage.getItem('hermes_backend')) currentBackend = d.default;
+  setBackend(currentBackend);
+}).catch(() => setBackend(currentBackend));
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -244,10 +274,14 @@ function appendThinking() {
   return msg;
 }
 
+let _sending = false;
+
 async function sendMessage() {
+  if (_sending) return;
   const text = inputEl.value.trim();
   if (!text) return;
 
+  _sending = true;
   inputEl.value = '';
   inputEl.style.height = 'auto';
   sendBtn.disabled = true;
@@ -262,7 +296,7 @@ async function sendMessage() {
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-      body: JSON.stringify({ session_id: sessionId, message: text }),
+      body: JSON.stringify({ session_id: sessionId, message: text, backend: currentBackend }),
     });
 
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -294,9 +328,15 @@ async function sendMessage() {
         if (eventType === 'tool_calls') {
           toolCalls = data.calls || [];
         } else if (eventType === 'tokens') {
-          totalIn  += data.input  || 0;
-          totalOut += data.output || 0;
-          tokenEl.textContent = '↑' + totalIn.toLocaleString() + ' ↓' + totalOut.toLocaleString() + ' tokens';
+          const inp = data.input  || 0;
+          const out = data.output || 0;
+          totalIn  += inp;
+          totalOut += out;
+          if (totalIn > 0 || totalOut > 0) {
+            tokenEl.textContent = '↑' + totalIn.toLocaleString() + ' ↓' + totalOut.toLocaleString() + ' tokens';
+          } else if ((data.tools || 0) > 0) {
+            tokenEl.textContent = 'tools: ' + data.tools;
+          }
         } else if (eventType === 'message') {
           reportLink = data.report_link || null;
           thinkingEl.remove();
@@ -311,6 +351,7 @@ async function sendMessage() {
     thinkingEl.remove();
     appendMsg('bot', '<span style="color:#ef4444">⚠ 連線錯誤：' + escHtml(err.message) + '</span>');
   } finally {
+    _sending = false;
     sendBtn.disabled = false;
     inputEl.focus();
   }

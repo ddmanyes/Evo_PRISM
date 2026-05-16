@@ -76,6 +76,7 @@ def _get_session(session_id: str) -> tuple[collections.deque, threading.Lock]:
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+    backend: str = ""  # "local" | "claude" | ""（空字串讀 INFERENCE_BACKEND env）
 
 
 # ── HTML 工具 ─────────────────────────────────────────────────────────────────
@@ -199,6 +200,23 @@ async def health():
         return {"ok": False, "error": str(e)}
 
 
+@app.get("/api/backend")
+async def get_backend():
+    from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL
+    local_ok = False
+    try:
+        import httpx
+        r = httpx.get("http://localhost:8080/health", timeout=2.0)
+        local_ok = r.json().get("status") == "ok"
+    except Exception:
+        pass
+    return {
+        "default": INFERENCE_BACKEND,
+        "local_available": local_ok,
+        "claude_model": CLAUDE_MODEL,
+    }
+
+
 @app.get("/api/history")
 async def api_history(sample_id: Optional[str] = None, limit: int = 50):
     import duckdb
@@ -288,7 +306,8 @@ async def chat(req: ChatRequest):
         loop = asyncio.get_running_loop()
         history_snapshot = list(history_deque)
         future = loop.run_in_executor(
-            None, handle_message, req.message, history_snapshot
+            None,
+            lambda: handle_message(req.message, history_snapshot, backend=req.backend),
         )
 
         try:
@@ -309,6 +328,7 @@ async def chat(req: ChatRequest):
             yield _sse("tokens", {
                 "input": result.input_tokens,
                 "output": result.output_tokens,
+                "tools": len(result.tool_calls),
             })
 
             report_link = _extract_report_link(result.tool_calls)

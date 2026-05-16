@@ -7,10 +7,10 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Web UI 上線（取代 Telegram Bot）；Code Promotion 框架；兩階段寫入全面修復
+**里程碑**：本機推理引擎切換（llama.cpp Gemma 4 Vision）；一鍵啟動腳本完成
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-16
-**commit**：71eee34
+**commit**：71eee34（待新 commit）
 
 ---
 
@@ -97,12 +97,13 @@
   - ALLOWED_IMPORTS 白名單（duckdb, pandas, numpy, scipy, anndata, scanpy…）
   - BLOCKED_PATTERNS 黑名單（os.system, subprocess, eval, exec, open()…）
   - `is_safe(code)` → (bool, reason)；`sandbox_exec(code, timeout=60)` → ExecResult
-- [x] `server/agent.py` — Claude API Agent Loop
+- [x] `server/agent.py` — 推理引擎切換至本機 llama.cpp（OpenAI-compatible API）
   - BIO_TOOLS：8 個工具定義（bio_history_* + bio_memory_* + bio_run_* + bio_execute_code）
+  - `_to_openai_tools()` 將 Anthropic schema 轉為 OpenAI function calling 格式
   - `handle_message(user_msg, history=[])` → AgentResponse（含 tool_calls + token 統計）
   - `execute_tool(name, input)` → str（分發至 Python 工具執行）
   - `run_cli()` 互動式 CLI（本機測試用）
-  - `config/settings.py` 新增 ANTHROPIC_API_KEY
+  - 推理引擎：`openai.OpenAI(base_url="http://localhost:8080/v1")`（Gemma 4 Vision）
 - [x] `tests/test_phase5.py` — 28/28 PASSED
   - TestIsSafe（10 tests）：白名單/黑名單安全檢查
   - TestSandboxExec（5 tests）：沙盒執行（含 timeout）
@@ -131,15 +132,46 @@
 
 ---
 
+## ✅ Phase 7 完成（2026-05-16）
+
+- [x] `server/agent.py` — 推理引擎雙後端支援
+  - `openai` 套件安裝至 venv（v2.37.0）
+  - `_to_openai_tools()` 轉換工具格式（Anthropic → OpenAI function calling）
+  - `handle_message(backend=)` 支援 `"local"` / `"claude"` 動態切換
+  - `_make_local_call()` / `_make_claude_call()` 分離實作
+  - 工具結果截斷至 800 字元，防止撐爆 context window
+  - max_tokens 預設提升至 8192
+  - 修復 5 個 HIGH 問題（history 過濾、tool_calls 序列化、exhaustion path、JSON decode、client 共用）
+- [x] `start_hermes.sh` — 一鍵啟動腳本
+  - 自動啟動 llama server（等待模型載入最多 120 秒）+ FastAPI Web UI
+  - 偵測已運行 server 並跳過，Ctrl+C 同時停止兩個 server
+  - ctx-size 提升至 16384（適合 18GB 記憶體）
+  - `--threads $(sysctl -n hw.physicalcpu)` 自動設定 CPU 執行緒
+  - Log 寫入 `logs/llama_server.log` / `logs/web_app.log`
+- [x] `pyrightconfig.json` — IDE 指向正確 venv，消除假錯誤
+- [x] `server/web_app.py` — 後端切換 API
+  - `ChatRequest.backend` 欄位（"local" / "claude"）
+  - `GET /api/backend` — 查詢預設後端與 llama server 狀態
+  - SSE tokens 事件加入工具呼叫數（`tools` 欄位）
+- [x] `server/static/index.html` — UI 改善
+  - Sidebar 加「本機 / Claude」切換按鈕，選擇存 localStorage
+  - `_sending` flag 防止 Enter 重複送出
+  - Token 計數：llama.cpp usage=null 時 fallback 顯示工具呼叫數
+- [x] `config/settings.py` — 新增 `INFERENCE_BACKEND`、`CLAUDE_MODEL` env var
+- [x] `server/code_executor.py` — 白名單加入 `glob`
+- [x] `analysis/report_generator.py` — EDA 報告嵌入 QC 圖
+  - `_generate_qc_figure_b64()` — genes/bin + UMI/bin 分布圖 base64 內嵌 Markdown
+  - `_collect_stats()` 回傳 `obs_df` 供繪圖使用
+  - 模板加入 `{qc_figure}` 佔位符
+
+---
+
 ## ⏭️ 下一步（按優先順序）
 
-### 部署準備
-
-1. `.env` 填入 `ANTHROPIC_API_KEY` + `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_IDS`
-2. 申請 Telegram Bot token（BotFather → `/newbot`）
-3. `docs/launchd_telegram_bot.plist.example` — macOS 自動啟動範本
-4. Linux 伺服器遷移（見 plan_zh.md checklist）
-5. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
+1. `test_phase5.py` 更新：mock 從 anthropic 改為 openai
+2. 端對端測試：Claude API 切換驗證（填入 `ANTHROPIC_API_KEY`）
+3. Linux 伺服器遷移（見 plan_zh.md checklist）
+4. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
 
 ---
 
@@ -147,7 +179,7 @@
 
 | 問題 | 狀態 | 說明 |
 |------|------|------|
-| 訊息平台未確認 | 待決定 | Telegram / LINE / Slack — 影響 Phase 0 |
+| 訊息平台 | 已決定 | FastAPI Web UI（取代 Telegram），`server/web_app.py` 已完成 |
 | launchd cleanup/rebuild 排程 | 待處理 | plist 已在 docs/，待 `launchctl load` × 2 |
 | Linux 伺服器權限 | 待確認 | `/mnt/space4/` 空間與寫入權限 |
 | MQ250422-A1-D1 缺失 web_summary | 既有問題 | 以 D1-D2 為主要原型 |

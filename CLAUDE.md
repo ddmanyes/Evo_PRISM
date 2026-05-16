@@ -163,6 +163,26 @@ launchctl load ~/Library/LaunchAgents/com.hermes.embedding_server.plist
 
 ---
 
+### Multimodal Server (Gemma 4 Vision)
+
+**支援影像輸入與多模態推理（port 8080）。**
+
+```bash
+# 手動啟動
+~/llama.cpp/build/bin/llama-server \
+  -m /Users/zhanqiru/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
+  --mmproj /Users/zhanqiru/mmproj-BF16.gguf \
+  --port 8080 --ctx-size 8192 --n-gpu-layers 99 \
+  --flash-attn -ctk q8_0 -ctv q8_0
+
+# 自動啟動
+cp docs/launchd_multimodal_server.plist.example \
+   ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
+launchctl load ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
+```
+
+---
+
 ### 備份與健檢
 
 ```bash
