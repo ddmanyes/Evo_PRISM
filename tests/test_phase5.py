@@ -311,35 +311,48 @@ class TestExecuteToolDispatch:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def _make_text_response(text: str, input_tokens: int = 10, output_tokens: int = 20):
-    """模擬 Claude text-only response（stop_reason='end_turn'）。"""
-    block = SimpleNamespace(type="text", text=text)
-    usage = SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
-    return SimpleNamespace(content=[block], stop_reason="end_turn", usage=usage)
+import json as _json
 
 
-def _make_tool_response(tool_name: str, tool_input: dict):
-    """模擬 Claude tool_use response（stop_reason='tool_use'）。"""
-    tool_block = SimpleNamespace(
-        type="tool_use", id="tu_001", name=tool_name, input=tool_input,
-    )
-    usage = SimpleNamespace(input_tokens=50, output_tokens=30)
-    return SimpleNamespace(content=[tool_block], stop_reason="tool_use", usage=usage)
+def _make_openai_text_response(text: str, prompt_tokens: int = 10, completion_tokens: int = 20):
+    """模擬 openai ChatCompletion text-only response（finish_reason='stop'）。"""
+    msg = SimpleNamespace(content=text, tool_calls=None)
+    choice = SimpleNamespace(message=msg, finish_reason="stop")
+    usage = SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+    return SimpleNamespace(choices=[choice], usage=usage)
+
+
+def _make_openai_tool_response(tool_name: str, tool_input: dict, tool_id: str = "tc_001"):
+    """模擬 openai ChatCompletion tool_calls response（finish_reason='tool_calls'）。"""
+    fn = SimpleNamespace(name=tool_name, arguments=_json.dumps(tool_input))
+    tc = SimpleNamespace(id=tool_id, type="function", function=fn)
+    tc.model_dump = lambda: {
+        "id": tool_id,
+        "type": "function",
+        "function": {"name": tool_name, "arguments": _json.dumps(tool_input)},
+    }
+    msg = SimpleNamespace(content=None, tool_calls=[tc])
+    choice = SimpleNamespace(message=msg, finish_reason="tool_calls")
+    usage = SimpleNamespace(prompt_tokens=50, completion_tokens=30)
+    return SimpleNamespace(choices=[choice], usage=usage)
 
 
 class TestHandleMessage:
-    def _mock_client(self, *responses):
+    def _mock_local_client(self, *responses):
+        """替換 server.agent._local_client 的 chat.completions.create。"""
         mock_client = MagicMock()
-        mock_client.messages.create.side_effect = list(responses)
+        mock_client.chat.completions.create.side_effect = list(responses)
         return mock_client
 
     def test_simple_text_reply(self):
         from server.agent import handle_message
-        mock_client = self._mock_client(_make_text_response("你好，我是 Hermes。"))
+        import server.agent as ag
 
-        with patch("anthropic.Anthropic", return_value=mock_client), \
-             patch("config.settings.ANTHROPIC_API_KEY", "sk-test"):
-            result = handle_message("你好")
+        mock_client = self._mock_local_client(
+            _make_openai_text_response("你好，我是 Hermes。")
+        )
+        with patch.object(ag, "_local_client", mock_client):
+            result = handle_message("你好", backend="local")
 
         assert "Hermes" in result.text
         assert result.input_tokens > 0
@@ -349,15 +362,15 @@ class TestHandleMessage:
 
     def test_tool_call_then_text(self):
         from server.agent import handle_message
-        mock_client = self._mock_client(
-            _make_tool_response("bio_execute_code",
-                                {"code": "print('42')", "description": "test"}),
-            _make_text_response("程式碼執行完成，輸出為 42。"),
-        )
+        import server.agent as ag
 
-        with patch("anthropic.Anthropic", return_value=mock_client), \
-             patch("config.settings.ANTHROPIC_API_KEY", "sk-test"):
-            result = handle_message("執行 print('42')")
+        mock_client = self._mock_local_client(
+            _make_openai_tool_response("bio_execute_code",
+                                       {"code": "print('42')", "description": "test"}),
+            _make_openai_text_response("程式碼執行完成，輸出為 42。"),
+        )
+        with patch.object(ag, "_local_client", mock_client):
+            result = handle_message("執行 print('42')", backend="local")
 
         assert "42" in result.text
         assert len(result.tool_calls) == 1
@@ -365,30 +378,37 @@ class TestHandleMessage:
 
     def test_history_passed_to_api(self):
         from server.agent import handle_message
-        mock_client = self._mock_client(_make_text_response("好的。"))
+        import server.agent as ag
+
+        mock_client = self._mock_local_client(_make_openai_text_response("好的。"))
         history = [
             {"role": "user", "content": "第一則訊息"},
             {"role": "assistant", "content": "了解。"},
         ]
+        with patch.object(ag, "_local_client", mock_client):
+            handle_message("第二則訊息", history, backend="local")
 
-        with patch("anthropic.Anthropic", return_value=mock_client), \
-             patch("config.settings.ANTHROPIC_API_KEY", "sk-test"):
-            handle_message("第二則訊息", history=history)
-
-        call_args = mock_client.messages.create.call_args
+        call_args = mock_client.chat.completions.create.call_args
         messages_sent = call_args.kwargs["messages"]
-        assert len(messages_sent) == 4  # 2 history + 1 new user msg + 1 final assistant reply
+        # system(1) + 2 history + 1 new user = 4
+        assert len(messages_sent) >= 4
+        roles = [m["role"] for m in messages_sent]
+        assert roles[0] == "system"
+        assert {"role": "user", "content": "第一則訊息"} in messages_sent
+        assert {"role": "assistant", "content": "了解。"} in messages_sent
+        assert {"role": "user", "content": "第二則訊息"} in messages_sent
 
     def test_max_tool_rounds_exceeded(self):
         from server.agent import handle_message
-        always_tool = _make_tool_response(
+        import server.agent as ag
+
+        always_tool = _make_openai_tool_response(
             "bio_execute_code", {"code": "print(1)", "description": "loop"}
         )
-        mock_client = self._mock_client(*[always_tool] * 5)
+        mock_client = self._mock_local_client(*[always_tool] * 5)
 
-        with patch("anthropic.Anthropic", return_value=mock_client), \
-             patch("config.settings.ANTHROPIC_API_KEY", "sk-test"):
-            result = handle_message("無限工具", max_tool_rounds=3)
+        with patch.object(ag, "_local_client", mock_client):
+            result = handle_message("無限工具", backend="local", max_tool_rounds=3)
 
         assert "分析步驟較多" in result.text
         assert len(result.tool_calls) == 3
@@ -399,27 +419,28 @@ class TestHandleMessage:
         assert r.total_tokens == 15
 
     def test_tool_result_appended_to_messages(self):
-        """驗證工具結果有正確附回給 Claude（messages 長度增加）。"""
+        """驗證工具結果有正確附回給 local backend（messages 長度增加）。"""
         from server.agent import handle_message
+        import server.agent as ag
 
         call_count = {"n": 0}
-        captured_messages = {}
+        captured_messages: dict = {}
 
         def mock_create(**kwargs):
             n = call_count["n"]
             call_count["n"] += 1
             captured_messages[n] = list(kwargs["messages"])
             if n == 0:
-                return _make_tool_response("bio_execute_code",
-                                           {"code": "print('x')", "description": "t"})
-            return _make_text_response("完成。")
+                return _make_openai_tool_response(
+                    "bio_execute_code", {"code": "print('x')", "description": "t"}
+                )
+            return _make_openai_text_response("完成。")
 
         mock_client = MagicMock()
-        mock_client.messages.create.side_effect = mock_create
+        mock_client.chat.completions.create.side_effect = mock_create
 
-        with patch("anthropic.Anthropic", return_value=mock_client), \
-             patch("config.settings.ANTHROPIC_API_KEY", "sk-test"):
-            handle_message("test tool result")
+        with patch.object(ag, "_local_client", mock_client):
+            handle_message("test tool result", backend="local")
 
-        # 第二次呼叫的 messages 應比第一次多（assistant tool_use + user tool_result）
+        # 第二次呼叫的 messages 應比第一次多（assistant tool_calls + tool result）
         assert len(captured_messages[1]) > len(captured_messages[0])
