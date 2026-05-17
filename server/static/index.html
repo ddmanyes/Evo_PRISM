@@ -158,6 +158,7 @@
       <div class="backend-toggle">
         <button class="backend-btn active" id="btn-local" onclick="setBackend('local')">本機</button>
         <button class="backend-btn" id="btn-claude" onclick="setBackend('claude')">Claude</button>
+        <button class="backend-btn" id="btn-google" onclick="setBackend('google')">Google</button>
       </div>
     </div>
     <div class="sidebar-link" id="health-status">
@@ -223,6 +224,7 @@ function setBackend(b) {
   localStorage.setItem('hermes_backend', b);
   document.getElementById('btn-local').classList.toggle('active', b === 'local');
   document.getElementById('btn-claude').classList.toggle('active', b === 'claude');
+  document.getElementById('btn-google').classList.toggle('active', b === 'google');
 }
 
 // Init backend from server default, then apply saved preference

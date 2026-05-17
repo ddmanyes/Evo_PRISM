@@ -691,6 +691,59 @@ def _make_local_call(messages: list[dict], model: str, max_tokens: int):
     )
 
 
+def _make_google_call(messages: list[dict], model: str, max_tokens: int) -> tuple:
+    """呼叫 Google Gemini API，回傳 (stop_reason, response, input_tokens, output_tokens)。"""
+    from google import genai
+    from google.genai import types
+    from config.settings import GOOGLE_API_KEY
+
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+
+    # BIO_TOOLS（Anthropic schema）→ Gemini FunctionDeclaration
+    gemini_tools = [
+        types.Tool(function_declarations=[
+            types.FunctionDeclaration(
+                name=t["name"],
+                description=t["description"],
+                parameters=t["input_schema"],
+            )
+            for t in BIO_TOOLS
+        ])
+    ]
+
+    system_instruction = next(
+        (m["content"] for m in messages if m["role"] == "system"), SYSTEM_PROMPT
+    )
+    history_contents = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        role = "model" if m["role"] == "assistant" else "user"
+        content = m["content"]
+        if isinstance(content, str):
+            history_contents.append(
+                types.Content(role=role, parts=[types.Part(text=content)])
+            )
+        elif isinstance(content, list):
+            parts = [types.Part(text=b["text"]) for b in content if b.get("type") == "text"]
+            if parts:
+                history_contents.append(types.Content(role=role, parts=parts))
+
+    resp = client.models.generate_content(
+        model=model,
+        contents=history_contents,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=gemini_tools,
+            max_output_tokens=max_tokens,
+        ),
+    )
+    in_tok  = getattr(resp.usage_metadata, "prompt_token_count", 0) or 0
+    out_tok = getattr(resp.usage_metadata, "candidates_token_count", 0) or 0
+    finish  = resp.candidates[0].finish_reason.name if resp.candidates else "STOP"
+    return finish, resp, in_tok, out_tok
+
+
 # ── 核心 Agent Loop ───────────────────────────────────────────────────────────
 
 
@@ -718,9 +771,16 @@ def handle_message(
     Returns:
         AgentResponse(text, tool_calls, input_tokens, output_tokens, messages)
     """
-    from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL
+    from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL, GOOGLE_MODEL
     resolved_backend = backend or INFERENCE_BACKEND
-    resolved_model   = model or (CLAUDE_MODEL if resolved_backend == "claude" else LLAMA_MODEL)
+    if model:
+        resolved_model = model
+    elif resolved_backend == "claude":
+        resolved_model = CLAUDE_MODEL
+    elif resolved_backend == "google":
+        resolved_model = GOOGLE_MODEL
+    else:
+        resolved_model = LLAMA_MODEL
 
     # 組裝 messages：system + history（完整結構，含 tool 輪次）+ 新訊息
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -772,6 +832,34 @@ def handle_message(
             messages.append({"role": "assistant", "content": serializable_blocks})
             messages.append({"role": "user", "content": tool_results})
             continue
+
+        # ── google backend (Gemini API) ───────────────────────────────────────
+        if resolved_backend == "google":
+            from google.genai import types as _gtypes
+            finish, resp, in_tok, out_tok = _make_google_call(messages, resolved_model, max_tokens)
+            total_input  += in_tok
+            total_output += out_tok
+
+            candidate = resp.candidates[0] if resp.candidates else None
+            fn_calls = [p.function_call for p in (candidate.content.parts if candidate else [])
+                        if hasattr(p, "function_call") and p.function_call]
+
+            if fn_calls:
+                messages.append({"role": "assistant", "content": resp.text or ""})
+                for fc in fn_calls:
+                    fn_args = dict(fc.args) if fc.args else {}
+                    tool_result = execute_tool(fc.name, fn_args)
+                    logger.info("Tool %r called: %s…", fc.name, str(tool_result)[:60])
+                    all_tool_calls.append({"name": fc.name, "input": fn_args, "result": tool_result})
+                    truncated = tool_result[:800]
+                    messages.append({"role": "user", "content": f"[tool_result:{fc.name}] {truncated}"})
+                continue
+
+            text = (resp.text or "").strip() or "（無文字回覆）"
+            messages.append({"role": "assistant", "content": text})
+            return AgentResponse(text=text, tool_calls=all_tool_calls,
+                                 input_tokens=total_input, output_tokens=total_output,
+                                 messages=messages)
 
         # ── local backend (llama.cpp OpenAI-compatible) ───────────────────────
         response = _make_local_call(messages, resolved_model, max_tokens)
