@@ -232,7 +232,10 @@ def generate_bulk_report(
         pca_out = REPORTS_DIR / f"pca_{sample_id}_{ts}.png"
 
         try:
-            pca_path = str(pca_plot(counts, output_path=pca_out))
+            import base64 as _b64
+            pca_file = pca_plot(counts, output_path=pca_out)
+            pca_b64  = _b64.b64encode(pca_file.read_bytes()).decode()
+            pca_path = f"data:image/png;base64,{pca_b64}"
         except Exception:
             logger.warning("PCA 生成失敗（可能缺 scikit-learn），跳過", exc_info=True)
             pca_path = "(PCA 圖生成失敗)"

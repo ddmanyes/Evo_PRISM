@@ -433,43 +433,46 @@ def _sse(event: str, data: dict) -> str:
 
 
 def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
-    """從工具呼叫結果的 result_path 讀取 .md，抽出所有 base64 圖片。
-    回傳 [{"filename": "qc.png", "data_uri": "data:image/png;base64,..."}, ...]
+    """從工具呼叫結果抽出所有 base64 圖片，來源有兩種：
+    1. tool result 文字中直接內嵌的 ![alt](data:image/...;base64,...) 區塊
+    2. result_path 指向的 .md 報告檔案中的同格式區塊
+    回傳 [{"filename": "fig_00.png", "data_uri": "data:image/png;base64,..."}, ...]
     """
     import re
     images: list[dict] = []
     seen: set[str] = set()
+    IMG_RE = re.compile(
+        r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)'
+    )
 
-    for call in tool_calls:
+    def _extract_from_text(text: str, label_prefix: str) -> None:
+        for i, m in enumerate(IMG_RE.finditer(text)):
+            alt, data_uri, img_type, b64_raw = m.group(1), m.group(2), m.group(3), m.group(4)
+            b64_clean = b64_raw.replace("\n", "").replace("\r", "")
+            b64_hash = b64_clean[:32]
+            if b64_hash in seen:
+                continue
+            seen.add(b64_hash)
+            filename = (alt.strip().replace(" ", "_") or f"{label_prefix}_{i}") + "." + img_type
+            images.append({"filename": filename, "data_uri": f"data:image/{img_type};base64,{b64_clean}"})
+
+    for call_idx, call in enumerate(tool_calls):
         result = call.get("result", "")
         if not isinstance(result, str):
             continue
 
-        # 從工具結果文字中取出 result_path / report_path
+        # 來源 1：tool result 文字直接內嵌圖片（bio_execute_code 的 fig_md）
+        _extract_from_text(result, f"fig_{call_idx:02d}")
+
+        # 來源 2：result_path 指向的 .md 報告檔案
         match = re.search(r'(?:result_path|report_path):\s*(\S+)', result)
-        if not match:
-            continue
-        md_path = Path(match.group(1))
-        if not md_path.exists() or md_path.suffix != ".md":
-            continue
-
-        try:
-            md_text = md_path.read_text(encoding="utf-8")
-        except Exception:
-            continue
-
-        # 抽出所有 ![alt](data:image/...;base64,...) 區塊
-        for i, m in enumerate(re.finditer(
-            r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)', md_text
-        )):
-            alt, data_uri, img_type, b64_raw = m.group(1), m.group(2), m.group(3), m.group(4)
-            data_uri = f"data:image/{img_type};base64," + b64_raw.replace("\n", "").replace("\r", "")
-            b64_hash = b64_raw[:32]  # use prefix as dedup key
-            if b64_hash in seen:
-                continue
-            seen.add(b64_hash)
-            filename = (alt.strip().replace(" ", "_") or f"image_{i}") + "." + img_type
-            images.append({"filename": filename, "data_uri": data_uri})
+        if match:
+            md_path = Path(match.group(1))
+            if md_path.exists() and md_path.suffix == ".md":
+                try:
+                    _extract_from_text(md_path.read_text(encoding="utf-8"), f"report_{call_idx:02d}")
+                except Exception:
+                    pass
 
     return images
 
