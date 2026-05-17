@@ -691,13 +691,41 @@ def _make_local_call(messages: list[dict], model: str, max_tokens: int):
     )
 
 
-def _make_google_call(messages: list[dict], model: str, max_tokens: int) -> tuple:
-    """呼叫 Google Gemini API，回傳 (stop_reason, response, input_tokens, output_tokens)。"""
-    from google import genai
-    from google.genai import types
-    from config.settings import GOOGLE_API_KEY
+_google_client = None
 
-    client = genai.Client(api_key=GOOGLE_API_KEY)
+
+def _get_google_client():
+    global _google_client
+    if _google_client is None:
+        from google import genai
+        from config.settings import GOOGLE_API_KEY
+        _google_client = genai.Client(api_key=GOOGLE_API_KEY)
+    return _google_client
+
+
+def _strip_schema_defaults(schema: dict) -> dict:  # type: ignore[type-arg]
+    """遞迴移除 types.Schema 不接受的 'default' 欄位。"""
+    schema = {k: v for k, v in schema.items() if k != "default"}
+    if "properties" in schema:
+        schema["properties"] = {
+            k: _strip_schema_defaults(v) for k, v in schema["properties"].items()
+        }
+    return schema
+
+
+def _make_google_call(
+    messages: list[dict],
+    model: str,
+    max_tokens: int,
+    native_history: list | None = None,
+) -> tuple:
+    """呼叫 Google Gemini API，回傳 (finish_reason, response, input_tokens, output_tokens, history_contents)。
+
+    native_history: 若提供，直接使用（含 FunctionCall/FunctionResponse parts）；
+                    否則從 OpenAI-format messages 重建。
+    """
+    from google.genai import types
+    client = _get_google_client()
 
     # BIO_TOOLS（Anthropic schema）→ Gemini FunctionDeclaration
     gemini_tools = [
@@ -705,7 +733,7 @@ def _make_google_call(messages: list[dict], model: str, max_tokens: int) -> tupl
             types.FunctionDeclaration(
                 name=t["name"],
                 description=t["description"],
-                parameters=t["input_schema"],
+                parameters=types.Schema(**_strip_schema_defaults(t["input_schema"])),
             )
             for t in BIO_TOOLS
         ])
@@ -714,20 +742,36 @@ def _make_google_call(messages: list[dict], model: str, max_tokens: int) -> tupl
     system_instruction = next(
         (m["content"] for m in messages if m["role"] == "system"), SYSTEM_PROMPT
     )
-    history_contents = []
-    for m in messages:
-        if m["role"] == "system":
-            continue
-        role = "model" if m["role"] == "assistant" else "user"
-        content = m["content"]
-        if isinstance(content, str):
-            history_contents.append(
-                types.Content(role=role, parts=[types.Part(text=content)])
-            )
-        elif isinstance(content, list):
-            parts = [types.Part(text=b["text"]) for b in content if b.get("type") == "text"]
-            if parts:
-                history_contents.append(types.Content(role=role, parts=parts))
+
+    if native_history is not None:
+        history_contents = native_history
+    else:
+        history_contents = []
+        for m in messages:
+            if m["role"] == "system":
+                continue
+            role = "model" if m["role"] == "assistant" else "user"
+            content = m["content"]
+            if isinstance(content, str):
+                history_contents.append(
+                    types.Content(role=role, parts=[types.Part(text=content)])
+                )
+            elif isinstance(content, list):
+                parts = []
+                for b in content:
+                    if b.get("type") == "text":
+                        parts.append(types.Part(text=b["text"]))
+                    elif b.get("type") == "image_url":
+                        # data URI → inline_data
+                        url = b.get("image_url", {}).get("url", "")
+                        if url.startswith("data:"):
+                            header, data = url.split(",", 1)
+                            mime = header.split(";")[0].replace("data:", "")
+                            parts.append(types.Part(
+                                inline_data=types.Blob(mime_type=mime, data=data)
+                            ))
+                if parts:
+                    history_contents.append(types.Content(role=role, parts=parts))
 
     resp = client.models.generate_content(
         model=model,
@@ -741,7 +785,7 @@ def _make_google_call(messages: list[dict], model: str, max_tokens: int) -> tupl
     in_tok  = getattr(resp.usage_metadata, "prompt_token_count", 0) or 0
     out_tok = getattr(resp.usage_metadata, "candidates_token_count", 0) or 0
     finish  = resp.candidates[0].finish_reason.name if resp.candidates else "STOP"
-    return finish, resp, in_tok, out_tok
+    return finish, resp, in_tok, out_tok, history_contents
 
 
 # ── 核心 Agent Loop ───────────────────────────────────────────────────────────
@@ -763,7 +807,7 @@ def handle_message(
     Args:
         user_msg:        使用者自然語言訊息
         history:         對話歷史（AgentResponse.messages 格式，含 tool 輪次）
-        backend:         "local" | "claude"（空字串則讀 INFERENCE_BACKEND env）
+        backend:         "local" | "claude" | "google"（空字串則讀 INFERENCE_BACKEND env）
         model:           模型名稱（空字串則依 backend 自動選擇）
         max_tokens:      最大回覆 token 數
         max_tool_rounds: 最多幾輪工具呼叫（防無限迴圈）
@@ -803,6 +847,7 @@ def handle_message(
     all_tool_calls: list[dict] = []
     total_input = 0
     total_output = 0
+    _google_native: list = []  # accumulates native Gemini Content objects across tool rounds
 
     for _round in range(max_tool_rounds):
         if resolved_backend == "claude":
@@ -836,26 +881,50 @@ def handle_message(
         # ── google backend (Gemini API) ───────────────────────────────────────
         if resolved_backend == "google":
             from google.genai import types as _gtypes
-            finish, resp, in_tok, out_tok = _make_google_call(messages, resolved_model, max_tokens)
+
+            # First iteration builds history from messages; subsequent iterations
+            # pass the accumulated native_history so FunctionCall parts are preserved.
+            finish, resp, in_tok, out_tok, _google_native = _make_google_call(
+                messages, resolved_model, max_tokens,
+                native_history=_google_native if _round > 0 else None,
+            )
             total_input  += in_tok
             total_output += out_tok
 
             candidate = resp.candidates[0] if resp.candidates else None
-            fn_calls = [p.function_call for p in (candidate.content.parts if candidate else [])
+            candidate_parts = candidate.content.parts if (candidate and candidate.content) else []
+            fn_calls = [p.function_call for p in candidate_parts
                         if hasattr(p, "function_call") and p.function_call]
 
             if fn_calls:
-                messages.append({"role": "assistant", "content": resp.text or ""})
+                # Preserve the model turn with its FunctionCall parts in native history
+                _google_native.append(
+                    _gtypes.Content(role="model", parts=candidate_parts)
+                )
+                # Batch all tool results into a single user turn (Gemini requires alternating roles)
+                response_parts = []
                 for fc in fn_calls:
                     fn_args = dict(fc.args) if fc.args else {}
                     tool_result = execute_tool(fc.name, fn_args)
                     logger.info("Tool %r called: %s…", fc.name, str(tool_result)[:60])
                     all_tool_calls.append({"name": fc.name, "input": fn_args, "result": tool_result})
-                    truncated = tool_result[:800]
-                    messages.append({"role": "user", "content": f"[tool_result:{fc.name}] {truncated}"})
+                    response_parts.append(
+                        _gtypes.Part(function_response=_gtypes.FunctionResponse(
+                            name=fc.name,
+                            response={"result": tool_result[:800]},
+                        ))
+                    )
+                _google_native.append(_gtypes.Content(role="user", parts=response_parts))
                 continue
 
-            text = (resp.text or "").strip() or "（無文字回覆）"
+            # Handle blocked / truncated responses before accessing resp.text
+            if finish in ("SAFETY", "RECITATION", "PROHIBITED_CONTENT"):
+                text = "（回應被安全過濾器封鎖）"
+            elif finish == "MAX_TOKENS":
+                text = ((resp.text or "").strip() + "…（已截斷）") or "（已截斷）"
+            else:
+                text = (resp.text or "").strip() or "（無文字回覆）"
+
             messages.append({"role": "assistant", "content": text})
             return AgentResponse(text=text, tool_calls=all_tool_calls,
                                  input_tokens=total_input, output_tokens=total_output,
