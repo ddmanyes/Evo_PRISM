@@ -60,8 +60,10 @@ cp .env.example .env
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...      # 使用 Claude 後端時需要
-INFERENCE_BACKEND=local           # 預設本機推理，改 claude 切換雲端
+GOOGLE_API_KEY=AIza...            # 使用 Google Gemini 後端時需要
+INFERENCE_BACKEND=local           # 預設本機推理，改 claude 或 google 切換雲端
 CLAUDE_MODEL=claude-sonnet-4-6    # Claude 模型版本
+GOOGLE_MODEL=gemini-2.0-flash     # Google Gemini 模型版本
 ```
 
 ---

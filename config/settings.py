@@ -28,15 +28,17 @@ EMBEDDING_MODEL      = os.getenv("EMBEDDING_MODEL", "bge-m3-Q8_0")
 EMBEDDING_DIM        = int(os.getenv("EMBEDDING_DIM", "1024"))
 LLAMACPP_BASE_URL    = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
 LLAMACPP_MODEL_PATH  = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
-ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── 推理後端 ───────────────────────────────────────────────
 # "local"  → llama.cpp port 8080（本機 Gemma 4，免費）
 # "claude" → Anthropic Claude API（需 ANTHROPIC_API_KEY）
+# "google" → Google Gemini API（需 GOOGLE_API_KEY）
 INFERENCE_BACKEND = os.getenv("INFERENCE_BACKEND", "local")
 CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
-GOOGLE_API_KEY       = os.getenv("GOOGLE_API_KEY", "")
-OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
+GOOGLE_API_KEY    = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_MODEL      = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
+OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
 
 # ── L1 快取參數 ────────────────────────────────────────────
 L1_COSINE_THRESHOLD = 0.88

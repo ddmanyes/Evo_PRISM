@@ -228,7 +228,8 @@ async def health():
 
 @app.get("/api/backend")
 async def get_backend():
-    from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL
+    from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL, GOOGLE_MODEL
+    import os
     local_ok = False
     try:
         import httpx
@@ -236,10 +237,13 @@ async def get_backend():
         local_ok = r.json().get("status") == "ok"
     except Exception:
         pass
+    google_ok = bool(os.getenv("GOOGLE_API_KEY", ""))
     return {
         "default": INFERENCE_BACKEND,
         "local_available": local_ok,
         "claude_model": CLAUDE_MODEL,
+        "google_model": GOOGLE_MODEL,
+        "google_available": google_ok,
     }
 
 
