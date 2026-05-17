@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt
 
 matplotlib.use("Agg")  # 無 display 環境
 
+import base64
+import io
 import re
 import sys
 
@@ -61,6 +63,15 @@ def _results_dir(sample_id: str, analysis_type: str) -> Path:
     d = BIO_DB_ROOT / "results" / sample_id / analysis_type
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _fig_to_b64_md(fig, alt: str = "figure") -> str:
+    """將 matplotlib Figure 轉為 Markdown inline base64 字串。"""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    buf.seek(0)
+    b64 = base64.b64encode(buf.read()).decode()
+    return f"\n![{alt}](data:image/png;base64,{b64})\n"
 
 
 def _record_analysis(
@@ -109,7 +120,7 @@ def gene_spatial_map(
     figsize: tuple[int, int] = (8, 7),
     save: bool = True,
     db_path: Optional[Path] = None,
-) -> tuple[plt.Figure, str]:
+) -> tuple[plt.Figure, str, str]:
     """
     繪製單基因空間表達圖，座標為 array_row/col（8µm bin grid）。
 
@@ -153,11 +164,13 @@ def gene_spatial_map(
     plt.tight_layout()
 
     out_path = ""
+    fig_md = ""
     if save:
         out_dir = _results_dir(sample_id, "spatial_eda")
         out_path = str(out_dir / f"spatial_{gene_name}.png")
         fig.savefig(out_path, dpi=150)
         logger.info("Saved: %s", out_path)
+        fig_md = _fig_to_b64_md(fig, alt=f"{gene_name} spatial map")
 
         n_expr = int((df["expr"] > 0).sum())
         with duckdb.connect(str(db_path)) as write_con:
@@ -170,7 +183,7 @@ def gene_spatial_map(
                 f"{gene_name} 空間圖：{n_expr:,} bins 有表達，vmax={vmax:.1f}",
             )
 
-    return fig, out_path
+    return fig, out_path, fig_md
 
 
 def qc_stats(
@@ -226,6 +239,7 @@ def qc_stats(
 
         fig_path = str(out_dir / "qc_distributions.png")
         fig.savefig(fig_path, dpi=150)
+        df.attrs["fig_md"] = _fig_to_b64_md(fig, alt="QC distributions")
         plt.close(fig)
 
         median_genes = float(df["n_genes"].median())
@@ -283,7 +297,7 @@ def gene_coexpression(
     figsize: tuple[int, int] = (6, 5),
     save: bool = True,
     db_path: Optional[Path] = None,
-) -> tuple[plt.Figure, str]:
+) -> tuple[plt.Figure, str, str]:
     """
     兩基因共表達散點圖（每 bin 為一個點）。
 
@@ -317,12 +331,14 @@ def gene_coexpression(
     plt.tight_layout()
 
     out_path = ""
+    fig_md = ""
     if save:
         out_dir = _results_dir(sample_id, "spatial_eda")
         out_path = str(out_dir / f"coexpr_{gene_a}_{gene_b}.png")
         fig.savefig(out_path, dpi=150)
+        fig_md = _fig_to_b64_md(fig, alt=f"co-expression {gene_a} × {gene_b}")
 
-    return fig, out_path
+    return fig, out_path, fig_md
 
 
 if __name__ == "__main__":
@@ -338,5 +354,5 @@ if __name__ == "__main__":
 
     gene = sys.argv[1] if len(sys.argv) > 1 else "PTPRC"
     print(f"[spatial_eda] Gene spatial map: {gene}")
-    _, path = gene_spatial_map(sample, gene)
+    _, path, _ = gene_spatial_map(sample, gene)
     print(f"  saved: {path}")
