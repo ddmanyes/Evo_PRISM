@@ -120,28 +120,11 @@ L1 金層（Gold）── 語意快取（近期記憶）
 
 ## 四、資料庫 Schema 總覽
 
-### sample_registry
+本章依架構層級由上至下說明各儲存單元，對應三層架構中的 L1 Gold → L2 Silver。
 
-**用途：實驗室樣本名冊。** 每個生物樣本登記一筆，記錄它是什麼資料類型、原始檔案在哪、是否已轉換為 L2 Parquet、是否已完成分析。新樣本進來就新增一筆，之後不再修改。
+---
 
-```sql
-CREATE TABLE sample_registry (
-    sample_id      VARCHAR PRIMARY KEY,
-    project        VARCHAR,
-    data_type      VARCHAR,  -- visium_hd|visium|scrna|bulk_rnaseq|proteomics|other
-    platform       VARCHAR,  -- 10x_visium_hd|kallisto|maxquant|...
-    species        VARCHAR,  -- 'mouse'|'human'
-    tissue         VARCHAR,
-    l3_path        VARCHAR,
-    l2_ready       BOOLEAN DEFAULT FALSE,
-    analysis_done  BOOLEAN DEFAULT FALSE,
-    added_by       VARCHAR,
-    notes          VARCHAR,
-    last_updated   TIMESTAMP DEFAULT now()
-);
-```
-
-### memory_recent（L1 Gold）
+### L1 Gold：`memory_recent`
 
 **用途：語意去重快取。** 每次分析完成後，將查詢文字、報告內容與其向量 embedding 一起存入。下次收到語意相似的問題（cosine ≥ 0.88）時，直接回傳快取結果，不重新執行分析、不消耗 LLM token。TTL 7 天到期自動清除——過期快取可能對應已更新的分析結果，過期即失效是刻意設計，確保不回傳過時答案。此表可完整重建，丟失不影響資料完整性。
 
@@ -166,7 +149,48 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
     USING HNSW (embedding) WITH (metric = 'cosine');
 ```
 
-### analysis_history
+---
+
+### L2 Silver：Parquet 計數矩陣
+
+**用途：壓縮後的空間轉錄體特徵矩陣。** 由 `scripts/02_spatial_to_parquet.py` 從 L3 原始 SpaceRanger 輸出（`.h5ad`）一次性轉換而來，存於 `silver/<sample_id>/`。DuckDB 可直接查詢 Parquet，不需匯入記憶體，支援生資規模的 SQL 聚合。
+
+每個樣本包含三類檔案：
+
+| 檔案 | 欄位 | 說明 |
+| --- | --- | --- |
+| `obs_metadata.parquet` | `barcode`, `spatial_x`, `spatial_y`, `in_tissue`, … | 每個 bin 的空間座標與 QC 指標 |
+| `var_metadata.parquet` | `gene_name`, `gene_id`, `genome` | 基因註解 |
+| `expression/part-*.parquet` | `barcode`, `gene_name`, `count` | 長格式稀疏矩陣，僅儲存非零值（float32） |
+
+> Visium HD 8µm 解析度：約 21 萬 bins × 最多 3 萬基因；非零值約 2.1 億筆，壓縮後約 416 MB（zstd）。
+
+---
+
+### L2 Silver：`sample_registry`
+
+**用途：實驗室樣本名冊。** 每個生物樣本登記一筆，記錄它是什麼資料類型、原始檔案在哪、是否已轉換為 L2 Parquet、是否已完成分析。新樣本進來就新增一筆，之後不再修改。
+
+```sql
+CREATE TABLE sample_registry (
+    sample_id      VARCHAR PRIMARY KEY,
+    project        VARCHAR,
+    data_type      VARCHAR,  -- visium_hd|visium|scrna|bulk_rnaseq|proteomics|other
+    platform       VARCHAR,  -- 10x_visium_hd|kallisto|maxquant|...
+    species        VARCHAR,  -- 'mouse'|'human'
+    tissue         VARCHAR,
+    l3_path        VARCHAR,
+    l2_ready       BOOLEAN DEFAULT FALSE,
+    analysis_done  BOOLEAN DEFAULT FALSE,
+    added_by       VARCHAR,
+    notes          VARCHAR,
+    last_updated   TIMESTAMP DEFAULT now()
+);
+```
+
+---
+
+### L2 Silver：`analysis_history`
 
 **用途：分析操作永久帳本。** 每次執行分析就新增一筆，**永遠不刪除**。記錄對哪個樣本、做了什麼分析、用了哪些參數、結果存在哪裡。這是系統追責與重現的唯一依據，也是 `analysis_index` View 的資料來源。
 
@@ -195,7 +219,9 @@ CREATE TABLE analysis_history (
 );
 ```
 
-### Views
+---
+
+### L2 Silver：Views
 
 Views 是從 `analysis_history` 自動聚合的虛擬表，不佔額外儲存空間，查詢結果即時反映最新資料。
 
