@@ -1,8 +1,8 @@
-# Hermes Bio-Memory — 專案憲法
+# 智慧生資分析平台 — 專案憲法
 
 ## 1. 專案定位
 
-**Hermes Bio-Memory** 是以 AI Agent 為核心的實驗室智慧生資分析平台。
+**智慧生資分析平台**是以 AI Agent 為核心的實驗室生物資訊分析系統。
 核心目標：讓實驗室成員透過 Telegram 自然語言查詢空間轉錄體與 Bulk RNA 分析結果，消除重複運算，建立實驗室知識資產。
 
 **當前階段**：本機測試建置（macOS `/Volumes/NO NAME/bio_DB/`），以 CRC Visium HD + MSseg 程式碼為測試資料，驗證 L1/L2/L3 三層架構後再部署至 Linux 伺服器。
