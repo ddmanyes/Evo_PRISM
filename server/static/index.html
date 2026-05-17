@@ -293,7 +293,7 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
 });
 inputEl.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
 });
 sendBtn.addEventListener('click', sendMessage);
 
@@ -414,6 +414,8 @@ async function sendMessage() {
   const imageToSend = pendingImageB64;
   inputEl.value = '';
   inputEl.style.height = 'auto';
+  inputEl.blur();
+  inputEl.focus();
   sendBtn.disabled = true;
   clearImage();
 
