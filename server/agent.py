@@ -625,6 +625,7 @@ LLAMA_BASE_URL = "http://localhost:8080/v1"
 LLAMA_MODEL    = "gemma-4"
 
 _local_client = None
+_claude_client = None
 
 def _get_local_client():
     global _local_client
@@ -633,18 +634,20 @@ def _get_local_client():
         _local_client = _OpenAI(base_url=LLAMA_BASE_URL, api_key="not-needed")
     return _local_client
 
+def _get_claude_client():
+    global _claude_client
+    if _claude_client is None:
+        import anthropic
+        from config.settings import ANTHROPIC_API_KEY
+        _claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    return _claude_client
+
 _HISTORY_ROLES = {"user", "assistant", "tool", "system"}
 
 
 def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list, int, int]:
     """呼叫 Claude API，回傳 (stop_reason, content_blocks, input_tokens, output_tokens)。"""
-    import anthropic
-    from config.settings import ANTHROPIC_API_KEY, CLAUDE_MODEL
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    # Claude API 的 system 從 messages 中分離
-    system_msg = next((m["content"] for m in messages if m["role"] == "system"), SYSTEM_PROMPT)
-    non_system = [m for m in messages if m["role"] != "system"]
+    from config.settings import CLAUDE_MODEL
 
     # 將 openai image_url content 轉為 Anthropic base64 image block
     def _convert_content(content):
@@ -666,18 +669,26 @@ def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list,
                 out.append(block)
         return out
 
-    converted = [
-        {**m, "content": _convert_content(m["content"])} for m in non_system
+    system_msg = next((m["content"] for m in messages if m["role"] == "system"), SYSTEM_PROMPT)
+    non_system = [m for m in messages if m["role"] != "system"]
+    converted = [{**m, "content": _convert_content(m["content"])} for m in non_system]
+
+    # Prompt Cache：system prompt + tools 標記為可快取，降低重複請求的 TTFT
+    cached_system = [{"type": "text", "text": system_msg, "cache_control": {"type": "ephemeral"}}]
+    cached_tools = [
+        {**t, "cache_control": {"type": "ephemeral"}} if i == len(BIO_TOOLS) - 1 else t
+        for i, t in enumerate(BIO_TOOLS)
     ]
 
-    resp = client.messages.create(
+    resp = _get_claude_client().beta.messages.create(  # type: ignore[call-overload]
         model=CLAUDE_MODEL,
         max_tokens=max_tokens,
-        system=system_msg,
-        tools=BIO_TOOLS,
-        messages=converted,
+        system=cached_system,  # type: ignore[arg-type]
+        tools=cached_tools,    # type: ignore[arg-type]
+        messages=converted,    # type: ignore[arg-type]
+        betas=["prompt-caching-2024-07-31"],
     )
-    return resp.stop_reason, resp.content, resp.usage.input_tokens, resp.usage.output_tokens
+    return resp.stop_reason, resp.content, resp.usage.input_tokens, resp.usage.output_tokens  # type: ignore[union-attr]
 
 
 def _make_local_call(messages: list[dict], model: str, max_tokens: int):
