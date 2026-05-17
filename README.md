@@ -1,6 +1,6 @@
-# 智慧生資分析平台
+# **實驗室生資智慧分析平台**
 
-**實驗室生資智慧分析平台** — 讓實驗室成員用自然語言查詢空間轉錄體與 Bulk RNA 分析結果，無需任何程式能力，無需重複運算。
+讓實驗室成員用自然語言查詢空間轉錄體與 Bulk RNA 分析結果，無需任何程式能力，無需重複運算。
 
 ---
 
@@ -80,7 +80,7 @@ cd "/Volumes/NO NAME/bio_DB"
 bash start_hermes.sh
 ```
 
-啟動後開啟瀏覽器：**http://localhost:8000**
+啟動後開啟瀏覽器：**<http://localhost:8000>**
 
 `Ctrl+C` 同時停止推理引擎與 Web Server。
 
@@ -95,20 +95,20 @@ cd "/Volumes/NO NAME/bio_DB"
 
 預期結果：**105 / 106 PASSED**（1 筆為既有路徑問題，非程式邏輯錯誤）
 
-| 測試檔 | 測試數 | 涵蓋範圍 |
-|--------|--------|---------|
-| `test_init_db.py` | 4 | Schema + Views 正確性 |
-| `test_phase2b.py` | 14 | 歷史查詢 + 報告生成 |
-| `test_phase3.py` | 15 | L1 快取 + HNSW |
-| `test_phase4.py` | 19 | MCP Server 工具 |
-| `test_phase5.py` | 28 | Agent Loop + 沙盒執行（openai mock） |
-| `test_phase6.py` | 23 | Telegram Bot 指令與訊息分派 |
+| 測試檔              | 測試數 | 涵蓋範圍                             |
+| ------------------- | ------ | ------------------------------------ |
+| `test_init_db.py` | 4      | Schema + Views 正確性                |
+| `test_phase2b.py` | 14     | 歷史查詢 + 報告生成                  |
+| `test_phase3.py`  | 15     | L1 快取 + HNSW                       |
+| `test_phase4.py`  | 19     | MCP Server 工具                      |
+| `test_phase5.py`  | 28     | Agent Loop + 沙盒執行（openai mock） |
+| `test_phase6.py`  | 23     | Telegram Bot 指令與訊息分派          |
 
 ---
 
 ## 功能說明
 
-### Web UI（http://localhost:8000）
+### Web UI（<http://localhost:8000）>
 
 - **聊天介面**：自然語言提問 → SSE 串流回覆
 - **圖片上傳**：附件按鈕或 `Ctrl+V` 貼圖 → Gemma 4 Vision 視覺分析
@@ -130,10 +130,10 @@ cd "/Volumes/NO NAME/bio_DB"
 
 ### 推理後端
 
-| 後端 | 模型 | 用途 |
-|------|------|------|
-| local（預設） | Gemma 4 26B Vision IQ2_M | 離線、隱私、多模態圖片分析 |
-| claude | claude-sonnet-4-6 | 更強推理，需 `ANTHROPIC_API_KEY` |
+| 後端          | 模型                     | 用途                               |
+| ------------- | ------------------------ | ---------------------------------- |
+| local（預設） | Gemma 4 26B Vision IQ2_M | 離線、隱私、多模態圖片分析         |
+| claude        | claude-sonnet-4-6        | 更強推理，需 `ANTHROPIC_API_KEY` |
 
 ---
 
@@ -189,12 +189,12 @@ bio_DB/
 
 ## 排程任務
 
-| 腳本 | 時間 | 功能 |
-|------|------|------|
-| `scheduler/backup_db.py` | 每日 02:00 | EXPORT DATABASE → `~/bio_db_backups/`（保留 7 天） |
-| `scheduler/cleanup_l1_cache.py` | 每日 03:30 | 清理 L1 TTL 到期快取 |
-| `scheduler/rebuild_hnsw.py` | 每週日 03:00 | 重建 HNSW 索引 |
-| `scheduler/scan_new_samples.py` | 每 30 分鐘 | 掃描並登記新樣本至 sample_registry |
+| 腳本                              | 時間         | 功能                                                 |
+| --------------------------------- | ------------ | ---------------------------------------------------- |
+| `scheduler/backup_db.py`        | 每日 02:00   | EXPORT DATABASE →`~/bio_db_backups/`（保留 7 天） |
+| `scheduler/cleanup_l1_cache.py` | 每日 03:30   | 清理 L1 TTL 到期快取                                 |
+| `scheduler/rebuild_hnsw.py`     | 每週日 03:00 | 重建 HNSW 索引                                       |
+| `scheduler/scan_new_samples.py` | 每 30 分鐘   | 掃描並登記新樣本至 sample_registry                   |
 
 手動備份與還原：
 
@@ -207,25 +207,25 @@ bio_DB/
 
 ## 測試數據規模
 
-| 資料集 | 大小 | 說明 |
-|--------|------|------|
-| CRC Visium HD（L3） | ~39 GB | 官方測試數據，唯讀 |
-| L2 Parquet | 416 MB | 8µm bins，215M nonzero entries |
-| Bulk RNA-seq | 84 樣本 | Kallisto 定量輸出 |
-| Proteomics | 5 個時間點 | sHG Perseus log2 intensity |
+| 資料集              | 大小       | 說明                            |
+| ------------------- | ---------- | ------------------------------- |
+| CRC Visium HD（L3） | ~39 GB     | 官方測試數據，唯讀              |
+| L2 Parquet          | 416 MB     | 8µm bins，215M nonzero entries |
+| Bulk RNA-seq        | 84 樣本    | Kallisto 定量輸出               |
+| Proteomics          | 5 個時間點 | sHG Perseus log2 intensity      |
 
 ---
 
 ## 文件
 
-| 文件 | 說明 |
-|------|------|
-| [plan_zh.md](plan_zh.md) | 完整系統設計（中文，18 章 + 附錄） |
-| [CLAUDE.md](CLAUDE.md) | 專案憲法（開發規範 + 架構 + 路徑） |
-| [PROGRESS.md](PROGRESS.md) | 實作進度封存 |
-| [presentation.md](presentation.md) | 系統簡報（Marp 格式，13 張） |
-| [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md) | 跨專案數據整合指南 |
-| [docs/L3_DATA_INGEST_GUIDE.md](docs/L3_DATA_INGEST_GUIDE.md) | 新增 L3 樣本操作指南 |
+| 文件                                                          | 說明                               |
+| ------------------------------------------------------------- | ---------------------------------- |
+| [plan_zh.md](plan_zh.md)                                         | 完整系統設計（中文，18 章 + 附錄） |
+| [CLAUDE.md](CLAUDE.md)                                           | 專案憲法（開發規範 + 架構 + 路徑） |
+| [PROGRESS.md](PROGRESS.md)                                       | 實作進度封存                       |
+| [presentation.md](presentation.md)                               | 系統簡報（Marp 格式，13 張）       |
+| [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md) | 跨專案數據整合指南                 |
+| [docs/L3_DATA_INGEST_GUIDE.md](docs/L3_DATA_INGEST_GUIDE.md)     | 新增 L3 樣本操作指南               |
 
 ---
 
