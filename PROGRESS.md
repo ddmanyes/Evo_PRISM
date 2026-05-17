@@ -7,10 +7,10 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 8 — 圖片上傳/回傳 + 穩健性修復
+**里程碑**：agent.py Cache Hit Protocol + Code Promotion 修復（3 CRITICAL + 8 HIGH 問題解決）
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
-**最後更新**：2026-05-16
-**commit**：76bb8fd → (latest)
+**最後更新**：2026-05-17
+**commit**：(latest)
 
 ---
 
@@ -194,6 +194,76 @@
 
 ---
 
+## ✅ 文件完整化完成（2026-05-17）
+
+### plan_zh.md 重構
+
+- [x] 章節重編：修復重複「十一」問題，統一從一到十九，加附錄 A/B/C
+- [x] 新增**附錄 A：設計決策與文獻依據**（6 小節）
+  - A1 三層 Medallion 架構（Databricks + LakeHarbor ICDE 2024）
+  - A2 HNSW 向量語意搜尋（DuckDB VSS + Malkov & Yashunin 2018）
+  - A3 Agent-First + Token 省策（Agent-First 2025 + MemGPT）
+  - A4 兩階段寫入 + 狀態機（WAL / crash recovery + saga pattern）
+  - A5 Code Promotion 自動升格框架（progressive rollout + memoization）
+  - A6 多模態視覺分析（Gemma 4 Vision + llama.cpp）
+- [x] 新增**附錄 B：驗收標準與驗證方法**（5 小節）
+  - B1 消除重複運算（L1 命中率 ≥ 80%）
+  - B2 Token 消耗可控（0-token 工具單元測試）
+  - B3 分析可追溯（analysis_history + stale 狀態）
+  - B4 使用門檻低（端對端手動測試）
+  - B5 數據安全（safe_write + 每日備份 + 還原驗證）
+- [x] 新增九（推理引擎雙後端）、十一（Web UI 架構）章節
+- [x] 修正日期（2026-05-16 → 2026-05-17）
+- [x] 修正 anndata_scanpy.md 對應章節（十一 → 十二、十三）
+- [x] 修正沙盒策略標記（Phase 5+ → 第十一階段）
+
+### CLAUDE.md 修正
+
+- [x] Schema 說明中 embedding 維度 `FLOAT[1536]` → `FLOAT[1024]`（與實際 bge-m3 一致）
+
+### presentation.md 重構為 Marp 格式
+
+- [x] 加入 Marp frontmatter（theme、paginate、自訂 CSS）
+- [x] 重組為標準報告結構：前言 → 問題 → 目標 → 方法 → 結果 → 討論 → 結論 → 下一步
+- [x] 拆分為 13 張投影片（含封面 + 附錄架構圖）
+- [x] 補充**非本科系聽者**的生物資訊背景說明（Slide 1：空間轉錄體、Bulk RNA、Proteomics 白話解釋）
+- [x] Slide 6 補充 HNSW 全名與定義
+- [x] 新增 Slide 10 討論（結果意義 + 系統限制）
+- [x] 新增 Slide 12 獨立結論頁
+- [x] 修正所有 linting 警告（MD022/MD032/MD033/MD040/MD060）
+
+---
+
+## ✅ agent.py 重大修復完成（2026-05-17）
+
+### Cache Hit Protocol
+
+- [x] `bio_history_check`：SELECT 加入 `parameters` 欄位回傳
+- [x] `bio_history_search`：enrichment 改用 `l1_cache_id IN (...)` 批次查詢（精準 join），UUID 型別統一轉 `str`
+- [x] `bio_history_search`：threshold 預設值 0.5 → 0.88（與規格第五章一致）
+- [x] `SYSTEM_PROMPT`：新增 Cache Hit Protocol 段落（觸發條件、條件式 result_path 展示、不需再呼叫 bio_memory_query）
+
+### Code Promotion 框架修復
+
+- [x] `_exec_bio_execute_code`：成功後寫入 `analysis_history`（含 `analysis_id` UUID + `parameters["generated_code"]`），promotion_candidates VIEW 可正常掃描
+- [x] `_exec_bio_execute_code`：`tempfile.mkdtemp` → `TemporaryDirectory` context manager，修復 SecurityError 時的 tempfile 洩漏
+
+### 架構合規修復
+
+- [x] `_startup_cleanup()`：新增函數，`run_cli()` 啟動時呼叫 `cleanup_stale_runs()`（第六章規範）
+- [x] `_exec_bio_register_sample`：改用 `get_connection()` 單例，避免多程序 DuckDB 寫入鎖衝突
+- [x] `_startup_cleanup`：改用 `get_connection()` 單例
+- [x] Claude backend：`content_blocks` 存入 messages 前呼叫 `model_dump()` 序列化
+- [x] `_get_local_client()`：openai import 改為 lazy（函數內部），避免未安裝時模組無法載入
+
+### 文件更新
+
+- [x] `plan_zh.md`：第二章新增 DuckDB + Parquet 選型理由（技術優勢 + 生資實測數字）
+- [x] `presentation.md`：新增 Slide 4B（DuckDB + Parquet 優勢說明，含壓縮流程圖）
+- [x] `README.md`：新增專案 README
+
+---
+
 ## ⏭️ 下一步（按優先順序）
 
 1. 端對端測試：Claude API 切換驗證（填入 `ANTHROPIC_API_KEY`）
@@ -235,6 +305,8 @@
 | 2026-05-15 | Phase 6 完成 | Telegram Bot + 23/23 tests，103/104 全套通過 |
 | 2026-05-15 | 安全性與正確性全面審查（5 輪）| 修復 17 項問題，詳見下方安全審查記錄 |
 | 2026-05-16 | Phase 8 完成 | 圖片上傳/回傳/下載 + session TTL + lazy client + matplotlib 捕獲 |
+| 2026-05-17 | 文件完整化 | plan_zh.md 重構（附錄 A 文獻依據 + 附錄 B 驗收標準 + 章節重編）；CLAUDE.md embedding 維度修正（1536→1024）；presentation.md 重構為標準報告格式（11 張→13 張 Marp 投影片） |
+| 2026-05-17 | agent.py 重大修復（3C + 8H） | Cache Hit Protocol 實作、enrichment UUID 型別修正、Code Promotion 寫入修復、startup cleanup、tempfile 洩漏修正、Claude backend 序列化、threshold 0.5→0.88、get_connection 統一 |
 
 ---
 

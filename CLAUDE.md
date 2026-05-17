@@ -275,7 +275,7 @@ analysis_index VIEW: GROUP BY sample_id + analysis_type, 顯示 run_count、last
 
 -- L1 語意快取（gold/hermes_cache.duckdb）
 memory_recent(id UUID, sample_id, query_text, report_text,
-              embedding FLOAT[1536], created_at, expires_at)
+              embedding FLOAT[1024], created_at, expires_at)
 -- + HNSW 索引（cosine metric）
 ```
 
