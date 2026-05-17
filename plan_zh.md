@@ -122,6 +122,8 @@ L1 金層（Gold）── 語意快取（近期記憶）
 
 ### sample_registry
 
+**用途：實驗室樣本名冊。** 每個生物樣本登記一筆，記錄它是什麼資料類型、原始檔案在哪、是否已轉換為 L2 Parquet、是否已完成分析。新樣本進來就新增一筆，之後不再修改。
+
 ```sql
 CREATE TABLE sample_registry (
     sample_id      VARCHAR PRIMARY KEY,
@@ -141,6 +143,15 @@ CREATE TABLE sample_registry (
 
 ### memory_recent（L1 Gold）
 
+**用途：語意去重快取。** 每次分析完成後，將查詢文字、報告內容與其向量 embedding 一起存入。下次收到語意相似的問題（cosine ≥ 0.88）時，直接回傳快取結果，不重新執行分析、不消耗 LLM token。TTL 7 天到期自動清除——過期快取可能對應已更新的分析結果，過期即失效是刻意設計，確保不回傳過時答案。此表可完整重建，丟失不影響資料完整性。
+
+| 欄位 | 說明 |
+| --- | --- |
+| `query_text` | 使用者原始問題文字 |
+| `report_text` | 上次分析產生的完整報告 |
+| `embedding` | 問題的 1024 維向量（bge-m3），供 HNSW 近似最近鄰搜尋 |
+| `expires_at` | 建立時間 + 7 天，到期由排程自動刪除 |
+
 ```sql
 CREATE TABLE memory_recent (
     id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -156,6 +167,16 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 ```
 
 ### analysis_history
+
+**用途：分析操作永久帳本。** 每次執行分析就新增一筆，**永遠不刪除**。記錄對哪個樣本、做了什麼分析、用了哪些參數、結果存在哪裡。這是系統追責與重現的唯一依據，也是 `analysis_index` View 的資料來源。
+
+| 欄位 | 說明 |
+| --- | --- |
+| `analysis_type` | 分析種類，如 `qc` / `spatial_gene` / `clustering` |
+| `parameters` | JSON 格式的完整參數，含可選的 `generated_code`（動態程式碼升格用） |
+| `status` | `running` → `completed` / `failed` / `stale`（超過 24 小時未完成自動標記） |
+| `summary` | ≤ 50 字的結果摘要，供 Agent 0-token 快速瀏覽 |
+| `result_path` | 完整報告或圖檔的存放路徑 |
 
 ```sql
 CREATE TABLE analysis_history (
@@ -176,10 +197,12 @@ CREATE TABLE analysis_history (
 
 ### Views
 
+Views 是從 `analysis_history` 自動聚合的虛擬表，不佔額外儲存空間，查詢結果即時反映最新資料。
+
 | View | 用途 | Token |
-|------|------|-------|
-| `analysis_index` | 精簡索引，Agent 每輪掃一眼 | 0 |
-| `promotion_candidates` | reuse_count ≥ 3 的升格候選清單 | 0 |
+| --- | --- | --- |
+| `analysis_index` | 依樣本 × 分析類型彙總執行次數、最後執行日期、成功／失敗數，Agent 每輪掃一眼即可掌握全局 | 0 |
+| `promotion_candidates` | 列出 `reuse_count ≥ 3` 的動態程式碼，供 Code Promotion 流程評估是否升格為永久工具 | 0 |
 
 ---
 
