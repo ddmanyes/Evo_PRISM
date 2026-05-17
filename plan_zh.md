@@ -2,55 +2,7 @@
 
 ---
 
-## 一、當前狀態（2026-05-16）
-
-| 項目 | 內容 |
-|------|------|
-| 測試平台 | macOS `/Volumes/NO NAME/bio_DB/`（ExFAT 外接硬碟） |
-| 目標平台 | Linux `/mnt/space4/bio_lab_db/`（生產部署） |
-| 測試數據 | CRC Visium HD 官方數據（~39 GB）+ Bulk RNA Kallisto（84 樣本）+ sHG Proteomics |
-| 推理引擎 | 本機 llama.cpp Gemma 4 Vision（port 8080）/ Claude API（可切換） |
-| 前端介面 | FastAPI Web UI（`server/web_app.py`，port 8000） |
-| 測試覆蓋 | 105/106 PASSED（1 個既有路徑問題，非程式碼問題） |
-
-### 已完成項目
-
-| 類別 | 完成項目 |
-|------|---------|
-| 基礎建設 | `00_init_db.py`（Schema）、`config/settings.py`（含 INFERENCE_BACKEND / CLAUDE_MODEL）、`config/db_utils.py`、`.env.example`、`pyrightconfig.json` |
-| L3 → L2 | `02_spatial_to_parquet.py`（CRC Visium HD → 416 MB Parquet）、Bulk RNA L2 pipeline（5 支腳本）、`01_register_sample.py`（自動掃描登記） |
-| 分析函式庫 | `analysis/bulk_eda.py`、`analysis/report_generator.py`（QC 圖 base64 嵌入）、`analysis/bulk_timeseries.py`、`analysis/pathway_scoring.py`（ssGSEA/Z-score）、`analysis/multiomics_integration.py`（RNA-Protein）、`analysis/history_query.py` |
-| 多組學 | Proteomics 數據整合（sHG Perseus log2）、`gene_sets/hair_follicle.yaml`（OxPhos/TCA/FAO/Glycolysis/Cell_Cycle） |
-| Agent | `server/agent.py`（10 個工具，雙後端 local/claude，圖片視覺分析，lazy client 初始化） |
-| Web UI | `server/web_app.py`（FastAPI SSE、session TTL、圖片 API）、`server/static/index.html`（圖片上傳/回傳/下載）、`server/static/history.html`（縮圖預覽） |
-| 啟動腳本 | `start_hermes.sh`（一鍵啟動 llama-server + FastAPI，ctx-size 16384） |
-| Code Promotion | `analysis/code_promoter.py`、`promotion_candidates` VIEW、`tools/registry.json`、`analysis/candidates/` |
-| 排程 | `scheduler/backup_db.py`（每日 02:00）、`scheduler/cleanup_l1_cache.py`（每日 03:30）、`scheduler/rebuild_hnsw.py`（每週日）、`scheduler/scan_new_samples.py`（每 30 分鐘） |
-| 測試 | 105/106 PASSED：`test_init_db`(4)、`test_phase2b`(14)、`test_phase3`(15)、`test_phase4`(19)、`test_phase5`(28, openai mock)、`test_phase6`(23) |
-| 文件 | `CLAUDE.md`、`docs/DATA_INTEGRATION_GUIDE.md`、所有 launchd plist 範本 |
-
-### 下一步優先順序
-
-```
-現在可做（本機）
-    ├── 端對端測試：Claude API 切換驗證（填入 ANTHROPIC_API_KEY）
-    └── 啟用 launchd_scan_samples.plist 排程
-
-接著（需 Telegram Token）
-    └── Telegram Bot 正式啟用（骨架已完成於 server/telegram_bot.py）
-
-之後（需 Linux 伺服器）
-    ├── 路徑設定遷移（config/settings.py）
-    ├── Docker 沙盒替換 code_executor.py
-    ├── FASTQ 自動 Kallisto 觸發
-    └── 5 位成員實際使用驗證
-```
-
-> 操作規範見 [CLAUDE.md](CLAUDE.md)，進度封存見 [PROGRESS.md](PROGRESS.md)，整合決策見 [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md)。
-
----
-
-## 二、系統定位與動機
+## 一、系統定位與動機
 
 ### 問題
 
@@ -70,6 +22,71 @@
 - **多層防線**：SQL 精確查（0 token）→ 語意搜尋（少量 token），避免重複運算
 - 所有樣本、分析、報告統一累積，形成可持續增值的**實驗室知識資產**
 - **多模態**：支援圖片上傳讓 Gemma 4 Vision 視覺分析，分析結果圖直接顯示於聊天框
+
+---
+
+## 二、技術選型說明
+
+### Agent 框架：自製輕量 Agent + 雙推理後端
+
+- **local**（預設）：Gemma 4 26B Vision IQ2_M，本機 llama.cpp port 8080，零費用、離線、多模態
+- **claude**：claude-sonnet-4-6，需 `ANTHROPIC_API_KEY`，推理更強時切換
+
+實驗室規模（月百次查詢）下 Claude API 費用極低，Prompt Cache 後更省。工具呼叫格式於 `agent.py` 自動轉換（Anthropic input_schema ↔ OpenAI function calling）。
+
+- **理解使用者意圖**：LLM 負責
+- **資料寫入**（DuckDB、Parquet）：LLM 決定呼叫哪個工具，Python 實際寫入
+- **檔案分析**（.h5ad、.parquet）：Python 讀取計算，LLM 處理摘要
+- **圖表生成**（matplotlib）：LLM 決定畫什麼，Python 畫圖 + plt.show() 自動捕獲
+- **視覺分析**（圖片輸入）：Gemma 4 Vision / Claude 直接處理
+- **分析歷史管理**：LLM 呼叫 `bio_history_*`，Python 執行 SQL
+
+### Embedding：bge-m3 本機（llama.cpp）
+
+| 屬性 | 值 |
+|------|------|
+| 模型 | `bge-m3-Q8_0.gguf`（605 MB） |
+| 維度 | 1024-dim |
+| 多語 | ✅ 中英混雜表現佳 |
+| 啟動 | `llama-server --embedding --port 8081 --ctx-size 8192` |
+| 費用 | 零（本機推理） |
+
+### 沙盒執行策略
+
+| 階段 | 隔離方式 |
+|------|---------|
+| macOS 測試（現階段） | `subprocess.run` + ALLOWED_IMPORTS 白名單 + timeout=60s |
+| Linux 部署（第十一階段） | Docker container（`python:3.11-slim` + bind-mount silver/） |
+
+### DuckDB 選型理由（資料分析優勢）
+
+DuckDB 是**列式（columnar）嵌入式分析資料庫**，特別適合生資規模的 OLAP 查詢：
+
+- **列式儲存與向量化執行**：每次只讀需要的欄位，CPU SIMD 批次處理。基因計數矩陣只取前 N 高表現基因，略過數億個零值。
+- **零依賴嵌入式**：不需另起 DB Server 程序，Python `import duckdb` 即用。單機 macOS 開發 / Linux 部署完全相同，無需維護 PostgreSQL。
+- **原生讀取 Parquet**：直接 `FROM 'silver/*.parquet'` 查詢，不需匯入。L2 Silver 416 MB Parquet 免載入記憶體，SQL 聚合後才傳給 LLM。
+- **HNSW 向量搜尋（VSS 擴充）**：嵌入式近似最近鄰，免部署 Pinecone / Weaviate。L1 語意快取 cosine 搜尋，0 token、< 1 秒命中。
+- **生資規模實測**：Visium HD 2µm 全圖 2.15 億 bins，8µm 聚合後約 500 萬列。DuckDB SQL 聚合 20 行結果傳給 LLM，節省 99%+ token。
+
+### Parquet 選型理由（L2 儲存格式優勢）
+
+Parquet 是**列式壓縮二進位格式**，為大型數字矩陣的標準儲存方案：
+
+- **列式壓縮**：RLE + Dictionary encoding，對稀疏矩陣（大量零值）壓縮率極高。CRC Visium HD 原始約 30 億數字 → 416 MB Parquet（約 95% 壓縮）。
+- **型別嚴格**：欄位型別固定（float32 / int32），不需每次解析。基因計數直接以 float32 存，DuckDB 無需型別推斷。
+- **分區儲存**：依樣本 / 分析類型分區，查詢時只讀相關分區。`silver/spatial_counts_{sample_id}_8um/` 分目錄存放。
+- **跨語言**：Python pandas / R arrow / DuckDB 原生支援。分析結果可直接用 R 讀取，與濕實驗室人員共用。
+- **與 DuckDB 原生整合**：DuckDB 視 Parquet 為第一公民，零轉換成本。`SELECT * FROM 'silver/*.parquet'` 直接使用。
+
+### 決策表格
+
+| 元件 | 選型 | 理由 |
+|------|------|------|
+| 資料庫 | DuckDB | 嵌入式、無伺服器、列式向量化、原生 Parquet + HNSW，不需另起 DB 程序 |
+| L2 儲存格式 | Parquet | 列式壓縮（~95%）、跨語言、與 DuckDB 零轉換整合 |
+| 向量搜尋 | DuckDB VSS（HNSW） | 免部署 Pinecone/Weaviate，嵌入主 DB |
+| LLM 框架 | 自製輕量 Agent | 實驗室場景工具數量少（≤10），無需 LangChain 等重型框架 |
+| 訊息平台 | Web UI（FastAPI，port 8000）為主；Telegram Bot 骨架已完成，待 Token 正式啟用 | Web UI 已完成並驗證，Telegram 為擴充選項 |
 
 ---
 
@@ -102,19 +119,89 @@ L1 金層（Gold）── 語意快取（近期記憶）
 
 ---
 
-## 四、完整查詢決策流程
+## 四、資料庫 Schema 總覽
+
+### sample_registry
+
+```sql
+CREATE TABLE sample_registry (
+    sample_id      VARCHAR PRIMARY KEY,
+    project        VARCHAR,
+    data_type      VARCHAR,  -- visium_hd|visium|scrna|bulk_rnaseq|proteomics|other
+    platform       VARCHAR,  -- 10x_visium_hd|kallisto|maxquant|...
+    species        VARCHAR,  -- 'mouse'|'human'
+    tissue         VARCHAR,
+    l3_path        VARCHAR,
+    l2_ready       BOOLEAN DEFAULT FALSE,
+    analysis_done  BOOLEAN DEFAULT FALSE,
+    added_by       VARCHAR,
+    notes          VARCHAR,
+    last_updated   TIMESTAMP DEFAULT now()
+);
+```
+
+### memory_recent（L1 Gold）
+
+```sql
+CREATE TABLE memory_recent (
+    id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    sample_id   VARCHAR,
+    query_text  VARCHAR,
+    report_text VARCHAR,
+    embedding   FLOAT[1024],  -- bge-m3 本機 1024-dim
+    created_at  TIMESTAMP DEFAULT now(),
+    expires_at  TIMESTAMP     -- TTL 7 天
+);
+CREATE INDEX memory_recent_emb_idx ON memory_recent
+    USING HNSW (embedding) WITH (metric = 'cosine');
+```
+
+### analysis_history
+
+```sql
+CREATE TABLE analysis_history (
+    analysis_id   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    sample_id     VARCHAR REFERENCES sample_registry(sample_id),
+    analysis_type VARCHAR,    -- 'bulk_eda', 'eda_report', 'spatial_heatmap' ...
+    parameters    JSON,       -- 分析參數 + 可選 generated_code / source / origin_id
+    status        VARCHAR,    -- 'running' | 'completed' | 'failed' | 'stale'
+    result_path   VARCHAR,
+    l1_cache_id   UUID,
+    requested_by  VARCHAR,
+    started_at    TIMESTAMP,
+    completed_at  TIMESTAMP,
+    summary       VARCHAR,    -- ≤50 字結果摘要（語意搜尋品質上限）
+    tool_id       UUID        -- 預留：未來 tools 表 FK，現為 NULL
+);
+```
+
+### Views
+
+| View | 用途 | Token |
+|------|------|-------|
+| `analysis_index` | 精簡索引，Agent 每輪掃一眼 | 0 |
+| `promotion_candidates` | reuse_count ≥ 3 的升格候選清單 | 0 |
+
+---
+
+## 五、完整查詢決策流程
 
 ```
-使用者提問（Telegram）
+使用者提問（Web UI / Telegram）
     │
     ├─[Step 1] bio_history_check()
     │   SQL 精確比對 analysis_history
-    │   └─ 命中 → 回傳存檔路徑 / 摘要（0 token，< 1 秒）
+    │   └─ 命中 → [Cache Hit Protocol]
+    │       ① 告知命中（樣本、類型、完成時間）
+    │       ② 顯示 parameters（分析條件 JSON）
+    │       ③ 列出可用輸出（result_path 下的 .md / .png / .csv）
+    │       ④ 詢問：「是否足夠？或需要調整參數重新執行？」
+    │       ⑤ 使用者確認 → 結束 ｜ 需重跑 → Step 3
     │   └─ 未命中 → Step 2
     │
     ├─[Step 2] bio_history_search()
     │   HNSW cosine 語意搜尋 L1 快取
-    │   └─ 相似度 ≥ 0.88 → 回傳快取報告（< 1 秒）
+    │   └─ 相似度 ≥ 0.88 → [Cache Hit Protocol]（同 Step 1 命中流程）
     │   └─ 未命中 → Step 3
     │
     ├─[Step 3] 判斷分析路徑
@@ -154,7 +241,9 @@ L1 金層（Gold）── 語意快取（近期記憶）
 
 ---
 
-## 五、分析歷史：兩階段寫入與狀態機
+## 六、分析歷史：兩階段寫入與狀態機
+
+> Schema 詳見四章「資料庫 Schema 總覽」。
 
 ### 狀態機
 
@@ -183,37 +272,6 @@ INSERT status='running'        ← 立刻寫入（程序崩潰也留下紀錄）
 | Agent 啟動時呼叫 `cleanup_stale_runs()` | 把 > 24h running 標為 stale |
 | UPDATE failed / stale 也必須走 `safe_write()` | 確保異常路徑同樣受 CHECKPOINT 保護 |
 
-### SQL Schema
-
-```sql
-CREATE TABLE analysis_history (
-    analysis_id   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    sample_id     VARCHAR REFERENCES sample_registry(sample_id),
-    analysis_type VARCHAR,    -- 'bulk_eda', 'eda_report', 'spatial_heatmap' ...
-    parameters    JSON,       -- 分析參數 + 可選 generated_code / source / origin_id
-    status        VARCHAR,    -- 'running' | 'completed' | 'failed' | 'stale'
-    result_path   VARCHAR,
-    l1_cache_id   UUID,
-    requested_by  VARCHAR,
-    started_at    TIMESTAMP,
-    completed_at  TIMESTAMP,
-    summary       VARCHAR,    -- ≤50 字結果摘要（語意搜尋品質上限）
-    tool_id       UUID        -- 預留：未來 tools 表 FK，現為 NULL
-);
-
--- 精簡索引 View（0 token，Agent 每輪掃一眼）
-CREATE VIEW analysis_index AS
-SELECT sample_id, analysis_type,
-       COUNT(*)                                         AS run_count,
-       MAX(completed_at)::DATE                          AS last_run_date,
-       SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS success_count,
-       SUM(CASE WHEN status='failed'    THEN 1 ELSE 0 END) AS fail_count,
-       STRING_AGG(DISTINCT requested_by, ', ')          AS run_by
-FROM analysis_history
-GROUP BY sample_id, analysis_type
-ORDER BY last_run_date DESC;
-```
-
 ### 三種 0-token 查詢模式
 
 ```sql
@@ -237,7 +295,7 @@ GROUP BY 1 ORDER BY 1 DESC;
 
 ---
 
-## 六、省 Token 搜尋策略
+## 七、省 Token 搜尋策略
 
 ### 設計原則
 
@@ -287,7 +345,7 @@ GROUP BY gene_name ORDER BY avg_expr DESC LIMIT 20
 
 ---
 
-## 七、Code Promotion 框架
+## 八、Code Promotion 框架
 
 動態程式碼（3C 路徑生成）在被重用 ≥ 3 次後自動評估升格為永久工具。
 
@@ -378,7 +436,7 @@ CREATE TABLE tools (
 
 ---
 
-## 八、資料庫安全
+## 九、資料庫安全
 
 ### 風險對策
 
@@ -413,7 +471,7 @@ scheduler/
 
 ---
 
-## 九、推理引擎架構
+## 十、推理引擎架構
 
 ### 雙後端設計
 
@@ -447,7 +505,7 @@ BIO_TOOLS（Anthropic input_schema 格式）
 
 ---
 
-## 十、Agent 工具清單（BIO_TOOLS）
+## 十一、Agent 工具清單（BIO_TOOLS）
 
 | 工具 | 用途 | Token |
 |------|------|-------|
@@ -467,7 +525,7 @@ BIO_TOOLS（Anthropic input_schema 格式）
 
 ---
 
-## 十一、Web UI 架構
+## 十二、Web UI 架構
 
 ```
 瀏覽器
@@ -509,7 +567,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ---
 
-## 十二、分析函式庫（analysis/）
+## 十三、分析函式庫（analysis/）
 
 | 模組 | 主要函數 | 狀態 |
 |------|---------|------|
@@ -540,7 +598,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ---
 
-## 十三、目錄結構
+## 十四、目錄結構
 
 ```
 /Volumes/NO NAME/bio_DB/
@@ -627,52 +685,6 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ---
 
-## 十四、資料庫 Schema 總覽
-
-### sample_registry
-
-```sql
-CREATE TABLE sample_registry (
-    sample_id      VARCHAR PRIMARY KEY,
-    project        VARCHAR,
-    data_type      VARCHAR,  -- visium_hd|visium|scrna|bulk_rnaseq|proteomics|other
-    platform       VARCHAR,  -- 10x_visium_hd|kallisto|maxquant|...
-    species        VARCHAR,  -- 'mouse'|'human'
-    tissue         VARCHAR,
-    l3_path        VARCHAR,
-    l2_ready       BOOLEAN DEFAULT FALSE,
-    analysis_done  BOOLEAN DEFAULT FALSE,
-    added_by       VARCHAR,
-    notes          VARCHAR,
-    last_updated   TIMESTAMP DEFAULT now()
-);
-```
-
-### memory_recent（L1 Gold）
-
-```sql
-CREATE TABLE memory_recent (
-    id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    sample_id   VARCHAR,
-    query_text  VARCHAR,
-    report_text VARCHAR,
-    embedding   FLOAT[1024],  -- bge-m3 本機 1024-dim
-    created_at  TIMESTAMP DEFAULT now(),
-    expires_at  TIMESTAMP     -- TTL 7 天
-);
-CREATE INDEX memory_recent_emb_idx ON memory_recent
-    USING HNSW (embedding) WITH (metric = 'cosine');
-```
-
-### Views
-
-| View | 用途 | Token |
-|------|------|-------|
-| `analysis_index` | 精簡索引，Agent 每輪掃一眼 | 0 |
-| `promotion_candidates` | reuse_count ≥ 3 的升格候選清單 | 0 |
-
----
-
 ## 十五、跨專案整合規則
 
 將其他專案的數據或分析方法併入 bio_DB 時，依下列優先順序：
@@ -707,42 +719,7 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ---
 
-## 十七、技術選型說明
-
-### Agent 框架：自製輕量 Agent + 雙推理後端
-
-- **local**（預設）：Gemma 4 26B Vision IQ2_M，本機 llama.cpp port 8080，零費用、離線、多模態
-- **claude**：claude-sonnet-4-6，需 `ANTHROPIC_API_KEY`，推理更強時切換
-
-實驗室規模（月百次查詢）下 Claude API 費用極低，Prompt Cache 後更省。工具呼叫格式於 `agent.py` 自動轉換（Anthropic input_schema ↔ OpenAI function calling）。
-
-- **理解使用者意圖**：LLM 負責
-- **資料寫入**（DuckDB、Parquet）：LLM 決定呼叫哪個工具，Python 實際寫入
-- **檔案分析**（.h5ad、.parquet）：Python 讀取計算，LLM 處理摘要
-- **圖表生成**（matplotlib）：LLM 決定畫什麼，Python 畫圖 + plt.show() 自動捕獲
-- **視覺分析**（圖片輸入）：Gemma 4 Vision / Claude 直接處理
-- **分析歷史管理**：LLM 呼叫 `bio_history_*`，Python 執行 SQL
-
-### Embedding：bge-m3 本機（llama.cpp）
-
-| 屬性 | 值 |
-|------|------|
-| 模型 | `bge-m3-Q8_0.gguf`（605 MB） |
-| 維度 | 1024-dim |
-| 多語 | ✅ 中英混雜表現佳 |
-| 啟動 | `llama-server --embedding --port 8081 --ctx-size 8192` |
-| 費用 | 零（本機推理） |
-
-### 沙盒執行策略
-
-| 階段 | 隔離方式 |
-|------|---------|
-| macOS 測試（現階段） | `subprocess.run` + ALLOWED_IMPORTS 白名單 + timeout=60s |
-| Linux 部署（Phase 5+） | Docker container（`python:3.11-slim` + bind-mount silver/） |
-
----
-
-## 十八、關鍵路徑對照
+## 十七、關鍵路徑對照
 
 | 項目 | macOS 測試 | Linux 生產 |
 |------|-----------|-----------|
@@ -756,7 +733,7 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ---
 
-## 十九、參考文獻索引
+## 十八、參考文獻索引
 
 | 文件 | 內容 | 對應章節 |
 |------|------|---------|
@@ -764,8 +741,8 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 | `references/duckdb_vss.md` | HNSW 向量搜尋 | 四、六 |
 | `references/lakeharbor_icde2024.md` | 結構感知資料湖（ICDE 2024） | 三 |
 | `references/agent_first_data_systems.md` | Agent-First 資料系統（2025） | 全章節 |
-| `references/mcp_protocol.md` | MCP Server 骨架 | 九 |
-| `references/anndata_scanpy.md` | 讀取 Visium HD | 十一 |
+| `references/mcp_protocol.md` | MCP Server 骨架 | 十 |
+| `references/anndata_scanpy.md` | 讀取 Visium HD | 十二、十三 |
 | `references/memgpt.md` | 分層記憶模型（概念參考） | 三 |
 
 ---
@@ -918,8 +895,56 @@ L1 TTL 7 天到期後，若報告仍有查詢價值，可透過 LLMLingua 壓縮
 
 ### tools 資料表（工具 ≥ 20 個時升級）
 
-詳見第七章「工具版本管理路徑」。觸發時機：工具庫超過 20 個，或有多人 `/approve` 並發需求。
+詳見第八章「工具版本管理路徑」。觸發時機：工具庫超過 20 個，或有多人 `/approve` 並發需求。
 
 ### 圖表語意搜尋
 
 不採用 CLIP 圖像向量搜尋（生資圖表訓練資料不足，無法區分同類熱圖）。正確做法：產圖時同步呼叫 `report_generator` 寫入精準文字描述，文字 embedding 比 CLIP 更準確。
+
+---
+
+## 附錄 D：當前狀態快照（2026-05-17）
+
+> 此為建置時期的進度快照，最新進度見 [PROGRESS.md](PROGRESS.md)。
+
+| 項目 | 內容 |
+|------|------|
+| 測試平台 | macOS `/Volumes/NO NAME/bio_DB/`（ExFAT 外接硬碟） |
+| 目標平台 | Linux `/mnt/space4/bio_lab_db/`（生產部署） |
+| 測試數據 | CRC Visium HD 官方數據（~39 GB）+ Bulk RNA Kallisto（84 樣本）+ sHG Proteomics |
+| 推理引擎 | 本機 llama.cpp Gemma 4 Vision（port 8080）/ Claude API（可切換） |
+| 前端介面 | FastAPI Web UI（`server/web_app.py`，port 8000） |
+| 測試覆蓋 | 105/106 PASSED（1 個既有路徑問題，非程式碼問題） |
+
+### 已完成項目
+
+| 類別 | 完成項目 |
+|------|---------|
+| 基礎建設 | `00_init_db.py`（Schema）、`config/settings.py`（含 INFERENCE_BACKEND / CLAUDE_MODEL）、`config/db_utils.py`、`.env.example`、`pyrightconfig.json` |
+| L3 → L2 | `02_spatial_to_parquet.py`（CRC Visium HD → 416 MB Parquet）、Bulk RNA L2 pipeline（5 支腳本）、`01_register_sample.py`（自動掃描登記） |
+| 分析函式庫 | `analysis/bulk_eda.py`、`analysis/report_generator.py`（QC 圖 base64 嵌入）、`analysis/bulk_timeseries.py`、`analysis/pathway_scoring.py`（ssGSEA/Z-score）、`analysis/multiomics_integration.py`（RNA-Protein）、`analysis/history_query.py` |
+| 多組學 | Proteomics 數據整合（sHG Perseus log2）、`gene_sets/hair_follicle.yaml`（OxPhos/TCA/FAO/Glycolysis/Cell_Cycle） |
+| Agent | `server/agent.py`（10 個工具，雙後端 local/claude，圖片視覺分析，lazy client 初始化） |
+| Web UI | `server/web_app.py`（FastAPI SSE、session TTL、圖片 API）、`server/static/index.html`（圖片上傳/回傳/下載）、`server/static/history.html`（縮圖預覽） |
+| 啟動腳本 | `start_hermes.sh`（一鍵啟動 llama-server + FastAPI，ctx-size 16384） |
+| Code Promotion | `analysis/code_promoter.py`、`promotion_candidates` VIEW、`tools/registry.json`、`analysis/candidates/` |
+| 排程 | `scheduler/backup_db.py`（每日 02:00）、`scheduler/cleanup_l1_cache.py`（每日 03:30）、`scheduler/rebuild_hnsw.py`（每週日）、`scheduler/scan_new_samples.py`（每 30 分鐘） |
+| 測試 | 105/106 PASSED：`test_init_db`(4)、`test_phase2b`(14)、`test_phase3`(15)、`test_phase4`(19)、`test_phase5`(28, openai mock)、`test_phase6`(23) |
+| 文件 | `CLAUDE.md`、`docs/DATA_INTEGRATION_GUIDE.md`、所有 launchd plist 範本 |
+
+### 下一步優先順序
+
+```
+現在可做（本機）
+    ├── 端對端測試：Claude API 切換驗證（填入 ANTHROPIC_API_KEY）
+    └── 啟用 launchd_scan_samples.plist 排程
+
+接著（需 Telegram Token）
+    └── Telegram Bot 正式啟用（骨架已完成於 server/telegram_bot.py）
+
+之後（需 Linux 伺服器）
+    ├── 路徑設定遷移（config/settings.py）
+    ├── Docker 沙盒替換 code_executor.py
+    ├── FASTQ 自動 Kallisto 觸發
+    └── 5 位成員實際使用驗證
+```
