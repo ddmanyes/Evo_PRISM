@@ -15,7 +15,7 @@ style: |
   strong { color: #1a5276; }
 ---
 
-# Hermes Bio-Memory
+# 智慧生資分析平台
 
 ## 實驗室生資智慧分析系統
 
@@ -263,7 +263,7 @@ CRC Visium HD 原始 ~30 億數字 → **416 MB Parquet**（壓縮約 95%）
 
 ## Slide 12 — 結論
 
-**Hermes Bio-Memory** 以三層 Medallion 架構 + Agent-First 查詢設計，解決了實驗室生資分析的四個核心痛點：
+**智慧生資分析平台** 以三層 Medallion 架構 + Agent-First 查詢設計，解決了實驗室生資分析的四個核心痛點：
 
 - **重複運算** → 兩層快取（SQL 精確 + HNSW 語意）攔截重複查詢，4 小時 Pipeline 不重跑
 - **數據孤島** → 統一 DuckDB + Parquet，所有樣本與分析結果集中可查

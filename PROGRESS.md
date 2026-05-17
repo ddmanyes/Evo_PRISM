@@ -1,4 +1,4 @@
-# Hermes Bio-Memory — 進度封存
+# 智慧生資分析平台 — 進度封存
 
 > 每次完成一個里程碑後更新本文件。
 > 詳細設計見 [plan_zh.md](plan_zh.md)，專案規範見 [CLAUDE.md](CLAUDE.md)。
