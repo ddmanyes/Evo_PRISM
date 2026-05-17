@@ -29,7 +29,7 @@
 
 ### 設計依據概覽
 
-本系統的核心架構均參考已發表的工程實踐，而非憑空設計。**三層 Bronze / Silver / Gold 架構**源自 Databricks Medallion Architecture 與結構感知資料湖設計（Hai et al., 2023），核心概念是原始數據唯讀不可改、分析結果只計算一次，避免重複運算。**語意搜尋**採用 DuckDB VSS 的 HNSW 實作（Malkov & Yashunin, 2018），讓「問法不同但意思相同」的查詢直接命中快取，不重跑分析。**Agent-First 查詢策略**參考 Trummer（2025）與 MemGPT 的分層記憶模型（Packer et al., 2023），讓資料庫處理結構化問題（0 token），LLM 只負責剩下無法用 SQL 回答的部分，大幅壓低 API 費用。**兩階段寫入**借鑑資料庫 WAL 與 Saga pattern（Garcia-Molina & Salem, 1987），確保長時間分析任務（~4 小時）即使中途崩潰也不遺失記錄。**Code Promotion 框架**則是原創設計，讓動態生成的程式碼在重用三次後自動升格為永久工具。詳細文獻論述見**附錄 A**。
+本系統的核心架構均參考已發表的工程實踐，而非憑空設計。**三層 Bronze / Silver / Gold 架構**源自 Databricks Medallion Architecture 與結構感知資料湖設計（Hai et al., 2023），核心概念是原始數據唯讀不可改、分析結果只計算一次，避免重複運算。**語意搜尋**採用 DuckDB VSS 的 HNSW 實作（Malkov & Yashunin, 2018），其設計目的是攔截「問法不同但語意相同」的重複查詢：每次分析完成後，系統將查詢文字轉換為 1024 維向量並存入 L1 快取（`memory_recent`）；下次收到新問題時，先以 cosine 相似度搜尋快取，若相似度達 0.88 以上即直接回傳既有結果，完全跳過 LLM 推理與分析重算，不消耗任何推理 token。實驗室成員對同一樣本反覆提問的場景十分常見（如每週例行 QC 確認），語意搜尋在此場景下能將大多數重複查詢的成本壓至接近零。**Agent-First 查詢策略**參考 Trummer（2025）與 MemGPT 的分層記憶模型（Packer et al., 2023），讓資料庫處理結構化問題（0 token），LLM 只負責剩下無法用 SQL 回答的部分，大幅壓低 API 費用。**兩階段寫入**借鑑資料庫 WAL 與 Saga pattern（Garcia-Molina & Salem, 1987），確保長時間分析任務（~4 小時）即使中途崩潰也不遺失記錄。**Code Promotion 框架**則是原創設計，讓動態生成的程式碼在重用三次後自動升格為永久工具。詳細文獻論述見**附錄 A**。
 
 ### 元件選型總覽
 
