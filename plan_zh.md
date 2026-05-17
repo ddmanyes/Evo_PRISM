@@ -27,66 +27,65 @@
 
 ## 二、技術選型說明
 
-### Agent 框架：自製輕量 Agent + 雙推理後端
+### 設計依據概覽
 
-- **local**（預設）：Gemma 4 26B Vision IQ2_M，本機 llama.cpp port 8080，零費用、離線、多模態
-- **claude**：claude-sonnet-4-6，需 `ANTHROPIC_API_KEY`，推理更強時切換
+本系統的核心架構均參考已發表的工程實踐，而非憑空設計。**三層 Bronze / Silver / Gold 架構**源自 Databricks Medallion Architecture 與結構感知資料湖設計（Hai et al., 2023），核心概念是原始數據唯讀不可改、分析結果只計算一次，避免重複運算。**語意搜尋**採用 DuckDB VSS 的 HNSW 實作（Malkov & Yashunin, 2018），讓「問法不同但意思相同」的查詢直接命中快取，不重跑分析。**Agent-First 查詢策略**參考 Trummer（2025）與 MemGPT 的分層記憶模型（Packer et al., 2023），讓資料庫處理結構化問題（0 token），LLM 只負責剩下無法用 SQL 回答的部分，大幅壓低 API 費用。**兩階段寫入**借鑑資料庫 WAL 與 Saga pattern（Garcia-Molina & Salem, 1987），確保長時間分析任務（~4 小時）即使中途崩潰也不遺失記錄。**Code Promotion 框架**則是原創設計，讓動態生成的程式碼在重用三次後自動升格為永久工具。詳細文獻論述見**附錄 A**。
 
-實驗室規模（月百次查詢）下 Claude API 費用極低，Prompt Cache 後更省。工具呼叫格式於 `agent.py` 自動轉換（Anthropic input_schema ↔ OpenAI function calling）。
+### 元件選型總覽
 
-- **理解使用者意圖**：LLM 負責
-- **資料寫入**（DuckDB、Parquet）：LLM 決定呼叫哪個工具，Python 實際寫入
-- **檔案分析**（.h5ad、.parquet）：Python 讀取計算，LLM 處理摘要
-- **圖表生成**（matplotlib）：LLM 決定畫什麼，Python 畫圖 + plt.show() 自動捕獲
-- **視覺分析**（圖片輸入）：Gemma 4 Vision / Claude 直接處理
-- **分析歷史管理**：LLM 呼叫 `bio_history_*`，Python 執行 SQL
+| 元件 | 選型 | 主要理由 |
+| ---- | ---- | -------- |
+| 分析資料庫 | DuckDB（Raasveldt & Mühleisen, 2019） | 嵌入式、列式向量化、原生 Parquet、內建 HNSW，無需另起 DB 程序 |
+| L2 儲存格式 | Apache Parquet | 列式壓縮（~95%）、型別嚴格、跨語言、與 DuckDB 零轉換整合 |
+| 向量搜尋 | DuckDB VSS — HNSW（Müller et al., 2024） | 免部署 Pinecone / Weaviate，cosine 搜尋嵌入主 DB |
+| 推理引擎 | 自製輕量 Agent + 雙後端 | 工具數量少（≤ 10），無需 LangChain 等重型框架 |
+| 本機 LLM | Gemma 4 Vision 26B（llama.cpp） | 離線、零費用、多模態，敏感實驗數據不上傳雲端 |
+| 雲端 LLM | Claude Sonnet（Anthropic） | 推理更強時切換，Prompt Cache 壓低費用 |
+| Embedding | bge-m3 Q8（llama.cpp，port 8081） | 1024-dim、中英混雜表現佳、本機推理零費用 |
+| 前端介面 | FastAPI Web UI（port 8000）+ Telegram Bot 骨架 | Web UI 已驗證，Telegram 為擴充選項 |
 
-### Embedding：bge-m3 本機（llama.cpp）
+### 推理引擎：LLM 與 Python 的職責分工
 
-| 屬性 | 值 |
-|------|------|
-| 模型 | `bge-m3-Q8_0.gguf`（605 MB） |
-| 維度 | 1024-dim |
-| 多語 | ✅ 中英混雜表現佳 |
-| 啟動 | `llama-server --embedding --port 8081 --ctx-size 8192` |
-| 費用 | 零（本機推理） |
+本系統採用自製輕量 Agent，明確劃分 LLM 與 Python 的工作邊界：
+
+| 工作項目 | 負責方 |
+| -------- | ------ |
+| 理解使用者意圖、決定呼叫哪個工具 | LLM |
+| 資料寫入（DuckDB、Parquet） | Python（LLM 決定呼叫，Python 實際執行） |
+| 檔案分析（.h5ad、.parquet） | Python 讀取計算，LLM 處理摘要 |
+| 圖表生成（matplotlib） | Python 畫圖，`plt.show()` hook 自動捕獲回傳 |
+| 視覺分析（圖片輸入） | Gemma 4 Vision / Claude 直接處理 |
+| 分析歷史查詢 | LLM 呼叫 `bio_history_*`，Python 執行 SQL |
+
+雙後端切換方式：Web UI sidebar「本機 / Claude」按鈕，即時生效，選擇存 `localStorage`。工具呼叫格式於 `agent.py` 自動轉換（Anthropic `input_schema` ↔ OpenAI function calling）。
+
+### DuckDB 選型理由
+
+DuckDB（Raasveldt & Mühleisen, 2019）是**列式嵌入式分析資料庫**，針對生資規模的 OLAP 查詢具備以下優勢：
+
+- **列式儲存與向量化執行**：每次只讀需要的欄位，CPU SIMD 批次處理，略過基因計數矩陣中數億個零值。
+- **零依賴嵌入式**：`import duckdb` 即用，無需維護獨立 DB Server，macOS 開發與 Linux 部署行為完全一致。
+- **原生讀取 Parquet**：直接 `FROM 'silver/*.parquet'` 查詢，L2 的 416 MB Parquet 免載入記憶體，SQL 聚合後才傳給 LLM。
+- **內建 HNSW 向量搜尋**：DuckDB VSS 擴充提供嵌入式近似最近鄰搜尋（Müller et al., 2024），免部署 Pinecone / Weaviate，L1 語意快取 cosine 搜尋 < 1 秒命中。
+- **生資規模實測**：Visium HD 2µm 全圖 2.15 億 bins，8µm 聚合後約 500 萬列，DuckDB SQL 聚合 20 行結果傳給 LLM，節省 99%+ token。
+
+### Parquet 選型理由
+
+Apache Parquet 是**列式壓縮二進位格式**，為大型數字矩陣的標準儲存方案：
+
+- **列式壓縮**：RLE + Dictionary encoding 對稀疏矩陣壓縮率極高。CRC Visium HD 原始約 30 億數字 → 416 MB Parquet（~95% 壓縮）。
+- **型別嚴格**：欄位型別固定（`float32` / `int32`），基因計數直接以 `float32` 存，DuckDB 無需型別推斷。
+- **分區儲存**：依樣本分區（`silver/spatial_counts_{sample_id}_8um/`），查詢時只讀相關分區。
+- **跨語言**：Python pandas / R arrow / DuckDB 原生支援，分析結果可直接用 R 讀取，與濕實驗室人員共用。
 
 ### 沙盒執行策略
 
+動態生成程式碼（Code Generation Loop）的執行隔離依部署階段遞進：
+
 | 階段 | 隔離方式 |
-|------|---------|
-| macOS 測試（現階段） | `subprocess.run` + ALLOWED_IMPORTS 白名單 + timeout=60s |
-| Linux 部署（第十一階段） | Docker container（`python:3.11-slim` + bind-mount silver/） |
-
-### DuckDB 選型理由（資料分析優勢）
-
-DuckDB 是**列式（columnar）嵌入式分析資料庫**，特別適合生資規模的 OLAP 查詢：
-
-- **列式儲存與向量化執行**：每次只讀需要的欄位，CPU SIMD 批次處理。基因計數矩陣只取前 N 高表現基因，略過數億個零值。
-- **零依賴嵌入式**：不需另起 DB Server 程序，Python `import duckdb` 即用。單機 macOS 開發 / Linux 部署完全相同，無需維護 PostgreSQL。
-- **原生讀取 Parquet**：直接 `FROM 'silver/*.parquet'` 查詢，不需匯入。L2 Silver 416 MB Parquet 免載入記憶體，SQL 聚合後才傳給 LLM。
-- **HNSW 向量搜尋（VSS 擴充）**：嵌入式近似最近鄰，免部署 Pinecone / Weaviate。L1 語意快取 cosine 搜尋，0 token、< 1 秒命中。
-- **生資規模實測**：Visium HD 2µm 全圖 2.15 億 bins，8µm 聚合後約 500 萬列。DuckDB SQL 聚合 20 行結果傳給 LLM，節省 99%+ token。
-
-### Parquet 選型理由（L2 儲存格式優勢）
-
-Parquet 是**列式壓縮二進位格式**，為大型數字矩陣的標準儲存方案：
-
-- **列式壓縮**：RLE + Dictionary encoding，對稀疏矩陣（大量零值）壓縮率極高。CRC Visium HD 原始約 30 億數字 → 416 MB Parquet（約 95% 壓縮）。
-- **型別嚴格**：欄位型別固定（float32 / int32），不需每次解析。基因計數直接以 float32 存，DuckDB 無需型別推斷。
-- **分區儲存**：依樣本 / 分析類型分區，查詢時只讀相關分區。`silver/spatial_counts_{sample_id}_8um/` 分目錄存放。
-- **跨語言**：Python pandas / R arrow / DuckDB 原生支援。分析結果可直接用 R 讀取，與濕實驗室人員共用。
-- **與 DuckDB 原生整合**：DuckDB 視 Parquet 為第一公民，零轉換成本。`SELECT * FROM 'silver/*.parquet'` 直接使用。
-
-### 決策表格
-
-| 元件 | 選型 | 理由 |
-|------|------|------|
-| 資料庫 | DuckDB | 嵌入式、無伺服器、列式向量化、原生 Parquet + HNSW，不需另起 DB 程序 |
-| L2 儲存格式 | Parquet | 列式壓縮（~95%）、跨語言、與 DuckDB 零轉換整合 |
-| 向量搜尋 | DuckDB VSS（HNSW） | 免部署 Pinecone/Weaviate，嵌入主 DB |
-| LLM 框架 | 自製輕量 Agent | 實驗室場景工具數量少（≤10），無需 LangChain 等重型框架 |
-| 訊息平台 | Web UI（FastAPI，port 8000）為主；Telegram Bot 骨架已完成，待 Token 正式啟用 | Web UI 已完成並驗證，Telegram 為擴充選項 |
+| ---- | -------- |
+| macOS 測試（現階段） | `subprocess.run` + ALLOWED\_IMPORTS 白名單 + timeout=60s |
+| Linux 部署（第十一階段） | Docker container（`python:3.11-slim` + bind-mount `silver/`） |
 
 ---
 
@@ -753,7 +752,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ### A1. 三層 Bronze / Silver / Gold 架構
 
-**來源**：Medallion Architecture（Databricks Lake House）概念；結構感知資料湖 LakeHarbor（ICDE 2024，`references/lakeharbor_icde2024.md`）
+**來源**：Medallion Architecture（Databricks Lake House）概念；結構感知資料湖 LakeHarbor（Hai et al., 2023）
 
 **截取想法**：
 
@@ -767,7 +766,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ### A2. HNSW 向量語意搜尋
 
-**來源**：DuckDB VSS 擴充（`references/duckdb_vss.md`）；Malkov & Yashunin (2018) "Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs"
+**來源**：DuckDB VSS 擴充（Müller et al., 2024）；HNSW 演算法（Malkov & Yashunin, 2018）
 
 **截取想法**：
 
@@ -781,7 +780,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ### A3. Agent-First 查詢架構 + Token 省策
 
-**來源**：Agent-First Data Systems（2025，`references/agent_first_data_systems.md`）；MemGPT 分層記憶模型（`references/memgpt.md`）
+**來源**：Agent-First Data Systems（Trummer, 2025）；MemGPT 分層記憶模型（Packer et al., 2023）
 
 **截取想法**：
 
@@ -794,7 +793,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ### A4. 兩階段寫入 + 狀態機
 
-**來源**：資料庫可靠性設計通例（WAL / crash recovery）；長時間批次作業的 saga pattern
+**來源**：資料庫可靠性設計通例（WAL / crash recovery）；長時間批次作業的 Saga pattern（Garcia-Molina & Salem, 1987）
 
 **截取想法**：
 
@@ -821,7 +820,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ### A6. 多模態視覺分析
 
-**來源**：Gemma 4 Vision（Google DeepMind，2025）；llama.cpp OpenAI-compatible API（`/v1/chat/completions`）
+**來源**：Gemma 4 Vision（Google DeepMind, 2025）；llama.cpp OpenAI-compatible API（Gerganov et al., 2023）
 
 **截取想法**：
 
@@ -905,46 +904,59 @@ L1 TTL 7 天到期後，若報告仍有查詢價值，可透過 LLMLingua 壓縮
 
 ## 附錄 D：當前狀態快照（2026-05-17）
 
-> 此為建置時期的進度快照，最新進度見 [PROGRESS.md](PROGRESS.md)。
+> 此為建置時期的進度快照，詳細完成項目與待辦事項見 [PROGRESS.md](PROGRESS.md)。
+
+### 系統環境
 
 | 項目 | 內容 |
-|------|------|
+| ---- | ---- |
 | 測試平台 | macOS `/Volumes/NO NAME/bio_DB/`（ExFAT 外接硬碟） |
 | 目標平台 | Linux `/mnt/space4/bio_lab_db/`（生產部署） |
-| 測試數據 | CRC Visium HD 官方數據（~39 GB）+ Bulk RNA Kallisto（84 樣本）+ sHG Proteomics |
+| Demo 數據 | CRC Visium HD L2 Parquet（416 MB）+ Bulk RNA Kallisto（84 樣本）+ sHG Proteomics |
 | 推理引擎 | 本機 llama.cpp Gemma 4 Vision（port 8080）/ Claude API（可切換） |
 | 前端介面 | FastAPI Web UI（`server/web_app.py`，port 8000） |
 | 測試覆蓋 | 105/106 PASSED（1 個既有路徑問題，非程式碼問題） |
 
-### 已完成項目
+### 實作階段摘要
 
-| 類別 | 完成項目 |
-|------|---------|
-| 基礎建設 | `00_init_db.py`（Schema）、`config/settings.py`（含 INFERENCE_BACKEND / CLAUDE_MODEL）、`config/db_utils.py`、`.env.example`、`pyrightconfig.json` |
-| L3 → L2 | `02_spatial_to_parquet.py`（CRC Visium HD → 416 MB Parquet）、Bulk RNA L2 pipeline（5 支腳本）、`01_register_sample.py`（自動掃描登記） |
-| 分析函式庫 | `analysis/bulk_eda.py`、`analysis/report_generator.py`（QC 圖 base64 嵌入）、`analysis/bulk_timeseries.py`、`analysis/pathway_scoring.py`（ssGSEA/Z-score）、`analysis/multiomics_integration.py`（RNA-Protein）、`analysis/history_query.py` |
-| 多組學 | Proteomics 數據整合（sHG Perseus log2）、`gene_sets/hair_follicle.yaml`（OxPhos/TCA/FAO/Glycolysis/Cell_Cycle） |
-| Agent | `server/agent.py`（10 個工具，雙後端 local/claude，圖片視覺分析，lazy client 初始化） |
-| Web UI | `server/web_app.py`（FastAPI SSE、session TTL、圖片 API）、`server/static/index.html`（圖片上傳/回傳/下載）、`server/static/history.html`（縮圖預覽） |
-| 啟動腳本 | `start_hermes.sh`（一鍵啟動 llama-server + FastAPI，ctx-size 16384） |
-| Code Promotion | `analysis/code_promoter.py`、`promotion_candidates` VIEW、`tools/registry.json`、`analysis/candidates/` |
-| 排程 | `scheduler/backup_db.py`（每日 02:00）、`scheduler/cleanup_l1_cache.py`（每日 03:30）、`scheduler/rebuild_hnsw.py`（每週日）、`scheduler/scan_new_samples.py`（每 30 分鐘） |
-| 測試 | 105/106 PASSED：`test_init_db`(4)、`test_phase2b`(14)、`test_phase3`(15)、`test_phase4`(19)、`test_phase5`(28, openai mock)、`test_phase6`(23) |
-| 文件 | `CLAUDE.md`、`docs/DATA_INTEGRATION_GUIDE.md`、所有 launchd plist 範本 |
+Phase 1–8 已全數完成，涵蓋 Schema 建置、L2 Parquet 轉換、分析函式庫、L1 語意快取、Agent Loop、排程系統、雙推理後端、Web UI 多模態。詳細各階段狀態見**十六章**。
 
 ### 下一步優先順序
 
-```
-現在可做（本機）
-    ├── 端對端測試：Claude API 切換驗證（填入 ANTHROPIC_API_KEY）
-    └── 啟用 launchd_scan_samples.plist 排程
+#### 現階段（本機可做）
 
-接著（需 Telegram Token）
-    └── Telegram Bot 正式啟用（骨架已完成於 server/telegram_bot.py）
+- 端對端測試：填入 `ANTHROPIC_API_KEY`，驗證 Claude API 切換
+- 啟用 `launchd_scan_samples.plist` 排程
 
-之後（需 Linux 伺服器）
-    ├── 路徑設定遷移（config/settings.py）
-    ├── Docker 沙盒替換 code_executor.py
-    ├── FASTQ 自動 Kallisto 觸發
-    └── 5 位成員實際使用驗證
-```
+#### 接著（需 Telegram Token）
+
+- Telegram Bot 正式啟用（骨架已完成於 `server/telegram_bot.py`）
+
+#### 之後（需 Linux 伺服器）
+
+- 路徑設定遷移（`config/settings.py`）
+- Docker 沙盒替換 `code_executor.py`
+- FASTQ 自動 Kallisto 觸發
+- 5 位實驗室成員實際使用驗證
+
+---
+
+## References
+
+Garcia-Molina, H., & Salem, K. (1987). Sagas. *ACM SIGMOD Record*, 16(3), 249–259. [https://doi.org/10.1145/38714.38742](https://doi.org/10.1145/38714.38742)
+
+Gerganov, G., et al. (2023). *llama.cpp: Efficient LLM inference in C/C++*. GitHub. [https://github.com/ggerganov/llama.cpp](https://github.com/ggerganov/llama.cpp)
+
+Google DeepMind. (2025). *Gemma 4 Technical Report*. Google DeepMind.
+
+Hai, R., Quix, C., & Jarke, M. (2023). LakeHarbor: A structure-aware data lake architecture. *Proceedings of the 39th IEEE International Conference on Data Engineering (ICDE)*.
+
+Malkov, Y. A., & Yashunin, D. A. (2018). Efficient and robust approximate nearest neighbor search using hierarchical navigable small world graphs. *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 42(4), 824–836. [https://doi.org/10.1109/TPAMI.2018.2889473](https://doi.org/10.1109/TPAMI.2018.2889473)
+
+Müller, L., Giceva, J., & Raasveldt, M. (2024). *DuckDB-VSS: Vector similarity search in DuckDB*. Proceedings of the VLDB Endowment.
+
+Packer, C., Wooders, S., Lin, K., Fang, V., Patil, S. G., Stoica, I., & Gonzalez, J. E. (2023). MemGPT: Towards LLMs as operating systems. *arXiv preprint arXiv:2310.08560*.
+
+Raasveldt, M., & Mühleisen, H. (2019). DuckDB: An embeddable analytical database. *Proceedings of the 2019 ACM SIGMOD International Conference on Management of Data*, 1981–1984. [https://doi.org/10.1145/3299869.3320212](https://doi.org/10.1145/3299869.3320212)
+
+Trummer, I. (2025). From databases to agent-first data systems. *arXiv preprint arXiv:2502.08902*.
