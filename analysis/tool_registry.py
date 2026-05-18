@@ -411,12 +411,14 @@ def open_stabilization(
     tool_name: str,
     diagnosis: str,
     action_taken: str,
+    fn: Optional[Callable] = None,
+    revision_history: Optional[list[dict]] = None,
 ) -> str:
     """Open a new stabilization iteration for *tool_name*.
 
-    Should be called when a hot-zone tool has been diagnosed and a concrete
-    refactoring action has started.  The iteration remains open (``closed_at``
-    = NULL) until :func:`close_stabilization` is called.
+    Automatically computes cyclomatic complexity and renders a visual diagnosis
+    snapshot (PNG base64) when *fn* is provided.  The snapshot is stored in
+    ``tool_stabilization_log.diagnosis_img`` for VLM recall.
 
     Returns the UUID string of the new ``tool_stabilization_log`` row.
     """
@@ -429,16 +431,39 @@ def open_stabilization(
         raise ValueError(f"Tool {tool_name!r} not found in tools table.")
     revision_now = int(active[0])
 
+    # Compute complexity and render snapshot when callable is available
+    complexity_before: Optional[int] = None
+    diagnosis_img: Optional[str] = None
+    if fn is not None:
+        try:
+            from analysis.tool_visualizer import compute_complexity, render_diagnosis_snapshot
+            complexity_before = compute_complexity(fn)
+            diagnosis_img = render_diagnosis_snapshot(
+                tool_name=tool_name,
+                fn=fn,
+                diagnosis_text=diagnosis,
+                revision_history=revision_history,
+                complexity=complexity_before,
+            )
+            logger.info(
+                "open_stabilization: snapshot rendered for %r  CC=%d",
+                tool_name, complexity_before,
+            )
+        except Exception as exc:
+            logger.warning("open_stabilization: snapshot failed — %s", exc)
+
     log_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     con.execute(
         """
         INSERT INTO tool_stabilization_log
             (log_id, tool_name, trigger_revision, diagnosis,
-             action_taken, outcome, revision_before, created_at)
-        VALUES (?, ?, ?, ?, ?, 'ongoing', ?, ?)
+             action_taken, outcome, revision_before, created_at,
+             complexity_before, diagnosis_img)
+        VALUES (?, ?, ?, ?, ?, 'ongoing', ?, ?, ?, ?)
         """,
-        [log_id, tool_name, revision_now, diagnosis, action_taken, revision_now, now],
+        [log_id, tool_name, revision_now, diagnosis, action_taken,
+         revision_now, now, complexity_before, diagnosis_img],
     )
     logger.info("open_stabilization: %r  revision=%d  log_id=%s", tool_name, revision_now, log_id)
     return log_id
@@ -449,14 +474,20 @@ def close_stabilization(
     log_id: str,
     outcome: str,
     action_taken: Optional[str] = None,
+    fn: Optional[Callable] = None,
 ) -> None:
     """Close an open stabilization iteration.
+
+    Automatically computes ``complexity_after`` when *fn* is provided, allowing
+    the delta (complexity_before − complexity_after) to serve as a quantitative
+    measure of improvement.
 
     Args:
         con:          Open DuckDB connection (write access).
         log_id:       UUID of the ``tool_stabilization_log`` row to close.
         outcome:      ``'stabilized'`` | ``'ongoing'`` | ``'reverted'``.
         action_taken: Optional update to the action description.
+        fn:           If provided, complexity_after is computed and stored.
     """
     if outcome not in ("stabilized", "ongoing", "reverted"):
         raise ValueError(f"outcome must be stabilized/ongoing/reverted, got {outcome!r}")
@@ -476,12 +507,23 @@ def close_stabilization(
     ).fetchone()
     revision_after = int(active[0]) if active else revision_before
 
+    complexity_after: Optional[int] = None
+    if fn is not None:
+        try:
+            from analysis.tool_visualizer import compute_complexity
+            complexity_after = compute_complexity(fn)
+        except Exception as exc:
+            logger.warning("close_stabilization: complexity_after failed — %s", exc)
+
     now = datetime.now(timezone.utc)
     updates = ["outcome = ?", "revision_after = ?", "closed_at = ?"]
     params: list = [outcome, revision_after, now]
     if action_taken:
         updates.append("action_taken = ?")
         params.append(action_taken)
+    if complexity_after is not None:
+        updates.append("complexity_after = ?")
+        params.append(complexity_after)
     params.append(log_id)
 
     con.execute(
