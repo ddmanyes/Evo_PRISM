@@ -630,6 +630,29 @@ def _exec_bio_sample_compare(args: dict) -> str:
     return "\n".join(lines)
 
 
+def _resolve_tool_fn(tool_name: str):
+    """Return the live Python callable for *tool_name*, or None if unresolvable.
+
+    Uses tools/registry.json to look up module_path + function_name, then
+    imports the module and returns the function object.  Used for complexity
+    measurement and snapshot rendering without hard-coding tool locations.
+    """
+    import importlib
+    import json
+    from pathlib import Path
+
+    registry_path = Path(__file__).parent.parent / "tools" / "registry.json"
+    try:
+        entries = json.loads(registry_path.read_text())
+        for entry in entries:
+            if entry.get("name") == tool_name:
+                mod = importlib.import_module(entry["module_path"])
+                return getattr(mod, entry["function_name"], None)
+    except Exception as exc:
+        logger.debug("_resolve_tool_fn: could not resolve %r — %s", tool_name, exc)
+    return None
+
+
 def _exec_bio_tool_health(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
@@ -701,11 +724,32 @@ def _exec_bio_tool_health(args: dict) -> str:
         action_taken = args.get("action_taken")
         if not tool_name or not diagnosis or not action_taken:
             return "[Error] stabilize 需要提供 tool_name、diagnosis、action_taken。"
+        # Resolve the live callable for complexity + snapshot rendering
+        fn = _resolve_tool_fn(tool_name)
+        rev_history = None
         with duckdb.connect(str(DUCKDB_PATH)) as con:
-            log_id = open_stabilization(con, tool_name, diagnosis, action_taken)
+            if fn:
+                try:
+                    rows = con.execute(
+                        "SELECT revision_number, old_hash, new_hash, change_reason, changed_at "
+                        "FROM tool_change_log WHERE tool_name = ? ORDER BY revision_number",
+                        [tool_name],
+                    ).fetchall()
+                    rev_history = [
+                        {"revision": r[0], "old_hash": r[1], "new_hash": r[2],
+                         "reason": r[3], "changed_at": str(r[4])}
+                        for r in rows
+                    ]
+                except Exception:
+                    pass
+            log_id = open_stabilization(
+                con, tool_name, diagnosis, action_taken,
+                fn=fn, revision_history=rev_history,
+            )
             con.execute("CHECKPOINT")
+        snapshot_note = "（已渲染視覺快照 ✓）" if fn else "（無法取得 callable，快照略過）"
         return (
-            f"已開啟穩定化迭代 for {tool_name!r}\n"
+            f"已開啟穩定化迭代 for {tool_name!r} {snapshot_note}\n"
             f"  log_id: {log_id}\n"
             f"  診斷：{diagnosis}\n"
             f"  行動：{action_taken}\n\n"
@@ -719,12 +763,38 @@ def _exec_bio_tool_health(args: dict) -> str:
             return "[Error] close_stabilize 需要提供 log_id 和 outcome。"
         with duckdb.connect(str(DUCKDB_PATH)) as con:
             try:
-                close_stabilization(con, log_id, outcome, args.get("action_taken"))
+                # Fetch tool_name to resolve fn for complexity_after
+                row = con.execute(
+                    "SELECT tool_name FROM tool_stabilization_log WHERE log_id = ?",
+                    [log_id],
+                ).fetchone()
+                fn = _resolve_tool_fn(row[0]) if row else None
+                close_stabilization(
+                    con, log_id, outcome,
+                    action_taken=args.get("action_taken"), fn=fn,
+                )
+                # Fetch complexity delta for summary
+                result_row = con.execute(
+                    "SELECT complexity_before, complexity_after FROM tool_stabilization_log "
+                    "WHERE log_id = ?", [log_id],
+                ).fetchone()
                 con.execute("CHECKPOINT")
             except ValueError as e:
                 return f"[Error] {e}"
-        outcome_zh = {"stabilized": "已穩定化 ✓", "ongoing": "仍在進行", "reverted": "已回退"}.get(outcome, outcome)
-        return f"迭代 {log_id[:8]}… 已關閉。結果：{outcome_zh}"
+        outcome_zh = {
+            "stabilized": "已穩定化 ✓",
+            "ongoing": "仍在進行",
+            "reverted": "已回退",
+        }.get(outcome, outcome)
+        complexity_note = ""
+        if result_row and result_row[0] is not None and result_row[1] is not None:
+            delta = result_row[0] - result_row[1]
+            sign = "↓" if delta > 0 else "→" if delta == 0 else "↑"
+            complexity_note = (
+                f"\n  Cyclomatic Complexity: {result_row[0]} → {result_row[1]} "
+                f"({sign}{abs(delta)})"
+            )
+        return f"迭代 {log_id[:8]}… 已關閉。結果：{outcome_zh}{complexity_note}"
 
     elif action == "prune":
         tool_name = args.get("tool_name")
