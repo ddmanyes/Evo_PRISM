@@ -216,6 +216,33 @@ def semantic_search(
     return results
 
 
+def invalidate_tool_cache(
+    tool_name: str,
+    *,
+    cache_path: Optional[Path] = None,
+) -> int:
+    """Delete all L1 cache entries whose query_text contains *tool_name*.
+
+    Called automatically by register_tool() when a tool's source changes, so
+    that stale results from the previous version are not served to users.
+
+    Returns the number of rows deleted (0 if cache file does not exist).
+    """
+    path = cache_path or L1_CACHE_PATH
+    if not path.exists():
+        return 0
+    with duckdb.connect(str(path)) as con:
+        deleted = con.execute(
+            "DELETE FROM memory_recent WHERE query_text LIKE ? RETURNING id",
+            [f"%{tool_name}%"],
+        ).fetchall()
+        con.execute("CHECKPOINT")
+    count = len(deleted)
+    if count:
+        logger.info("invalidate_tool_cache: removed %d entries for tool %r", count, tool_name)
+    return count
+
+
 def cache_stats(cache_path: Optional[Path] = None) -> dict:
     """回傳 L1 快取統計（不需要 embedding server）。"""
     from scheduler.cleanup_l1_cache import stats

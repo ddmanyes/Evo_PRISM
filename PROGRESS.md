@@ -7,7 +7,7 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：HELIX 架構全面改善（P0+P1+P2 共 12 項，47/47 HELIX tests PASSED）
+**里程碑**：ENGRAM 模組完成（analysis_artifacts + HNSW + Web UI，23/23 tests PASSED）
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-18
 **commit**：(latest)
@@ -268,6 +268,39 @@
 
 ---
 
+## ✅ ENGRAM 模組完成（2026-05-18）
+
+### 分析產出永久記憶系統
+
+- [x] `scripts/10_migrate_schema_v9.py` — `analysis_artifacts` 表 + HNSW cosine 索引 + `analysis_index` view 加 `artifact_count`
+- [x] `analysis/artifact_registry.py` — ENGRAM-Core 五個公開函數
+  - `register_artifact()` — 自動讀取 file_size、MIME、inline_data（≤500 KB），生成 embedding，一行寫入 DB
+  - `get_artifacts()` — 依 analysis_id 查詢，支援 artifact_type / subtype 篩選、include_inline 控制
+  - `compare_analyses()` — 並排回傳 N 個分析的 artifact，含 tool_version/tool_status
+  - `artifact_summary()` — 0-token 概覽（total_runs/total_artifacts/by_subtype/latest_run）
+  - `search_artifacts()` — 兩層搜尋：Layer 1 精確 subtype（score=1.0）→ Layer 2 HNSW cosine fallback
+- [x] `tests/test_artifact_registry.py` — 23/23 PASSED（5 test classes）
+  - 修正 `analysis_id` UUID→VARCHAR 型別不符（search 路徑的 `::VARCHAR` 強制轉型）
+- [x] `analysis/bulk_eda.py` — 分析完成後自動呼叫 `register_artifact()`（PCA 圖 + EDA 報告，非致命 try/except）
+- [x] `server/web_app.py` — 8 個 ENGRAM API 路由
+  - `GET /engram` — ENGRAM Web UI 頁面
+  - `GET /api/engram/samples` — 所有有 artifact 的樣本統計
+  - `GET /api/engram/summary/{sample_id}` — 0-token 概覽
+  - `GET /api/engram/analyses/{sample_id}` — 樣本下的分析清單（含 artifact 數）
+  - `GET /api/engram/artifacts/{analysis_id}` — 某分析的 artifact 列表
+  - `GET /api/engram/artifact/{artifact_id}/inline` — 取得單一 artifact base64
+  - `GET /api/engram/compare?ids=...` — 並排比較多分析
+  - `GET /api/engram/search?q=...` — 語意搜尋
+- [x] `server/static/engram.html` — Web UI
+  - 樣本列表側邊欄 + 分析記錄卡片 + artifact 縮圖格狀佈局
+  - 圖片 lightbox（點擊放大，ESC 關閉）
+  - Lazy-load inline_data（按需 fetch，結果 cache）
+  - Subtype 篩選 chips（pca / volcano / heatmap…）
+  - 多選並排比較（含工具版本顯示）
+  - 語意搜尋（相似度 %）
+
+---
+
 ## ✅ HELIX 架構全面改善完成（2026-05-18）
 
 ### P0 — 閉環缺口
@@ -340,6 +373,7 @@
 | 2026-05-16 | Phase 8 完成 | 圖片上傳/回傳/下載 + session TTL + lazy client + matplotlib 捕獲 |
 | 2026-05-17 | 文件完整化 | plan_zh.md 重構（附錄 A 文獻依據 + 附錄 B 驗收標準 + 章節重編）；CLAUDE.md embedding 維度修正（1536→1024）；presentation.md 重構為標準報告格式（11 張→13 張 Marp 投影片） |
 | 2026-05-17 | agent.py 重大修復（3C + 8H） | Cache Hit Protocol 實作、enrichment UUID 型別修正、Code Promotion 寫入修復、startup cleanup、tempfile 洩漏修正、Claude backend 序列化、threshold 0.5→0.88、get_connection 統一 |
+| 2026-05-18 | ENGRAM 模組完成 | analysis_artifacts + HNSW 索引、5 個 ENGRAM-Core 函數、23/23 tests、bulk_eda 自動登記、8 個 API 路由、engram.html Web UI |
 
 ---
 
