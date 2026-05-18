@@ -15,8 +15,10 @@ Key tables (bio_memory.duckdb):
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import inspect
+import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -69,6 +71,52 @@ def compute_tool_hash(fn: Callable) -> str:
         return "unavailable"
     normalized = _normalize_source(source)
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------------------
+# Churn helpers
+# ---------------------------------------------------------------------------
+
+def _safe_getsource(fn: Callable) -> Optional[str]:
+    """Return raw source of *fn*, or None if unavailable (built-ins, etc.)."""
+    try:
+        return inspect.getsource(fn)
+    except OSError:
+        return None
+
+
+def _compute_churn(
+    old_source: Optional[str],
+    new_source: Optional[str],
+) -> tuple[Optional[str], Optional[float]]:
+    """Diff *old_source* vs *new_source* and return (changed_lines_json, churn_ratio).
+
+    changed_lines_json — JSON list of [start, end] 1-based line ranges that
+                         appear in unified diff hunks of the new source.
+    churn_ratio        — changed_line_count / total_lines_in_new_source
+                         (Nagappan relative churn; None when source unavailable).
+
+    Returns (None, None) when either source is unavailable.
+    """
+    if old_source is None or new_source is None:
+        return None, None
+
+    old_lines = old_source.splitlines(keepends=True)
+    new_lines = new_source.splitlines(keepends=True)
+    hunks: list[list[int]] = []
+    changed_count = 0
+
+    for group in difflib.SequenceMatcher(None, old_lines, new_lines).get_grouped_opcodes(0):
+        for tag, _i1, _i2, j1, j2 in group:
+            if tag in ("replace", "insert"):
+                start = j1 + 1        # 1-based
+                end   = j2            # inclusive
+                hunks.append([start, end])
+                changed_count += j2 - j1
+
+    total = len(new_lines) or 1
+    churn_ratio = round(changed_count / total, 4) if hunks else 0.0
+    return json.dumps(hunks) if hunks else json.dumps([]), churn_ratio
 
 
 # ---------------------------------------------------------------------------
@@ -171,14 +219,33 @@ def register_tool(
         ],
     )
 
+    # --- compute line-level churn vs previous snapshot ---
+    new_source = _safe_getsource(fn)
+    old_snapshot_row = con.execute(
+        """
+        SELECT source_snapshot
+        FROM   tool_change_log
+        WHERE  tool_name = ?
+        ORDER  BY revision_number DESC
+        LIMIT  1
+        """,
+        [tool_name],
+    ).fetchone()
+    old_source = old_snapshot_row[0] if old_snapshot_row and old_snapshot_row[0] else None
+    changed_lines_json, churn_ratio = _compute_churn(old_source, new_source)
+
     # --- append to change log ---
     con.execute(
         """
         INSERT INTO tool_change_log
-            (tool_name, old_hash, new_hash, new_tool_id, revision_number, changed_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (tool_name, old_hash, new_hash, new_tool_id, revision_number, changed_at,
+             source_snapshot, changed_lines, churn_ratio)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        [tool_name, old_hash, content_hash, new_tool_id, next_revision, now],
+        [
+            tool_name, old_hash, content_hash, new_tool_id, next_revision, now,
+            new_source, changed_lines_json, churn_ratio,
+        ],
     )
 
     logger.info(
@@ -363,6 +430,94 @@ def get_hot_tools(
         }
         for tool_name, rev_count, note, chash, tool_id in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Intra-tool hotspot (line-level churn)
+# ---------------------------------------------------------------------------
+
+def get_hot_lines(
+    con: duckdb.DuckDBPyConnection,
+    tool_name: str,
+    top_n: int = 5,
+    min_hits: int = 2,
+) -> dict:
+    """Return frequently-changed line ranges inside *tool_name*.
+
+    Reads the last *top_n* revisions' ``changed_lines`` JSON from
+    ``tool_change_log``, counts how many times each line number appears
+    across those revisions, and returns ranges that appear >= *min_hits* times.
+
+    Return dict keys:
+      tool_name      str
+      revisions_used int   — number of revisions with source_snapshot data
+      hot_lines      list  — [[start, end], ...] sorted by start line
+      avg_churn      float — mean churn_ratio across revisions_used
+      suggestion     str   — human-readable hint when hot_lines is non-empty
+    """
+    rows = con.execute(
+        """
+        SELECT changed_lines, churn_ratio
+        FROM   tool_change_log
+        WHERE  tool_name = ?
+          AND  changed_lines IS NOT NULL
+        ORDER  BY revision_number DESC
+        LIMIT  ?
+        """,
+        [tool_name, top_n],
+    ).fetchall()
+
+    if not rows:
+        return {
+            "tool_name": tool_name,
+            "revisions_used": 0,
+            "hot_lines": [],
+            "avg_churn": None,
+            "suggestion": None,
+        }
+
+    # Count per-line hit frequency across revisions
+    line_hits: dict[int, int] = {}
+    churn_values: list[float] = []
+
+    for changed_lines_json, churn_ratio in rows:
+        try:
+            ranges: list[list[int]] = json.loads(changed_lines_json)
+        except (TypeError, ValueError):
+            continue
+        seen_in_this_rev: set[int] = set()
+        for start, end in ranges:
+            for lineno in range(start, end + 1):
+                if lineno not in seen_in_this_rev:
+                    line_hits[lineno] = line_hits.get(lineno, 0) + 1
+                    seen_in_this_rev.add(lineno)
+        if churn_ratio is not None:
+            churn_values.append(churn_ratio)
+
+    # Collapse individual hot lines back into contiguous ranges
+    hot_line_nos = sorted(ln for ln, hits in line_hits.items() if hits >= min_hits)
+    hot_ranges: list[list[int]] = []
+    for lineno in hot_line_nos:
+        if hot_ranges and lineno == hot_ranges[-1][1] + 1:
+            hot_ranges[-1][1] = lineno
+        else:
+            hot_ranges.append([lineno, lineno])
+
+    avg_churn = round(sum(churn_values) / len(churn_values), 4) if churn_values else None
+    suggestion = (
+        f"Lines {', '.join(f'{s}-{e}' for s, e in hot_ranges)} "
+        f"changed in {min_hits}+ of the last {len(rows)} revisions — "
+        "consider extracting as configurable parameters."
+        if hot_ranges else None
+    )
+
+    return {
+        "tool_name":     tool_name,
+        "revisions_used": len(rows),
+        "hot_lines":     hot_ranges,
+        "avg_churn":     avg_churn,
+        "suggestion":    suggestion,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -820,6 +975,20 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
             f"回潮偵測（{len(regression_zones)} 個工具穩定化後複雜度上升）：{names}。"
             "建議重新開啟穩定化迭代。"
         )
+
+    # intra-tool hot lines for every hot-zone tool
+    hot_lines_report: dict[str, dict] = {}
+    for tool in hot_zones:
+        hl = get_hot_lines(con, tool["tool_name"])
+        if hl["hot_lines"]:
+            hot_lines_report[tool["tool_name"]] = hl
+    if hot_lines_report:
+        names = ", ".join(hot_lines_report)
+        parts.append(
+            f"行級熱區（{len(hot_lines_report)} 個工具有反覆修改的程式碼片段）："
+            f"{names}。建議將這些行抽成可調控參數。"
+        )
+
     if not parts:
         parts.append("工具庫健康，無需立即處理。")
 
@@ -831,6 +1000,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         "stale_analyses":        stale_analyses,
         "prune_candidates":      prune_candidates,
         "regression_zones":      regression_zones,
+        "hot_lines_report":      hot_lines_report,
         "helix_self_health":     helix_self_health(con),
         "recommendation":        " ".join(parts),
     }

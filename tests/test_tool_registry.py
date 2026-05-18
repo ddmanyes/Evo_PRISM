@@ -68,14 +68,17 @@ def helix_con(tmp_path):
     """)
     con.execute("""
         CREATE TABLE IF NOT EXISTS tool_change_log (
-            log_id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            tool_name       VARCHAR NOT NULL,
-            old_hash        VARCHAR(16),
-            new_hash        VARCHAR(16) NOT NULL,
-            new_tool_id     UUID REFERENCES tools(tool_id),
-            revision_number INTEGER NOT NULL,
-            change_reason   VARCHAR,
-            changed_at      TIMESTAMP DEFAULT now()
+            log_id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            tool_name        VARCHAR NOT NULL,
+            old_hash         VARCHAR(16),
+            new_hash         VARCHAR(16) NOT NULL,
+            new_tool_id      UUID REFERENCES tools(tool_id),
+            revision_number  INTEGER NOT NULL,
+            change_reason    VARCHAR,
+            changed_at       TIMESTAMP DEFAULT now(),
+            source_snapshot  TEXT,
+            changed_lines    VARCHAR,
+            churn_ratio      DOUBLE
         )
     """)
     con.execute("""
@@ -159,6 +162,25 @@ def _ar_new_v3(): return 63      # noqa: E704
 def _ar_old_v1(): return 71      # noqa: E704
 def _ar_old_v2(): return 72      # noqa: E704
 def _ar_old_v3(): return 73      # noqa: E704
+
+# stubs for churn / hot-lines tests — multi-line so difflib has something to diff
+def _churn_v1():
+    x = 1
+    y = 2
+    return x + y
+
+def _churn_v2():
+    x = 1
+    y = 2
+    z = 3          # added line → churn
+    return x + y + z
+
+def _churn_v3():
+    x = 1
+    y = 2
+    z = 3
+    w = 4          # another added line → same zone keeps accumulating
+    return x + y + z + w
 
 
 # ---------------------------------------------------------------------------
@@ -469,3 +491,139 @@ class TestHelixSelfHealth:
         assert h["tools_table_rows"] == 0
         assert h["orphan_iterations"] == 0
         assert h["downsample_coverage_pct"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _compute_churn (unit)
+# ---------------------------------------------------------------------------
+
+class TestComputeChurn:
+    def test_no_change_zero_churn(self):
+        from analysis.tool_registry import _compute_churn
+        import json
+        src = "def f():\n    return 1\n"
+        cl, cr = _compute_churn(src, src)
+        assert cl is not None
+        assert json.loads(cl) == []
+        assert cr == 0.0
+
+    def test_added_lines_detected(self):
+        from analysis.tool_registry import _compute_churn
+        import json
+        old = "def f():\n    x = 1\n    return x\n"
+        new = "def f():\n    x = 1\n    y = 2\n    return x + y\n"
+        cl, cr = _compute_churn(old, new)
+        assert cl is not None and cr is not None
+        ranges = json.loads(cl)
+        assert len(ranges) > 0
+        assert cr > 0.0
+
+    def test_none_source_returns_none(self):
+        from analysis.tool_registry import _compute_churn
+        assert _compute_churn(None, "def f(): pass") == (None, None)
+        assert _compute_churn("def f(): pass", None) == (None, None)
+
+    def test_churn_ratio_between_zero_and_one(self):
+        from analysis.tool_registry import _compute_churn
+        old = "def f():\n    return 1\n"
+        new = "def f():\n    x = 99\n    return x\n"
+        _, cr = _compute_churn(old, new)
+        assert cr is not None
+        assert 0.0 <= cr <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# register_tool churn columns
+# ---------------------------------------------------------------------------
+
+class TestRegisterToolChurn:
+    def test_source_snapshot_stored(self, helix_con):
+        from analysis.tool_registry import register_tool
+        register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
+        row = helix_con.execute(
+            "SELECT source_snapshot FROM tool_change_log WHERE tool_name='t'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] is not None
+        assert "def _churn_v1" in row[0]
+
+    def test_churn_ratio_second_revision(self, helix_con):
+        from analysis.tool_registry import register_tool
+        register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
+        register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
+        row = helix_con.execute(
+            "SELECT churn_ratio FROM tool_change_log "
+            "WHERE tool_name='t' ORDER BY revision_number DESC LIMIT 1"
+        ).fetchone()
+        assert row[0] is not None
+        assert row[0] > 0.0
+
+    def test_changed_lines_json_parseable(self, helix_con):
+        import json
+        from analysis.tool_registry import register_tool
+        register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
+        register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
+        row = helix_con.execute(
+            "SELECT changed_lines FROM tool_change_log "
+            "WHERE tool_name='t' ORDER BY revision_number DESC LIMIT 1"
+        ).fetchone()
+        assert row[0] is not None
+        parsed = json.loads(row[0])
+        assert isinstance(parsed, list)
+
+
+# ---------------------------------------------------------------------------
+# get_hot_lines
+# ---------------------------------------------------------------------------
+
+class TestGetHotLines:
+    def test_no_data_returns_empty(self, helix_con):
+        from analysis.tool_registry import get_hot_lines
+        result = get_hot_lines(helix_con, "nonexistent")
+        assert result["hot_lines"] == []
+        assert result["revisions_used"] == 0
+        assert result["suggestion"] is None
+
+    def test_repeated_changes_detected(self, helix_con):
+        from analysis.tool_registry import register_tool, get_hot_lines
+        register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
+        register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
+        register_tool(helix_con, "t", _churn_v3, "1.2.0", "d")
+        result = get_hot_lines(helix_con, "t", top_n=5, min_hits=2)
+        assert isinstance(result["hot_lines"], list)
+        assert result["revisions_used"] >= 2
+
+    def test_avg_churn_present_after_revisions(self, helix_con):
+        from analysis.tool_registry import register_tool, get_hot_lines
+        register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
+        register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
+        result = get_hot_lines(helix_con, "t")
+        avg = result["avg_churn"]
+        assert avg is not None
+        assert 0.0 <= avg <= 1.0
+
+    def test_suggestion_present_when_hot(self, helix_con):
+        from analysis.tool_registry import register_tool, get_hot_lines
+        register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
+        register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
+        register_tool(helix_con, "t", _churn_v3, "1.2.0", "d")
+        result = get_hot_lines(helix_con, "t", top_n=5, min_hits=2)
+        if result["hot_lines"]:
+            assert result["suggestion"] is not None
+            assert "consider" in result["suggestion"].lower() or "建議" in result["suggestion"]
+
+
+# ---------------------------------------------------------------------------
+# tool_health_report hot_lines_report key
+# ---------------------------------------------------------------------------
+
+class TestToolHealthReportHotLines:
+    def test_hot_lines_report_key_present(self, helix_con):
+        from analysis.tool_registry import tool_health_report
+        report = tool_health_report(helix_con)
+        assert "hot_lines_report" in report
+
+    def test_hot_lines_report_empty_on_no_hot_tools(self, helix_con):
+        from analysis.tool_registry import tool_health_report
+        report = tool_health_report(helix_con)
+        assert report["hot_lines_report"] == {}
