@@ -15,6 +15,7 @@ Key tables (bio_memory.duckdb):
 
 from __future__ import annotations
 
+import ast
 import difflib
 import hashlib
 import inspect
@@ -35,42 +36,41 @@ logger = logging.getLogger(__name__)
 # Hash computation
 # ---------------------------------------------------------------------------
 
-def _normalize_source(source: str) -> str:
-    """Strip comment lines and collapse consecutive blank lines to one."""
-    lines = source.splitlines()
-    normalized: list[str] = []
-    prev_blank = False
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        if stripped == "":
-            if prev_blank:
-                continue
-            prev_blank = True
-        else:
-            prev_blank = False
-        normalized.append(line)
-    return "\n".join(normalized)
-
-
 def compute_tool_hash(fn: Callable) -> str:
-    """Return first 16 hex chars of SHA-256 over normalized source of *fn*.
+    """Return first 16 hex chars of SHA-256 over AST-normalized source of *fn*.
 
-    Normalization: strip lines beginning with ``#`` and collapse multiple
-    consecutive blank lines into one, so trivial comment edits do not
-    invalidate a stored hash.
+    Uses ast.parse → ast.dump so that whitespace, formatting, and comment-only
+    edits do not produce a new hash — only real logic changes do (9C-1).
 
-    Returns the string ``"unavailable"`` when ``inspect.getsource`` raises
-    ``OSError`` (e.g. built-ins or compiled extensions).
+    Falls back to text-strip normalization if AST parse fails (e.g. syntax error
+    in source retrieved via inspect), and returns "unavailable" only when
+    inspect.getsource itself raises OSError (built-ins / compiled extensions).
     """
     try:
         source = inspect.getsource(fn)
-    except OSError:
+    except (OSError, TypeError):
         logger.warning("compute_tool_hash: source unavailable for %r", fn)
         return "unavailable"
-    normalized = _normalize_source(source)
-    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    try:
+        tree = ast.parse(source)
+        normalised = ast.dump(tree)
+    except SyntaxError:
+        # Fallback: strip comment lines and collapse blank lines
+        lines = []
+        prev_blank = False
+        for line in source.splitlines():
+            s = line.strip()
+            if s.startswith("#"):
+                continue
+            if s == "":
+                if prev_blank:
+                    continue
+                prev_blank = True
+            else:
+                prev_blank = False
+            lines.append(line)
+        normalised = "\n".join(lines)
+    return hashlib.sha256(normalised.encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +261,30 @@ def register_tool(
         "register_tool: registered %r  version=%s  hash=%s  revision=%d  tool_id=%s",
         tool_name, version, content_hash, next_revision, new_tool_id,
     )
+
+    # SQL-9: assert revision_count in tools matches max revision_number in change log
+    sync_row = con.execute(
+        """
+        SELECT t.revision_count, MAX(cl.revision_number)
+        FROM   tools t
+        LEFT   JOIN tool_change_log cl ON cl.tool_name = t.tool_name
+        WHERE  t.tool_id = ? AND t.status = 'active'
+        GROUP  BY t.revision_count
+        """,
+        [new_tool_id],
+    ).fetchone()
+    if sync_row is not None:
+        db_rev, log_rev = int(sync_row[0]), int(sync_row[1]) if sync_row[1] else 0
+        if db_rev != log_rev:
+            logger.error(
+                "register_tool: revision_count mismatch for %r: "
+                "tools.revision_count=%d, tool_change_log.max=%d",
+                tool_name, db_rev, log_rev,
+            )
+            raise AssertionError(
+                f"revision_count sync broken for {tool_name!r}: "
+                f"tools={db_rev}, log={log_rev}"
+            )
 
     # Invalidate L1 cache entries that reference this tool so users cannot
     # receive stale results produced by the previous version.

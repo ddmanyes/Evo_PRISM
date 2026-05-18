@@ -301,6 +301,79 @@
 
 ---
 
+## ✅ Code Review HIGH 問題修復（2026-05-18）
+
+### 3 個 HIGH 問題修復
+
+- [x] **Migration 原子性**：`scripts/17_migrate_schema_v16.py` / `scripts/18_migrate_schema_v17.py` — blob backup 從 `TEMP TABLE` 改為 persistent 表（`_blob_backup_v16` / `_blob_backup_v17`），session 中斷後資料可從 persistent 表恢復，不再依賴 session 存活
+- [x] **`_bootstrap_vss()` read_only 安全**：`config/db_utils.py` — 新增 `read_only` 參數，`LOAD vss` 兩種連線都執行，`SET hnsw_enable_experimental_persistence` 只在 writable 連線執行，避免 read_only 模式靜默失敗
+- [x] **`artifact_relations` 唯一約束**：migration v16/v17 及 restore 段均加入 `uq_rel_src_dst_type` 索引；`link_artifacts()` ON CONFLICT 改用 `(src_artifact_id, dst_artifact_id, relation_type)` 防止重複邊；測試 fixture 同步加入唯一索引
+- [x] **總測試數：213/213 PASSED，3 skipped**（與修復前相同，全數通過）
+
+---
+
+## ✅ Phase 9B + 9C + 9D + SQL-7~10 完成（2026-05-18）
+
+### Phase 9B：ENGRAM Provenance & Lineage
+
+- [x] `scripts/17_migrate_schema_v16.py` — migration v16：`analysis_artifacts` 新增 `input_data_hash` / `code_hash` / `env_hash`（recreate-table 策略）
+- [x] `artifact_relations` 表 — 有向邊（src, dst, relation_type），relation_type: `derived_from` | `used_by` | `compared_with`
+- [x] `tool_artifact_lineage` view — 三表預先 join（artifacts + history + tools）
+- [x] `analysis/artifact_registry.py` — `register_artifact()` 自動計算三個 hash；新增 `link_artifacts()` / `get_lineage()`
+  - `_hash_input_data(paths)` — SHA256[:16] of (path, mtime, size)
+  - `_hash_function_source(fn)` — AST-normalized SHA256[:16]
+  - `_hash_env()` — Python version + package versions + env vars
+- [x] 9B 測試：**13 個新測試**（TestProvenanceHashes × 6 + TestLinkArtifacts × 3 + TestGetLineage × 4）
+
+### Phase 9C：HELIX AST-normalized hash
+
+- [x] `analysis/tool_registry.py` — `compute_tool_hash()` 改用 `ast.parse` → `ast.dump` 正規化
+  - comment-only 修改不觸發 revision（`ast.dump` 不含 comment 節點）
+  - 邏輯變更才更新 hash
+  - SyntaxError fallback 保留 text-strip normalization
+  - `inspect.getsource` 新增捕捉 `TypeError`（built-in 函數）
+- [x] 9C 測試：**3 個新測試**（TestAstNormalizedHash）
+
+### Phase 9D：Matryoshka 雙層 HNSW 索引
+
+- [x] `scripts/18_migrate_schema_v17.py` — migration v17：`analysis_artifacts` 新增 `embedding_256 FLOAT[256]`；建立 `idx_artifacts_hnsw_256`
+- [x] `config/settings.py` — 新增 `MATRYOSHKA_DIM=256` / `MATRYOSHKA_ENABLED=false`（env var 控制）
+- [x] `analysis/artifact_registry.py` — `register_artifact()` 自動截斷 `embedding[:256]` 寫入 `embedding_256`
+- [x] `search_artifacts()` — `MATRYOSHKA_ENABLED=true` 時啟動兩階段搜尋（256 粗篩 top-50 → 1024 精排 top-N）
+- [x] 9D 測試：**3 個新測試**（TestMatryoshkaEmbedding）
+
+### SQL-9/SQL-10 補強
+
+- [x] SQL-9：`register_tool()` 寫入 `tool_change_log` 後加 `revision_count` 同步 assertion
+- [x] SQL-10：`config/db_utils.py` `get_connection()` 加入 `_bootstrap_vss()` — 每次連線自動 LOAD vss + SET hnsw_enable_experimental_persistence（消除分散在各腳本的重複設定）
+- [x] **總測試數：213/213 PASSED，3 skipped**（較 Phase 9A 的 194 增加 19 個測試）
+
+---
+
+## ✅ Phase 9-SQL + Phase 9A 完成（2026-05-18）
+
+### Schema 健康基線（Phase 9-SQL P0/P1）
+
+- [x] `scripts/11_migrate_schema_v10.py` — `schema_migrations` 版本追蹤表 + v1–v9 歷史補登
+- [x] `scripts/12_migrate_schema_v11.py` — ENUM 型別建立（`analysis_status` / `artifact_type_enum` / `tool_status_enum`）；DuckDB 1.5.x FK 限制下改用 ENUM 文件策略
+- [x] `scripts/13_migrate_schema_v12.py` — `analysis_artifacts.file_path` 改相對路徑（BIO_DB_ROOT-relative）
+- [x] `config/settings.py` — 新增 `resolve_artifact_path()` 讓絕對路徑可跨平台還原
+- [x] `scripts/14_migrate_schema_v13.py` — composite index（`analysis_history(sample_id,analysis_type)`、`(status,started_at)`；`tools(tool_name,status)`）+ UNIQUE index `uq_artifacts_run_subtype_label`；FK ON DELETE 策略文件化
+- [x] `references/rrf_hybrid_search_summary.md` — REF-3 RRF Hybrid Search 摘要（≤300 字）
+
+### ENGRAM 搜尋強化（Phase 9A）
+
+- [x] `scripts/15_migrate_schema_v14.py` — `analysis_artifact_blobs` blob 拆表（inline_data 移出主表）；recreate-table 策略解決 DuckDB FK 限制
+- [x] `scripts/16_migrate_schema_v15.py` — `engram_search_metrics` 觀測表（query / returned_n / latency_ms / search_layer）
+- [x] `analysis/artifact_registry.py` — 全面更新（9A-1~4）：
+  - `register_artifact()` blob 拆表寫入 + `_make_embed_text` 強化（CSV schema、report 首段）+ 相對路徑儲存
+  - `get_artifacts()` / `compare_analyses()` JOIN blob 表取 inline_data
+  - `search_artifacts()` 改 Hybrid RRF（k=60）— Layer 1 exact boost + Layer 2 HNSW，回傳 `score` + `search_layer`
+  - `_record_search_metric()` 寫入 `engram_search_metrics`
+- [x] `tests/test_artifact_registry.py` — 更新 2 個測試（blob 表查詢、RRF score 驗證）；**194/194 PASSED**
+
+---
+
 ## ✅ HELIX 架構全面改善完成（2026-05-18）
 
 ### P0 — 閉環缺口
@@ -333,9 +406,137 @@
 ## ⏭️ 下一步（按優先順序）
 
 1. 端對端測試：Claude API 切換驗證（填入 `ANTHROPIC_API_KEY`）
-2. Linux 伺服器遷移（見 plan_zh.md checklist）
-3. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
-4. Telegram Bot token 申請（Phase 0 正式啟用）
+2. launchd 排程安裝（`launchctl load` × 5，plist 範本在 `docs/`）
+3. Linux 伺服器遷移（見 plan_zh.md checklist）
+4. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
+5. Telegram Bot token 申請（Phase 0 正式啟用）
+
+---
+
+## 📐 Phase 9：雙軌記憶優化規劃
+
+> 目標：強化 ENGRAM / HELIX 雙軌記憶系統的搜尋品質、可追溯性與長期維運能力。
+> 設計依據見 plan_zh.md 附錄 A8（ENGRAM）與 §7（HELIX）；外部技術參考於 9-REF 階段先行下載。
+
+### Phase 9-REF：文獻下載與閱讀（先行）
+
+| 編號 | 文獻／資源 | 用途對應 | 優先 |
+|------|-----------|---------|------|
+| REF-1 | **A-MEM** (Zettelkasten-inspired agent memory, 2024) | 9B-2 artifact_relations 邊類型設計 | P1 |
+| REF-2 | **OpenLineage spec** (openlineage.io) | 9C-3 lineage event emitter | P2 |
+| REF-3 | **Microsoft Hybrid Retrieval (2024) — RRF** | 9A-2 Hybrid search 公式驗證 | P0 |
+| REF-4 | **Matryoshka Representation Learning** (Kusupati et al., 2022) | 9D 雙層索引設計 | P2 |
+| REF-5 | **MemGPT** (Berkeley, 2023) | 對照 HELIX 遺忘曲線與 recall/archival 分層 | P3 |
+| REF-6 | **bge-m3 paper** (BAAI, 2024) — Matryoshka 支援確認 | 9D 可行性驗證 | P2 |
+| REF-7 | **PROV-O ontology** (W3C) | 9B-1 provenance hash 命名規範 | P2 |
+| REF-8 | **ColBERT v2 / PLAID** | 評估是否值得替換單一 cosine（觀察用） | P3 |
+
+- [x] 下載 REF-3 PDF 至 `references/pdfs/`（9A 啟動前必需）
+- [x] 撰寫 `references/rrf_hybrid_search_summary.md`（≤ 300 字摘要 + 對應設計決策）
+- [ ] 下載 REF-1, REF-7 PDF（9B 啟動前必需）
+- [ ] 撰寫 `references/amem_zettelkasten_summary.md`、`references/prov_o_summary.md`
+- [ ] 下載 REF-4, REF-6 PDF（9D 啟動前必需）
+- [ ] 撰寫 `references/matryoshka_summary.md`、`references/bge_m3_summary.md`
+- [ ] 下載 REF-2 規格與 SDK 文件（9C 啟動前必需）
+- [ ] 撰寫 `references/openlineage_summary.md`
+- [ ] REF-5, REF-8 列入長期閱讀清單（不阻塞實作，視時間補做）
+
+### Phase 9-SQL：Schema 健康基線（P0 — 與 9A/9B 並行）
+
+> 從 SQL 設計原則（約束、正規化、索引、慣例）對現有 schema 補強。
+> Linux 遷移前必須完成 P0 項目。
+
+**P0（Linux 遷移前必做）**
+
+- [x] SQL-1 `analysis_artifacts.file_path` 改存相對路徑（相對 project root）— 配 `config/settings.py` 拼回絕對路徑；migration v12 一次轉換既有資料
+- [x] SQL-2 `schema_migrations` 表 — 記錄 (version, applied_at, description)；既有 v2–v9 補登一次
+- [x] SQL-3 ENUM 型別建立（DuckDB 1.5.x 有 FK 的表不支援 ALTER TYPE，改為 ENUM 文件策略）：
+  - `analysis_status` ENUM('running','completed','failed','stale') — 已建立
+  - `artifact_type_enum` ENUM('figure','csv','report','log') — 已建立
+  - `tool_status_enum` ENUM('active','deprecated','candidate') — 已建立
+
+**P1（9B 啟動前完成）**
+
+- [x] SQL-4 補 composite 索引：
+  - `analysis_history(sample_id, analysis_type)` — 已建立 (migration v13)
+  - `analysis_history(status, started_at)` — 已建立 (migration v13)
+  - `tools(tool_name, status)` — 已建立 (migration v13)
+- [x] SQL-5 FK ON DELETE 策略文件化（DuckDB 1.5.x 不支援 ON DELETE，application 層 enforce）
+- [ ] SQL-6 NOT NULL 補齊：待 DuckDB 升級後 ALTER（1.5.x 有 FK 的表不支援 SET NOT NULL）
+
+**P2（隨 9B/9C 一併處理）**
+
+- [ ] SQL-7 UNIQUE 約束：
+  - `analysis_artifacts(analysis_id, artifact_subtype, label)` — 防同分析重複登記
+  - `sample_registry(project, sample_id)` 評估是否需要（跨 project 同 sample_id 政策）
+- [ ] SQL-8 `analysis_history.parameters` JSON → STRUCT 或 EAV — 視 9A-3 embedding 強化需求決定
+- [ ] SQL-9 `tools.revision_count` derived data 同步保證 — 在 `tool_change_log` 寫入路徑加 assertion
+- [ ] SQL-10 HNSW persistence 設定移入 `config/db_utils.py` connection bootstrap，避免遺漏
+
+**P3（長期，不阻塞）**
+
+- [ ] SQL-11 時間戳欄位命名統一規範（`created_at` + `updated_at` 雙標準）— 大重構，風險高
+- [ ] SQL-12 audit log 表（trigger-based）— 視實驗室稽核需求啟動
+
+### 預估工時
+
+| 子項 | 工時 | 對應 Migration |
+|------|------|----------------|
+| SQL-1 file_path 轉相對 | 2h | v12 |
+| SQL-2 schema_migrations | 1h | v12 |
+| SQL-3 ENUM | 2h | v13 |
+| SQL-4 composite index | 1h | 併入 9A-4 |
+| SQL-5 FK 策略 | 1h | 文件 + 9B |
+| SQL-6 NOT NULL | 1h | 併入 v13 |
+| SQL-7 UNIQUE | 2h | v14 |
+| SQL-8 STRUCT/EAV | 4h | v14 |
+| SQL-9/10 | 2h | code-only |
+| SQL-11 | 4h | v15（緩） |
+| SQL-12 | 6h | v16（視需求） |
+
+### Phase 9A：ENGRAM 搜尋強化（P0 — 無 schema breaking）
+
+- [x] 9A-1 `analysis_artifact_blobs` 表拆分（migration v14）— inline_data 移出主表，避免 wide-row 影響 HNSW scan
+- [x] 9A-2 Hybrid 搜尋（RRF k=60）— `search_artifacts()` Layer 1 exact boost + Layer 2 HNSW，回傳 `score` + `search_layer`
+- [x] 9A-3 `_make_embed_text` 強化 — CSV 抽 header schema、report/log 抽首段
+- [x] 9A-4 `engram_search_metrics` 表（migration v15）— 記錄 query / returned_n / latency_ms / search_layer
+- [x] 9A 測試：**194/194 PASSED**（全套，較原 23 增加 171 個其他模組測試）
+
+### Phase 9B：Provenance & Lineage（P1 — 小幅 schema 變動）
+
+- [ ] 9B-1 `analysis_artifacts` 增 `input_data_hash` / `code_hash` / `env_hash`（migration v11）
+- [ ] 9B-2 `artifact_relations(src, dst, relation_type)` 表 — bulk_eda 自動連結（PCA → DEG → volcano）
+- [ ] 9B-3 `tool_artifact_lineage` materialized view — 三表預先 join，HELIX↔ENGRAM 反向追溯
+- [ ] 9B-4 `register_artifact()` 自動計算三個 hash
+- [ ] 9B 測試：覆蓋 hash 計算 + relation insert + lineage view
+
+### Phase 9C：HELIX 精進（P2 — 選做）
+
+- [ ] 9C-1 AST-normalized `source_hash` — `ast.parse` → `ast.dump` 後再 SHA256，消除 whitespace 噪音
+- [ ] 9C-2 SVG snapshot 取代部分 PNG（diff-friendly，文字檔可 git track）
+- [ ] 9C-3 OpenLineage event emitter — `register_tool()` / `register_artifact()` 同步輸出標準事件
+
+### Phase 9D：Matryoshka 雙層索引（P2 — 中等風險）
+
+- [ ] 9D-1 啟用 bge-m3 Matryoshka 模式 — 同步產生 1024 與 256 維 embedding
+- [ ] 9D-2 新建 256 維 HNSW 粗篩索引 `idx_artifacts_hnsw_256`
+- [ ] 9D-3 `search_artifacts()` 改兩階段 — 256 粗篩 top-50 → 1024 精排 top-N
+- [ ] 9D-4 Benchmark：HNSW 內存下降比例、recall@5 保留率
+
+### 預估工時與優先
+
+| Sub-phase | 工時 | 風險 | 文獻依賴 |
+|-----------|------|------|----------|
+| 9-REF (REF-3) | 1h | 低 | — |
+| 9A | 7h | 低 | REF-3 |
+| 9-REF (REF-1, REF-7) | 2h | 低 | — |
+| 9B | 11h | 中 | REF-1, REF-7 |
+| 9-REF (REF-4, REF-6) | 2h | 低 | — |
+| 9D | 6h | 中 | REF-4, REF-6 |
+| 9-REF (REF-2) | 1h | 低 | — |
+| 9C | 10h | 中 | REF-2 |
+
+**建議執行順序**：REF-3 → 9A → REF-1/REF-7 → 9B → REF-4/REF-6 → 9D → REF-2 → 9C
 
 ---
 
@@ -374,6 +575,7 @@
 | 2026-05-17 | 文件完整化 | plan_zh.md 重構（附錄 A 文獻依據 + 附錄 B 驗收標準 + 章節重編）；CLAUDE.md embedding 維度修正（1536→1024）；presentation.md 重構為標準報告格式（11 張→13 張 Marp 投影片） |
 | 2026-05-17 | agent.py 重大修復（3C + 8H） | Cache Hit Protocol 實作、enrichment UUID 型別修正、Code Promotion 寫入修復、startup cleanup、tempfile 洩漏修正、Claude backend 序列化、threshold 0.5→0.88、get_connection 統一 |
 | 2026-05-18 | ENGRAM 模組完成 | analysis_artifacts + HNSW 索引、5 個 ENGRAM-Core 函數、23/23 tests、bulk_eda 自動登記、8 個 API 路由、engram.html Web UI |
+| 2026-05-18 | Phase 9-SQL + 9A 完成 | schema_migrations (v10)、ENUM 型別 (v11)、file_path 相對化 (v12)、composite index + UNIQUE (v13)、blob 拆表 (v14)、search_metrics (v15)；Hybrid RRF 搜尋；194/194 PASSED |
 
 ---
 

@@ -5,17 +5,23 @@ Manages the permanent record of every file produced by an analysis run.
 Mirrors the HELIX pattern: register once, query forever, semantic search via HNSW.
 
 Key functions:
-    register_artifact()   — log a single output file (auto-embeds if ≤ INLINE_SIZE_LIMIT_KB)
+    register_artifact()   — log a single output file (auto-embeds, blob split since v14)
     get_artifacts()       — fetch all artifacts for one analysis run
     compare_analyses()    — side-by-side artifact lists for N analysis runs
     artifact_summary()    — 0-token metadata overview for a sample
-    search_artifacts()    — two-layer search: exact subtype first, HNSW fallback
+    search_artifacts()    — Hybrid RRF: exact subtype boost + HNSW cosine (9A-2)
+    link_artifacts()      — record directed relation between two artifacts (9B-2)
+    get_lineage()         — retrieve provenance chain for an artifact (9B-3)
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
+import importlib.metadata
 import logging
+import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,14 +31,11 @@ import duckdb
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import DUCKDB_PATH
 
 logger = logging.getLogger(__name__)
 
-# Artifacts larger than this threshold store only file_path, not inline_data.
 INLINE_SIZE_LIMIT_KB = 500
 
-# Recognised artifact subtypes — used for precise SQL filtering.
 KNOWN_SUBTYPES = frozenset({
     "volcano", "pca", "heatmap", "qc_figure", "scatter",
     "deg_list", "pathway_scores", "timeseries",
@@ -54,6 +57,9 @@ _MIME = {
     ".log":  "text/plain",
 }
 
+# RRF smoothing constant (Cormack et al. SIGIR 2009)
+_RRF_K = 60
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -66,12 +72,34 @@ def _mime_for(path: Path) -> str:
 def _read_inline(path: Path) -> Optional[str]:
     """Return base64-encoded content if file ≤ INLINE_SIZE_LIMIT_KB, else None."""
     try:
-        size_kb = path.stat().st_size // 1024
-        if size_kb > INLINE_SIZE_LIMIT_KB:
+        if path.stat().st_size > INLINE_SIZE_LIMIT_KB * 1024:
             return None
         return base64.b64encode(path.read_bytes()).decode()
     except OSError:
         return None
+
+
+def _extract_csv_schema(path: Path) -> str:
+    """Return first-row column names for a CSV file (≤ 500 bytes read)."""
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            header = f.readline(500).strip()
+        return header[:200]
+    except OSError:
+        return ""
+
+
+def _extract_report_lead(path: Path) -> str:
+    """Return first non-empty paragraph of a Markdown/text report (≤ 300 chars)."""
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    return line[:300]
+    except OSError:
+        pass
+    return ""
 
 
 def _make_embed_text(
@@ -79,7 +107,14 @@ def _make_embed_text(
     artifact_subtype: Optional[str],
     analysis_type: Optional[str],
     parameters: Optional[str],
+    path: Optional[Path] = None,
 ) -> str:
+    """Build rich embed text for semantic indexing (9A-3).
+
+    Enhances base label+subtype with file-content signals:
+    - CSV: column schema (header row)
+    - report/log: first paragraph
+    """
     parts = [label]
     if artifact_subtype:
         parts.append(artifact_subtype)
@@ -87,6 +122,18 @@ def _make_embed_text(
         parts.append(analysis_type)
     if parameters:
         parts.append(parameters[:200])
+
+    if path is not None and path.exists():
+        suffix = path.suffix.lower()
+        if suffix in (".csv", ".tsv"):
+            schema = _extract_csv_schema(path)
+            if schema:
+                parts.append(f"columns: {schema}")
+        elif suffix in (".md", ".txt", ".log"):
+            lead = _extract_report_lead(path)
+            if lead:
+                parts.append(lead)
+
     return " ".join(parts)
 
 
@@ -117,6 +164,121 @@ def _rows_to_dicts(rows: list, cols: list[str]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Provenance hash helpers (9B-1)
+# ---------------------------------------------------------------------------
+
+def _hash_input_data(paths: list[Path]) -> str:
+    """SHA256[:16] of sorted (path, mtime) pairs — changes when input data changes."""
+    h = hashlib.sha256()
+    for p in sorted(paths):
+        try:
+            stat = p.stat()
+            h.update(f"{p}:{stat.st_mtime}:{stat.st_size}".encode())
+        except OSError:
+            h.update(str(p).encode())
+    return h.hexdigest()[:16]
+
+
+def _hash_function_source(fn) -> str:
+    """SHA256[:16] of a callable's source code (ignores whitespace-only changes)."""
+    import ast
+    import inspect
+    try:
+        src = inspect.getsource(fn)
+        tree = ast.parse(src)
+        normalised = ast.dump(tree)
+    except Exception:
+        normalised = str(fn)
+    return hashlib.sha256(normalised.encode()).hexdigest()[:16]
+
+
+def _hash_env() -> str:
+    """SHA256[:16] of Python version + key package versions + critical env vars."""
+    import sys
+    parts = [f"python={sys.version}"]
+    for pkg in ("duckdb", "numpy", "pandas", "scanpy", "anndata"):
+        try:
+            parts.append(f"{pkg}={importlib.metadata.version(pkg)}")
+        except importlib.metadata.PackageNotFoundError:
+            pass
+    for var in ("BIO_DB_ROOT", "INFERENCE_BACKEND", "EMBED_PROVIDER"):
+        val = os.environ.get(var, "")
+        if val:
+            parts.append(f"{var}={val}")
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+def _provenance_col_exists(con: duckdb.DuckDBPyConnection) -> bool:
+    """Return True if migration v16 has added provenance columns."""
+    row = con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'analysis_artifacts' "
+        "  AND column_name = 'input_data_hash' "
+        "  AND table_schema = 'main'"
+    ).fetchone()
+    return row is not None
+
+
+def _matryoshka_col_exists(con: duckdb.DuckDBPyConnection) -> bool:
+    """Return True if migration v17 has added the embedding_256 column."""
+    row = con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'analysis_artifacts' "
+        "  AND column_name = 'embedding_256' "
+        "  AND table_schema = 'main'"
+    ).fetchone()
+    return row is not None
+
+
+def _relations_table_exists(con: duckdb.DuckDBPyConnection) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'artifact_relations' AND table_schema = 'main'"
+    ).fetchone()
+    return row is not None
+
+
+def _blob_table_exists(con: duckdb.DuckDBPyConnection) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'analysis_artifact_blobs' AND table_schema = 'main'"
+    ).fetchone()
+    return row is not None
+
+
+def _metrics_table_exists(con: duckdb.DuckDBPyConnection) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'engram_search_metrics' AND table_schema = 'main'"
+    ).fetchone()
+    return row is not None
+
+
+def _record_search_metric(
+    con: duckdb.DuckDBPyConnection,
+    query: str,
+    returned_n: int,
+    latency_ms: int,
+    search_layer: str,
+    threshold: Optional[float],
+    sample_id: Optional[str],
+) -> None:
+    if not _metrics_table_exists(con):
+        return
+    try:
+        con.execute(
+            """
+            INSERT INTO engram_search_metrics
+                (query, returned_n, latency_ms, search_layer, threshold, sample_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [query, returned_n, latency_ms, search_layer, threshold, sample_id],
+        )
+    except Exception as exc:
+        logger.warning("artifact_registry: failed to record search metric: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Core API
 # ---------------------------------------------------------------------------
 
@@ -128,24 +290,26 @@ def register_artifact(
     label: str,
     *,
     artifact_subtype: Optional[str] = None,
+    input_paths: Optional[list[Path]] = None,
+    producing_fn=None,
 ) -> str:
     """Register a single output file produced by an analysis run.
 
-    Automatically reads file size and MIME type, embeds inline_data when the
-    file is ≤ INLINE_SIZE_LIMIT_KB, and generates a semantic embedding for
-    HNSW search (requires embedding server; skipped gracefully if unavailable).
+    Since migration v14, inline_data is stored in analysis_artifact_blobs (1:0..1).
+    file_path is stored relative to BIO_DB_ROOT (migration v12).
+    Since migration v16, provenance hashes are recorded when available (9B-1).
 
     Args:
-        con:              Open DuckDB connection (write, bio_memory.duckdb).
-        analysis_id:      UUID of the parent analysis_history row.
-        file_path:        Absolute path to the output file.
-        artifact_type:    'figure' | 'csv' | 'report' | 'log'.
-        label:            Human-readable description, e.g. 'PCA 圖'.
-        artifact_subtype: Fine-grained type from KNOWN_SUBTYPES, e.g. 'pca'.
+        input_paths:  List of input data files used to produce this artifact.
+                      Used to compute input_data_hash. If None, hash is skipped.
+        producing_fn: The Python callable that generated this artifact.
+                      Used to compute code_hash. If None, hash is skipped.
 
     Returns:
         UUID string of the new artifact_id.
     """
+    from config.settings import BIO_DB_ROOT
+
     path = Path(file_path)
     artifact_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -160,26 +324,127 @@ def register_artifact(
     else:
         logger.warning("register_artifact: file not found: %s", path)
 
-    analysis_type, parameters = _get_analysis_context(con, analysis_id)
-    embed_text = _make_embed_text(label, artifact_subtype, analysis_type, parameters)
-    embedding = _get_embedding(embed_text)
+    # Store relative path (migration v12)
+    try:
+        rel_path = str(path.relative_to(BIO_DB_ROOT))
+    except ValueError:
+        rel_path = str(path)
+        logger.warning(
+            "register_artifact: %s is outside BIO_DB_ROOT %s — "
+            "stored as absolute path, portability will break on server deployment",
+            path, BIO_DB_ROOT,
+        )
 
-    con.execute(
-        """
-        INSERT INTO analysis_artifacts
-            (artifact_id, analysis_id, artifact_type, artifact_subtype,
-             label, file_path, inline_data, file_size_kb, mime_type,
-             embedding, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            artifact_id, analysis_id, artifact_type, artifact_subtype,
-            label, str(path), inline_data, size_kb, mime_type,
-            embedding, now,
-        ],
+    analysis_type, parameters = _get_analysis_context(con, analysis_id)
+    embed_text_str = _make_embed_text(
+        label, artifact_subtype, analysis_type, parameters, path
     )
+    embedding = _get_embedding(embed_text_str)
+
+    # Provenance hashes (migration v16 — silently skipped on older schema)
+    input_data_hash: Optional[str] = None
+    code_hash: Optional[str] = None
+    env_hash: Optional[str] = None
+    if _provenance_col_exists(con):
+        if input_paths is not None:
+            input_data_hash = _hash_input_data(input_paths)
+        if producing_fn is not None:
+            code_hash = _hash_function_source(producing_fn)
+        env_hash = _hash_env()
+
+    # Matryoshka 256-dim sub-vector (migration v17, 9D-1)
+    embedding_256: Optional[list[float]] = None
+    use_matryoshka = _matryoshka_col_exists(con)
+    if use_matryoshka and embedding is not None:
+        embedding_256 = embedding[:256]
+
+    use_provenance = _provenance_col_exists(con)
+
+    if use_provenance and use_matryoshka:
+        con.execute(
+            """
+            INSERT INTO analysis_artifacts
+                (artifact_id, analysis_id, artifact_type, artifact_subtype,
+                 label, file_path, file_size_kb, mime_type,
+                 embedding, embedding_256,
+                 input_data_hash, code_hash, env_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                artifact_id, analysis_id, artifact_type, artifact_subtype,
+                label, rel_path, size_kb, mime_type,
+                embedding, embedding_256,
+                input_data_hash, code_hash, env_hash, now,
+            ],
+        )
+    elif use_provenance:
+        con.execute(
+            """
+            INSERT INTO analysis_artifacts
+                (artifact_id, analysis_id, artifact_type, artifact_subtype,
+                 label, file_path, file_size_kb, mime_type,
+                 embedding, input_data_hash, code_hash, env_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                artifact_id, analysis_id, artifact_type, artifact_subtype,
+                label, rel_path, size_kb, mime_type,
+                embedding, input_data_hash, code_hash, env_hash, now,
+            ],
+        )
+    elif use_matryoshka:
+        con.execute(
+            """
+            INSERT INTO analysis_artifacts
+                (artifact_id, analysis_id, artifact_type, artifact_subtype,
+                 label, file_path, file_size_kb, mime_type,
+                 embedding, embedding_256, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                artifact_id, analysis_id, artifact_type, artifact_subtype,
+                label, rel_path, size_kb, mime_type,
+                embedding, embedding_256, now,
+            ],
+        )
+    else:
+        con.execute(
+            """
+            INSERT INTO analysis_artifacts
+                (artifact_id, analysis_id, artifact_type, artifact_subtype,
+                 label, file_path, file_size_kb, mime_type,
+                 embedding, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                artifact_id, analysis_id, artifact_type, artifact_subtype,
+                label, rel_path, size_kb, mime_type,
+                embedding, now,
+            ],
+        )
+
+    # Write blob to separate table if migration v14 has been applied
+    if inline_data and _blob_table_exists(con):
+        try:
+            con.execute(
+                """
+                INSERT INTO analysis_artifact_blobs (artifact_id, inline_data)
+                VALUES (?, ?)
+                ON CONFLICT (artifact_id) DO NOTHING
+                """,
+                [artifact_id, inline_data],
+            )
+        except Exception as exc:
+            logger.warning("register_artifact: blob insert failed: %s", exc)
+
+    # CHECKPOINT after every write — ExFAT has no journal (CLAUDE.md §6)
+    try:
+        con.execute("CHECKPOINT")
+    except Exception as exc:
+        logger.warning("register_artifact: CHECKPOINT failed: %s", exc)
+
     logger.info(
-        "register_artifact: %s  type=%s/%s  size=%s KB  inline=%s",
+        "register_artifact: %s  type=%s/%s  size=%s KB  blob=%s",
         path.name, artifact_type, artifact_subtype or "-",
         size_kb, inline_data is not None,
     )
@@ -196,34 +461,36 @@ def get_artifacts(
 ) -> list[dict]:
     """Return all artifacts for one analysis run.
 
-    Args:
-        con:              Open DuckDB connection.
-        analysis_id:      UUID of the analysis.
-        artifact_type:    Optional filter: 'figure' | 'csv' | 'report' | 'log'.
-        artifact_subtype: Optional filter: 'volcano' | 'pca' | ...
-        include_inline:   If False, omit inline_data (saves memory when browsing).
-
-    Returns:
-        List of dicts ordered by created_at.
+    Joins analysis_artifact_blobs for inline_data when include_inline=True
+    and blob table exists (migration v14+). Falls back to inline_data column
+    on older schemas.
     """
-    inline_col = "inline_data" if include_inline else "NULL AS inline_data"
     params: list = [analysis_id]
-    where = ["analysis_id = ?"]
+    where = ["aa.analysis_id = ?"]
 
     if artifact_type:
-        where.append("artifact_type = ?")
+        where.append("aa.artifact_type = ?")
         params.append(artifact_type)
     if artifact_subtype:
-        where.append("artifact_subtype = ?")
+        where.append("aa.artifact_subtype = ?")
         params.append(artifact_subtype)
+
+    use_blob_table = include_inline and _blob_table_exists(con)
+    inline_col = "b.inline_data" if use_blob_table else "NULL AS inline_data"
+    blob_join = (
+        "LEFT JOIN analysis_artifact_blobs b ON aa.artifact_id = b.artifact_id"
+        if use_blob_table else ""
+    )
 
     rows = con.execute(
         f"""
-        SELECT artifact_id, analysis_id, artifact_type, artifact_subtype,
-               label, file_path, {inline_col}, file_size_kb, mime_type, created_at
-        FROM   analysis_artifacts
+        SELECT aa.artifact_id, aa.analysis_id, aa.artifact_type, aa.artifact_subtype,
+               aa.label, aa.file_path, {inline_col}, aa.file_size_kb,
+               aa.mime_type, aa.created_at
+        FROM   analysis_artifacts aa
+        {blob_join}
         WHERE  {" AND ".join(where)}
-        ORDER  BY created_at
+        ORDER  BY aa.created_at
         """,
         params,
     ).fetchall()
@@ -242,22 +509,17 @@ def compare_analyses(
     artifact_subtype: Optional[str] = None,
     include_inline: bool = True,
 ) -> dict[str, list[dict]]:
-    """Return artifacts grouped by analysis_id for side-by-side comparison.
-
-    Args:
-        con:              Open DuckDB connection.
-        analysis_ids:     List of analysis UUIDs to compare.
-        artifact_subtype: Narrow to a specific subtype (e.g. 'volcano').
-        include_inline:   Whether to include base64 image data.
-
-    Returns:
-        Dict mapping analysis_id → list of artifact dicts.
-        Each dict includes analysis metadata (type, parameters, tool_version).
-    """
+    """Return artifacts grouped by analysis_id for side-by-side comparison."""
     if not analysis_ids:
         return {}
 
-    inline_col = "aa.inline_data" if include_inline else "NULL AS inline_data"
+    use_blob_table = include_inline and _blob_table_exists(con)
+    inline_col = "b.inline_data" if use_blob_table else "NULL AS inline_data"
+    blob_join = (
+        "LEFT JOIN analysis_artifact_blobs b ON aa.artifact_id = b.artifact_id"
+        if use_blob_table else ""
+    )
+
     placeholders = ", ".join("?" * len(analysis_ids))
     params: list = list(analysis_ids)
 
@@ -276,6 +538,7 @@ def compare_analyses(
         FROM   analysis_artifacts aa
         JOIN   analysis_history   ah ON aa.analysis_id = ah.analysis_id
         LEFT   JOIN tools          t  ON ah.tool_id    = t.tool_id
+        {blob_join}
         WHERE  aa.analysis_id IN ({placeholders})
                {subtype_clause}
         ORDER  BY aa.analysis_id, aa.created_at
@@ -310,17 +573,7 @@ def artifact_summary(
     con: duckdb.DuckDBPyConnection,
     sample_id: str,
 ) -> dict:
-    """Return a 0-token metadata overview for all analyses of a sample.
-
-    Designed for Agent use: one SQL call, no file IO, no LLM tokens.
-
-    Returns:
-        sample_id        str
-        total_runs       int
-        total_artifacts  int
-        by_subtype       dict[subtype → count]
-        latest_run       dict  (analysis_id, completed_at, artifact_count)
-    """
+    """Return a 0-token metadata overview for all analyses of a sample."""
     rows = con.execute(
         """
         SELECT
@@ -334,7 +587,7 @@ def artifact_summary(
         WHERE  ah.sample_id = ?
           AND  ah.status    = 'completed'
         GROUP  BY ah.analysis_id, ah.analysis_type, ah.completed_at
-        ORDER  BY ah.completed_at DESC
+        ORDER  BY ah.completed_at DESC NULLS LAST
         """,
         [sample_id],
     ).fetchall()
@@ -378,48 +631,55 @@ def search_artifacts(
     query: str,
     *,
     n: int = 5,
-    threshold: float = 0.88,
+    threshold: float = 0.01,
     artifact_subtype: Optional[str] = None,
     sample_id: Optional[str] = None,
 ) -> list[dict]:
-    """Two-layer semantic search across artifact embeddings.
+    """Hybrid RRF search across artifact embeddings (9A-2).
 
-    Layer 1: Exact match on artifact_subtype (zero token, always tried first).
-    Layer 2: HNSW cosine vector search as fallback.
+    Combines two retrieval layers via Reciprocal Rank Fusion (k=60):
+      Layer 1 — exact match on artifact_subtype (SQL)
+      Layer 2 — HNSW cosine vector search
+
+    RRF score range: ~0.008 (single layer, rank N) to ~0.033 (both layers rank 1).
+    threshold default 0.01 filters results ranking poorly in both layers.
 
     Args:
         con:              Open DuckDB connection (VSS loaded internally).
-        query:            Natural language query, e.g. '差異表現的圖'.
+        query:            Natural language query.
         n:                Max results to return.
-        threshold:        Cosine similarity threshold (0–1).
-        artifact_subtype: If provided, attempt exact subtype match first.
+        threshold:        Minimum RRF score (range ~0.008–0.033). Default 0.01.
+        artifact_subtype: If provided, used as Layer 1 exact match.
         sample_id:        Restrict search to a specific sample.
 
     Returns:
-        List of artifact dicts with an added 'score' field (1.0 for exact matches).
+        List of artifact dicts with 'score' (RRF) and 'search_layer' fields.
     """
+    t_start = time.monotonic()
+
     cols = [
         "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
-        "label", "file_path", "inline_data", "file_size_kb",
-        "mime_type", "created_at", "score",
+        "label", "file_path", "file_size_kb", "mime_type", "created_at",
     ]
 
     sample_join = ""
+    sample_where = ""
     sample_params: list = []
     if sample_id:
         sample_join = "JOIN analysis_history ah ON aa.analysis_id = ah.analysis_id"
+        sample_where = "AND ah.sample_id = ?"
         sample_params = [sample_id]
 
-    sample_where = "AND ah.sample_id = ?" if sample_id else ""
+    # ── Layer 1: exact subtype match ────────────────────────────────────────
+    exact_ranked: dict[str, int] = {}  # artifact_id → rank (1-based)
+    exact_rows_map: dict[str, dict] = {}
 
-    # Layer 1: exact subtype match
     if artifact_subtype:
         exact_rows = con.execute(
             f"""
             SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
                    aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
-                   aa.inline_data, aa.file_size_kb, aa.mime_type,
-                   aa.created_at, 1.0 AS score
+                   aa.file_size_kb, aa.mime_type, aa.created_at
             FROM   analysis_artifacts aa
             {sample_join}
             WHERE  aa.artifact_subtype = ?
@@ -427,41 +687,269 @@ def search_artifacts(
             ORDER  BY aa.created_at DESC
             LIMIT  ?
             """,
-            [artifact_subtype] + sample_params + [n],
+            [artifact_subtype] + sample_params + [n * 2],
         ).fetchall()
-        if exact_rows:
-            return _rows_to_dicts(exact_rows, cols)
+        for rank, row in enumerate(exact_rows, start=1):
+            aid = str(row[0])
+            exact_ranked[aid] = rank
+            exact_rows_map[aid] = dict(zip(cols, row))
 
-    # Layer 2: HNSW semantic search
+    # ── Layer 2: HNSW vector search (with Matryoshka two-phase if enabled) ──
     embedding = _get_embedding(query)
-    if embedding is None:
-        logger.warning("search_artifacts: embedding unavailable, returning empty")
+    hnsw_ranked: dict[str, int] = {}
+    hnsw_rows_map: dict[str, dict] = {}
+
+    if embedding is not None:
+        try:
+            con.execute("LOAD vss")
+        except Exception:
+            pass
+
+        from config.settings import MATRYOSHKA_ENABLED
+        use_matryoshka_search = (
+            MATRYOSHKA_ENABLED
+            and _matryoshka_col_exists(con)
+            and len(embedding) >= 256
+        )
+
+        try:
+            if use_matryoshka_search:
+                # Phase 1: coarse scan with 256-dim sub-vector (fast)
+                embedding_256 = embedding[:256]
+                coarse_rows = con.execute(
+                    f"""
+                    SELECT aa.artifact_id::VARCHAR
+                    FROM   analysis_artifacts aa
+                    {sample_join}
+                    WHERE  aa.embedding_256 IS NOT NULL
+                           {sample_where}
+                    ORDER  BY array_cosine_distance(aa.embedding_256, ?::FLOAT[256])
+                    LIMIT  ?
+                    """,
+                    sample_params + [embedding_256, n * 10],
+                ).fetchall()
+                coarse_ids = [str(r[0]) for r in coarse_rows]
+
+                if coarse_ids:
+                    # Phase 2: re-rank top candidates with full 1024-dim embedding
+                    id_placeholders = ", ".join("?" * len(coarse_ids))
+                    hnsw_rows = con.execute(
+                        f"""
+                        SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
+                               aa.artifact_type, aa.artifact_subtype, aa.label,
+                               aa.file_path, aa.file_size_kb, aa.mime_type, aa.created_at
+                        FROM   analysis_artifacts aa
+                        WHERE  aa.artifact_id::VARCHAR IN ({id_placeholders})
+                          AND  aa.embedding IS NOT NULL
+                        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
+                        LIMIT  ?
+                        """,
+                        coarse_ids + [embedding, n * 2],
+                    ).fetchall()
+                else:
+                    hnsw_rows = []
+            else:
+                hnsw_rows = con.execute(
+                    f"""
+                    SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
+                           aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
+                           aa.file_size_kb, aa.mime_type, aa.created_at
+                    FROM   analysis_artifacts aa
+                    {sample_join}
+                    WHERE  aa.embedding IS NOT NULL
+                           {sample_where}
+                    ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
+                    LIMIT  ?
+                    """,
+                    sample_params + [embedding, n * 2],
+                ).fetchall()
+
+            for rank, row in enumerate(hnsw_rows, start=1):
+                aid = str(row[0])
+                hnsw_ranked[aid] = rank
+                hnsw_rows_map[aid] = dict(zip(cols, row))
+        except Exception as exc:
+            logger.warning("search_artifacts: HNSW search failed: %s", exc)
+
+    # ── RRF fusion ───────────────────────────────────────────────────────────
+    all_ids = set(exact_ranked) | set(hnsw_ranked)
+    if not all_ids:
+        latency_ms = int((time.monotonic() - t_start) * 1000)
+        _record_search_metric(con, query, 0, latency_ms, "none", threshold, sample_id)
         return []
 
-    try:
-        con.execute("LOAD vss")
-    except Exception:
-        pass
+    scored: list[tuple[float, str]] = []
+    for aid in all_ids:
+        r_exact = exact_ranked.get(aid, None)
+        r_hnsw  = hnsw_ranked.get(aid, None)
+        rrf = (1 / (_RRF_K + r_exact) if r_exact else 0.0) + \
+              (1 / (_RRF_K + r_hnsw)  if r_hnsw  else 0.0)
+        scored.append((rrf, aid))
 
+    scored.sort(reverse=True)
+    top = [(s, aid) for s, aid in scored if s >= threshold][:n]
+
+    if not top:
+        latency_ms = int((time.monotonic() - t_start) * 1000)
+        _record_search_metric(con, query, 0, latency_ms, "none", threshold, sample_id)
+        return []
+
+    # Determine dominant layer for metrics (any() correctly handles dual-layer hits)
+    exact_contributed = any(aid in exact_ranked for _, aid in top)
+    hnsw_contributed  = any(aid in hnsw_ranked  for _, aid in top)
+    if exact_contributed and hnsw_contributed:
+        batch_layer = "rrf"
+    elif exact_contributed:
+        batch_layer = "exact"
+    else:
+        batch_layer = "hnsw"
+
+    results = []
+    for rrf_score, aid in top:
+        row_dict = exact_rows_map.get(aid) or hnsw_rows_map.get(aid, {})
+        row_dict["score"] = round(rrf_score, 6)
+        # Per-item layer: artifact may appear in one or both layers
+        in_e = aid in exact_ranked
+        in_h = aid in hnsw_ranked
+        row_dict["search_layer"] = "rrf" if (in_e and in_h) else ("exact" if in_e else "hnsw")
+        results.append(row_dict)
+
+    latency_ms = int((time.monotonic() - t_start) * 1000)
+    _record_search_metric(
+        con, query, len(results), latency_ms, batch_layer, threshold, sample_id
+    )
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Provenance & Lineage API (9B-2 / 9B-3)
+# ---------------------------------------------------------------------------
+
+VALID_RELATION_TYPES = frozenset({
+    "derived_from",
+    "used_by",
+    "compared_with",
+})
+
+
+def link_artifacts(
+    con: duckdb.DuckDBPyConnection,
+    src_artifact_id: str,
+    dst_artifact_id: str,
+    relation_type: str = "derived_from",
+) -> Optional[str]:
+    """Record a directed relation between two artifacts (9B-2).
+
+    Example: link PCA artifact → DEG CSV that was derived from it.
+
+    Args:
+        src_artifact_id: The source (upstream) artifact.
+        dst_artifact_id: The destination (downstream) artifact.
+        relation_type:   One of 'derived_from' | 'used_by' | 'compared_with'.
+
+    Returns:
+        UUID of the new relation_id, or None if artifact_relations table absent.
+    """
+    if not _relations_table_exists(con):
+        logger.warning("link_artifacts: artifact_relations table not found — run migration v16")
+        return None
+
+    if relation_type not in VALID_RELATION_TYPES:
+        raise ValueError(
+            f"relation_type must be one of {VALID_RELATION_TYPES}, got {relation_type!r}"
+        )
+
+    relation_id = str(uuid.uuid4())
+    con.execute(
+        """
+        INSERT INTO artifact_relations
+            (relation_id, src_artifact_id, dst_artifact_id, relation_type)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (src_artifact_id, dst_artifact_id, relation_type) DO NOTHING
+        """,
+        [relation_id, src_artifact_id, dst_artifact_id, relation_type],
+    )
     try:
-        rows = con.execute(
-            f"""
-            SELECT aa.artifact_id, aa.analysis_id, aa.artifact_type,
-                   aa.artifact_subtype, aa.label, aa.file_path,
-                   aa.inline_data, aa.file_size_kb, aa.mime_type,
-                   aa.created_at,
-                   1 - array_cosine_distance(aa.embedding, ?::FLOAT[1024]) AS score
-            FROM   analysis_artifacts aa
-            {sample_join}
-            WHERE  aa.embedding IS NOT NULL
-                   {sample_where}
-            ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
-            LIMIT  ?
-            """,
-            [embedding] + sample_params + [embedding, n],
-        ).fetchall()
+        con.execute("CHECKPOINT")
     except Exception as exc:
-        logger.warning("search_artifacts: HNSW search failed: %s", exc)
+        logger.warning("link_artifacts: CHECKPOINT failed: %s", exc)
+    return relation_id
+
+
+def get_lineage(
+    con: duckdb.DuckDBPyConnection,
+    artifact_id: str,
+    *,
+    direction: str = "upstream",
+) -> list[dict]:
+    """Retrieve the provenance chain for an artifact (9B-3).
+
+    Uses tool_artifact_lineage view when available, otherwise falls back to
+    artifact_relations + analysis_artifacts direct query.
+
+    Args:
+        artifact_id: The artifact to trace.
+        direction:   'upstream' (what produced this) or 'downstream' (what uses this).
+
+    Returns:
+        List of relation dicts with artifact metadata and provenance hashes.
+    """
+    if not _relations_table_exists(con):
         return []
 
-    return [r for r in _rows_to_dicts(rows, cols) if (r["score"] or 0) >= threshold]
+    if direction == "upstream":
+        # src → dst means dst was derived from src; to find upstream of target,
+        # look for relations where dst_artifact_id = target
+        join_col = "dst_artifact_id"
+        other_col = "src_artifact_id"
+    else:
+        join_col = "src_artifact_id"
+        other_col = "dst_artifact_id"
+
+    has_provenance = _provenance_col_exists(con)
+    provenance_cols = (
+        "aa.input_data_hash, aa.code_hash, aa.env_hash,"
+        if has_provenance else
+        "NULL AS input_data_hash, NULL AS code_hash, NULL AS env_hash,"
+    )
+
+    rows = con.execute(
+        f"""
+        SELECT
+            r.relation_id, r.relation_type,
+            aa.artifact_id, aa.label, aa.artifact_subtype,
+            aa.artifact_type, aa.file_path, aa.created_at,
+            ah.analysis_id, ah.analysis_type, ah.sample_id,
+            {provenance_cols}
+            t.tool_name, t.version AS tool_version
+        FROM   artifact_relations r
+        JOIN   analysis_artifacts aa ON aa.artifact_id = r.{other_col}
+        JOIN   analysis_history   ah ON aa.analysis_id = ah.analysis_id
+        LEFT JOIN tools           t  ON ah.tool_id = t.tool_id
+        WHERE  r.{join_col} = ?
+        ORDER  BY aa.created_at
+        """,
+        [artifact_id],
+    ).fetchall()
+
+    result = []
+    for row in rows:
+        result.append({
+            "relation_id":      str(row[0]),
+            "relation_type":    row[1],
+            "artifact_id":      str(row[2]),
+            "label":            row[3],
+            "artifact_subtype": row[4],
+            "artifact_type":    row[5],
+            "file_path":        row[6],
+            "created_at":       str(row[7]),
+            "analysis_id":      str(row[8]),
+            "analysis_type":    row[9],
+            "sample_id":        row[10],
+            "input_data_hash":  row[11],
+            "code_hash":        row[12],
+            "env_hash":         row[13],
+            "tool_name":        row[14],
+            "tool_version":     row[15],
+        })
+    return result

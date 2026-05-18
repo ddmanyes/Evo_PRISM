@@ -17,13 +17,35 @@ from config.settings import DUCKDB_PATH
 _con: duckdb.DuckDBPyConnection | None = None
 
 
+def _bootstrap_vss(con: duckdb.DuckDBPyConnection, read_only: bool = False) -> None:
+    """Load VSS extension and enable HNSW persistence on every new connection (SQL-10).
+
+    Centralised here so callers never need to repeat LOAD vss / SET statements.
+    Silently skipped when VSS is unavailable (in-memory test DBs, missing extension).
+    SET hnsw_enable_experimental_persistence is skipped for read_only connections —
+    DuckDB silently ignores or errors on SET in read_only mode.
+    """
+    try:
+        con.execute("LOAD vss")
+    except Exception:
+        return
+    if not read_only:
+        try:
+            con.execute("SET hnsw_enable_experimental_persistence = true")
+        except Exception:
+            pass
+
+
 def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     """取得 bio_memory.duckdb 連線（寫入模式為單例）。"""
     global _con
     if read_only:
-        return duckdb.connect(str(DUCKDB_PATH), read_only=True)
+        con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
+        _bootstrap_vss(con, read_only=True)
+        return con
     if _con is None:
         _con = duckdb.connect(str(DUCKDB_PATH))
+        _bootstrap_vss(_con)
     return _con
 
 
