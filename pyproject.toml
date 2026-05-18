@@ -33,6 +33,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "uvicorn>=0.47.0",
     "mistune>=3.2.1",
+    "radon>=6.0.1",
 ]
 
 [project.optional-dependencies]

@@ -33,6 +33,44 @@ _RENDER_W_IN = 640 / _RENDER_DPI
 _RENDER_H_IN = 640 / _RENDER_DPI
 
 
+def compute_loc(fn: Callable) -> Optional[int]:
+    """Return non-blank, non-comment source lines of *fn*, or None on failure."""
+    try:
+        source = inspect.getsource(fn)
+        count = sum(
+            1 for line in source.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        )
+        return count
+    except Exception as exc:
+        logger.warning("compute_loc: failed for %r — %s", getattr(fn, "__name__", fn), exc)
+        return None
+
+
+def compute_halstead_volume(fn: Callable) -> Optional[float]:
+    """Return Halstead volume of *fn* via radon, or None if unavailable.
+
+    V = N * log2(n) where N = total operators+operands, n = distinct.
+    Higher values correlate with maintenance effort.
+    """
+    try:
+        from radon.metrics import h_visit
+        source = inspect.getsource(fn)
+        results = h_visit(source)
+        if hasattr(results, "volume"):
+            return round(float(results.volume), 2)
+        if isinstance(results, (list, tuple)) and results:
+            vol = getattr(results[0], "volume", None)
+            return round(float(vol), 2) if vol is not None else None
+        return None
+    except Exception as exc:
+        logger.warning(
+            "compute_halstead_volume: failed for %r — %s",
+            getattr(fn, "__name__", fn), exc,
+        )
+        return None
+
+
 def compute_complexity(fn: Callable) -> Optional[int]:
     """Return the cyclomatic complexity of *fn* using radon, or None if unavailable.
 

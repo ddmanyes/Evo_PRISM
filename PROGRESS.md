@@ -7,10 +7,14 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：agent.py Cache Hit Protocol + Code Promotion 修復（3 CRITICAL + 8 HIGH 問題解決）
+**里程碑**：HELIX 架構全面改善（P0+P1+P2 共 12 項，47/47 HELIX tests PASSED）
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
-**最後更新**：2026-05-17
+**最後更新**：2026-05-18
 **commit**：(latest)
+
+---
+
+---
 
 ---
 
@@ -261,6 +265,35 @@
 - [x] `plan_zh.md`：第二章新增 DuckDB + Parquet 選型理由（技術優勢 + 生資實測數字）
 - [x] `presentation.md`：新增 Slide 4B（DuckDB + Parquet 優勢說明，含壓縮流程圖）
 - [x] `README.md`：新增專案 README
+
+---
+
+## ✅ HELIX 架構全面改善完成（2026-05-18）
+
+### P0 — 閉環缺口
+
+- [x] `open_stabilization()` 加入重複 ongoing 防護斷言（`ValueError` 若同工具已有未關閉迭代）
+- [x] `scheduler/helix_expire_snapshots.py` — 遺忘曲線降採樣排程（180d→0.5x、365d→0.25x）
+
+### P1 — 重要改善
+
+- [x] `tool_health_report()` 增加 `regression_zones`（偵測穩定化後複雜度回潮的工具）
+- [x] `prune_deprecated()` 連帶清理 1 年以上 `diagnosis_img`（保留文字診斷）
+- [x] `tests/test_tool_registry.py` — 32 tests，涵蓋 register/drift/hot/prune/stabilize/mark_stable/auto_revert/health
+- [x] `tests/test_tool_visualizer.py` — 15 tests，涵蓋 loc/halstead/CC/render/downsample
+- [x] **總計 47/47 HELIX tests PASSED**
+
+### P2 — 體驗與長期維護
+
+- [x] `mark_stable(tool_name, reason)` + `is_marked_stable()` — 穩定工具白名單
+- [x] `auto_revert_stale_stabilizations(con, days=30)` — 30 天自動關閉失效迭代
+- [x] 熱區閾值改為 `settings.HELIX_HOT_THRESHOLD`（env var 可覆蓋，預設 3）
+- [x] `close_stabilization()` 渲染 `after_img`，與 `diagnosis_img` 並列前後對比
+- [x] `tool_stabilization_log` 加 `loc`/`halstead_volume`/`after_img` 欄位（migration v7）
+- [x] `tool_health_report` 加 `helix_self_health`（表大小、孤兒迭代、降採樣覆蓋率）
+- [x] `compute_loc()` / `compute_halstead_volume()` 加入 `tool_visualizer.py`
+- [x] `config/settings.py` 加入 HELIX 四個常數（HOT_THRESHOLD、STALE_ITERATION_DAYS、SNAPSHOT_DECAY_DAYS_1/2）
+- [x] `CLAUDE.md` §7 更新（§7.5–§7.9 新增排程、mark_stable、auto_revert、閾值設定說明）
 
 ---
 
