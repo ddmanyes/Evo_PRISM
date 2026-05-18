@@ -925,27 +925,29 @@ def _exec_bio_run_spatial_eda(args: dict) -> str:
 
 def _exec_bio_register_sample(args: dict) -> str:
     import re
-    from config.db_utils import safe_write, get_connection
+    import duckdb
+    from config.db_utils import safe_write
+    from config.settings import DUCKDB_PATH
     from datetime import datetime, timezone
     sample_id = args["sample_id"]
     if not re.match(r'^[a-z0-9_-]+$', sample_id):
         return f"樣本 ID {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號。"
-    con = get_connection()
-    if con.execute("SELECT 1 FROM sample_registry WHERE sample_id=?", [sample_id]).fetchone():
-        return f"樣本 {sample_id!r} 已存在，跳過。"
-    safe_write(
-        con,
-        """INSERT INTO sample_registry
-               (sample_id, project, data_type, platform, species, tissue,
-                l3_path, l2_ready, analysis_done, added_by, notes, last_updated)
-           VALUES (?, ?, ?, ?, ?, ?, ?, false, false, ?, ?, ?)""",
-        [
-            sample_id, args.get("project", ""), args["data_type"],
-            args.get("platform", ""), args.get("species", "human"),
-            args.get("tissue", ""), args["l3_path"],
-            "agent", args.get("notes", ""), datetime.now(timezone.utc),
-        ],
-    )
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
+        if con.execute("SELECT 1 FROM sample_registry WHERE sample_id=?", [sample_id]).fetchone():
+            return f"樣本 {sample_id!r} 已存在，跳過。"
+        safe_write(
+            con,
+            """INSERT INTO sample_registry
+                   (sample_id, project, data_type, platform, species, tissue,
+                    l3_path, l2_ready, analysis_done, added_by, notes, last_updated)
+               VALUES (?, ?, ?, ?, ?, ?, ?, false, false, ?, ?, ?)""",
+            [
+                sample_id, args.get("project", ""), args["data_type"],
+                args.get("platform", ""), args.get("species", "human"),
+                args.get("tissue", ""), args["l3_path"],
+                "agent", args.get("notes", ""), datetime.now(timezone.utc),
+            ],
+        )
     return f"樣本 {sample_id!r} 已登記。data_type={args['data_type']!r}"
 
 
@@ -1047,7 +1049,7 @@ _plt_orig.show = _hermes_show
                 [
                     str(_uuid.uuid4()),
                     args.get("sample_id", "unknown"),
-                    json.dumps({"generated_code": code, "description": description}),
+                    json.dumps({"generated_code": code[:2000], "description": description}),
                     now, now,
                     description[:50] or "dynamic code execution",
                 ],

@@ -315,36 +315,48 @@ def get_hot_tools(
         [min_revisions],
     ).fetchall()
 
-    result: list[dict] = []
-    for tool_name, rev_count, note, chash, tool_id in rows:
-        log_rows = con.execute(
-            """
-            SELECT revision_number, old_hash, new_hash, change_reason, changed_at
-            FROM   tool_change_log
-            WHERE  tool_name = ?
-            ORDER  BY revision_number DESC
-            LIMIT  10
-            """,
-            [tool_name],
-        ).fetchall()
-        result.append({
+    if not rows:
+        return []
+
+    # Batch-fetch all change log entries for the hot tools in a single query
+    # to avoid N+1 per-tool round trips.
+    hot_names = [r[0] for r in rows]
+    placeholders = ", ".join("?" * len(hot_names))
+    log_all = con.execute(
+        f"""
+        SELECT tool_name, revision_number, old_hash, new_hash, change_reason, changed_at
+        FROM   tool_change_log
+        WHERE  tool_name IN ({placeholders})
+        ORDER  BY tool_name, revision_number DESC
+        """,
+        hot_names,
+    ).fetchall()
+
+    # Group log rows by tool_name, keeping at most 10 per tool
+    from collections import defaultdict
+    log_by_tool: dict[str, list[dict]] = defaultdict(list)
+    for tool_name_log, rev, old_h, new_h, reason, changed_at in log_all:
+        entries = log_by_tool[tool_name_log]
+        if len(entries) < 10:
+            entries.append({
+                "revision":   rev,
+                "old_hash":   old_h,
+                "new_hash":   new_h,
+                "reason":     reason,
+                "changed_at": str(changed_at),
+            })
+
+    return [
+        {
             "tool_name":      tool_name,
             "revision_count": rev_count,
             "stability_note": note,
             "content_hash":   chash,
             "tool_id":        str(tool_id),
-            "change_log": [
-                {
-                    "revision": r[0],
-                    "old_hash": r[1],
-                    "new_hash": r[2],
-                    "reason":   r[3],
-                    "changed_at": str(r[4]),
-                }
-                for r in log_rows
-            ],
-        })
-    return result
+            "change_log":     log_by_tool.get(tool_name, []),
+        }
+        for tool_name, rev_count, note, chash, tool_id in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
