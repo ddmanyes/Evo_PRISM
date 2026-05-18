@@ -53,8 +53,8 @@ crc_visium_data/  bulk_rna_data/  proteome_data/
 
 ```bash
 # 1. 建立 venv（ExFAT 磁碟不支援 symlink，venv 必須建在 APFS）
-python3 -m venv ~/.venvs/hermes-bio-memory
-ln -s ~/.venvs/hermes-bio-memory "/Volumes/NO NAME/bio_DB/.venv"
+python3 -m venv ~/.venvs/bioagent
+ln -s ~/.venvs/bioagent "/Volumes/NO NAME/bio_DB/.venv"
 
 # 2. 安裝依賴
 cd "/Volumes/NO NAME/bio_DB"
@@ -65,7 +65,7 @@ cp .env.example .env
 # 填入 ANTHROPIC_API_KEY（使用 Claude 後端時才需要）
 
 # 4. 初始化資料庫 Schema
-~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
+~/.venvs/bioagent/bin/python scripts/00_init_db.py
 
 # 5. 啟動 Embedding Server（分析前必須在線）
 ~/llama.cpp/build/bin/llama-server \
@@ -77,7 +77,7 @@ cp .env.example .env
 
 ```bash
 cd "/Volumes/NO NAME/bio_DB"
-bash start_hermes.sh
+bash start_bioagent.sh
 ```
 
 啟動後開啟瀏覽器：**<http://localhost:8000>**
@@ -91,15 +91,15 @@ bash start_hermes.sh
 ### 關閉系統
 
 ```bash
-# 方法一：在 start_hermes.sh 執行的終端機按 Ctrl+C
+# 方法一：在 start_bioagent.sh 執行的終端機按 Ctrl+C
 # （只停止由該腳本啟動的服務）
 
 # 方法二：強制停止所有服務（含 launchd 或手動啟動的）
 cd "/Volumes/NO NAME/bio_DB"
-bash stop_hermes.sh
+bash stop_bioagent.sh
 ```
 
-`stop_hermes.sh` 依序停止 port 8080（推理引擎）、8081（Embedding）、8000（Web UI）。
+`stop_bioagent.sh` 依序停止 port 8080（推理引擎）、8081（Embedding）、8000（Web UI）。
 
 ---
 
@@ -107,7 +107,7 @@ bash stop_hermes.sh
 
 ```bash
 cd "/Volumes/NO NAME/bio_DB"
-~/.venvs/hermes-bio-memory/bin/python -m pytest tests/ -v --tb=short
+~/.venvs/bioagent/bin/python -m pytest tests/ -v --tb=short
 ```
 
 預期結果：**105 / 106 PASSED**（1 筆為既有路徑問題，非程式邏輯錯誤）
@@ -158,10 +158,10 @@ cd "/Volumes/NO NAME/bio_DB"
 
 ```bash
 # 健檢（確認 sample / history / stale 數量）
-~/.venvs/hermes-bio-memory/bin/python config/db_utils.py
+~/.venvs/bioagent/bin/python config/db_utils.py
 
 # 確認 L2 Parquet 資料正確
-~/.venvs/hermes-bio-memory/bin/python -c "
+~/.venvs/bioagent/bin/python -c "
 import duckdb
 r = duckdb.execute(\"\"\"
     SELECT COUNT(*) as bins, COUNT(DISTINCT gene_name) as genes
@@ -173,7 +173,7 @@ print(f'bins={r[0]}, genes={r[1]}')
 # 預期：bins≈516880, genes≈18000
 
 # 列出資料庫所有表格
-~/.venvs/hermes-bio-memory/bin/python -c "
+~/.venvs/bioagent/bin/python -c "
 import duckdb
 con = duckdb.connect('bio_memory.duckdb', read_only=True)
 print(con.execute('SHOW TABLES').fetchall())
@@ -198,7 +198,7 @@ bio_DB/
 ├── silver/           ← L2 Parquet（scripts/ 寫入，analysis/ 唯讀）
 ├── gold/             ← L1 快取 DuckDB（hermes_cache.duckdb）
 ├── results/          ← 分析結果（.md 報告 + QC 圖）
-├── start_hermes.sh   ← 一鍵啟動腳本
+├── start_bioagent.sh   ← 一鍵啟動腳本
 └── bio_memory.duckdb ← 主資料庫（sample_registry + analysis_history）
 ```
 
@@ -216,8 +216,8 @@ bio_DB/
 手動備份與還原：
 
 ```bash
-~/.venvs/hermes-bio-memory/bin/python scheduler/backup_db.py            # 備份
-~/.venvs/hermes-bio-memory/bin/python scheduler/backup_db.py --restore  # 還原最新備份
+~/.venvs/bioagent/bin/python scheduler/backup_db.py            # 備份
+~/.venvs/bioagent/bin/python scheduler/backup_db.py --restore  # 還原最新備份
 ```
 
 ---

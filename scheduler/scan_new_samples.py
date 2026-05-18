@@ -3,7 +3,7 @@
 
 由 launchd 每 30 分鐘觸發（見 docs/launchd_scan_samples.plist.example）。
 亦可手動執行：
-    ~/.venvs/hermes-bio-memory/bin/python scheduler/scan_new_samples.py
+    ~/.venvs/bioagent/bin/python scheduler/scan_new_samples.py
 """
 from __future__ import annotations
 

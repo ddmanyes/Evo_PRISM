@@ -91,7 +91,7 @@ _REPORT_TEMPLATE = """\
 
 ---
 
-*由 Hermes Bio-Memory `report_generator.py` 自動生成。*
+*由 BioAgent `report_generator.py` 自動生成。*
 """
 
 

@@ -1,5 +1,5 @@
 """
-Phase 5 — Hermes Bio-Memory Agent Loop。
+Phase 5 — BioAgent Agent Loop。
 
 推理引擎：llama.cpp OpenAI-compatible API（port 8080，本機 Gemma 4 Vision）
 工具呼叫格式：OpenAI function calling
@@ -408,7 +408,7 @@ def _exec_bio_check_l2_sufficiency(args: dict) -> str:
     if l2_ready:
         return f"l2_ready=true。樣本 {sample_id!r} 的 L2 Parquet 已就緒，可直接執行分析。"
     cmd = (
-        f"~/.venvs/hermes-bio-memory/bin/python scripts/02_spatial_to_parquet.py --sample-id {sample_id}"
+        f"~/.venvs/bioagent/bin/python scripts/02_spatial_to_parquet.py --sample-id {sample_id}"
         if data_type in ("visium_hd", "visium")
         else f"# data_type={data_type!r}，請手動執行對應的 L2 轉換腳本。"
     )
@@ -1059,7 +1059,7 @@ def run_cli() -> None:
     """互動式 CLI（用於本機測試）。"""
     logging.basicConfig(level=logging.INFO)
     _startup_cleanup()
-    print("Hermes Bio-Memory Agent（輸入 'exit' 離開）")
+    print("BioAgent Agent（輸入 'exit' 離開）")
     print("─" * 50)
     history: list[dict] = []
     while True:
@@ -1075,7 +1075,7 @@ def run_cli() -> None:
             break
 
         result = handle_message(user_msg, history)
-        print(f"\nHermes：{result.text}")
+        print(f"\nBioAgent：{result.text}")
         print(f"  [tokens: in={result.input_tokens} out={result.output_tokens} | tools={len(result.tool_calls)}]")
 
         # 使用 handle_message 回傳的完整 messages（含 tool 輪次），確保 API 合規

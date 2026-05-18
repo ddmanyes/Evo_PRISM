@@ -106,7 +106,7 @@ class TestCmdStart:
         with patch("server.telegram_bot.TELEGRAM_ALLOWED_USER_IDS", [111]):
             await cmd_start(update, _make_context())
         call_text = update.message.reply_text.call_args[0][0]
-        assert "Hermes" in call_text
+        assert "BioAgent" in call_text
 
     @pytest.mark.asyncio
     async def test_rejected_user_gets_denied(self):

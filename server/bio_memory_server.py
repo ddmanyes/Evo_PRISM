@@ -1,5 +1,5 @@
 """
-Phase 4 — Bio-Memory MCP Server
+Phase 4 — BioAgent MCP Server
 
 公開 7 個 MCP 工具供 Claude Code / Hermes Agent 呼叫：
 

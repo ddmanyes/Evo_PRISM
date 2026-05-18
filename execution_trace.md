@@ -6,8 +6,8 @@
 
 ### 1.0 venv 建置（APFS 繞道）
 - **結果**：✅ 成功
-- **路徑**：`~/.venvs/hermes-bio-memory` (Python 3.11.14)
-- **Symlink**：`/Volumes/NO NAME/bio_DB/.venv → ~/.venvs/hermes-bio-memory`
+- **路徑**：`~/.venvs/bioagent` (Python 3.11.14)
+- **Symlink**：`/Volumes/NO NAME/bio_DB/.venv → ~/.venvs/bioagent`
 - **套件數**：81 packages installed
 - **修正**：pyproject.toml 移除不存在的 `readme = "README.md"`；改用 `--no-install-project`
 
@@ -120,8 +120,8 @@
 ## 2026-05-15 — Phase 3 執行記錄
 
 ### 3.0 launchd 排程啟用
-- **結果**：✅ com.hermes.backup 已 `launchctl load`（每日 02:00）
-- **備妥**：com.hermes.cleanup_l1（每日 03:30）、com.hermes.rebuild_hnsw（每週日 03:00）plist 已放置於 docs/，待個別 load
+- **結果**：✅ com.bioagent.backup 已 `launchctl load`（每日 02:00）
+- **備妥**：com.bioagent.cleanup_l1（每日 03:30）、com.bioagent.rebuild_hnsw（每週日 03:00）plist 已放置於 docs/，待個別 load
 
 ### 3.1 scripts/03_init_l1_cache.py
 - **結果**：✅ 成功
@@ -194,7 +194,7 @@
 ## 2026-05-15 — Phase 4 執行記錄（MCP Server）
 
 ### 4.0 mcp 套件安裝
-- **結果**：✅ `mcp` 安裝至 `~/.venvs/hermes-bio-memory`（Python SDK）
+- **結果**：✅ `mcp` 安裝至 `~/.venvs/bioagent`（Python SDK）
 
 ### 4.1 server/bio_memory_server.py
 - **結果**：✅ 成功，7 個 MCP 工具：
@@ -218,7 +218,7 @@
 
 ### 4.3 .mcp.json 設定
 - **位置**：`bio_DB/.mcp.json`（gitignore 排除，含本機絕對路徑）
-- **Command**：`~/.venvs/hermes-bio-memory/bin/python server/bio_memory_server.py`
+- **Command**：`~/.venvs/bioagent/bin/python server/bio_memory_server.py`
 - **PYTHONPATH**：`/Volumes/NO NAME/bio_DB`
 
 ---
@@ -228,7 +228,7 @@
 | Hash | 內容 |
 |------|------|
 | _(待 commit)_ | feat: Phase 5 WIP — code_executor + agent loop |
-| `e8b8e1c` | feat: Phase 4 complete — Bio-Memory MCP Server |
+| `e8b8e1c` | feat: Phase 4 complete — BioAgent MCP Server |
 | `8ae83d1` | feat: Phase 3 L1 cache + Phase 2B analysis layer |
 | `f761800` | docs/chore: reinforce project constitution |
 | `277dd9a` | feat: Phase 2B complete |

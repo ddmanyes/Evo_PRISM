@@ -38,10 +38,10 @@ bio_DB/
 
 ```bash
 # 建立 venv（只需執行一次）
-python3 -m venv ~/.venvs/hermes-bio-memory
+python3 -m venv ~/.venvs/bioagent
 
 # 建立 symlink（路徑請換成你的實際路徑）
-ln -s ~/.venvs/hermes-bio-memory "/path/to/bio_DB/.venv"
+ln -s ~/.venvs/bioagent "/path/to/bio_DB/.venv"
 
 # 安裝依賴
 cd /path/to/bio_DB
@@ -74,8 +74,8 @@ GOOGLE_MODEL=gemini-2.0-flash     # Google Gemini 模型版本
 若要全新建立（例如磁碟路徑不同），執行：
 
 ```bash
-~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
-~/.venvs/hermes-bio-memory/bin/python scripts/01_register_sample.py
+~/.venvs/bioagent/bin/python scripts/00_init_db.py
+~/.venvs/bioagent/bin/python scripts/01_register_sample.py
 ```
 
 > **注意**：`sample_registry` 內的 `l3_path` 存放絕對路徑，換機器後若磁碟掛載點不同需重新登記。
@@ -114,7 +114,7 @@ curl http://localhost:8081/health
 ## 步驟七：啟動系統
 
 ```bash
-bash start_hermes.sh
+bash start_bioagent.sh
 ```
 
 腳本會自動：
@@ -129,7 +129,7 @@ bash start_hermes.sh
 ## 健檢
 
 ```bash
-~/.venvs/hermes-bio-memory/bin/python config/db_utils.py
+~/.venvs/bioagent/bin/python config/db_utils.py
 ```
 
 正常輸出示例：

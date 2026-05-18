@@ -33,7 +33,7 @@
 
 ### Phase 1：環境與 Schema（完成）
 - [x] `pyproject.toml` + `uv sync --no-install-project`
-- [x] venv 建於 APFS（`~/.venvs/hermes-bio-memory`）+ symlink 至 `.venv`
+- [x] venv 建於 APFS（`~/.venvs/bioagent`）+ symlink 至 `.venv`
 - [x] `config/settings.py` — 集中路徑設定
 - [x] `scripts/00_init_db.py` — sample_registry + analysis_history + analysis_index view
 - [x] `analysis_history.tool_id UUID` 預留欄位（未來 tools 表 FK）
@@ -68,7 +68,7 @@
 
 ## ✅ Phase 3 + 3.5 完成（2026-05-15）
 
-- [x] launchd 每日備份排程已啟用（com.hermes.backup）
+- [x] launchd 每日備份排程已啟用（com.bioagent.backup）
 - [x] `scripts/03_init_l1_cache.py` — gold/hermes_cache.duckdb + memory_recent + HNSW（cosine）
 - [x] `scheduler/cleanup_l1_cache.py` — TTL 清理（每日 03:30）
 - [x] `scheduler/rebuild_hnsw.py` — HNSW 重建（每週日 03:00）
@@ -142,7 +142,7 @@
   - 工具結果截斷至 800 字元，防止撐爆 context window
   - max_tokens 預設提升至 8192
   - 修復 5 個 HIGH 問題（history 過濾、tool_calls 序列化、exhaustion path、JSON decode、client 共用）
-- [x] `start_hermes.sh` — 一鍵啟動腳本
+- [x] `start_bioagent.sh` — 一鍵啟動腳本
   - 自動啟動 llama server（等待模型載入最多 120 秒）+ FastAPI Web UI
   - 偵測已運行 server 並跳過，Ctrl+C 同時停止兩個 server
   - ctx-size 提升至 16384（適合 18GB 記憶體）
