@@ -98,6 +98,12 @@ def register_tool(
         UUID string of the active ``tool_id`` for this tool.
     """
     content_hash = compute_tool_hash(fn)
+    if content_hash == "unavailable":
+        raise RuntimeError(
+            f"register_tool: source unavailable for {tool_name!r} — "
+            "cannot compute content hash; ensure the function is defined in a "
+            "readable .py file, not a built-in or compiled extension."
+        )
     module_path = fn.__module__ or ""
     function_name = fn.__qualname__
 
@@ -121,7 +127,7 @@ def register_tool(
     now = datetime.now(timezone.utc)
     old_row = con.execute(
         """
-        SELECT tool_id, content_hash, COALESCE(revision_count, 1)
+        SELECT tool_id, content_hash, COALESCE(NULLIF(revision_count, 0), 1)
         FROM   tools
         WHERE  tool_name = ? AND status = 'active'
         LIMIT  1
@@ -465,6 +471,7 @@ def open_stabilization(
         [log_id, tool_name, revision_now, diagnosis, action_taken,
          revision_now, now, complexity_before, diagnosis_img],
     )
+    con.execute("CHECKPOINT")
     logger.info("open_stabilization: %r  revision=%d  log_id=%s", tool_name, revision_now, log_id)
     return log_id
 
@@ -518,7 +525,7 @@ def close_stabilization(
     now = datetime.now(timezone.utc)
     updates = ["outcome = ?", "revision_after = ?", "closed_at = ?"]
     params: list = [outcome, revision_after, now]
-    if action_taken:
+    if action_taken is not None:   # allow empty string to clear the field
         updates.append("action_taken = ?")
         params.append(action_taken)
     if complexity_after is not None:
@@ -530,6 +537,7 @@ def close_stabilization(
         f"UPDATE tool_stabilization_log SET {', '.join(updates)} WHERE log_id = ?",
         params,
     )
+    con.execute("CHECKPOINT")
     delta = revision_after - revision_before
     logger.info(
         "close_stabilization: log_id=%s  outcome=%s  revision_delta=+%d",

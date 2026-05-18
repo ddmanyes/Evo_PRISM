@@ -30,10 +30,11 @@ _RENDER_W_IN = 640 / _RENDER_DPI
 _RENDER_H_IN = 640 / _RENDER_DPI
 
 
-def compute_complexity(fn: Callable) -> int:
-    """Return the cyclomatic complexity of *fn* using radon.
+def compute_complexity(fn: Callable) -> Optional[int]:
+    """Return the cyclomatic complexity of *fn* using radon, or None if unavailable.
 
-    Falls back to 0 if radon is unavailable or source cannot be retrieved.
+    Returns None (not 0) when radon is unavailable or source cannot be retrieved,
+    to distinguish "not measurable" from "genuinely zero-branch" functions.
     Higher values indicate more branching paths and maintenance risk.
     """
     try:
@@ -45,7 +46,7 @@ def compute_complexity(fn: Callable) -> int:
         return max(r.complexity for r in results)
     except Exception as exc:
         logger.warning("compute_complexity: failed for %r — %s", getattr(fn, "__name__", fn), exc)
-        return 0
+        return None
 
 
 def _source_heatmap_data(fn: Callable) -> list[int]:
@@ -103,14 +104,19 @@ def render_diagnosis_snapshot(
         left=0.08, right=0.97, top=0.88, bottom=0.06,
     )
 
-    # Title
+    # Normalise complexity — None means "not measurable" (radon unavailable)
+    cc: Optional[int] = complexity
+    cc_label = "N/A" if cc is None else str(cc)
     complexity_color = (
-        "#e05252" if complexity >= 10 else
-        "#f0c040" if complexity >= 5 else
+        "#888888" if cc is None else
+        "#e05252" if cc >= 10 else
+        "#f0c040" if cc >= 5 else
         "#52c07a"
     )
+
+    # Title
     fig.suptitle(
-        f"{tool_name}   CC={complexity}",
+        f"{tool_name}   CC={cc_label}",
         color=complexity_color,
         fontsize=7 * downsample_factor,
         fontweight="bold", y=0.96,
@@ -145,11 +151,16 @@ def render_diagnosis_snapshot(
         ax_gauge.barh(0.5, thresh - prev, left=prev, height=0.4,
                       color=color, linewidth=0)
         prev = thresh
-    marker_x = min(complexity, 20)
-    ax_gauge.axvline(x=marker_x, color="white",
-                     linewidth=1.5 * downsample_factor)
-    ax_gauge.text(marker_x, 0.05, f"{complexity}", color="white",
-                  fontsize=6 * downsample_factor, ha="center")
+    if cc is not None:
+        marker_x = min(cc, 20)
+        ax_gauge.axvline(x=float(marker_x), color="white",
+                         linewidth=1.5 * downsample_factor)
+        ax_gauge.text(float(marker_x), 0.05, cc_label, color="white",
+                      fontsize=6 * downsample_factor, ha="center")
+    else:
+        ax_gauge.text(0.5, 0.5, "N/A", color="#888", ha="center", va="center",
+                      transform=ax_gauge.transAxes,
+                      fontsize=6 * downsample_factor)
     ax_gauge.set_title("Cyclomatic Complexity", color="#aaa",
                        fontsize=5 * downsample_factor, pad=2)
     ax_gauge.axis("off")
@@ -227,12 +238,13 @@ def downsample_snapshot(data_uri: str, factor: float = 0.5) -> str:
     new_w = max(32, int(w * factor))
 
     fig, ax = plt.subplots(figsize=(new_w / 96, new_h / 96), dpi=96)
-    ax.imshow(img_array, aspect="auto", interpolation="bilinear")
-    ax.axis("off")
-    fig.subplots_adjust(0, 0, 1, 1)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=96, bbox_inches="tight")
-    plt.close(fig)
-    b64 = base64.b64encode(buf.getvalue()).decode()
-    return f"data:image/png;base64,{b64}"
+    try:
+        ax.imshow(img_array, aspect="auto", interpolation="bilinear")
+        ax.axis("off")
+        fig.subplots_adjust(0, 0, 1, 1)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=96, bbox_inches="tight")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/png;base64,{b64}"
+    finally:
+        plt.close(fig)
