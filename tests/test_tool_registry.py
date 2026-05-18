@@ -758,3 +758,64 @@ class TestCacheInvalidation:
             register_tool(helix_con, "inv_tool", _churn_v2, "1.1.0", "d")
 
         assert "inv_tool" in called_with
+
+
+# ---------------------------------------------------------------------------
+# AST-normalized hash (9C-1)
+# ---------------------------------------------------------------------------
+
+class TestAstNormalizedHash:
+    def test_comment_only_change_same_hash(self, tmp_path):
+        """Comment-only edits must NOT change the hash (AST strips comments)."""
+        from analysis.tool_registry import compute_tool_hash
+        import importlib.util
+
+        src_v1 = (
+            "def my_tool():\n"
+            "    # original comment\n"
+            "    return 1 + 1\n"
+        )
+        src_v2 = (
+            "def my_tool():\n"
+            "    # completely different comment\n"
+            "    return 1 + 1  # inline note\n"
+        )
+
+        def _load(src, name):
+            p = tmp_path / f"{name}.py"
+            p.write_text(src)
+            spec = importlib.util.spec_from_file_location(name, p)
+            assert spec is not None and spec.loader is not None
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)  # type: ignore[union-attr]
+            return m.my_tool
+
+        fn1 = _load(src_v1, "fn_v1")
+        fn2 = _load(src_v2, "fn_v2")
+        assert compute_tool_hash(fn1) == compute_tool_hash(fn2)
+
+    def test_logic_change_different_hash(self, tmp_path):
+        """Real logic changes MUST produce a different hash."""
+        from analysis.tool_registry import compute_tool_hash
+        import importlib.util
+
+        src_v1 = "def my_tool():\n    return 1 + 1\n"
+        src_v3 = "def my_tool():\n    return 2 * 3\n"
+
+        def _load(src, name):
+            p = tmp_path / f"{name}.py"
+            p.write_text(src)
+            spec = importlib.util.spec_from_file_location(name, p)
+            assert spec is not None and spec.loader is not None
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)  # type: ignore[union-attr]
+            return m.my_tool
+
+        fn1 = _load(src_v1, "fn_v1b")
+        fn3 = _load(src_v3, "fn_v3")
+        assert compute_tool_hash(fn1) != compute_tool_hash(fn3)
+
+    def test_unavailable_for_builtin(self):
+        """Built-in functions must return 'unavailable'."""
+        from analysis.tool_registry import compute_tool_hash
+        assert compute_tool_hash(len) == "unavailable"

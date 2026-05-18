@@ -17,6 +17,7 @@ import asyncio
 import collections
 import json
 import logging
+import re
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -494,6 +495,22 @@ def _extract_report_link(tool_calls: list) -> Optional[str]:
 
 # ── ENGRAM 路由 ───────────────────────────────────────────────────────────────
 
+_SAMPLE_ID_RE   = re.compile(r"^[a-zA-Z0-9_\-]+$")
+_ANALYSIS_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
+def _require_sample_id(sample_id: str) -> None:
+    if not _SAMPLE_ID_RE.match(sample_id):
+        raise HTTPException(status_code=422, detail="無效的 sample_id 格式")
+
+
+def _require_analysis_id(analysis_id: str) -> None:
+    if not _ANALYSIS_ID_RE.match(analysis_id.lower()):
+        raise HTTPException(status_code=422, detail="無效的 analysis_id 格式（需為 UUID）")
+
+
 @app.get("/engram", response_class=HTMLResponse)
 async def engram_page():
     html_path = STATIC_DIR / "engram.html"
@@ -536,6 +553,7 @@ async def engram_samples():
 @app.get("/api/engram/summary/{sample_id}")
 async def engram_summary(sample_id: str):
     """一個樣本的 artifact 統計概覽（0-token 設計）。"""
+    _require_sample_id(sample_id)
     import duckdb
     from config.settings import DUCKDB_PATH
     from analysis.artifact_registry import artifact_summary
@@ -547,6 +565,7 @@ async def engram_summary(sample_id: str):
 @app.get("/api/engram/analyses/{sample_id}")
 async def engram_analyses(sample_id: str):
     """列出某樣本下所有已完成分析，附帶 artifact 數量。"""
+    _require_sample_id(sample_id)
     import duckdb
     from config.settings import DUCKDB_PATH
 
@@ -586,6 +605,7 @@ async def engram_artifacts(
     include_inline: bool = False,
 ):
     """列出某分析的所有 artifact（預設不含 inline_data）。"""
+    _require_analysis_id(analysis_id)
     import duckdb
     from config.settings import DUCKDB_PATH
     from analysis.artifact_registry import get_artifacts
@@ -602,6 +622,7 @@ async def engram_artifacts(
 @app.get("/api/engram/artifact/{artifact_id}/inline")
 async def engram_artifact_inline(artifact_id: str):
     """取得單一 artifact 的 inline_data（base64）。"""
+    _require_analysis_id(artifact_id)
     import duckdb
     from config.settings import DUCKDB_PATH
 

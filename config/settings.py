@@ -28,6 +28,11 @@ EMBEDDING_MODEL      = os.getenv("EMBEDDING_MODEL", "bge-m3-Q8_0")
 EMBEDDING_DIM        = int(os.getenv("EMBEDDING_DIM", "1024"))
 LLAMACPP_BASE_URL    = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
 LLAMACPP_MODEL_PATH  = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
+
+# Matryoshka dual-layer index (9D): coarse index uses first MATRYOSHKA_DIM dims
+# bge-m3 supports Matryoshka — truncating to 256 dims retains ~95% recall
+MATRYOSHKA_DIM       = int(os.getenv("MATRYOSHKA_DIM", "256"))
+MATRYOSHKA_ENABLED   = os.getenv("MATRYOSHKA_ENABLED", "false").lower() == "true"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── 推理後端 ───────────────────────────────────────────────
@@ -64,6 +69,23 @@ HELIX_STALE_ITERATION_DAYS  = int(os.getenv("HELIX_STALE_ITERATION_DAYS", "30"))
 HELIX_SNAPSHOT_DECAY_DAYS_1 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_1", "180"))
 # 超過此天數後 downsample to 0.25x
 HELIX_SNAPSHOT_DECAY_DAYS_2 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_2", "365"))
+
+# ── Artifact 路徑工具 ──────────────────────────────────────
+def resolve_artifact_path(rel_path: str) -> Path:
+    """Convert a BIO_DB_ROOT-relative artifact path to an absolute Path.
+
+    analysis_artifacts.file_path stores relative paths since migration v12.
+    Call this whenever reading file_path from the DB.
+
+    Example:
+        resolve_artifact_path("results/s1/pca.png")
+        → Path("/Volumes/NO NAME/bio_DB/results/s1/pca.png")
+    """
+    p = Path(rel_path)
+    if p.is_absolute():
+        return p
+    return BIO_DB_ROOT / p
+
 
 # ── 開發設定 ───────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

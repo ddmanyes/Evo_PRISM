@@ -23,9 +23,7 @@ from config.settings import DUCKDB_PATH, EMBEDDING_DIM
 
 def migrate(db_path: Path = DUCKDB_PATH) -> None:
     print(f"Connecting to: {db_path}")
-    con = duckdb.connect(str(db_path))
-
-    try:
+    with duckdb.connect(str(db_path)) as con:
         # Load VSS for HNSW index creation
         try:
             con.execute("LOAD vss")
@@ -142,9 +140,6 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         print("  HNSW index               : idx_artifacts_hnsw (cosine)")
         print("  analysis_index view      : updated with artifact_count")
         print("\nENGRAM artifact registry ready.")
-
-    finally:
-        con.close()
 
 
 if __name__ == "__main__":
