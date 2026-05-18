@@ -244,18 +244,18 @@
 
 <script>
 // Session
-let sessionId = localStorage.getItem('hermes_sid');
+let sessionId = localStorage.getItem('bioagent_sid');
 if (!sessionId) {
   sessionId = crypto.randomUUID();
-  localStorage.setItem('hermes_sid', sessionId);
+  localStorage.setItem('bioagent_sid', sessionId);
 }
 
 // Backend selection
-let currentBackend = localStorage.getItem('hermes_backend') || 'local';
+let currentBackend = localStorage.getItem('bioagent_backend') || 'local';
 
 function setBackend(b) {
   currentBackend = b;
-  localStorage.setItem('hermes_backend', b);
+  localStorage.setItem('bioagent_backend', b);
   document.getElementById('btn-local').classList.toggle('active', b === 'local');
   document.getElementById('btn-claude').classList.toggle('active', b === 'claude');
   document.getElementById('btn-google').classList.toggle('active', b === 'google');
@@ -263,7 +263,7 @@ function setBackend(b) {
 
 // Init backend from server default, then apply saved preference
 fetch('/api/backend').then(r => r.json()).then(d => {
-  if (!localStorage.getItem('hermes_backend')) currentBackend = d.default;
+  if (!localStorage.getItem('bioagent_backend')) currentBackend = d.default;
   setBackend(currentBackend);
 }).catch(() => setBackend(currentBackend));
 

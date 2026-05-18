@@ -1,5 +1,5 @@
 """
-Centralized configuration for Hermes Bio-Memory.
+Centralized configuration for BioAgent.
 All file paths and constants are defined here — no hardcoding in scripts.
 """
 from pathlib import Path

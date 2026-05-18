@@ -1,7 +1,7 @@
 [project]
-name = "hermes-bio-memory"
+name = "bioagent"
 version = "0.1.0"
-description = "Hermes Bio-Memory：AI Agent 驅動的實驗室生資智慧分析平台"
+description = "BioAgent：AI Agent 驅動的實驗室生資智慧分析平台"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 
@@ -67,10 +67,10 @@ build-backend = "hatchling.build"
 [tool.uv]
 # ExFAT 磁碟不支援 symlink，venv 建在 SSD 並 symlink 過來
 # 執行前先設定：
-#   export UV_PROJECT_ENVIRONMENT=/Volumes/SSD/envs/hermes-bio-memory
+#   export UV_PROJECT_ENVIRONMENT=/Volumes/SSD/envs/bioagent
 # 或手動建立 symlink：
-#   uv venv /Volumes/SSD/envs/hermes-bio-memory
-#   ln -s /Volumes/SSD/envs/hermes-bio-memory .venv
+#   uv venv /Volumes/SSD/envs/bioagent
+#   ln -s /Volumes/SSD/envs/bioagent .venv
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,5 +1,5 @@
 """
-Phase 6 — Hermes Bio-Memory Telegram Bot。
+Phase 6 — BioAgent Telegram Bot。
 
 架構：
     Telegram 訊息
@@ -101,7 +101,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _reject(update)
         return
     await update.message.reply_text(
-        "👋 你好！我是 **Hermes Bio-Memory**，實驗室生資分析助理。\n\n"
+        "👋 你好！我是 **BioAgent**，實驗室生資分析助理。\n\n"
         "**可用指令：**\n"
         "• /help — 使用說明\n"
         "• /history [sample_id] — 查詢分析歷史\n"
@@ -116,7 +116,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _reject(update)
         return
     await update.message.reply_text(
-        "**Hermes Bio-Memory 使用說明**\n\n"
+        "**BioAgent 使用說明**\n\n"
         "**自然語言查詢範例：**\n"
         "• `crc_official_v4 做過哪些分析？`\n"
         "• `幫我看 crc_official_v4 的空間 EDA`\n"
@@ -285,7 +285,7 @@ def main() -> None:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
-    logger.info("Hermes Bot 啟動（allowed_users=%s）", TELEGRAM_ALLOWED_USER_IDS)
+    logger.info("BioAgent Bot 啟動（allowed_users=%s）", TELEGRAM_ALLOWED_USER_IDS)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

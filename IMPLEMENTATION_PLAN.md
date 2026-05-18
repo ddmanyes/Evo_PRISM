@@ -24,9 +24,9 @@
 **指令**：
 ```bash
 mkdir -p ~/.venvs
-uv venv ~/.venvs/hermes-bio-memory --python 3.11
-ln -sf ~/.venvs/hermes-bio-memory "/Volumes/NO NAME/bio_DB/.venv"
-UV_PROJECT_ENVIRONMENT=~/.venvs/hermes-bio-memory uv sync --directory "/Volumes/NO NAME/bio_DB"
+uv venv ~/.venvs/bioagent --python 3.11
+ln -sf ~/.venvs/bioagent "/Volumes/NO NAME/bio_DB/.venv"
+UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv sync --directory "/Volumes/NO NAME/bio_DB"
 ```
 **驗收**：`uv run python -c "import duckdb; print(duckdb.__version__)"` 輸出版本號  
 
@@ -38,7 +38,7 @@ UV_PROJECT_ENVIRONMENT=~/.venvs/hermes-bio-memory uv sync --directory "/Volumes/
 **指令**：
 ```bash
 cd "/Volumes/NO NAME/bio_DB"
-UV_PROJECT_ENVIRONMENT=~/.venvs/hermes-bio-memory uv run python scripts/00_init_db.py
+UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv run python scripts/00_init_db.py
 ```
 **驗收**：
 - 輸出 `VSS extension loaded` 或 `WARNING: VSS extension failed`（後者可接受，繼續）
@@ -53,7 +53,7 @@ UV_PROJECT_ENVIRONMENT=~/.venvs/hermes-bio-memory uv run python scripts/00_init_
 **指令**：
 ```bash
 cd "/Volumes/NO NAME/bio_DB"
-UV_PROJECT_ENVIRONMENT=~/.venvs/hermes-bio-memory uv run pytest tests/test_init_db.py -v
+UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv run pytest tests/test_init_db.py -v
 ```
 **驗收**：所有測試 PASSED（至少 4 個測試通過）
 
@@ -64,7 +64,7 @@ UV_PROJECT_ENVIRONMENT=~/.venvs/hermes-bio-memory uv run pytest tests/test_init_
 **目標**：確認 CRC 官方數據結構正確，anndata 可讀取 H5 檔  
 **指令**：
 ```bash
-UV_PROJECT_ENVIRONMENT=~/.venvs/hermes-bio-memory uv run python -c "
+UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv run python -c "
 import anndata as ad
 import pathlib
 p = pathlib.Path('/Volumes/NO NAME/bio_DB/crc_visium_data/official_v4')
@@ -123,9 +123,9 @@ if h5:
 ## Phase 3 — L1 語意快取（基礎設施完成，embedding 待接入）
 
 ### [x] 3.0 啟用 launchd 排程（✅ 完成）
-- com.hermes.backup：每日 02:00（已 load）
-- com.hermes.cleanup_l1：每日 03:30（plist 備妥，待 load）
-- com.hermes.rebuild_hnsw：每週日 03:00（plist 備妥，待 load）
+- com.bioagent.backup：每日 02:00（已 load）
+- com.bioagent.cleanup_l1：每日 03:30（plist 備妥，待 load）
+- com.bioagent.rebuild_hnsw：每週日 03:00（plist 備妥，待 load）
 
 ### [x] 3.1 scripts/03_init_l1_cache.py（✅ 完成）
 - gold/hermes_cache.duckdb 建立，memory_recent schema + HNSW 索引（cosine）

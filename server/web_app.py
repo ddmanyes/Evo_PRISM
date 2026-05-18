@@ -1,5 +1,5 @@
 """
-Hermes Bio-Memory — Web UI (FastAPI)
+BioAgent — Web UI (FastAPI)
 
 路由：
     GET  /                              → 聊天介面（HTML）
@@ -40,7 +40,7 @@ from config.db_utils import db_health_check
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Hermes Bio-Memory", version="1.0.0")
+app = FastAPI(title="BioAgent", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

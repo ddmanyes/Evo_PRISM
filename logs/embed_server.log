@@ -1,0 +1,72 @@
+0.00.098.379 I log_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.098.382 I device_info:
+0.00.098.394 I   - MTL0    : Apple M3 Pro (13639 MiB, 13639 MiB free)
+0.00.098.394 I   - BLAS    : Accelerate (0 MiB, 0 MiB free)
+0.00.098.405 I   - CPU     : Apple M3 Pro (18432 MiB, 18432 MiB free)
+0.00.098.495 I system_info: n_threads = 5 (n_threads_batch = 5) / 11 | MTL : EMBED_LIBRARY = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | ACCELERATE = 1 | REPACK = 1 | 
+0.00.098.499 W srv          main: embeddings enabled with n_batch (2048) > n_ubatch (512)
+0.00.098.501 W srv          main: setting n_batch = n_ubatch = 512 to avoid assertion failure
+0.00.098.501 I srv          main: n_parallel is set to auto, using n_parallel = 4 and kv_unified = true
+0.00.098.578 I srv          init: running without SSL
+0.00.099.158 I srv          init: using 10 threads for HTTP server
+0.00.099.713 I srv         start: binding port with default address family
+0.00.101.705 I srv          main: loading model
+0.00.102.017 I srv    load_model: loading model '/Users/zhanqiru/llama.cpp/models/bge-m3-Q8_0.gguf'
+0.00.102.814 I common_init_result: fitting params to device memory ...
+0.00.102.816 I common_init_result: (for bugs during this step try to reproduce them with -fit off, or provide --verbose logs if the bug only occurs with -fit on)
+0.00.642.780 W load: model vocab missing newline token, using special_pad_id instead
+0.01.018.187 W common_init_from_params: warming up the model with an empty run - please wait ... (--no-warmup to disable)
+0.01.102.902 I srv    load_model: initializing slots, n_slots = 4
+0.01.102.904 W srv    load_model: speculative decoding not supported by this context
+0.01.102.907 I slot   load_model: id  0 | task -1 | new slot, n_ctx = 8192
+0.01.103.086 I slot   load_model: id  1 | task -1 | new slot, n_ctx = 8192
+0.01.103.088 I slot   load_model: id  2 | task -1 | new slot, n_ctx = 8192
+0.01.103.088 I slot   load_model: id  3 | task -1 | new slot, n_ctx = 8192
+0.01.103.095 I srv    load_model: prompt cache is enabled, size limit: 8192 MiB
+0.01.103.095 I srv    load_model: use `--cache-ram 0` to disable the prompt cache
+0.01.103.096 I srv    load_model: for more info see https://github.com/ggml-org/llama.cpp/pull/16391
+0.01.103.397 I srv          init: idle slots will be saved to prompt cache and cleared upon starting a new task
+0.01.107.005 I init: chat template, example_format: '<|im_start|>system
+You are a helpful assistant<|im_end|>
+<|im_start|>user
+Hello<|im_end|>
+<|im_start|>assistant
+Hi there<|im_end|>
+<|im_start|>user
+How are you?<|im_end|>
+<|im_start|>assistant
+'
+0.01.107.401 I srv          init: init: chat template, thinking = 0
+0.01.107.421 I srv          main: model loaded
+0.01.107.425 I srv          main: server is listening on http://127.0.0.1:8081
+0.01.107.427 I srv  update_slots: all slots are idle
+1.06.932.615 I slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+1.06.932.628 I slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+1.07.025.493 I slot      release: id  3 | task 0 | stop processing: n_tokens = 18, truncated = 0
+1.07.025.500 I srv  update_slots: all slots are idle
+3.10.429.234 I slot get_availabl: id  3 | task -1 | selected slot by LCP similarity, sim_best = 0.875 (> 0.100 thold), f_keep = 0.778
+3.10.429.246 I slot launch_slot_: id  3 | task 2 | processing task, is_child = 0
+3.10.461.679 I slot      release: id  3 | task 2 | stop processing: n_tokens = 16, truncated = 0
+3.10.461.693 I srv  update_slots: all slots are idle
+4.48.784.782 I slot get_availabl: id  3 | task -1 | selected slot by LCP similarity, sim_best = 0.200 (> 0.100 thold), f_keep = 0.062
+4.48.784.786 I slot launch_slot_: id  3 | task 4 | processing task, is_child = 0
+4.48.833.225 I slot      release: id  3 | task 4 | stop processing: n_tokens = 5, truncated = 0
+4.48.833.232 I srv  update_slots: all slots are idle
+26.55.100.947 I srv    operator(): operator(): cleaning up before exit...
+Received second interrupt, terminating immediately.
+/Users/zhanqiru/llama.cpp/ggml/src/ggml-metal/ggml-metal-device.m:618: GGML_ASSERT([rsets->data count] == 0) failed
+WARNING: Using native backtrace. Set GGML_BACKTRACE_LLDB for more info.
+WARNING: GGML_BACKTRACE_LLDB may cause native MacOS Terminal.app to crash.
+See: https://github.com/ggml-org/llama.cpp/pull/17869
+0   libggml-base.0.11.1.dylib           0x0000000105891380 ggml_print_backtrace + 276
+1   libggml-base.0.11.1.dylib           0x000000010589156c ggml_abort + 156
+2   libggml-metal.0.11.1.dylib          0x0000000105b7630c ggml_metal_device_init + 0
+3   libggml-metal.0.11.1.dylib          0x0000000105b76c58 ggml_metal_device_free + 24
+4   libggml-metal.0.11.1.dylib          0x0000000105b7865c _ZNSt3__16vectorINS_10unique_ptrI17ggml_metal_device25ggml_metal_device_deleterEENS_9allocatorIS4_EEED1B8ne200100Ev + 72
+5   libsystem_c.dylib                   0x000000018308742c __cxa_finalize_ranges + 480
+6   libsystem_c.dylib                   0x00000001830871ec exit + 44
+7   llama-server                        0x0000000104f3531c _ZL14signal_handleri + 116
+8   libsystem_platform.dylib            0x00000001831dd764 _sigtramp + 56
+9   libggml-base.0.11.1.dylib           0x00000001058a62dc ggml_quantize_free + 20
+10  llama-server                        0x0000000104f33f20 main + 15328
+11  dyld                                0x0000000182e09d54 start + 7184

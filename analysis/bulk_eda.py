@@ -192,7 +192,7 @@ _REPORT_TEMPLATE = """\
 
 ---
 
-*由 Hermes Bio-Memory analysis/bulk_eda.py 自動生成*
+*由 BioAgent analysis/bulk_eda.py 自動生成*
 """
 
 

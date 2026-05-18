@@ -5,25 +5,25 @@
   macOS launchd 排程：每日 02:00 自動備份 bio_memory.duckdb
 
   安裝步驟：
-    1. 複製此檔到 ~/Library/LaunchAgents/com.hermes.backup.plist
+    1. 複製此檔到 ~/Library/LaunchAgents/com.bioagent.backup.plist
     2. 確認路徑與你的環境一致（python 路徑、bio_DB 路徑）
-    3. launchctl load ~/Library/LaunchAgents/com.hermes.backup.plist
+    3. launchctl load ~/Library/LaunchAgents/com.bioagent.backup.plist
     4. 驗證：launchctl list | grep hermes
 
   手動觸發測試：
-    launchctl start com.hermes.backup
+    launchctl start com.bioagent.backup
 
   移除排程：
-    launchctl unload ~/Library/LaunchAgents/com.hermes.backup.plist
+    launchctl unload ~/Library/LaunchAgents/com.bioagent.backup.plist
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.hermes.backup</string>
+    <string>com.bioagent.backup</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/zhanqiru/.venvs/hermes-bio-memory/bin/python</string>
+        <string>/Users/zhanqiru/.venvs/bioagent/bin/python</string>
         <string>/Volumes/NO NAME/bio_DB/scheduler/backup_db.py</string>
     </array>
 

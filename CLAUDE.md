@@ -108,11 +108,11 @@ bio_DB/
 
 ```bash
 # 一次性建置（首次使用）
-python3 -m venv ~/.venvs/hermes-bio-memory
-ln -s ~/.venvs/hermes-bio-memory "/Volumes/NO NAME/bio_DB/.venv"
+python3 -m venv ~/.venvs/bioagent
+ln -s ~/.venvs/bioagent "/Volumes/NO NAME/bio_DB/.venv"
 
 # 直接以 venv 的 python 執行（不需 uv run）
-~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
+~/.venvs/bioagent/bin/python scripts/00_init_db.py
 ```
 
 ### uv 指令
@@ -145,7 +145,7 @@ Server 提供本機 OpenAI-compatible `/v1/embeddings` API（port 8081）。
 
 # 確認在線
 curl http://localhost:8081/health          # → {"status":"ok"}
-~/.venvs/hermes-bio-memory/bin/python -c "
+~/.venvs/bioagent/bin/python -c "
 from analysis.embed import server_health; print(server_health())"
 
 # 停止
@@ -155,8 +155,8 @@ pkill -f "llama-server.*8081"
 **自動啟動（推薦）**：安裝 launchd plist，開機自動啟動、自動重啟：
 ```bash
 cp docs/launchd_embedding_server.plist.example \
-   ~/Library/LaunchAgents/com.hermes.embedding_server.plist
-launchctl load ~/Library/LaunchAgents/com.hermes.embedding_server.plist
+   ~/Library/LaunchAgents/com.bioagent.embedding_server.plist
+launchctl load ~/Library/LaunchAgents/com.bioagent.embedding_server.plist
 ```
 
 模型：`~/llama.cpp/models/bge-m3-Q8_0.gguf`（605 MB，1024-dim，BAAI bge-m3，多語含中文）
@@ -177,8 +177,8 @@ launchctl load ~/Library/LaunchAgents/com.hermes.embedding_server.plist
 
 # 自動啟動
 cp docs/launchd_multimodal_server.plist.example \
-   ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
-launchctl load ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
+   ~/Library/LaunchAgents/com.bioagent.multimodal_server.plist
+launchctl load ~/Library/LaunchAgents/com.bioagent.multimodal_server.plist
 ```
 
 ---
