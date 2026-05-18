@@ -55,6 +55,16 @@ TELEGRAM_ALLOWED_USER_IDS = [
     int(uid) for uid in os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",") if uid
 ]
 
+# ── HELIX 設定 ─────────────────────────────────────────────
+# 工具 revision_count 達到此值即列入熱區（hot zone）
+HELIX_HOT_THRESHOLD         = int(os.getenv("HELIX_HOT_THRESHOLD", "3"))
+# 穩定化迭代超過此天數未關閉則視為失效（auto_revert 觸發閾值）
+HELIX_STALE_ITERATION_DAYS  = int(os.getenv("HELIX_STALE_ITERATION_DAYS", "30"))
+# diagnosis_img 遺忘曲線：超過此天數後 downsample to 0.5x
+HELIX_SNAPSHOT_DECAY_DAYS_1 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_1", "180"))
+# 超過此天數後 downsample to 0.25x
+HELIX_SNAPSHOT_DECAY_DAYS_2 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_2", "365"))
+
 # ── 開發設定 ───────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 DRY_RUN   = os.getenv("DRY_RUN", "false").lower() == "true"

@@ -332,18 +332,51 @@ con.execute("UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
 
 ### 7.5 diagnosis_img 降採樣排程（遺忘曲線）
 
-目前 `downsample_snapshot()` 需手動呼叫。未來應加入 `scheduler/` 排程：
+`scheduler/helix_expire_snapshots.py` 已實作，建議加入 launchd 每週執行：
 
 ```
-關閉後 180 天 → downsample_snapshot(data_uri, factor=0.5)   # 640→320，~25 tokens
-關閉後 365 天 → downsample_snapshot(data_uri, factor=0.25)  # 640→160，~6 tokens
+關閉後 180 天 → factor=0.5   # 640→320，~25 VLM tokens
+關閉後 365 天 → factor=0.25  # 640→160，~6 VLM tokens
 ```
 
-在排程未建立前，**禁止手動刪除** `diagnosis_img` 欄位的內容——刪除比模糊更不可逆。
+閾值由 `settings.HELIX_SNAPSHOT_DECAY_DAYS_1` / `HELIX_SNAPSHOT_DECAY_DAYS_2` 控制。
+
+**禁止手動刪除** `diagnosis_img`——刪除比模糊更不可逆。`prune_deprecated()` 會在 1 年後自動清除 `diagnosis_img`（保留文字診斷）。
 
 ### 7.6 HELIX 寫入規則
 
-HELIX 的所有寫入（`register_tool`、`open_stabilization`、`close_stabilization`）內部已呼叫 `CHECKPOINT`，無需在外層再呼叫 `safe_write()`。
+HELIX 的所有寫入（`register_tool`、`open_stabilization`、`close_stabilization`、`mark_stable`、`auto_revert_stale_stabilizations`）內部已呼叫 `CHECKPOINT`，無需在外層再呼叫 `safe_write()`。
+
+### 7.7 mark_stable() — 穩定工具白名單
+
+對已確認穩定但 `revision_count` 偏高的工具，呼叫 `mark_stable()` 避免熱區報告噪音：
+
+```python
+from analysis.tool_registry import mark_stable
+with duckdb.connect(str(DUCKDB_PATH)) as con:
+    mark_stable(con, "bio_run_bulk_eda", "已有完整單元測試覆蓋，頻繁迭代屬正常維護")
+```
+
+標記後 `stability_note` 以 `[STABLE]` 開頭；`is_marked_stable()` 可查詢。
+
+### 7.8 auto_revert_stale_stabilizations() — 失效迭代自動關閉
+
+`closed_at IS NULL` 超過 `settings.HELIX_STALE_ITERATION_DAYS`（預設 30 天）的迭代自動設為 `outcome='reverted'`。建議 Agent 啟動時呼叫：
+
+```python
+from analysis.tool_registry import auto_revert_stale_stabilizations
+auto_revert_stale_stabilizations(con, days=30)
+```
+
+### 7.9 熱區閾值設定
+
+熱區閾值預設 `revision_count ≥ 3`，可透過 env var 覆蓋：
+
+```bash
+export HELIX_HOT_THRESHOLD=5
+```
+
+`get_hot_tools`、`prune_deprecated`、`tool_health_report` 均讀取 `settings.HELIX_HOT_THRESHOLD`。
 
 ---
 
@@ -419,4 +452,5 @@ memory_recent(id UUID, sample_id, query_text, report_text,
 | [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md) | 跨專案數據與程式碼整合決策指南 |
 | [docs/launchd_backup.plist.example](docs/launchd_backup.plist.example) | macOS 每日備份排程範本 |
 | [docs/launchd_scan_samples.plist.example](docs/launchd_scan_samples.plist.example) | macOS 每 30 分鐘掃描新樣本排程範本 |
+| [docs/launchd_helix_expire.plist.example](docs/launchd_helix_expire.plist.example) | macOS 每週日 04:00 HELIX snapshot 遺忘曲線降採樣排程範本 |
 | [msseg_docs/CLAUDE.md](msseg_docs/CLAUDE.md) | MSseg 子專案開發規範 |

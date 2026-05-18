@@ -19,10 +19,12 @@ import hashlib
 import inspect
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 import duckdb
+
+from config.settings import HELIX_HOT_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +302,7 @@ def set_stability_note(
 
 def get_hot_tools(
     con: duckdb.DuckDBPyConnection,
-    min_revisions: int = 3,
+    min_revisions: int = HELIX_HOT_THRESHOLD,
 ) -> list[dict]:
     """Return tools whose ``revision_count`` meets or exceeds *min_revisions*.
 
@@ -372,7 +374,7 @@ def prune_deprecated(
     tool_name: str,
     keep_stable: int = 2,
     keep_unstable: int = 10,
-    hot_threshold: int = 3,
+    hot_threshold: int = HELIX_HOT_THRESHOLD,
 ) -> int:
     """Delete old deprecated rows for *tool_name* that have no analysis_history FK.
 
@@ -421,6 +423,31 @@ def prune_deprecated(
             "prune_deprecated: %r — deleted %d deprecated rows (hot=%s, kept=%d)",
             tool_name, deleted, is_hot, keep_n,
         )
+
+    # Clear diagnosis_img for closed iterations older than 1 year.
+    # Text diagnosis and all other columns are preserved for provenance.
+    # The helix_expire_snapshots scheduler handles progressive downsampling
+    # at 180d/365d; this clause is a hard cleanup for very old entries that
+    # were never downsampled (e.g. data pre-dating the scheduler).
+    cutoff_1yr = datetime.now(timezone.utc) - timedelta(days=365)
+    img_cleared = con.execute(
+        """
+        UPDATE tool_stabilization_log
+        SET    diagnosis_img = NULL
+        WHERE  tool_name   = ?
+          AND  outcome     != 'ongoing'
+          AND  closed_at   IS NOT NULL
+          AND  closed_at   < ?
+          AND  diagnosis_img IS NOT NULL
+        """,
+        [tool_name, cutoff_1yr],
+    ).rowcount
+    if img_cleared:
+        logger.info(
+            "prune_deprecated: %r — cleared diagnosis_img for %d old iteration(s)",
+            tool_name, img_cleared,
+        )
+
     return deleted
 
 
@@ -453,13 +480,38 @@ def open_stabilization(
         raise ValueError(f"Tool {tool_name!r} not found in tools table.")
     revision_now = int(active[0])
 
+    # Guard: refuse to open a second ongoing iteration for the same tool.
+    # Duplicate ongoing rows corrupt the stabilization state machine —
+    # close_stabilization() would only close the most-recently opened row,
+    # leaving the earlier one dangling forever.
+    existing_ongoing = con.execute(
+        "SELECT log_id FROM tool_stabilization_log "
+        "WHERE tool_name = ? AND closed_at IS NULL LIMIT 1",
+        [tool_name],
+    ).fetchone()
+    if existing_ongoing:
+        raise ValueError(
+            f"Tool {tool_name!r} already has an open stabilization iteration "
+            f"(log_id={existing_ongoing[0]}).  "
+            "Call close_stabilization() first before opening a new one."
+        )
+
     # Compute complexity and render snapshot when callable is available
     complexity_before: Optional[int] = None
+    loc: Optional[int] = None
+    halstead_volume: Optional[float] = None
     diagnosis_img: Optional[str] = None
     if fn is not None:
         try:
-            from analysis.tool_visualizer import compute_complexity, render_diagnosis_snapshot
+            from analysis.tool_visualizer import (
+                compute_complexity,
+                compute_loc,
+                compute_halstead_volume,
+                render_diagnosis_snapshot,
+            )
             complexity_before = compute_complexity(fn)
+            loc = compute_loc(fn)
+            halstead_volume = compute_halstead_volume(fn)
             diagnosis_img = render_diagnosis_snapshot(
                 tool_name=tool_name,
                 fn=fn,
@@ -468,8 +520,8 @@ def open_stabilization(
                 complexity=complexity_before,
             )
             logger.info(
-                "open_stabilization: snapshot rendered for %r  CC=%d",
-                tool_name, complexity_before,
+                "open_stabilization: snapshot rendered for %r  CC=%s  LOC=%s  HV=%s",
+                tool_name, complexity_before, loc, halstead_volume,
             )
         except Exception as exc:
             logger.warning("open_stabilization: snapshot failed — %s", exc)
@@ -481,11 +533,12 @@ def open_stabilization(
         INSERT INTO tool_stabilization_log
             (log_id, tool_name, trigger_revision, diagnosis,
              action_taken, outcome, revision_before, created_at,
-             complexity_before, diagnosis_img)
-        VALUES (?, ?, ?, ?, ?, 'ongoing', ?, ?, ?, ?)
+             complexity_before, diagnosis_img, loc, halstead_volume)
+        VALUES (?, ?, ?, ?, ?, 'ongoing', ?, ?, ?, ?, ?, ?)
         """,
         [log_id, tool_name, revision_now, diagnosis, action_taken,
-         revision_now, now, complexity_before, diagnosis_img],
+         revision_now, now, complexity_before, diagnosis_img,
+         loc, halstead_volume],
     )
     con.execute("CHECKPOINT")
     logger.info("open_stabilization: %r  revision=%d  log_id=%s", tool_name, revision_now, log_id)
@@ -531,12 +584,28 @@ def close_stabilization(
     revision_after = int(active[0]) if active else revision_before
 
     complexity_after: Optional[int] = None
+    after_img: Optional[str] = None
     if fn is not None:
         try:
-            from analysis.tool_visualizer import compute_complexity
+            from analysis.tool_visualizer import compute_complexity, render_diagnosis_snapshot
             complexity_after = compute_complexity(fn)
+            # Fetch original diagnosis text for the after snapshot
+            orig = con.execute(
+                "SELECT diagnosis FROM tool_stabilization_log WHERE log_id = ?", [log_id]
+            ).fetchone()
+            diagnosis_text = orig[0] if orig else ""
+            after_img = render_diagnosis_snapshot(
+                tool_name=tool_name,
+                fn=fn,
+                diagnosis_text=f"[AFTER] {diagnosis_text}",
+                complexity=complexity_after,
+            )
+            logger.info(
+                "close_stabilization: after_img rendered for %r  CC=%s",
+                tool_name, complexity_after,
+            )
         except Exception as exc:
-            logger.warning("close_stabilization: complexity_after failed — %s", exc)
+            logger.warning("close_stabilization: after_img/complexity failed — %s", exc)
 
     now = datetime.now(timezone.utc)
     updates = ["outcome = ?", "revision_after = ?", "closed_at = ?"]
@@ -547,6 +616,9 @@ def close_stabilization(
     if complexity_after is not None:
         updates.append("complexity_after = ?")
         params.append(complexity_after)
+    if after_img is not None:
+        updates.append("after_img = ?")
+        params.append(after_img)
     params.append(log_id)
 
     con.execute(
@@ -652,7 +724,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         "SELECT count(*) FROM tools WHERE status = 'deprecated'"
     ).fetchone()[0]
 
-    hot_zones = get_hot_tools(con, min_revisions=3)
+    hot_zones = get_hot_tools(con, min_revisions=HELIX_HOT_THRESHOLD)
     open_stabilizations = get_open_stabilizations(con)
 
     # stale analyses per tool_name
@@ -682,6 +754,43 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     ).fetchall()
     prune_candidates = {r[0]: r[1] for r in prune_rows}
 
+    # regression_zones: tools whose last closed complexity_after > current complexity_before
+    # (i.e. complexity grew back after a stabilization — refactor regression)
+    regression_rows = con.execute(
+        """
+        WITH last_closed AS (
+            SELECT DISTINCT ON (tool_name)
+                   tool_name, complexity_after, closed_at
+            FROM   tool_stabilization_log
+            WHERE  closed_at IS NOT NULL
+              AND  complexity_after IS NOT NULL
+            ORDER  BY tool_name, closed_at DESC
+        ),
+        last_open AS (
+            SELECT DISTINCT ON (tool_name)
+                   tool_name, complexity_before
+            FROM   tool_stabilization_log
+            ORDER  BY tool_name, created_at DESC
+        )
+        SELECT lc.tool_name,
+               lo.complexity_before AS complexity_now,
+               lc.complexity_after  AS complexity_after_last
+        FROM   last_closed lc
+        JOIN   last_open   lo ON lo.tool_name = lc.tool_name
+        WHERE  lo.complexity_before > lc.complexity_after
+        ORDER  BY (lo.complexity_before - lc.complexity_after) DESC
+        """
+    ).fetchall()
+    regression_zones = [
+        {
+            "tool_name":              r[0],
+            "complexity_now":         r[1],
+            "complexity_after_last":  r[2],
+            "regression":             r[1] - r[2],
+        }
+        for r in regression_rows
+    ]
+
     # Build recommendation text
     parts: list[str] = []
     if open_stabilizations:
@@ -705,6 +814,12 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         parts.append(
             f"共 {total_stale} 筆分析結果由舊版工具產生，建議評估是否重跑。"
         )
+    if regression_zones:
+        names = ", ".join(r["tool_name"] for r in regression_zones)
+        parts.append(
+            f"回潮偵測（{len(regression_zones)} 個工具穩定化後複雜度上升）：{names}。"
+            "建議重新開啟穩定化迭代。"
+        )
     if not parts:
         parts.append("工具庫健康，無需立即處理。")
 
@@ -715,6 +830,8 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         "open_stabilizations":   open_stabilizations,
         "stale_analyses":        stale_analyses,
         "prune_candidates":      prune_candidates,
+        "regression_zones":      regression_zones,
+        "helix_self_health":     helix_self_health(con),
         "recommendation":        " ".join(parts),
     }
 
@@ -799,3 +916,147 @@ def get_stale_analyses(
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Stable-tool whitelist
+# ---------------------------------------------------------------------------
+
+def mark_stable(
+    con: duckdb.DuckDBPyConnection,
+    tool_name: str,
+    reason: str,
+) -> None:
+    """Mark a high-revision tool as intentionally stable (whitelist).
+
+    Sets ``stability_note`` to a special sentinel prefix so that
+    ``tool_health_report`` can suppress hot-zone noise for tools that are
+    genuinely mature but happen to have a high revision count (e.g. a
+    frequently-tweaked utility that is well-tested and intentionally evolving).
+
+    Args:
+        con:       Open DuckDB connection (write access).
+        tool_name: Logical tool name.
+        reason:    Human-readable explanation, e.g. "已有完整單元測試覆蓋，頻繁迭代屬正常維護".
+    """
+    sentinel = f"[STABLE] {reason}"
+    con.execute(
+        "UPDATE tools SET stability_note = ? WHERE tool_name = ? AND status = 'active'",
+        [sentinel, tool_name],
+    )
+    con.execute("CHECKPOINT")
+    logger.info("mark_stable: %r → %s", tool_name, sentinel[:80])
+
+
+def is_marked_stable(con: duckdb.DuckDBPyConnection, tool_name: str) -> bool:
+    """Return True if the active version of *tool_name* carries the [STABLE] sentinel."""
+    row = con.execute(
+        "SELECT stability_note FROM tools WHERE tool_name = ? AND status = 'active' LIMIT 1",
+        [tool_name],
+    ).fetchone()
+    if row is None or row[0] is None:
+        return False
+    return str(row[0]).startswith("[STABLE]")
+
+
+# ---------------------------------------------------------------------------
+# Stale-iteration auto-revert
+# ---------------------------------------------------------------------------
+
+def auto_revert_stale_stabilizations(
+    con: duckdb.DuckDBPyConnection,
+    days: int = 30,
+) -> list[str]:
+    """Close dangling open iterations that exceeded *days* without being closed.
+
+    Sets ``outcome='reverted'`` and ``closed_at=now`` for every
+    ``tool_stabilization_log`` row where ``closed_at IS NULL`` and
+    ``created_at < now - days``.
+
+    Returns list of ``log_id`` strings that were auto-reverted.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = con.execute(
+        """
+        SELECT log_id, tool_name, created_at
+        FROM   tool_stabilization_log
+        WHERE  closed_at IS NULL
+          AND  created_at < ?
+        ORDER  BY created_at ASC
+        """,
+        [cutoff],
+    ).fetchall()
+
+    if not rows:
+        return []
+
+    now = datetime.now(timezone.utc)
+    reverted: list[str] = []
+    for log_id, tool_name, created_at in rows:
+        con.execute(
+            """
+            UPDATE tool_stabilization_log
+            SET    outcome = 'reverted', closed_at = ?,
+                   action_taken = COALESCE(action_taken || ' | ', '') ||
+                                  '[auto-reverted: exceeded 30-day open limit]'
+            WHERE  log_id = ?
+            """,
+            [now, str(log_id)],
+        )
+        reverted.append(str(log_id))
+        logger.info(
+            "auto_revert_stale_stabilizations: %r log_id=%s created_at=%s",
+            tool_name, log_id, str(created_at)[:10],
+        )
+
+    con.execute("CHECKPOINT")
+    return reverted
+
+
+# ---------------------------------------------------------------------------
+# HELIX self-health
+# ---------------------------------------------------------------------------
+
+def helix_self_health(con: duckdb.DuckDBPyConnection) -> dict:
+    """Return operational metrics about HELIX itself.
+
+    Keys:
+      tools_table_rows        int   — total rows in tools (active + deprecated)
+      stabilization_log_rows  int   — total rows in tool_stabilization_log
+      change_log_rows         int   — total rows in tool_change_log
+      orphan_iterations       int   — open iterations with no matching active tool
+      downsample_coverage_pct float — % of closed iterations that have diagnosis_img
+    """
+    tools_rows = con.execute("SELECT count(*) FROM tools").fetchone()[0]
+    stab_rows  = con.execute("SELECT count(*) FROM tool_stabilization_log").fetchone()[0]
+    chg_rows   = con.execute("SELECT count(*) FROM tool_change_log").fetchone()[0]
+
+    orphan_count = con.execute(
+        """
+        SELECT count(*)
+        FROM   tool_stabilization_log sl
+        LEFT JOIN tools t ON t.tool_name = sl.tool_name AND t.status = 'active'
+        WHERE  sl.closed_at IS NULL
+          AND  t.tool_name IS NULL
+        """
+    ).fetchone()[0]
+
+    coverage_row = con.execute(
+        """
+        SELECT
+            count(*) FILTER (WHERE diagnosis_img IS NOT NULL) AS with_img,
+            count(*) AS total
+        FROM tool_stabilization_log
+        WHERE closed_at IS NOT NULL
+        """
+    ).fetchone()
+    with_img, total_closed = coverage_row[0], coverage_row[1]
+    coverage_pct = round(100.0 * with_img / total_closed, 1) if total_closed > 0 else 0.0
+
+    return {
+        "tools_table_rows":        tools_rows,
+        "stabilization_log_rows":  stab_rows,
+        "change_log_rows":         chg_rows,
+        "orphan_iterations":       orphan_count,
+        "downsample_coverage_pct": coverage_pct,
+    }
