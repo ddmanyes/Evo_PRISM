@@ -272,7 +272,82 @@ find . -name "._*" -delete && find . -name ".DS_Store" -delete
 
 ---
 
-## 7. 核心資料庫 Schema
+## 7. HELIX 規範（Health-Evolving Loop with Iterative eXpiration）
+
+HELIX 是本系統管理工具版本、健康與記憶的核心模組，由三個子系統組成：
+- **HELIX-Core**（`analysis/tool_registry.py`）：版本化、熱區偵測、穩定化迭代
+- **HELIX-Vision**（`analysis/tool_visualizer.py`）：視覺快照渲染、遺忘曲線降採樣
+- **HELIX-Agent**（`server/agent.py` 的 `bio_tool_health` 工具）：Agent 介面
+
+### 7.1 register_tool() — 何時必須呼叫
+
+**任何對 `analysis/` 下工具函數的修改，完成後必須執行 `register_tool()`。**
+
+```python
+from analysis.tool_registry import register_tool
+with duckdb.connect(str(DUCKDB_PATH)) as con:
+    register_tool(con, tool_name="bio_run_bulk_eda",
+                  fn=generate_bulk_report,
+                  version="1.1.0",
+                  module_path="analysis.bulk_eda",
+                  function_name="generate_bulk_report",
+                  change_reason="修正 barcode 格式判斷")
+```
+
+**違反後果**：`tool_change_log` 出現空白；`revision_count` 不累積；熱區偵測失效；`analysis_history.tool_id` 仍指向舊版本，stale analyses 追蹤錯誤。
+
+### 7.2 穩定化迭代 — 開啟與關閉責任
+
+| 條件 | 動作 |
+|------|------|
+| `revision_count ≥ 3` 且尚無進行中迭代 | **必須**開啟迭代（`action=stabilize`） |
+| 已有進行中迭代 | 不重複開啟；`report` 顯示 ✓ |
+| 重構／修復完成 | **必須**在同一 session 或最遲下次修改前呼叫 `action=close_stabilize` |
+| `outcome=ongoing` | 允許跨 session；但每次 `report` 都會顯示為未關閉警示 |
+
+**迭代不得無限期懸掛**：`closed_at IS NULL` 超過 30 天的迭代視為失效，下次開啟前應先以 `outcome=reverted` 關閉。
+
+### 7.3 analysis_history.tool_id — 必須填入
+
+每次分析工具執行後，**必須**將 `tool_id` 寫入 `analysis_history`。這是 stale analyses 追蹤的唯一依據。
+
+```python
+from analysis.tool_registry import get_active_tool_id
+tool_id = get_active_tool_id(con, "bio_run_bulk_eda")
+con.execute("UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
+            [tool_id, analysis_id])
+```
+
+`tool_id = NULL` 的歷史記錄無法判斷由哪個版本產生，HELIX 的 stale analyses 報告將忽略這些記錄。
+
+### 7.4 prune_deprecated() — 哪些版本絕對不能刪
+
+`prune_deprecated()` 只刪除滿足以下**全部條件**的 deprecated 版本：
+1. `status = 'deprecated'`
+2. `analysis_history` 中**沒有任何記錄**的 `tool_id` 指向此版本
+
+**鐵律**：有任何 `analysis_history` 引用的版本永遠保留，不論多舊。這保證歷史分析記錄的可追溯性不被破壞。
+
+穩定工具（`revision_count < 3`）保留 2 個 deprecated 版本；熱區工具（`revision_count ≥ 3`）保留 10 個版本。
+
+### 7.5 diagnosis_img 降採樣排程（遺忘曲線）
+
+目前 `downsample_snapshot()` 需手動呼叫。未來應加入 `scheduler/` 排程：
+
+```
+關閉後 180 天 → downsample_snapshot(data_uri, factor=0.5)   # 640→320，~25 tokens
+關閉後 365 天 → downsample_snapshot(data_uri, factor=0.25)  # 640→160，~6 tokens
+```
+
+在排程未建立前，**禁止手動刪除** `diagnosis_img` 欄位的內容——刪除比模糊更不可逆。
+
+### 7.6 HELIX 寫入規則
+
+HELIX 的所有寫入（`register_tool`、`open_stabilization`、`close_stabilization`）內部已呼叫 `CHECKPOINT`，無需在外層再呼叫 `safe_write()`。
+
+---
+
+## 8. 核心資料庫 Schema
 
 ```sql
 -- 樣本登記（bio_memory.duckdb）
@@ -285,7 +360,28 @@ sample_registry(sample_id PK, project, data_type, platform, species, tissue, l3_
 analysis_history(analysis_id UUID PK, sample_id FK, analysis_type,
                  parameters JSON, status, result_path, l1_cache_id UUID,
                  requested_by, started_at, completed_at, summary VARCHAR,
-                 tool_id UUID)  -- 預留：未來 tools 表 FK，目前皆為 NULL
+                 tool_id UUID FK → tools(tool_id))   -- HELIX 版本追蹤必填
+
+-- HELIX 工具版本帳本
+tools(tool_id UUID PK, tool_name, version, module_path, function_name,
+      status,           -- 'active' | 'deprecated'
+      source_hash,      -- SHA256[:16] content fingerprint
+      revision_count,   -- 熱區閾值：≥ 3
+      stability_note,   -- 診斷備註
+      created_at, deprecated_at)
+
+-- HELIX 修改紀錄（append-only）
+tool_change_log(log_id UUID PK, tool_name, old_hash, new_hash,
+                revision_number, change_reason, changed_at)
+
+-- HELIX 穩定化迭代
+tool_stabilization_log(log_id UUID PK, tool_name, trigger_revision,
+                       diagnosis, action_taken, outcome,
+                       revision_before, revision_after,
+                       diagnosis_img VARCHAR,      -- base64 PNG，VLM 視覺記憶（HELIX-Vision）
+                       complexity_before INTEGER,  -- radon CC at open
+                       complexity_after  INTEGER,  -- radon CC at close；delta = 改善量
+                       created_at, closed_at)      -- closed_at NULL = 迭代進行中
 
 -- 精簡索引 View（0 token 查詢）
 analysis_index VIEW: GROUP BY sample_id + analysis_type, 顯示 run_count、last_run_date

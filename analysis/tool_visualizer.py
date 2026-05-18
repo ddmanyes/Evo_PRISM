@@ -1,17 +1,20 @@
 """
-Tool diagnosis visualizer.
+HELIX-Vision — visual memory layer of the HELIX system.
 
-Renders a PNG snapshot capturing the full context of a stabilization iteration:
-  - Cyclomatic complexity score + gauge
+Renders a 640×640 PNG snapshot encoding the full context of a stabilization
+iteration into a single image:
+  - Source heatmap   (line-token-count proxy for complexity hotspots)
+  - Complexity gauge (cyclomatic complexity, via radon)
   - Revision timeline (hash history from tool_change_log)
   - Diagnosis text
-  - Source heatmap (line-token-count proxy for complexity hotspots)
 
 The snapshot is stored as a base64 data URI in tool_stabilization_log.diagnosis_img.
-At 640x640 resolution this costs ~100 VLM vision tokens — roughly 10x compression
-vs the equivalent text, consistent with DeepSeek-OCR (arXiv:2510.18234) findings.
-Older snapshots can be downsampled progressively to simulate the forgetting curve
-described in Figure 13 of that paper.
+At 640×640 this costs ~100 VLM vision tokens — roughly 10× compression vs the
+equivalent text, consistent with DeepSeek-OCR (arXiv:2510.18234) findings.
+
+Older snapshots are downsampled progressively by downsample_snapshot() to simulate
+the Ebbinghaus forgetting curve: spatial layout survives at lower resolution while
+fine text detail fades, mirroring biological memory degradation over time.
 """
 
 from __future__ import annotations

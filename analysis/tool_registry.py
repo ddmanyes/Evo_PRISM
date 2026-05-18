@@ -1,12 +1,16 @@
 """
-Tool registry with content-hash versioning and stability tracking.
+HELIX-Core — Health-Evolving Loop with Iterative eXpiration.
 
 Detects when tool source code changes, manages tool lifecycle, and surfaces
 "hot zones" — tools that change frequently, signalling design instability.
+Drives the stabilization iteration cycle and records complexity deltas as
+objective improvement metrics.
 
 Key tables (bio_memory.duckdb):
-  tools           — one active row per tool_name, deprecated rows kept for provenance
-  tool_change_log — append-only log of every hash transition
+  tools                  — one active row per tool_name; deprecated rows kept for provenance
+  tool_change_log        — append-only log of every hash transition (old_hash → new_hash)
+  tool_stabilization_log — one row per stabilization iteration; diagnosis_img stores the
+                           VLM visual memory snapshot (HELIX-Vision renders this)
 """
 
 from __future__ import annotations
