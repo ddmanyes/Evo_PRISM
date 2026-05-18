@@ -179,17 +179,20 @@ graph LR
 erDiagram
     sample_registry ||--o{ analysis_history : "sample_id"
     analysis_history ||--o{ analysis_artifacts : "analysis_id"
-    analysis_history }o--|| tools : "tool_id"
+    analysis_history }o--o| tools : "tool_id"
     analysis_artifacts ||--o| analysis_artifact_blobs : "artifact_id"
     analysis_artifacts ||--o{ artifact_relations : "src/dst artifact_id"
-    tools ||--o{ tool_change_log : "tool_name"
-    tools ||--o{ tool_stabilization_log : "tool_name"
+    analysis_artifacts ||--o{ engram_search_metrics : "sample_id (邏輯)"
+    tools ||--o{ tool_change_log : "tool_name (邏輯)"
+    tools ||--o{ tool_stabilization_log : "tool_name (邏輯)"
+    tool_change_log }o--o| tools : "new_tool_id"
     tools }o--o| analysis_history : "origin_id (Code Promotion)"
     memory_recent {
         UUID id PK
         VARCHAR sample_id
         VARCHAR query_text
-        FLOAT embedding
+        VARCHAR report_text
+        FLOAT1024 embedding
         TIMESTAMP expires_at
     }
     sample_registry {
@@ -197,33 +200,40 @@ erDiagram
         VARCHAR data_type
         VARCHAR platform
         BOOLEAN l2_ready
+        BOOLEAN analysis_done
     }
     analysis_history {
         UUID analysis_id PK
         VARCHAR sample_id FK
         UUID tool_id FK
         VARCHAR analysis_type
+        JSON parameters
         VARCHAR status
         VARCHAR result_path
+        VARCHAR summary
     }
     tools {
         UUID tool_id PK
         VARCHAR tool_name
+        VARCHAR version
         VARCHAR source_hash
         INTEGER revision_count
         VARCHAR status
+        UUID origin_id FK
     }
     tool_change_log {
         UUID log_id PK
-        VARCHAR tool_name FK
+        VARCHAR tool_name
+        UUID new_tool_id FK
         VARCHAR old_hash
         VARCHAR new_hash
         DOUBLE churn_ratio
     }
     tool_stabilization_log {
         UUID log_id PK
-        VARCHAR tool_name FK
+        VARCHAR tool_name
         VARCHAR outcome
+        VARCHAR diagnosis_img
         INTEGER complexity_before
         INTEGER complexity_after
         TIMESTAMP closed_at
@@ -233,7 +243,14 @@ erDiagram
         UUID analysis_id FK
         VARCHAR artifact_type
         VARCHAR artifact_subtype
-        FLOAT embedding
+        VARCHAR label
+        VARCHAR file_path
+        INTEGER file_size_kb
+        VARCHAR mime_type
+        VARCHAR input_data_hash
+        VARCHAR code_hash
+        VARCHAR env_hash
+        FLOAT1024 embedding
     }
     analysis_artifact_blobs {
         UUID artifact_id PK
@@ -244,12 +261,30 @@ erDiagram
         UUID src_artifact_id FK
         UUID dst_artifact_id FK
         VARCHAR relation_type
+        TIMESTAMPTZ created_at
+    }
+    engram_search_metrics {
+        UUID metric_id PK
+        VARCHAR query
+        INTEGER returned_n
+        INTEGER latency_ms
+        VARCHAR search_layer
+        DOUBLE threshold
+        VARCHAR sample_id
+        TIMESTAMPTZ created_at
+    }
+    schema_migrations {
+        INTEGER version PK
+        TIMESTAMPTZ applied_at
+        VARCHAR description
     }
 ```
 
 ---
 
 ### L1 Gold：`memory_recent`
+
+**系統的便條紙——問過的問題先查這裡，7 天後自動丟棄。**
 
 **用途：語意去重快取。** 每次分析完成後，將查詢文字、報告內容與其向量 embedding 一起存入。下次收到語意相似的問題（cosine ≥ 0.88）時，直接回傳快取結果，不重新執行分析、不消耗 LLM token。此表可完整重建，丟失不影響資料完整性。
 
@@ -287,6 +322,8 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 
 ### L2 Silver：Parquet 計數矩陣
 
+**從原始數據壓縮出來的中間數據，還沒被分析過，但已經可以快速查詢。**
+
 **用途：壓縮後的空間轉錄體特徵矩陣。** 由 `scripts/02_spatial_to_parquet.py` 從 L3 原始 SpaceRanger 輸出（`.h5ad`）一次性轉換而來，存於 `silver/<sample_id>/`。DuckDB 可直接查詢 Parquet，不需匯入記憶體，支援生資規模的 SQL 聚合。
 
 每個樣本包含三類檔案：
@@ -302,6 +339,8 @@ CREATE INDEX memory_recent_emb_idx ON memory_recent
 ---
 
 ### L2 Silver：`sample_registry`
+
+**實驗室的樣本登記簿——每個樣本進來就登記一筆，之後不再修改。**
 
 **用途：實驗室樣本名冊。** 每個生物樣本登記一筆，記錄它是什麼資料類型、原始檔案在哪、是否已轉換為 L2 Parquet、是否已完成分析。新樣本進來就新增一筆，之後不再修改。
 
@@ -325,6 +364,8 @@ CREATE TABLE sample_registry (
 ---
 
 ### L2 Silver：`analysis_history`
+
+**實驗室的分析日誌——每跑一次分析自動記一筆，永不刪除。**
 
 **用途：分析操作永久帳本。** 每次執行分析就新增一筆，**永遠不刪除**。記錄對哪個樣本、做了什麼分析、用了哪些參數、結果存在哪裡。這是系統追責與重現的唯一依據，也是 `analysis_index` View 的資料來源。
 
@@ -356,6 +397,8 @@ CREATE TABLE analysis_history (
 ---
 
 ### L2 Silver：`tools`
+
+**每個分析工具的版本履歷——改了幾次、現在用哪版、是否還在維護，一目了然。**
 
 **用途：工具版本帳本。** 每次工具源碼變動就新增一筆（舊版標為 `deprecated`，active 永遠只有一筆）。`analysis_history.tool_id` 外鍵指向此表，解鎖跨版本查詢（「哪些分析由已 deprecated 的版本產生？」）。
 
@@ -392,6 +435,8 @@ CREATE TABLE tools (
 
 ### L2 Silver：`tool_change_log`
 
+**工具的修改日記——每次改動自動留下一筆，永不刪除。**
+
 **用途：append-only 修改紀錄。** 每次 `register_tool()` 偵測到 hash 變化時寫入一筆，永不刪除。提供工具演變的完整追溯，也是熱圖快照的時間軸資料來源。
 
 ```sql
@@ -414,6 +459,8 @@ CREATE TABLE tool_change_log (
 ---
 
 ### L2 Silver：`tool_stabilization_log`
+
+**問題工具的診療記錄——記下為什麼一直改、做了什麼、改完有沒有變好。**
 
 **用途：穩定化迭代帳本。** 熱區工具（revision ≥ 3）觸發一次穩定化迭代就新增一筆，記錄診斷脈絡、行動計畫、效果驗收。`closed_at IS NULL` 代表迭代仍在進行中。
 
@@ -447,6 +494,8 @@ CREATE TABLE tool_stabilization_log (
 ---
 
 ### L2 Silver：`analysis_artifacts`（ENGRAM）
+
+**分析產出的成果檔案櫃——每張圖、每份 CSV、每篇報告都有索引，可語意搜尋、可並排比較。**
 
 **用途：分析產出的永久記憶索引（metadata 層）。** 每次分析完成，`register_artifact()` 自動將所有輸出檔（圖、CSV、報告）寫入此表。與 `analysis_history` 搭配使用：`analysis_history` 記錄「做了什麼分析」，`analysis_artifacts` 記錄「產出了什麼結果」。
 
@@ -488,9 +537,22 @@ CREATE UNIQUE INDEX uq_artifacts_run_subtype_label
 **已知 artifact_subtype 清單：**
 `volcano` / `pca` / `heatmap` / `qc_figure` / `scatter` / `deg_list` / `pathway_scores` / `timeseries` / `eda_report` / `summary_report` / `qc_csv` / `counts_csv` / `run_log`
 
+**`results/` 目錄結構：**
+
+實體產出檔案存放於 `bio_DB/results/`，路徑規則依分析模組而異：
+
+| 分析模組 | 路徑規則 | 範例 |
+| --- | --- | --- |
+| `spatial_eda.py` | `results/<sample_id>/<analysis_type>/` | `results/crc_official_v4/spatial_eda/spatial_CD8A.png` |
+| `bulk_eda.py` | `results/bulk_eda/` | `results/bulk_eda/pca_crc_s1_20260518.png` |
+
+`analysis_artifacts.file_path` 存 `BIO_DB_ROOT` 相對路徑（如 `results/crc_official_v4/spatial_eda/spatial_CD8A.png`）；`resolve_artifact_path()` 在執行時還原為絕對路徑，確保跨平台可攜。
+
 ---
 
 ### L2 Silver：`analysis_artifact_blobs`（ENGRAM blob 表，migration v14）
+
+**成果檔案的實體內容——小檔案（≤ 500 KB）直接存這裡，讓主表保持輕巧。**
 
 **用途：artifact 的 inline base64 blob 儲存（1:0..1 關係）。** migration v14 將 inline_data 從主表拆出，消除 HNSW 掃描時讀取大型 blob 欄位的效能懲罰。≤ 500 KB 的檔案才會寫入此表；大型檔案（報告、高解析度圖）只在 `file_path` 有記錄。
 
@@ -504,6 +566,8 @@ CREATE TABLE analysis_artifact_blobs (
 ---
 
 ### L2 Silver：`engram_search_metrics`（ENGRAM 搜尋觀測，migration v15）
+
+**搜尋行為的觀測站——記下每次搜尋怎麼跑、多快、走哪一層，累積後用來調整參數。**
 
 **用途：記錄每次 `search_artifacts()` 呼叫的可觀測性數據。** 累積後可分析「哪類查詢 exact 層命中率高」、「哪個 threshold 讓 HNSW 召回率最好」，為未來參數調整提供依據。
 
@@ -523,6 +587,8 @@ CREATE TABLE engram_search_metrics (
 ---
 
 ### L2 Silver：`schema_migrations`（migration v10）
+
+**資料庫的升級記錄——確保每個版本的 schema 變更只套用一次，不重複不遺漏。**
 
 **用途：追蹤已套用的 schema 版本。** 每次執行 migration 腳本後寫入一筆，確保冪等（重複執行不重複記錄）。
 
@@ -602,6 +668,44 @@ Views 是從 `analysis_history` 自動聚合的虛擬表，不佔額外儲存空
 ```
 
 > **工具生命週期**：3C 生成 → 存入 3B 可重用 → 重用 ≥3 次後升格回 3A 永久工具
+
+```mermaid
+flowchart TD
+    Q(["使用者提問\nWeb UI / Telegram"])
+
+    Q --> S1["Step 1 — 精確查詢<br/>這個問題做過了嗎？"]
+    S1 -->|命中| HIT["已有結果<br/>告知命中、列出產出<br/>詢問是否足夠"]
+    HIT -->|確認足夠| END(["結束"])
+    HIT -->|需重跑| S3
+
+    S1 -->|未命中| S2["Step 2 — 語意搜尋<br/>有沒有語意相近的分析？"]
+    S2 -->|相似度 ≥ 0.88| HIT
+    S2 -->|未命中| S3
+
+    S3{{"Step 3<br/>選擇分析路徑"}}
+
+    S3 -->|標準分析類型| A["3A — 標準工具<br/>確認 L2 就緒<br/>執行 EDA / QC 分析"]
+    A -->|L2 未就緒| STOP(["提示需先轉換數據"])
+    A -->|L2 就緒| RUN["執行分析<br/>記錄狀態 running → completed"]
+    RUN --> L1W["寫入 L1 快取"]
+    L1W --> END
+
+    S3 -->|非標準但曾做過| B["3B — 程式碼重用<br/>查詢歷史生成的程式碼"]
+    B -->|找到| REUSE["重用既有程式碼"]
+    REUSE -->|重用 ≥ 3 次| PROMO["升格為永久工具"]
+    REUSE --> L1W
+    B -->|找不到| C
+
+    S3 -->|全新需求| C["3C — 動態生成<br/>LLM 生成程式碼<br/>安全檢查 → 沙盒執行"]
+    C -->|執行失敗| C
+    C -->|執行成功| SAVE["儲存程式碼至歷史記錄"]
+    SAVE --> L1W
+
+    S3 -->|缺少 L2 數據| S4["Step 4 — L3 Pipeline<br/>重新跑原始數據轉換<br/>約 4 小時"]
+    S4 -->|有原始數據| PIPE["執行 SpaceRanger / Kallisto<br/>L3 → L2 → L1"]
+    S4 -->|無原始數據| NOTIFY(["提示使用者上傳原始數據"])
+    PIPE --> END
+```
 
 ---
 
