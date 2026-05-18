@@ -715,6 +715,48 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     }
 
 
+def get_complexity_trend(
+    con: duckdb.DuckDBPyConnection,
+    tool_name: Optional[str] = None,
+) -> list[dict]:
+    """Return closed stabilization iterations with complexity deltas.
+
+    Each dict contains: ``tool_name``, ``log_id``, ``created_at``,
+    ``closed_at``, ``complexity_before``, ``complexity_after``, ``delta``,
+    ``outcome``.  Rows without both complexity values are excluded.
+
+    If *tool_name* is given, filters to that tool only.
+    """
+    sql = """
+        SELECT log_id, tool_name, created_at, closed_at,
+               complexity_before, complexity_after, outcome
+        FROM   tool_stabilization_log
+        WHERE  closed_at IS NOT NULL
+          AND  complexity_before IS NOT NULL
+          AND  complexity_after  IS NOT NULL
+    """
+    params: list = []
+    if tool_name:
+        sql += " AND tool_name = ?"
+        params.append(tool_name)
+    sql += " ORDER BY closed_at DESC"
+
+    rows = con.execute(sql, params).fetchall()
+    return [
+        {
+            "log_id":             str(r[0]),
+            "tool_name":          r[1],
+            "created_at":         str(r[2]),
+            "closed_at":          str(r[3]),
+            "complexity_before":  r[4],
+            "complexity_after":   r[5],
+            "delta":              r[4] - r[5],   # positive = improvement
+            "outcome":            r[6],
+        }
+        for r in rows
+    ]
+
+
 def get_stale_analyses(
     con: duckdb.DuckDBPyConnection,
     tool_name: str,
