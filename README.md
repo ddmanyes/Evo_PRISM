@@ -82,7 +82,24 @@ bash start_hermes.sh
 
 啟動後開啟瀏覽器：**<http://localhost:8000>**
 
-`Ctrl+C` 同時停止推理引擎與 Web Server。
+啟動順序：
+
+1. Gemma 4 Vision 推理引擎（port 8080）— 等待模型載入，最多 120 秒
+2. Embedding Server bge-m3（port 8081）— 若已透過 launchd 自動啟動則跳過
+3. FastAPI Web UI（port 8000）— 等待 scanpy/anndata import，最多 60 秒
+
+### 關閉系統
+
+```bash
+# 方法一：在 start_hermes.sh 執行的終端機按 Ctrl+C
+# （只停止由該腳本啟動的服務）
+
+# 方法二：強制停止所有服務（含 launchd 或手動啟動的）
+cd "/Volumes/NO NAME/bio_DB"
+bash stop_hermes.sh
+```
+
+`stop_hermes.sh` 依序停止 port 8080（推理引擎）、8081（Embedding）、8000（Web UI）。
 
 ---
 
