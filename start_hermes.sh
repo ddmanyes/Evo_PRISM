@@ -3,6 +3,7 @@ set -euo pipefail
 # Usage:
 #   bash start_hermes.sh           # 互動式選擇模式
 #   bash start_hermes.sh --claude  # Claude API + embedding only
+#   bash start_hermes.sh --google  # Google Gemini API + embedding only
 #   bash start_hermes.sh --local   # Gemma 4 Vision + embedding
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -33,11 +34,13 @@ if [ -z "$MODE" ]; then
     echo ""
     echo "選擇推理後端："
     echo "  1) Claude API（雲端，需 ANTHROPIC_API_KEY）"
-    echo "  2) 本機 Gemma 4 Vision（離線，需 ~16GB RAM）"
+    echo "  2) Google Gemini API（雲端，需 GOOGLE_API_KEY）"
+    echo "  3) 本機 Gemma 4 Vision（離線，需 ~16GB RAM）"
     echo ""
-    read -rp "請輸入 1 或 2 [預設 1]: " CHOICE
+    read -rp "請輸入 1、2 或 3 [預設 1]: " CHOICE
     case "${CHOICE:-1}" in
-        2) MODE="--local" ;;
+        2) MODE="--google" ;;
+        3) MODE="--local" ;;
         *) MODE="--claude" ;;
     esac
 fi
@@ -45,7 +48,8 @@ fi
 case "$MODE" in
     --local)  USE_LOCAL=1 ;;
     --claude) USE_LOCAL=0 ;;
-    *) error "未知參數 $MODE，請用 --claude 或 --local"; exit 1 ;;
+    --google) USE_LOCAL=0 ;;
+    *) error "未知參數 $MODE，請用 --claude、--google 或 --local"; exit 1 ;;
 esac
 
 cleanup() {
@@ -162,8 +166,11 @@ else
     fi
 fi
 
-BACKEND_LABEL="Claude API"
-[ "$USE_LOCAL" -eq 1 ] && BACKEND_LABEL="本機 Gemma 4 Vision"
+case "$MODE" in
+    --local)  BACKEND_LABEL="本機 Gemma 4 Vision" ;;
+    --google) BACKEND_LABEL="Google Gemini API" ;;
+    *)        BACKEND_LABEL="Claude API" ;;
+esac
 
 echo ""
 info "========================================"
