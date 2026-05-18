@@ -403,6 +403,166 @@ def prune_deprecated(
 
 
 # ---------------------------------------------------------------------------
+# Stabilization iteration tracking
+# ---------------------------------------------------------------------------
+
+def open_stabilization(
+    con: duckdb.DuckDBPyConnection,
+    tool_name: str,
+    diagnosis: str,
+    action_taken: str,
+) -> str:
+    """Open a new stabilization iteration for *tool_name*.
+
+    Should be called when a hot-zone tool has been diagnosed and a concrete
+    refactoring action has started.  The iteration remains open (``closed_at``
+    = NULL) until :func:`close_stabilization` is called.
+
+    Returns the UUID string of the new ``tool_stabilization_log`` row.
+    """
+    active = con.execute(
+        "SELECT COALESCE(revision_count, 1) FROM tools "
+        "WHERE tool_name = ? AND status = 'active' LIMIT 1",
+        [tool_name],
+    ).fetchone()
+    if active is None:
+        raise ValueError(f"Tool {tool_name!r} not found in tools table.")
+    revision_now = int(active[0])
+
+    log_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    con.execute(
+        """
+        INSERT INTO tool_stabilization_log
+            (log_id, tool_name, trigger_revision, diagnosis,
+             action_taken, outcome, revision_before, created_at)
+        VALUES (?, ?, ?, ?, ?, 'ongoing', ?, ?)
+        """,
+        [log_id, tool_name, revision_now, diagnosis, action_taken, revision_now, now],
+    )
+    logger.info("open_stabilization: %r  revision=%d  log_id=%s", tool_name, revision_now, log_id)
+    return log_id
+
+
+def close_stabilization(
+    con: duckdb.DuckDBPyConnection,
+    log_id: str,
+    outcome: str,
+    action_taken: Optional[str] = None,
+) -> None:
+    """Close an open stabilization iteration.
+
+    Args:
+        con:          Open DuckDB connection (write access).
+        log_id:       UUID of the ``tool_stabilization_log`` row to close.
+        outcome:      ``'stabilized'`` | ``'ongoing'`` | ``'reverted'``.
+        action_taken: Optional update to the action description.
+    """
+    if outcome not in ("stabilized", "ongoing", "reverted"):
+        raise ValueError(f"outcome must be stabilized/ongoing/reverted, got {outcome!r}")
+
+    row = con.execute(
+        "SELECT tool_name, revision_before FROM tool_stabilization_log WHERE log_id = ?",
+        [log_id],
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"No stabilization log found for log_id={log_id!r}")
+
+    tool_name, revision_before = row[0], row[1]
+    active = con.execute(
+        "SELECT COALESCE(revision_count, 1) FROM tools "
+        "WHERE tool_name = ? AND status = 'active' LIMIT 1",
+        [tool_name],
+    ).fetchone()
+    revision_after = int(active[0]) if active else revision_before
+
+    now = datetime.now(timezone.utc)
+    updates = ["outcome = ?", "revision_after = ?", "closed_at = ?"]
+    params: list = [outcome, revision_after, now]
+    if action_taken:
+        updates.append("action_taken = ?")
+        params.append(action_taken)
+    params.append(log_id)
+
+    con.execute(
+        f"UPDATE tool_stabilization_log SET {', '.join(updates)} WHERE log_id = ?",
+        params,
+    )
+    delta = revision_after - revision_before
+    logger.info(
+        "close_stabilization: log_id=%s  outcome=%s  revision_delta=+%d",
+        log_id, outcome, delta,
+    )
+
+
+def get_open_stabilizations(
+    con: duckdb.DuckDBPyConnection,
+    tool_name: Optional[str] = None,
+) -> list[dict]:
+    """Return all open (``closed_at`` IS NULL) stabilization iterations.
+
+    If *tool_name* is given, filters to that tool only.
+    """
+    sql = """
+        SELECT log_id, tool_name, trigger_revision, diagnosis,
+               action_taken, revision_before, created_at
+        FROM   tool_stabilization_log
+        WHERE  closed_at IS NULL
+    """
+    params: list = []
+    if tool_name:
+        sql += " AND tool_name = ?"
+        params.append(tool_name)
+    sql += " ORDER BY created_at DESC"
+
+    rows = con.execute(sql, params).fetchall()
+    return [
+        {
+            "log_id":           str(r[0]),
+            "tool_name":        r[1],
+            "trigger_revision": r[2],
+            "diagnosis":        r[3],
+            "action_taken":     r[4],
+            "revision_before":  r[5],
+            "created_at":       str(r[6]),
+        }
+        for r in rows
+    ]
+
+
+def backfill_revision_after(con: duckdb.DuckDBPyConnection) -> int:
+    """Back-fill ``revision_after`` for closed rows that still have it NULL.
+
+    This can happen if ``close_stabilization`` was called before the tool was
+    re-registered.  Uses the current active ``revision_count`` as a proxy.
+    Returns number of rows updated.
+    """
+    rows = con.execute(
+        """
+        SELECT sl.log_id, sl.tool_name
+        FROM   tool_stabilization_log sl
+        WHERE  sl.closed_at IS NOT NULL
+          AND  sl.revision_after IS NULL
+        """
+    ).fetchall()
+
+    updated = 0
+    for log_id, tool_name in rows:
+        active = con.execute(
+            "SELECT COALESCE(revision_count, 1) FROM tools "
+            "WHERE tool_name = ? AND status = 'active' LIMIT 1",
+            [tool_name],
+        ).fetchone()
+        if active:
+            con.execute(
+                "UPDATE tool_stabilization_log SET revision_after = ? WHERE log_id = ?",
+                [int(active[0]), str(log_id)],
+            )
+            updated += 1
+    return updated
+
+
+# ---------------------------------------------------------------------------
 # Health report
 # ---------------------------------------------------------------------------
 
@@ -410,12 +570,13 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     """Return a summary dict for ``bio_tool_health`` agent tool.
 
     Keys:
-      total_active       int
-      total_deprecated   int
-      hot_zones          list[dict]   (tools with revision_count >= 3)
-      stale_analyses     dict[tool_name → int]   (deprecated-tool analyses)
-      prune_candidates   dict[tool_name → int]   (unreferenced deprecated rows)
-      recommendation     str
+      total_active          int
+      total_deprecated      int
+      hot_zones             list[dict]   (tools with revision_count >= 3)
+      open_stabilizations   list[dict]   (ongoing iterations)
+      stale_analyses        dict[tool_name → int]
+      prune_candidates      dict[tool_name → int]
+      recommendation        str
     """
     active_count = con.execute(
         "SELECT count(*) FROM tools WHERE status = 'active'"
@@ -426,6 +587,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     ).fetchone()[0]
 
     hot_zones = get_hot_tools(con, min_revisions=3)
+    open_stabilizations = get_open_stabilizations(con)
 
     # stale analyses per tool_name
     stale_rows = con.execute(
@@ -456,9 +618,16 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
 
     # Build recommendation text
     parts: list[str] = []
+    if open_stabilizations:
+        names = ", ".join(s["tool_name"] for s in open_stabilizations)
+        parts.append(f"進行中穩定化迭代（{len(open_stabilizations)} 筆）：{names}。完成後呼叫 close_stabilize 記錄結果。")
     if hot_zones:
-        names = ", ".join(t["tool_name"] for t in hot_zones)
-        parts.append(f"熱區工具（revision ≥ 3）：{names}。建議診斷後設定 stability_note。")
+        # Only flag hot zones that don't already have an open stabilization
+        open_names = {s["tool_name"] for s in open_stabilizations}
+        unattended = [t for t in hot_zones if t["tool_name"] not in open_names]
+        if unattended:
+            names = ", ".join(t["tool_name"] for t in unattended)
+            parts.append(f"熱區工具（revision ≥ 3，尚無迭代）：{names}。建議開啟穩定化迭代。")
     if prune_candidates:
         total_prunable = sum(prune_candidates.values())
         parts.append(
@@ -474,12 +643,13 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         parts.append("工具庫健康，無需立即處理。")
 
     return {
-        "total_active":     active_count,
-        "total_deprecated": deprecated_count,
-        "hot_zones":        hot_zones,
-        "stale_analyses":   stale_analyses,
-        "prune_candidates": prune_candidates,
-        "recommendation":   " ".join(parts),
+        "total_active":          active_count,
+        "total_deprecated":      deprecated_count,
+        "hot_zones":             hot_zones,
+        "open_stabilizations":   open_stabilizations,
+        "stale_analyses":        stale_analyses,
+        "prune_candidates":      prune_candidates,
+        "recommendation":        " ".join(parts),
     }
 
 
