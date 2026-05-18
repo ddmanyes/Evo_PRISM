@@ -91,12 +91,17 @@ def _compute_churn(
 ) -> tuple[Optional[str], Optional[float]]:
     """Diff *old_source* vs *new_source* and return (changed_lines_json, churn_ratio).
 
-    changed_lines_json — JSON list of [start, end] 1-based line ranges that
-                         appear in unified diff hunks of the new source.
-    churn_ratio        — changed_line_count / total_lines_in_new_source
-                         (Nagappan relative churn; None when source unavailable).
+    changed_lines_json — JSON list of [start, end] 1-based line ranges in the
+                         *new* source that correspond to replaced or inserted
+                         hunks.  Pure deletions are represented as a zero-width
+                         marker at the deletion point: [j1+1, j1] where j1==j2.
+    churn_ratio        — (added_lines + deleted_lines) / max(old_lines, new_lines)
+                         Follows Nagappan's relative churn definition, which counts
+                         both additions and deletions.  None when source unavailable.
 
-    Returns (None, None) when either source is unavailable.
+    Returns (None, None) when either source is unavailable (e.g. first
+    registration where no previous snapshot exists — callers should expect
+    revisions_used to be one less than revision_count for this reason).
     """
     if old_source is None or new_source is None:
         return None, None
@@ -104,19 +109,23 @@ def _compute_churn(
     old_lines = old_source.splitlines(keepends=True)
     new_lines = new_source.splitlines(keepends=True)
     hunks: list[list[int]] = []
-    changed_count = 0
+    added_count   = 0
+    deleted_count = 0
 
+    # 'equal' entries (including zero-width sentinels from n=0) are intentionally ignored.
     for group in difflib.SequenceMatcher(None, old_lines, new_lines).get_grouped_opcodes(0):
-        for tag, _i1, _i2, j1, j2 in group:
+        for tag, i1, i2, j1, j2 in group:
             if tag in ("replace", "insert"):
-                start = j1 + 1        # 1-based
-                end   = j2            # inclusive
+                start = j1 + 1    # 1-based, inclusive
+                end   = j2        # inclusive; j1==j2 means pure deletion marker
                 hunks.append([start, end])
-                changed_count += j2 - j1
+                added_count += j2 - j1
+            if tag in ("replace", "delete"):
+                deleted_count += i2 - i1
 
-    total = len(new_lines) or 1
-    churn_ratio = round(changed_count / total, 4) if hunks else 0.0
-    return json.dumps(hunks) if hunks else json.dumps([]), churn_ratio
+    denominator = max(len(old_lines), len(new_lines)) or 1
+    churn_ratio = round((added_count + deleted_count) / denominator, 4)
+    return json.dumps(hunks), churn_ratio
 
 
 # ---------------------------------------------------------------------------
@@ -476,6 +485,8 @@ def get_hot_lines(
             "suggestion": None,
         }
 
+    _MAX_RANGE_LINES = 10_000   # guard against malformed/oversized ranges
+
     # Count per-line hit frequency across revisions
     line_hits: dict[int, int] = {}
     churn_values: list[float] = []
@@ -487,6 +498,14 @@ def get_hot_lines(
             continue
         seen_in_this_rev: set[int] = set()
         for start, end in ranges:
+            if end < start:          # pure-deletion marker (start > end) → skip iteration
+                continue
+            if end - start > _MAX_RANGE_LINES:
+                logger.warning(
+                    "get_hot_lines: oversized range [%d, %d] in tool %r, skipping",
+                    start, end, tool_name,
+                )
+                continue
             for lineno in range(start, end + 1):
                 if lineno not in seen_in_this_rev:
                     line_hits[lineno] = line_hits.get(lineno, 0) + 1
@@ -976,12 +995,75 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
             "建議重新開啟穩定化迭代。"
         )
 
-    # intra-tool hot lines for every hot-zone tool
+    # intra-tool hot lines — batch fetch all hot-zone tools in a single query
     hot_lines_report: dict[str, dict] = {}
-    for tool in hot_zones:
-        hl = get_hot_lines(con, tool["tool_name"])
-        if hl["hot_lines"]:
-            hot_lines_report[tool["tool_name"]] = hl
+    if hot_zones:
+        hot_names = [t["tool_name"] for t in hot_zones]
+        placeholders = ", ".join("?" * len(hot_names))
+        cl_rows = con.execute(
+            f"""
+            SELECT tool_name, changed_lines, churn_ratio
+            FROM   tool_change_log
+            WHERE  tool_name IN ({placeholders})
+              AND  changed_lines IS NOT NULL
+            ORDER  BY tool_name, revision_number DESC
+            """,
+            hot_names,
+        ).fetchall()
+
+        # group by tool_name, keep top-5 per tool, then reuse get_hot_lines aggregation
+        from collections import defaultdict
+        cl_by_tool: dict[str, list[tuple]] = defaultdict(list)
+        for row_name, row_cl, row_cr in cl_rows:
+            if len(cl_by_tool[row_name]) < 5:
+                cl_by_tool[row_name].append((row_cl, row_cr))
+
+        _MAX_RANGE_LINES = 10_000
+        for tool_name_hl, tool_rows in cl_by_tool.items():
+            line_hits: dict[int, int] = {}
+            churn_values: list[float] = []
+            for changed_lines_json, churn_ratio in tool_rows:
+                try:
+                    ranges: list[list[int]] = json.loads(changed_lines_json)
+                except (TypeError, ValueError):
+                    continue
+                seen: set[int] = set()
+                for start, end in ranges:
+                    if end < start:
+                        continue
+                    if end - start > _MAX_RANGE_LINES:
+                        continue
+                    for lineno in range(start, end + 1):
+                        if lineno not in seen:
+                            line_hits[lineno] = line_hits.get(lineno, 0) + 1
+                            seen.add(lineno)
+                if churn_ratio is not None:
+                    churn_values.append(churn_ratio)
+
+            hot_line_nos = sorted(ln for ln, hits in line_hits.items() if hits >= 2)
+            hot_ranges: list[list[int]] = []
+            for lineno in hot_line_nos:
+                if hot_ranges and lineno == hot_ranges[-1][1] + 1:
+                    hot_ranges[-1][1] = lineno
+                else:
+                    hot_ranges.append([lineno, lineno])
+
+            if not hot_ranges:
+                continue
+
+            avg_churn = round(sum(churn_values) / len(churn_values), 4) if churn_values else None
+            suggestion = (
+                f"Lines {', '.join(f'{s}-{e}' for s, e in hot_ranges)} "
+                f"changed in 2+ of the last {len(tool_rows)} revisions — "
+                "consider extracting as configurable parameters."
+            )
+            hot_lines_report[tool_name_hl] = {
+                "tool_name":      tool_name_hl,
+                "revisions_used": len(tool_rows),
+                "hot_lines":      hot_ranges,
+                "avg_churn":      avg_churn,
+                "suggestion":     suggestion,
+            }
     if hot_lines_report:
         names = ", ".join(hot_lines_report)
         parts.append(
