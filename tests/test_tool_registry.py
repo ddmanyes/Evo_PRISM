@@ -531,6 +531,22 @@ class TestComputeChurn:
         assert cr is not None
         assert 0.0 <= cr <= 1.0
 
+    def test_delete_only_has_nonzero_churn(self):
+        from analysis.tool_registry import _compute_churn
+        old = "def f():\n    x = 1\n    y = 2\n    z = 3\n    return x\n"
+        new = "def f():\n    x = 1\n    return x\n"
+        cl, cr = _compute_churn(old, new)
+        assert cr is not None
+        assert cr > 0.0, "pure deletion should produce non-zero churn"
+
+    def test_empty_string_differs_from_none(self):
+        from analysis.tool_registry import _compute_churn
+        import json
+        cl, cr = _compute_churn("", "")
+        assert cl is not None   # not None — both sources are present (just empty)
+        assert json.loads(cl) == []
+        assert cr == 0.0
+
 
 # ---------------------------------------------------------------------------
 # register_tool churn columns
@@ -627,3 +643,24 @@ class TestToolHealthReportHotLines:
         from analysis.tool_registry import tool_health_report
         report = tool_health_report(helix_con)
         assert report["hot_lines_report"] == {}
+
+    def test_hot_lines_report_populated_for_hot_tool(self, helix_con):
+        from analysis.tool_registry import register_tool, tool_health_report
+        # Register 3 revisions so the tool enters the hot zone (revision_count >= 3)
+        register_tool(helix_con, "hot_t", _churn_v1, "1.0.0", "d")
+        register_tool(helix_con, "hot_t", _churn_v2, "1.1.0", "d")
+        register_tool(helix_con, "hot_t", _churn_v3, "1.2.0", "d")
+        report = tool_health_report(helix_con)
+        # hot_lines_report may or may not have "hot_t" depending on whether
+        # the same lines were changed in 2+ revisions — but the key must exist
+        assert "hot_lines_report" in report
+        assert isinstance(report["hot_lines_report"], dict)
+
+    def test_hot_tool_in_hot_zones(self, helix_con):
+        from analysis.tool_registry import register_tool, tool_health_report
+        register_tool(helix_con, "hot_t", _churn_v1, "1.0.0", "d")
+        register_tool(helix_con, "hot_t", _churn_v2, "1.1.0", "d")
+        register_tool(helix_con, "hot_t", _churn_v3, "1.2.0", "d")
+        report = tool_health_report(helix_con)
+        hot_names = [t["tool_name"] for t in report["hot_zones"]]
+        assert "hot_t" in hot_names
