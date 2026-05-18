@@ -197,7 +197,16 @@ L1 金層（Gold）── 語意快取（近期記憶）
 
 ### L1 Gold：`memory_recent`
 
-**用途：語意去重快取。** 每次分析完成後，將查詢文字、報告內容與其向量 embedding 一起存入。下次收到語意相似的問題（cosine ≥ 0.88）時，直接回傳快取結果，不重新執行分析、不消耗 LLM token。TTL 7 天到期自動清除——過期快取可能對應已更新的分析結果，過期即失效是刻意設計，確保不回傳過時答案。此表可完整重建，丟失不影響資料完整性。
+**用途：語意去重快取。** 每次分析完成後，將查詢文字、報告內容與其向量 embedding 一起存入。下次收到語意相似的問題（cosine ≥ 0.88）時，直接回傳快取結果，不重新執行分析、不消耗 LLM token。此表可完整重建，丟失不影響資料完整性。
+
+**快取失效策略（兩道保護）：**
+
+| 保護層 | 機制 | 觸發時機 |
+| ------ | ---- | -------- |
+| 工具改版主動清除 | `register_tool()` 偵測到 hash 變化時，自動呼叫 `invalidate_tool_cache(tool_name)`，刪除所有 `query_text` 包含該工具名稱的快取條目 | 開發者更新工具程式碼後立即生效 |
+| TTL 7 天被動過期 | `expires_at` 到期由 `scheduler/cleanup_l1_cache.py` 每日 03:30 自動刪除 | 兜底保護，確保長期不改版的工具快取也不會無限累積 |
+
+選擇「改版清快取」而非「快取加 tool_id 欄位」的理由：`memory_recent` 的設計定位是可重建的短期去重器，不是高價值的持久化資料；修改簽名成本高（跨兩個 DuckDB 檔案、需 migration），而清了重算的代價低。
 
 | 欄位            | 說明                                                 |
 | --------------- | ---------------------------------------------------- |
@@ -522,16 +531,157 @@ GROUP BY 1 ORDER BY 1 DESC;
 
 ### analysis_history vs. memory_recent
 
-| 比較項目   | `analysis_history`（SQL，L2）   | `memory_recent`（VSS，L1）     |
-| ---------- | --------------------------------- | -------------------------------- |
-| 查的是     | 「有沒有**做過**這件事」    | 「有沒有**問過類似**問題」 |
-| 比對方式   | 精確（sample_id + analysis_type） | 語意相似度（cosine ≥ 0.88）     |
-| 時間紀錄   | ✅ started_at / completed_at      | ❌ 只有 TTL                      |
-| Token 消耗 | **0 token**                 | 少量（embedding API）            |
-| 壽命       | **永久**                    | TTL 7 天                         |
+| 比較項目 | `analysis_history`（SQL，L2） | `memory_recent`（VSS，L1） |
+| - | - | - |
+| 查的是 | 「有沒有**做過**這件事」 | 「有沒有**問過類似**問題」 |
+| 比對方式 | 精確（sample_id + analysis_type） | 語意相似度（cosine ≥ 0.88） |
+| 時間紀錄 | ✅ started_at / completed_at | ❌ 只有 TTL |
+| 工具版本追蹤 | ✅ `tool_id` FK → tools | ❌ 無（由工具改版主動清除代替） |
+| 工具改版後行為 | 舊記錄標為 stale，永久保留可查 | 對應條目自動刪除，下次重算填回 |
+| Token 消耗 | **0 token** | 少量（embedding API） |
+| 壽命 | **永久** | TTL 7 天（改版時提前失效） |
 
-> `analysis_history` 是**永久帳本**（SQL 精確查，0 token）。
-> `memory_recent` 是**語意去重器**，攔截「問法不同但意思相同」的重複查詢。
+> `analysis_history` 是**永久帳本**（SQL 精確查，0 token），記錄「哪個版本在何時用何參數跑出何結果」。
+> `memory_recent` 是**語意去重器**，攔截「問法不同但意思相同」的重複查詢；工具改版後自動清空，確保不回傳舊版計算結果。
+
+### 端對端案例：Bulk RNA 火山圖分析
+
+以下用一個具體場景說明三層架構、HELIX 與 L1 快取如何協同運作。
+
+**情境**：實驗室成員想分析 CRC 樣本的差異表現基因，先後提出四個查詢。
+
+---
+
+#### 第一次：Group A vs B，p < 0.05（全新查詢）
+
+```
+使用者：「幫我畫 Group_A vs Group_B 的火山圖，p < 0.05」
+
+1. Agent 語意搜尋 L1 快取 → 未命中（第一次）
+2. 執行 plot_volcano(group1="A", group2="B", pval=0.05)
+3. 寫入 analysis_history：
+     parameters = {"group1":"A","group2":"B","pval":0.05}
+     tool_id    = <plot_volcano v1 的 UUID>
+     status     = completed
+4. 寫入 L1 快取（embedding of "Group_A vs Group_B pval=0.05"）
+5. 回傳火山圖（base64 inline PNG）
+```
+
+---
+
+#### 第二次：相同問題，換個說法（L1 快取命中）
+
+```
+使用者：「A 組對 B 組差異表現，顯著性 0.05，火山圖」
+
+1. Agent 語意搜尋 L1 快取
+   → cosine 相似度 0.93 ≥ 0.88，命中！
+2. 直接回傳快取報告，不重新執行、不消耗任何 token
+```
+
+---
+
+#### 第三次：換組別 A vs C，p < 0.01（參數不同）
+
+```
+使用者：「改成 A 組對 C 組，p 值改 0.01」
+
+1. 語意搜尋 → 相似但分數 0.71 < 0.88，未命中
+   （group2 與 pval 不同，向量有足夠差異）
+2. 重新執行 plot_volcano(group1="A", group2="C", pval=0.01)
+3. 新增一筆 analysis_history（tool_id 同樣指向 v1）
+4. 寫入新快取條目（不覆蓋 A vs B 的記錄）
+```
+
+此時 `analysis_history` 有兩筆獨立記錄，可以事後查詢「我跑過哪些組別比較」。
+
+---
+
+#### 第四次：開發者修改了 `plot_volcano()` 的統計邏輯，重新登記工具
+
+```python
+# 開發者呼叫 register_tool()
+register_tool(con, "bio_plot_volcano", plot_volcano, version="1.1.0", ...)
+```
+
+HELIX 自動執行：
+
+```
+1. 計算新 hash → 與 v1 不同
+2. v1 標為 deprecated
+3. v2 設為 active，revision_count = 2
+4. 記錄行級 diff（changed_lines + churn_ratio）到 tool_change_log
+5. 呼叫 invalidate_tool_cache("bio_plot_volcano")
+   → 刪除 L1 快取中所有包含 "bio_plot_volcano" 的條目（2 筆）
+```
+
+`analysis_history` 的舊紀錄不刪除，但 `tool_id` 仍指向 v1——這些記錄被標為 stale，代表「結果由舊版工具產生，可能需要用新版重跑」。
+
+---
+
+#### 第五次：使用者再次詢問 A vs B（快取已清空，重新計算）
+
+```
+使用者：「之前的 A vs B 火山圖給我看」
+
+1. 語意搜尋 L1 快取 → 未命中（快取已被 v1→v2 更新清除）
+2. 用新版 plot_volcano v2 重新計算
+3. 新的 analysis_history 記錄：tool_id = v2 的 UUID
+4. 寫入新快取條目
+```
+
+使用者看到的是用最新邏輯算出的結果，而非舊版快取。
+
+---
+
+#### 整體機制小結
+
+```
+工具改版
+  └─ register_tool()
+       ├─ HELIX：舊版 deprecated，新版 active，記錄 diff
+       └─ 清快取：invalidate_tool_cache() 刪除相關 L1 條目
+
+下次查詢
+  ├─ L1 命中（TTL 內 + 工具未改版）→ 直接回傳，0 token
+  └─ L1 未命中 → 重新執行（用當前 active 版本）→ 寫入歷史 + 填回快取
+```
+
+### 跨版本結果比較（不需要新 Schema）
+
+若需要比較「舊版工具」與「新版工具」對同一組數據的分析結果差異（例如驗證統計方法更新是否影響結論），**不需要新增任何 schema**，只需查詢 `analysis_history`。
+
+每次分析的輸出檔案命名已包含時間戳（`bulk_eda_{sample_id}_{ts}.md`），不同版本的結果各自獨立存檔，互不覆蓋。`result_path` 欄位永久記錄每次分析的實際檔案位置。
+
+```sql
+-- 找出同一樣本、同一分析類型、由不同工具版本產生的結果
+SELECT
+    ah.analysis_id,
+    ah.completed_at,
+    ah.summary,
+    ah.result_path,
+    t.version      AS tool_version,
+    t.status       AS tool_status,
+    t.revision_count
+FROM   analysis_history ah
+JOIN   tools             t  ON ah.tool_id = t.tool_id
+WHERE  ah.sample_id     = 'crc_official_v4'
+  AND  ah.analysis_type = 'bulk_eda'
+  AND  ah.status        = 'completed'
+ORDER  BY ah.completed_at DESC;
+```
+
+典型輸出（工具從 v1 升到 v2 後，兩個版本的結果都可取回）：
+
+```
+analysis_id   completed_at          summary              result_path                              tool_version  tool_status
+uuid-001      2026-05-01 10:00      Bulk RNA crc ...     results/bulk_eda/bulk_eda_crc_..._v1.md  1.0.0         deprecated
+uuid-002      2026-05-18 14:30      Bulk RNA crc ...     results/bulk_eda/bulk_eda_crc_..._v2.md  1.1.0         active
+```
+
+拿到兩個 `result_path` 後，Agent 可以直接讀取兩份報告並排呈現給使用者，不需重新執行任何分析。
+
+> **為何不需要新 Schema**：`analysis_history.tool_id` 外鍵已鎖定每筆記錄對應的工具版本；`result_path` 保存了實際輸出位置；`tools.version` 與 `tools.status` 記錄了版本語意。三個欄位合起來已能支援跨版本比較，額外的 schema 只會增加維護成本。
 
 ### L2 Parquet 如何壓縮 Token
 

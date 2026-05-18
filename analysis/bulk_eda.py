@@ -273,6 +273,17 @@ def generate_bulk_report(
                     WHERE analysis_id=?""",
                 [str(report_path), completed_at, summary, analysis_id],
             )
+            try:
+                from analysis.artifact_registry import register_artifact
+                if pca_out.exists():
+                    register_artifact(con, analysis_id, pca_out,
+                                      "figure", "PCA 主成分分析圖",
+                                      artifact_subtype="pca")
+                register_artifact(con, analysis_id, report_path,
+                                  "report", "Bulk EDA 分析報告",
+                                  artifact_subtype="eda_report")
+            except Exception as _exc:
+                logger.warning("bulk_eda: register_artifact 失敗（非致命）: %s", _exc)
 
     except Exception:
         logger.exception("bulk_eda 分析失敗  analysis_id=%s", analysis_id)

@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ENGRAM — 分析 Artifact 瀏覽器</title>
+<style>
+  :root {
+    --bg: #f8f9fa; --card: #ffffff; --text: #212529;
+    --accent: #7c3aed; --accent-light: #ede9fe;
+    --border: #dee2e6; --muted: #6c757d; --code-bg: #f1f3f5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: var(--text); line-height: 1.6; }
+
+  .toolbar { background: var(--card); border-bottom: 1px solid var(--border);
+             padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+             position: sticky; top: 0; z-index: 100; }
+  .toolbar .brand { font-weight: 700; font-size: 18px; color: var(--accent); letter-spacing: -0.5px; }
+  .toolbar .brand span { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .toolbar a { text-decoration: none; color: var(--muted); font-size: 14px; }
+  .toolbar a:hover { color: var(--accent); }
+  .toolbar .sep { color: var(--border); }
+  .spacer { flex: 1; }
+
+  .search-row { background: var(--card); border-bottom: 1px solid var(--border);
+                padding: 12px 24px; display: flex; gap: 10px; align-items: center; }
+  .search-row input { flex: 1; padding: 8px 14px; border: 1px solid var(--border);
+                      border-radius: 8px; font-size: 14px; outline: none; }
+  .search-row input:focus { border-color: var(--accent); }
+  .search-row select { padding: 8px 10px; border: 1px solid var(--border);
+                       border-radius: 8px; font-size: 14px; background: var(--card);
+                       color: var(--text); cursor: pointer; outline: none; }
+  .search-row button { padding: 8px 18px; border-radius: 8px; border: none;
+                       background: var(--accent); color: white; font-size: 14px;
+                       cursor: pointer; font-weight: 500; white-space: nowrap; }
+  .search-row button:hover { background: #6d28d9; }
+
+  .layout { display: flex; height: calc(100vh - 110px); overflow: hidden; }
+
+  .sidebar { width: 260px; min-width: 200px; background: var(--card);
+             border-right: 1px solid var(--border); overflow-y: auto; }
+  .sidebar-header { padding: 14px 16px 10px; font-size: 11px; font-weight: 600;
+                    color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+                    border-bottom: 1px solid var(--border); }
+  .sample-item { padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--border);
+                 transition: background 0.1s; }
+  .sample-item:hover { background: var(--bg); }
+  .sample-item.active { background: var(--accent-light); border-left: 3px solid var(--accent); }
+  .sample-item .sid { font-weight: 600; font-size: 14px; }
+  .sample-item .smeta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .sidebar-empty { padding: 24px 16px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  .main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+  .section-title { font-size: 14px; font-weight: 600; color: var(--muted);
+                   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+  .analysis-grid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 28px; }
+  .analysis-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+                   padding: 14px 18px; cursor: pointer; transition: border-color 0.15s; }
+  .analysis-card:hover { border-color: var(--accent); }
+  .analysis-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+  .analysis-card .ahead { display: flex; align-items: center; justify-content: space-between; }
+  .analysis-card .atype { font-weight: 600; font-size: 14px; color: var(--accent); }
+  .analysis-card .abadge { font-size: 12px; padding: 2px 8px; border-radius: 20px;
+                            background: var(--accent-light); color: var(--accent); }
+  .analysis-card .ameta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .analysis-card .asummary { font-size: 13px; margin-top: 6px; }
+
+  .artifact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                   gap: 14px; margin-bottom: 28px; }
+  .artifact-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+                   overflow: hidden; transition: transform 0.15s, box-shadow 0.15s; cursor: pointer; }
+  .artifact-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .artifact-thumb { width: 100%; height: 140px; background: var(--bg);
+                    display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .artifact-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .artifact-thumb .file-icon { font-size: 40px; }
+  .artifact-info { padding: 10px 12px; }
+  .artifact-info .alabel { font-size: 13px; font-weight: 600; white-space: nowrap;
+                            overflow: hidden; text-overflow: ellipsis; }
+  .artifact-info .asubtype { font-size: 11px; color: var(--accent); background: var(--accent-light);
+                               padding: 1px 6px; border-radius: 10px; display: inline-block; margin-top: 3px; }
+  .artifact-info .asize { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+              z-index: 1000; align-items: center; justify-content: center; }
+  .lightbox.open { display: flex; }
+  .lightbox-inner { background: var(--card); border-radius: 14px; max-width: 90vw;
+                    max-height: 90vh; overflow: auto; padding: 24px; position: relative; }
+  .lightbox-close { position: absolute; top: 12px; right: 16px; font-size: 22px;
+                    cursor: pointer; color: var(--muted); background: none; border: none; }
+  .lightbox-img { max-width: 80vw; max-height: 75vh; display: block; margin: 0 auto; }
+  .lightbox-label { text-align: center; margin-top: 10px; font-size: 14px; color: var(--muted); }
+
+  .compare-bar { background: var(--accent-light); border: 1px solid var(--accent);
+                 border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+                 display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .compare-bar .cb-label { font-size: 13px; font-weight: 600; color: var(--accent); }
+  .compare-bar button { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--accent);
+                         font-size: 13px; cursor: pointer; background: var(--accent); color: white; }
+  .compare-bar .clear-btn { background: white; color: var(--accent); }
+
+  .search-results { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+                    overflow: hidden; margin-bottom: 24px; }
+  .search-results .sr-header { padding: 10px 16px; background: var(--accent-light);
+                                font-size: 13px; font-weight: 600; color: var(--accent); }
+  .sr-row { padding: 10px 16px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 12px; }
+  .sr-row:last-child { border-bottom: none; }
+  .sr-row .sr-score { font-size: 12px; padding: 2px 8px; border-radius: 10px;
+                       background: var(--code-bg); color: var(--muted); white-space: nowrap; }
+  .sr-row .sr-label { font-size: 13px; font-weight: 500; flex: 1; }
+  .sr-row .sr-meta { font-size: 12px; color: var(--muted); }
+
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty p { font-size: 14px; }
+
+  .loading { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border);
+             border-top-color: var(--accent); border-radius: 50%;
+             animation: spin 0.7s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip { padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+          border: 1px solid var(--border); background: var(--card); color: var(--muted); transition: all 0.1s; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="brand">ENGRAM <span>Artifact 瀏覽器</span></div>
+  <span class="sep">|</span>
+  <a href="/">聊天</a>
+  <span class="sep">|</span>
+  <a href="/history">歷史記錄</a>
+  <div class="spacer"></div>
+  <span id="compare-count" style="font-size:13px;color:var(--muted);"></span>
+</div>
+
+<div class="search-row">
+  <input type="text" id="search-input" placeholder="語意搜尋（例：火山圖、PCA 降維、DEG 清單）…"
+         onkeydown="if(event.key==='Enter') doSearch()">
+  <select id="search-subtype">
+    <option value="">全部類型</option>
+    <option value="volcano">volcano</option>
+    <option value="pca">pca</option>
+    <option value="heatmap">heatmap</option>
+    <option value="qc_figure">qc_figure</option>
+    <option value="scatter">scatter</option>
+    <option value="deg_list">deg_list</option>
+    <option value="pathway_scores">pathway_scores</option>
+    <option value="timeseries">timeseries</option>
+    <option value="eda_report">eda_report</option>
+    <option value="summary_report">summary_report</option>
+    <option value="qc_csv">qc_csv</option>
+    <option value="counts_csv">counts_csv</option>
+    <option value="run_log">run_log</option>
+  </select>
+  <button onclick="doSearch()">搜尋</button>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-header">樣本列表</div>
+    <div id="sample-list"><div class="loading"><span class="spinner"></span>載入中…</div></div>
+  </div>
+  <div class="main" id="main-panel">
+    <div class="empty">
+      <div class="empty-icon">🧬</div>
+      <p>選擇左側樣本以瀏覽分析 artifact</p>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox" onclick="if(event.target===this)closeLightbox()">
+  <div class="lightbox-inner">
+    <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+    <img class="lightbox-img" id="lightbox-img" src="" alt="">
+    <div class="lightbox-label" id="lightbox-label"></div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let currentSample = null;
+let currentAnalysis = null;
+let compareIds = [];
+let currentSubtypeFilter = '';
+const _imgCache = {};
+
+async function init() {
+  await loadSamples();
+}
+
+async function loadSamples() {
+  const el = document.getElementById('sample-list');
+  try {
+    const samples = await fetch(`${API}/api/engram/samples`).then(r => r.json());
+    if (!samples.length) {
+      el.innerHTML = '<div class="sidebar-empty">尚無 artifact 記錄</div>';
+      return;
+    }
+    el.innerHTML = samples.map(s => `
+      <div class="sample-item" id="si-${s.sample_id}" onclick="selectSample('${escHtml(s.sample_id)}')">
+        <div class="sid">${escHtml(s.sample_id)}</div>
+        <div class="smeta">${s.run_count} 次分析 · ${s.artifact_count} 個 artifact</div>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="sidebar-empty">載入失敗：${escHtml(e.message)}</div>`;
+  }
+}
+
+async function selectSample(sampleId) {
+  currentSample = sampleId;
+  currentAnalysis = null;
+  currentSubtypeFilter = '';
+  document.querySelectorAll('.sample-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`si-${sampleId}`);
+  if (el) el.classList.add('active');
+  await renderSampleView(sampleId);
+}
+
+async function renderSampleView(sampleId) {
+  const panel = document.getElementById('main-panel');
+  panel.innerHTML = '<div class="loading"><span class="spinner"></span>載入中…</div>';
+  try {
+    const [analyses, summary] = await Promise.all([
+      fetch(`${API}/api/engram/analyses/${sampleId}`).then(r => r.json()),
+      fetch(`${API}/api/engram/summary/${sampleId}`).then(r => r.json()),
+    ]);
+
+    const subtypes = Object.keys(summary.by_subtype || {});
+    const chipsHtml = subtypes.length ? `
+      <div class="chips">
+        <div class="chip active" onclick="filterSubtype('')" id="chip-all">全部</div>
+        ${subtypes.map(st => `
+          <div class="chip" onclick="filterSubtype('${escHtml(st)}')" id="chip-${escHtml(st)}">${escHtml(st)} (${summary.by_subtype[st]})</div>
+        `).join('')}
+      </div>` : '';
+
+    const statsHtml = `<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
+      ${statCard('分析次數', summary.total_runs)}
+      ${statCard('Artifact 總數', summary.total_artifacts)}
+      ${statCard('最後分析', summary.latest_run ? fmtDate(summary.latest_run.completed_at) : '—')}
+    </div>`;
+
+    const compareBarHtml = compareIds.length ? `
+      <div class="compare-bar">
+        <span class="cb-label">並排比較</span>
+        <span style="font-size:12px;flex:1;">${compareIds.length} 個分析已選取</span>
+        <button onclick="runCompare()">比較 Artifacts</button>
+        <button class="clear-btn" onclick="clearCompare()">清除</button>
+      </div>` : '';
+
+    const analysesHtml = analyses.length ? analyses.map(a => `
+      <div class="analysis-card ${currentAnalysis===a.analysis_id?'active':''}"
+           id="ac-${a.analysis_id}" onclick="selectAnalysis('${a.analysis_id}','${sampleId}')">
+        <div class="ahead">
+          <span class="atype">${escHtml(a.analysis_type)}</span>
+          <span class="abadge">${a.artifact_count} artifacts</span>
+        </div>
+        <div class="ameta">${fmtDate(a.completed_at)}
+          <label style="margin-left:12px;cursor:pointer;font-size:12px;" onclick="event.stopPropagation()">
+            <input type="checkbox" ${compareIds.includes(a.analysis_id)?'checked':''}
+                   onchange="toggleCompare('${a.analysis_id}',this.checked)"> 加入比較
+          </label>
+        </div>
+        ${a.summary ? `<div class="asummary">${escHtml(a.summary)}</div>` : ''}
+      </div>`).join('')
+      : '<div class="empty"><p>此樣本尚無分析記錄</p></div>';
+
+    panel.innerHTML = `
+      <div style="margin-bottom:8px;font-size:18px;font-weight:700;">${escHtml(sampleId)}</div>
+      ${statsHtml}${chipsHtml}${compareBarHtml}
+      <div class="section-title">分析記錄</div>
+      <div class="analysis-grid" id="analysis-grid">${analysesHtml}</div>
+      <div id="artifact-section"></div>`;
+
+    if (currentAnalysis) await renderArtifacts(currentAnalysis, currentSubtypeFilter);
+  } catch(e) {
+    panel.innerHTML = `<div class="empty"><p>載入失敗：${escHtml(e.message)}</p></div>`;
+  }
+}
+
+function statCard(label, value) {
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;
+          padding:10px 18px;min-width:120px;">
+    <div style="font-size:12px;color:var(--muted);">${label}</div>
+    <div style="font-size:20px;font-weight:700;color:var(--accent);">${value}</div>
+  </div>`;
+}
+
+async function selectAnalysis(analysisId, sampleId) {
+  currentAnalysis = analysisId;
+  document.querySelectorAll('.analysis-card').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`ac-${analysisId}`);
+  if (el) el.classList.add('active');
+  await renderArtifacts(analysisId, currentSubtypeFilter);
+}
+
+async function renderArtifacts(analysisId, subtypeFilter) {
+  const sec = document.getElementById('artifact-section');
+  if (!sec) return;
+  sec.innerHTML = '<div class="loading"><span class="spinner"></span>載入 artifacts…</div>';
+  try {
+    let url = `${API}/api/engram/artifacts/${analysisId}`;
+    if (subtypeFilter) url += `?artifact_subtype=${encodeURIComponent(subtypeFilter)}`;
+    const artifacts = await fetch(url).then(r => r.json());
+    if (!artifacts.length) {
+      sec.innerHTML = '<div class="section-title">Artifacts</div><div class="empty"><div class="empty-icon">📂</div><p>此分析尚無 artifact 記錄</p></div>';
+      return;
+    }
+    sec.innerHTML = `
+      <div class="section-title">Artifacts <span style="font-weight:400;color:var(--muted);font-size:12px;">(${artifacts.length})</span></div>
+      <div class="artifact-grid">${artifacts.map(artifactCardHtml).join('')}</div>`;
+    setTimeout(lazyLoadThumbs, 50);
+  } catch(e) {
+    sec.innerHTML = `<div class="empty"><p>載入失敗：${escHtml(e.message)}</p></div>`;
+  }
+}
+
+function artifactCardHtml(a) {
+  const isImage = a.mime_type && a.mime_type.startsWith('image/');
+  const thumbHtml = isImage
+    ? `<div class="artifact-thumb">
+         <img src="" data-artifact-id="${a.artifact_id}" alt="${escHtml(a.label)}"
+              style="opacity:0;transition:opacity 0.2s" onload="this.style.opacity=1">
+       </div>`
+    : `<div class="artifact-thumb"><span class="file-icon">${mimeIcon(a.mime_type)}</span></div>`;
+  const onclick = isImage ? `loadAndShowImage('${a.artifact_id}','${escHtml(a.label).replace(/'/g,"\\'")}')` : '';
+  return `<div class="artifact-card" onclick="${onclick}">
+    ${thumbHtml}
+    <div class="artifact-info">
+      <div class="alabel" title="${escHtml(a.label)}">${escHtml(a.label)}</div>
+      ${a.artifact_subtype ? `<span class="asubtype">${escHtml(a.artifact_subtype)}</span>` : ''}
+      <div class="asize">${a.file_size_kb != null ? a.file_size_kb + ' KB · ' : ''}${escHtml(a.artifact_type)}</div>
+    </div>
+  </div>`;
+}
+
+async function lazyLoadThumbs() {
+  document.querySelectorAll('[data-artifact-id]').forEach(async img => {
+    const id = img.dataset.artifactId;
+    if (img.src && img.src !== window.location.href) return;
+    if (_imgCache[id]) { img.src = _imgCache[id]; return; }
+    try {
+      const data = await fetch(`${API}/api/engram/artifact/${id}/inline`).then(r => r.json());
+      if (data.inline_data) {
+        _imgCache[id] = `data:${data.mime_type};base64,${data.inline_data}`;
+        img.src = _imgCache[id];
+      }
+    } catch(_) {}
+  });
+}
+
+async function loadAndShowImage(artifactId, label) {
+  if (!_imgCache[artifactId]) {
+    try {
+      const data = await fetch(`${API}/api/engram/artifact/${artifactId}/inline`).then(r => r.json());
+      if (data.inline_data) {
+        _imgCache[artifactId] = `data:${data.mime_type};base64,${data.inline_data}`;
+        document.querySelectorAll(`[data-artifact-id="${artifactId}"]`).forEach(img => {
+          img.src = _imgCache[artifactId];
+        });
+      }
+    } catch(_) { return; }
+  }
+  if (_imgCache[artifactId]) showLightbox(_imgCache[artifactId], label);
+}
+
+function showLightbox(src, label) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox-label').textContent = label;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightbox-img').src = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+async function filterSubtype(subtype) {
+  currentSubtypeFilter = subtype;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  const chipEl = document.getElementById(subtype ? `chip-${subtype}` : 'chip-all');
+  if (chipEl) chipEl.classList.add('active');
+  if (currentAnalysis) await renderArtifacts(currentAnalysis, subtype);
+}
+
+function toggleCompare(analysisId, checked) {
+  if (checked) { if (!compareIds.includes(analysisId)) compareIds.push(analysisId); }
+  else { compareIds = compareIds.filter(id => id !== analysisId); }
+  document.getElementById('compare-count').textContent = compareIds.length ? `${compareIds.length} 個已選取比較` : '';
+}
+
+function clearCompare() {
+  compareIds = [];
+  document.querySelectorAll('.analysis-card input[type=checkbox]').forEach(cb => cb.checked = false);
+  document.getElementById('compare-count').textContent = '';
+  if (currentSample) renderSampleView(currentSample);
+}
+
+async function runCompare() {
+  if (!compareIds.length) return;
+  const panel = document.getElementById('main-panel');
+  panel.innerHTML = '<div class="loading"><span class="spinner"></span>比較中…</div>';
+  try {
+    const subtype = document.getElementById('search-subtype').value;
+    let url = `${API}/api/engram/compare?ids=${encodeURIComponent(compareIds.join(','))}`;
+    if (subtype) url += `&artifact_subtype=${encodeURIComponent(subtype)}`;
+    const result = await fetch(url).then(r => r.json());
+
+    let html = `<div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+      <span style="font-size:18px;font-weight:700;">並排比較</span>
+      <button onclick="if(currentSample)renderSampleView(currentSample)"
+              style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--card);">← 返回</button>
+    </div>`;
+
+    for (const [aid, artifacts] of Object.entries(result)) {
+      const toolVer = artifacts[0]?.tool_version || '—';
+      const aType = artifacts[0]?.analysis_type || '—';
+      html += `<div style="margin-bottom:24px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--accent);">
+          ${escHtml(aType)} · <span style="font-weight:400;color:var(--muted);">${aid.slice(0,8)}… · 工具版本 ${escHtml(String(toolVer))}</span>
+        </div>
+        <div class="artifact-grid">${artifacts.map(artifactCardHtml).join('')}</div>
+      </div>`;
+    }
+    panel.innerHTML = html;
+    setTimeout(lazyLoadThumbs, 50);
+  } catch(e) {
+    panel.innerHTML = `<div class="empty"><p>比較失敗：${escHtml(e.message)}</p></div>`;
+  }
+}
+
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  const subtype = document.getElementById('search-subtype').value;
+  const panel = document.getElementById('main-panel');
+  panel.innerHTML = '<div class="loading"><span class="spinner"></span>搜尋中…</div>';
+
+  let url = `${API}/api/engram/search?q=${encodeURIComponent(q)}&n=20`;
+  if (subtype) url += `&artifact_subtype=${encodeURIComponent(subtype)}`;
+  if (currentSample) url += `&sample_id=${encodeURIComponent(currentSample)}`;
+
+  try {
+    const results = await fetch(url).then(r => r.json());
+    if (!results.length) {
+      panel.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><p>找不到符合「${escHtml(q)}」的 artifact</p></div>`;
+      return;
+    }
+    const rows = results.map(r => `
+      <div class="sr-row">
+        <span class="sr-score">相似度 ${(r.score*100).toFixed(0)}%</span>
+        <span class="sr-label">${escHtml(r.label)}</span>
+        <span class="sr-meta">${escHtml(r.artifact_subtype||r.artifact_type)} · ${r.analysis_id.slice(0,8)}…</span>
+      </div>`).join('');
+    panel.innerHTML = `
+      <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:18px;font-weight:700;">搜尋結果：${escHtml(q)}</span>
+        <button onclick="if(currentSample)renderSampleView(currentSample)"
+                style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:var(--card);">← 返回</button>
+      </div>
+      <div class="search-results">
+        <div class="sr-header">${results.length} 筆結果</div>
+        ${rows}
+      </div>`;
+  } catch(e) {
+    panel.innerHTML = `<div class="empty"><p>搜尋失敗：${escHtml(e.message)}</p></div>`;
+  }
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('zh-TW', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function mimeIcon(mime) {
+  if (!mime) return '📄';
+  if (mime.startsWith('image/')) return '🖼️';
+  if (mime==='text/csv'||mime==='text/tab-separated-values') return '📊';
+  if (mime==='text/markdown'||mime==='text/plain') return '📝';
+  if (mime==='application/json') return '🔧';
+  return '📄';
+}
+
+init();
+</script>
+</body>
+</html>

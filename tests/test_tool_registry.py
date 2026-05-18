@@ -664,3 +664,97 @@ class TestToolHealthReportHotLines:
         report = tool_health_report(helix_con)
         hot_names = [t["tool_name"] for t in report["hot_zones"]]
         assert "hot_t" in hot_names
+
+
+# ---------------------------------------------------------------------------
+# Cache invalidation on tool update
+# ---------------------------------------------------------------------------
+
+class TestCacheInvalidation:
+    """invalidate_tool_cache() is called by register_tool() when source changes."""
+
+    @pytest.fixture()
+    def l1_con(self, tmp_path):
+        """Minimal in-memory memory_recent table (no VSS needed for these tests)."""
+        db_path = tmp_path / "test_cache.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute(
+            """
+            CREATE TABLE memory_recent (
+                id          UUID PRIMARY KEY,
+                sample_id   VARCHAR,
+                query_text  VARCHAR,
+                report_text VARCHAR,
+                summary     VARCHAR,
+                embedding   FLOAT[8],
+                analysis_id UUID,
+                created_at  TIMESTAMPTZ DEFAULT now(),
+                expires_at  TIMESTAMPTZ DEFAULT now() + INTERVAL '7 days'
+            )
+            """
+        )
+        yield con, db_path
+        con.close()
+
+    def _insert(self, con, query_text: str) -> None:
+        import uuid as _uuid
+        con.execute(
+            "INSERT INTO memory_recent (id, sample_id, query_text, report_text, summary, embedding) "
+            "VALUES (?, 's1', ?, 'r', 'sum', [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8])",
+            [str(_uuid.uuid4()), query_text],
+        )
+
+    def test_invalidate_removes_matching_rows(self, l1_con):
+        from analysis.l1_cache import invalidate_tool_cache
+        con, db_path = l1_con
+        self._insert(con, "bio_plot_volcano Group_A vs B pval=0.05")
+        self._insert(con, "bio_plot_volcano Group_A vs C pval=0.01")
+        self._insert(con, "bio_run_spatial_eda sample_id=crc_v4")
+        con.execute("CHECKPOINT")
+
+        removed = invalidate_tool_cache("bio_plot_volcano", cache_path=db_path)
+
+        assert removed == 2
+        remaining = con.execute("SELECT query_text FROM memory_recent").fetchall()
+        assert len(remaining) == 1
+        assert "spatial_eda" in remaining[0][0]
+
+    def test_invalidate_returns_zero_when_no_match(self, l1_con):
+        from analysis.l1_cache import invalidate_tool_cache
+        con, db_path = l1_con
+        self._insert(con, "bio_run_spatial_eda sample_id=crc_v4")
+        con.execute("CHECKPOINT")
+
+        removed = invalidate_tool_cache("bio_plot_volcano", cache_path=db_path)
+        assert removed == 0
+
+    def test_invalidate_returns_zero_when_cache_missing(self, tmp_path):
+        from analysis.l1_cache import invalidate_tool_cache
+        missing = tmp_path / "nonexistent.duckdb"
+        assert invalidate_tool_cache("bio_plot_volcano", cache_path=missing) == 0
+
+    def test_register_tool_triggers_invalidation(self, helix_con, l1_con, monkeypatch):
+        """register_tool() must call invalidate_tool_cache with the tool_name."""
+        from analysis.tool_registry import register_tool
+        con, db_path = l1_con
+        self._insert(con, "inv_tool sample run")
+        con.execute("CHECKPOINT")
+
+        called_with: list[str] = []
+
+        def _fake_invalidate(name, **_kwargs):
+            called_with.append(name)
+            return 0
+
+        monkeypatch.setattr("analysis.l1_cache.invalidate_tool_cache", _fake_invalidate)
+
+        import importlib, analysis.tool_registry as tr
+        monkeypatch.setattr(tr, "invalidate_tool_cache" if hasattr(tr, "invalidate_tool_cache") else "__builtins__", _fake_invalidate, raising=False)
+
+        # Patch at the import site inside register_tool's try block
+        import unittest.mock as mock
+        with mock.patch("analysis.l1_cache.invalidate_tool_cache", side_effect=_fake_invalidate):
+            register_tool(helix_con, "inv_tool", _churn_v1, "1.0.0", "d")
+            register_tool(helix_con, "inv_tool", _churn_v2, "1.1.0", "d")
+
+        assert "inv_tool" in called_with

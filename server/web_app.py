@@ -492,6 +492,175 @@ def _extract_report_link(tool_calls: list) -> Optional[str]:
     return None
 
 
+# ── ENGRAM 路由 ───────────────────────────────────────────────────────────────
+
+@app.get("/engram", response_class=HTMLResponse)
+async def engram_page():
+    html_path = STATIC_DIR / "engram.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>engram.html not found</h1>", status_code=500)
+
+
+@app.get("/api/engram/samples")
+async def engram_samples():
+    """列出所有有 artifact 記錄的樣本及統計。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        rows = con.execute(
+            """
+            SELECT ah.sample_id,
+                   COUNT(DISTINCT ah.analysis_id) AS run_count,
+                   COUNT(aa.artifact_id)          AS artifact_count,
+                   MAX(ah.completed_at)           AS last_run_at
+            FROM   analysis_history   ah
+            JOIN   analysis_artifacts aa ON ah.analysis_id = aa.analysis_id
+            WHERE  ah.status = 'completed'
+            GROUP  BY ah.sample_id
+            ORDER  BY last_run_at DESC NULLS LAST
+            """
+        ).fetchall()
+    return [
+        {
+            "sample_id":      r[0],
+            "run_count":      r[1],
+            "artifact_count": r[2],
+            "last_run_at":    r[3].isoformat() if r[3] else None,
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/engram/summary/{sample_id}")
+async def engram_summary(sample_id: str):
+    """一個樣本的 artifact 統計概覽（0-token 設計）。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+    from analysis.artifact_registry import artifact_summary
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        return artifact_summary(con, sample_id)
+
+
+@app.get("/api/engram/analyses/{sample_id}")
+async def engram_analyses(sample_id: str):
+    """列出某樣本下所有已完成分析，附帶 artifact 數量。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        rows = con.execute(
+            """
+            SELECT ah.analysis_id::VARCHAR, ah.analysis_type, ah.status,
+                   ah.completed_at, ah.summary,
+                   COUNT(aa.artifact_id) AS artifact_count
+            FROM   analysis_history   ah
+            LEFT   JOIN analysis_artifacts aa ON ah.analysis_id = aa.analysis_id
+            WHERE  ah.sample_id = ?
+              AND  ah.status    = 'completed'
+            GROUP  BY ah.analysis_id, ah.analysis_type, ah.status, ah.completed_at, ah.summary
+            ORDER  BY ah.completed_at DESC NULLS LAST
+            """,
+            [sample_id],
+        ).fetchall()
+    return [
+        {
+            "analysis_id":    r[0],
+            "analysis_type":  r[1],
+            "status":         r[2],
+            "completed_at":   r[3].isoformat() if r[3] else None,
+            "summary":        r[4],
+            "artifact_count": r[5],
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/engram/artifacts/{analysis_id}")
+async def engram_artifacts(
+    analysis_id: str,
+    artifact_type: Optional[str] = None,
+    artifact_subtype: Optional[str] = None,
+    include_inline: bool = False,
+):
+    """列出某分析的所有 artifact（預設不含 inline_data）。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+    from analysis.artifact_registry import get_artifacts
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        return get_artifacts(
+            con, analysis_id,
+            artifact_type=artifact_type,
+            artifact_subtype=artifact_subtype,
+            include_inline=include_inline,
+        )
+
+
+@app.get("/api/engram/artifact/{artifact_id}/inline")
+async def engram_artifact_inline(artifact_id: str):
+    """取得單一 artifact 的 inline_data（base64）。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        row = con.execute(
+            """SELECT artifact_id::VARCHAR, label, mime_type, inline_data
+               FROM analysis_artifacts WHERE artifact_id = ?""",
+            [artifact_id],
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Artifact 不存在")
+    return {
+        "artifact_id": row[0],
+        "label":       row[1],
+        "mime_type":   row[2],
+        "inline_data": row[3],
+    }
+
+
+@app.get("/api/engram/compare")
+async def engram_compare(
+    ids: str,
+    artifact_subtype: Optional[str] = None,
+):
+    """並排比較多個分析的 artifact。ids 以逗號分隔。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+    from analysis.artifact_registry import compare_analyses
+
+    analysis_ids = [i.strip() for i in ids.split(",") if i.strip()]
+    if not analysis_ids:
+        return {}
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        return compare_analyses(con, analysis_ids,
+                                artifact_subtype=artifact_subtype,
+                                include_inline=False)
+
+
+@app.get("/api/engram/search")
+async def engram_search(
+    q: str,
+    artifact_subtype: Optional[str] = None,
+    sample_id: Optional[str] = None,
+    n: int = 10,
+):
+    """語意搜尋 artifact（Layer 1: 精確 subtype；Layer 2: HNSW）。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+    from analysis.artifact_registry import search_artifacts
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        return search_artifacts(
+            con, q,
+            n=n,
+            artifact_subtype=artifact_subtype,
+            sample_id=sample_id,
+        )
+
+
 # ── 啟動 ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

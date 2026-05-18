@@ -261,6 +261,15 @@ def register_tool(
         "register_tool: registered %r  version=%s  hash=%s  revision=%d  tool_id=%s",
         tool_name, version, content_hash, next_revision, new_tool_id,
     )
+
+    # Invalidate L1 cache entries that reference this tool so users cannot
+    # receive stale results produced by the previous version.
+    try:
+        from analysis.l1_cache import invalidate_tool_cache
+        invalidate_tool_cache(tool_name)
+    except Exception as exc:  # cache file missing or VSS unavailable → non-fatal
+        logger.warning("register_tool: cache invalidation skipped for %r: %s", tool_name, exc)
+
     return new_tool_id
 
 
