@@ -39,7 +39,7 @@
 
 **Code Promotion 框架**則是原創設計，讓動態生成的程式碼在重用三次後自動升格為永久工具。詳細文獻論述見**附錄 A**。
 
-**工具健康管理與視覺記憶壓縮**是本系統原創設計，解決工具庫隨時間臃腫的問題。工具源碼每次修改都以 SHA256[:16] content-hash 版本化，並記錄至 `tool_change_log`；修改次數（`revision_count`）是工具設計不穩定的直接信號。修改集中於少數工具（熱區，revision ≥ 3）時，系統觸發穩定化迭代，記錄診斷、行動計畫、以及循環複雜度（Cyclomatic Complexity，via radon）的前後對比，作為客觀改善指標。迭代記憶以 640×640 PNG 快照儲存（含源碼密度熱圖、CC 儀表板、修改時間軸、診斷文字），VLM 只需 ~100 vision tokens 即可讀回完整迭代脈絡——約為等效文字的 1/10（DeepSeek-OCR，arXiv:2510.18234）。舊快照可按「遺忘曲線」逐步降解析度，進一步壓縮長期儲存成本。詳細文獻論述見**附錄 A（A7）**。
+**HELIX（Health-Evolving Loop with Iterative eXpiration）** 是本系統原創設計，解決工具庫隨時間臃腫的問題。工具源碼每次修改都以 SHA256[:16] content-hash 版本化，並記錄至 `tool_change_log`；修改次數（`revision_count`）是工具設計不穩定的直接信號。修改集中於少數工具（熱區，revision ≥ 3）時，HELIX 觸發穩定化迭代，記錄診斷、行動計畫、以及循環複雜度（Cyclomatic Complexity，via radon）的前後對比，作為客觀改善指標。迭代記憶以 640×640 PNG 快照儲存（含源碼密度熱圖、CC 儀表板、修改時間軸、診斷文字），VLM 只需 ~100 vision tokens 即可讀回完整迭代脈絡——約為等效文字的 1/10（DeepSeek-OCR，arXiv:2510.18234）。舊快照按 Ebbinghaus 遺忘曲線逐步降解析度（Iterative eXpiration），進一步壓縮長期儲存成本。詳細論述見**附錄 A7**。
 
 ### 三層架構流程
 
@@ -80,8 +80,9 @@ L1 金層（Gold）── 語意快取（近期記憶）
 | 雲端 LLM          | Claude Sonnet（Anthropic）                     | 推理更強時切換，Prompt Cache 壓低費用                                        |
 | Embedding         | bge-m3 Q8（llama.cpp，port 8081）              | 1024-dim、中英混雜表現佳、本機推理零費用                                     |
 | 前端介面          | FastAPI Web UI（port 8000）+ Telegram Bot 骨架 | Web UI 已驗證，Telegram 為擴充選項                                           |
-| 複雜度量測        | radon（cc_visit）                              | 循環複雜度（CC）作為穩定化前後的客觀數值指標，衡量工具改善幅度               |
-| 工具視覺記憶壓縮  | matplotlib → 640×640 PNG → base64 data URI     | VLM 讀回迭代快照僅需 ~100 vision tokens（約文字的 1/10，DeepSeek-OCR 2510.18234） |
+| HELIX-Core（工具健康）  | `analysis/tool_registry.py`               | content-hash 版本化、熱區偵測、穩定化迭代生命週期管理                        |
+| HELIX-Vision（視覺記憶）| `analysis/tool_visualizer.py` + radon     | 640×640 PNG 快照（~100 VLM tokens）+ Ebbinghaus 降採樣；CC 量化改善幅度       |
+| HELIX-Agent（Agent 介面）| `bio_tool_health` tool                   | report / stabilize / close_stabilize / trend / prune 六個 action              |
 
 ### 推理引擎：LLM 與 Python 的職責分工
 
@@ -156,9 +157,9 @@ L1 金層（Gold）── 語意快取（近期記憶）
 | L2 SQL / Parquet 查詢         | L1 未命中       | ~30 秒   | 極少（SQL 壓縮後） |
 | L3 Pipeline                   | L2 無 Parquet   | ~4 小時  | 正常               |
 
-### 工具生命週期閉環
+### HELIX 工具生命週期閉環
 
-工具是分析記憶的「執行者」，其版本與健康狀態本身也是記憶的一部分，與三層架構緊密整合。每一個進入系統的工具都有完整的生死履歷：從動態生成、升格為正式工具、每次修改留下 hash 指紋、頻繁修改觸發穩定化迭代、迭代以視覺快照封存記憶、最終穩定後剪枝舊版本，形成一個自我維護的閉環。
+工具是分析記憶的「執行者」，其版本與健康狀態本身也是記憶的一部分，與三層架構緊密整合。HELIX 為每一個進入系統的工具維護完整的生死履歷：從動態生成、升格為正式工具、每次修改留下 hash 指紋、頻繁修改觸發穩定化迭代、迭代以視覺快照封存記憶（HELIX-Vision）、最終穩定後剪枝舊版本，形成一個自我維護的螺旋上升閉環。
 
 ```
 [3C] LLM 動態生成程式碼
@@ -1037,7 +1038,7 @@ history.html → GET /api/results/{id}/images → 縮圖預覽列
 
 ---
 
-### A7. 工具健康管理與視覺記憶壓縮
+### A7. HELIX — Health-Evolving Loop with Iterative eXpiration
 
 #### 問題的本質：工具庫為何會臃腫
 
