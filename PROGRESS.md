@@ -7,7 +7,7 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：ENGRAM 模組完成（analysis_artifacts + HNSW + Web UI，23/23 tests PASSED）
+**里程碑**：plan_zh.md 第一章至第四章重構（期刊風格改寫、三層架構圖、ER Diagram）
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-18
 **commit**：(latest)
@@ -298,6 +298,17 @@
   - Subtype 篩選 chips（pca / volcano / heatmap…）
   - 多選並排比較（含工具版本顯示）
   - 語意搜尋（相似度 %）
+
+---
+
+## ✅ plan_zh.md 第一至四章重構（2026-05-18）
+
+### 期刊風格改寫
+
+- [x] **第一章**：核心主張改為三層遞進（去重→比較→推導）；實現方式改為三層協同（人機介面→去重閘道→記憶核心）
+- [x] **第二章**：重構為期刊風格，段落驅動取代 bullet/表格；拆為 2.1 架構設計決策 / 2.2 原創模組 / 2.3 技術元件選型；HELIX/ENGRAM 各有完整 contribution 段落；加入 HELIX × ENGRAM 協同段落（provenance hash → 可信度標記）
+- [x] **第三章**：移除重複的 HELIX 閉環與雙軌記憶段落（已在第二章說明）；新增寫入路徑 / 查詢路徑兩段；ASCII 架構圖補入 `results/` 目錄與分類標題；加入 Mermaid 靜態架構圖與查詢路徑圖；效能表加入「資料生命週期」欄
+- [x] **第四章**：章首加入 Mermaid ER Diagram，涵蓋 10 張資料表的主鍵、外鍵與關聯線
 
 ---
 
