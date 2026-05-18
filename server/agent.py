@@ -636,18 +636,47 @@ def _resolve_tool_fn(tool_name: str):
     Uses tools/registry.json to look up module_path + function_name, then
     imports the module and returns the function object.  Used for complexity
     measurement and snapshot rendering without hard-coding tool locations.
+
+    Security: module_path and function_name are validated against an explicit
+    allowlist before import to prevent arbitrary code execution if registry.json
+    were tampered with.
     """
     import importlib
     import json
     from pathlib import Path
 
+    # Explicit allowlist — only modules inside the analysis/ package are permitted.
+    _ALLOWED_MODULES = {
+        "analysis.report_generator",
+        "analysis.bulk_eda",
+        "analysis.spatial_eda",
+        "analysis.pathway_scoring",
+        "analysis.bulk_timeseries",
+        "analysis.multiomics_integration",
+    }
+
     registry_path = Path(__file__).parent.parent / "tools" / "registry.json"
     try:
         entries = json.loads(registry_path.read_text())
         for entry in entries:
-            if entry.get("name") == tool_name:
-                mod = importlib.import_module(entry["module_path"])
-                return getattr(mod, entry["function_name"], None)
+            if entry.get("name") != tool_name:
+                continue
+            module_path = entry.get("module_path", "")
+            function_name = entry.get("function_name", "")
+            if module_path not in _ALLOWED_MODULES:
+                logger.warning(
+                    "_resolve_tool_fn: blocked disallowed module %r for tool %r",
+                    module_path, tool_name,
+                )
+                return None
+            if not function_name.isidentifier():
+                logger.warning(
+                    "_resolve_tool_fn: invalid function_name %r for tool %r",
+                    function_name, tool_name,
+                )
+                return None
+            mod = importlib.import_module(module_path)
+            return getattr(mod, function_name, None)
     except Exception as exc:
         logger.debug("_resolve_tool_fn: could not resolve %r — %s", tool_name, exc)
     return None
