@@ -24,7 +24,7 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -148,6 +148,10 @@ BIO_TOOLS = [
                 "n": {"type": "integer", "description": "回傳筆數上限（預設 5）", "default": 5},
                 "threshold": {"type": "number", "description": "相似度門檻（預設 0.88）", "default": 0.88},
                 "sample_id": {"type": "string", "description": "限定樣本 ID（可選）"},
+                "analysis_type": {
+                    "type": "string",
+                    "description": "限定分析類型（可選，如 spatial_eda / bulk_eda），避免跨類型命中",
+                },
             },
             "required": ["query"],
         },
@@ -190,14 +194,23 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sample_id": {"type": "string", "description": "唯一樣本 ID（全小寫底線）"},
-                "data_type": {"type": "string", "description": "資料類型：visium_hd | visium | scrna | bulk_rnaseq | ..."},
-                "l3_path": {"type": "string", "description": "L3 原始數據絕對路徑（唯讀）"},
-                "project": {"type": "string", "description": "專案代號（可選）"},
-                "platform": {"type": "string", "description": "平台（可選）"},
-                "species": {"type": "string", "description": "物種（預設 human）", "default": "human"},
-                "tissue": {"type": "string", "description": "組織類型（可選）"},
-                "notes": {"type": "string", "description": "備註（可選）"},
+                "sample_id":  {"type": "string", "description": "唯一樣本 ID（全小寫底線）"},
+                "data_type":  {"type": "string", "description": "資料類型：visium_hd | visium | scrna | bulk_rnaseq | ..."},
+                "l3_path":    {"type": "string", "description": "L3 原始數據絕對路徑（唯讀）"},
+                "project":    {"type": "string", "description": "專案代號（可選）"},
+                "platform":   {"type": "string", "description": "平台（可選）"},
+                "species":    {"type": "string", "description": "物種（預設 human）", "default": "human"},
+                "tissue":     {"type": "string", "description": "組織類型（可選）"},
+                "notes":      {"type": "string", "description": "備註（可選）"},
+                "condition":  {"type": "string", "description": "實驗條件（可選）：control/tumor/treated/..."},
+                "time_point": {"type": "string", "description": "時間點（可選）：0h/24h/day3/..."},
+                "batch":      {"type": "string", "description": "測序批次（可選）：batch_1/batch_2/..."},
+                "donor_id":   {"type": "string", "description": "供體 ID（可選），連結同一個體的多個樣本"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "標籤陣列（可選）：paper_figure/key_result/qc_only/...",
+                },
             },
             "required": ["sample_id", "data_type", "l3_path"],
         },
@@ -234,6 +247,44 @@ BIO_TOOLS = [
                 "timeout": {"type": "integer", "description": "執行超時秒數（預設 60）", "default": 60},
             },
             "required": ["code", "description"],
+        },
+    },
+    {
+        "name": "bio_sample_list",
+        "description": (
+            "列出 sample_registry 中已登記的樣本（0 token，純 SQL）。"
+            "支援 data_type / tissue / condition 過濾，方便快速瀏覽現有資料集。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "data_type": {
+                    "type": "string",
+                    "description": "資料類型篩選（可選，如 visium_hd / bulk_rnaseq）",
+                },
+                "tissue": {"type": "string", "description": "組織類型篩選（可選，模糊比對）"},
+                "condition": {"type": "string", "description": "樣本條件篩選（可選，對應 notes 欄位模糊比對）"},
+                "limit": {"type": "integer", "description": "最多回傳筆數（預設 50）", "default": 50},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "bio_sample_compare",
+        "description": (
+            "比較兩個或多個樣本的分析歷史摘要，回傳各樣本最新各類型分析的摘要對照表。"
+            "協助判斷不同樣本的分析狀態差異，無需閱讀完整報告。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sample_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "要比較的樣本 ID 列表（2 個以上）",
+                },
+            },
+            "required": ["sample_ids"],
         },
     },
     {
@@ -338,6 +389,7 @@ def _exec_bio_history_search(args: dict) -> str:
         n=int(args.get("n", 5)),
         threshold=float(args.get("threshold", 0.88)),
         sample_id=args.get("sample_id"),
+        analysis_type=args.get("analysis_type"),
     )
     if not results:
         return f"語意搜尋 cache miss（query={args['query']!r}）"
@@ -384,13 +436,135 @@ def _exec_bio_memory_query(args: dict) -> str:
         return f"L1 cache miss（threshold={args.get('threshold', L1_COSINE_THRESHOLD)}）。建議執行 bio_run_spatial_eda。"
     r = results[0]
     report = r["report_text"]
-    if len(report) > 2000:
-        report = report[:2000] + "\n…（報告過長，已截斷，完整內容見 result_path）"
+    total_chars = len(report)
+    if total_chars > 2000:
+        report = report[:2000] + f"\n…（完整報告共 {total_chars} 字，截斷於 2000 字，完整內容見 result_path）"
     return (
         f"L1 cache hit（score={r['score']:.4f}）\n"
         f"summary: {r['summary']}\ncreated_at: {str(r['created_at'])[:16]}\n\n"
         f"--- 完整報告 ---\n{report}"
     )
+
+
+def _exec_bio_sample_list(args: dict) -> str:
+    """列出 sample_registry 中的樣本，支援 data_type / tissue / condition 過濾。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+
+    data_type: Optional[str] = args.get("data_type")
+    tissue: Optional[str] = args.get("tissue")
+    condition: Optional[str] = args.get("condition")
+    limit: int = int(args.get("limit", 50))
+
+    where_clauses: list[str] = []
+    params: list = []
+
+    if data_type:
+        where_clauses.append("data_type = ?")
+        params.append(data_type)
+    if tissue:
+        where_clauses.append("tissue ILIKE ?")
+        params.append(f"%{tissue}%")
+    if condition:
+        # condition 對應 notes 欄位模糊比對
+        where_clauses.append("notes ILIKE ?")
+        params.append(f"%{condition}%")
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    params.append(limit)
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        rows = con.execute(
+            f"""
+            SELECT sample_id, data_type, tissue, notes AS condition,
+                   l2_ready, analysis_done
+            FROM   sample_registry
+            {where_sql}
+            ORDER  BY last_updated DESC
+            LIMIT  ?
+            """,
+            params,
+        ).fetchall()
+
+    if not rows:
+        return "sample_registry 中無符合條件的樣本。"
+
+    header = f"樣本清單（共 {len(rows)} 筆）\n{'─' * 60}"
+    col_header = f"{'sample_id':<30} {'data_type':<15} {'tissue':<12} {'condition':<15} {'l2_ready':<9} {'done'}"
+    lines = [header, col_header]
+    for r in rows:
+        sid, dtype, tis, cond, l2, done = r
+        lines.append(
+            f"{str(sid):<30} {str(dtype or ''):<15} {str(tis or ''):<12} "
+            f"{str(cond or '')[:14]:<15} {'✓' if l2 else '✗':<9} {'✓' if done else '✗'}"
+        )
+    return "\n".join(lines)
+
+
+def _exec_bio_sample_compare(args: dict) -> str:
+    """比較多個樣本的最新各類型分析摘要，回傳對照表。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+
+    sample_ids: list[str] = args.get("sample_ids", [])
+    if len(sample_ids) < 2:
+        return "[Error] bio_sample_compare 需要至少 2 個 sample_id。"
+
+    placeholders = ", ".join("?" * len(sample_ids))
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        # 取每個樣本每種分析類型的最新 completed 紀錄
+        rows = con.execute(
+            f"""
+            WITH ranked AS (
+                SELECT ah.sample_id,
+                       ah.analysis_type,
+                       ah.completed_at,
+                       ah.summary,
+                       ah.result_path,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY ah.sample_id, ah.analysis_type
+                           ORDER BY ah.completed_at DESC
+                       ) AS rn
+                FROM   analysis_history ah
+                WHERE  ah.sample_id IN ({placeholders})
+                  AND  ah.status = 'completed'
+            )
+            SELECT sample_id, analysis_type,
+                   strftime(completed_at, '%Y-%m-%d %H:%M') AS completed_at,
+                   summary, result_path
+            FROM   ranked
+            WHERE  rn = 1
+            ORDER  BY sample_id, analysis_type
+            """,
+            sample_ids,
+        ).fetchall()
+
+    if not rows:
+        return f"指定樣本（{', '.join(sample_ids)}）均無 completed 分析記錄。"
+
+    # 組裝對照表：以 analysis_type 為欄、sample_id 為列
+    from collections import defaultdict
+
+    table: dict[str, dict[str, str]] = defaultdict(dict)
+    all_types: list[str] = []
+    for sample_id, analysis_type, completed_at, summary, result_path in rows:
+        entry = f"{(summary or '').strip()[:60]} [{completed_at}]"
+        table[sample_id][analysis_type] = entry
+        if analysis_type not in all_types:
+            all_types.append(analysis_type)
+
+    lines = [f"樣本比較對照表（{len(sample_ids)} 個樣本 × {len(all_types)} 種分析）"]
+    lines.append(f"{'分析類型':<20} " + "  ".join(f"{sid[:20]:<22}" for sid in sample_ids))
+    lines.append("─" * (22 + 24 * len(sample_ids)))
+    for atype in all_types:
+        row_parts = [f"{atype:<20}"]
+        for sid in sample_ids:
+            cell = table.get(sid, {}).get(atype, "（尚無記錄）")
+            row_parts.append(f"{cell[:22]:<22}")
+        lines.append("  ".join(row_parts))
+
+    return "\n".join(lines)
 
 
 def _exec_bio_check_l2_sufficiency(args: dict) -> str:
@@ -590,6 +764,8 @@ _TOOL_HANDLERS = {
     "bio_history_timeline": _exec_bio_history_timeline,
     "bio_history_search": _exec_bio_history_search,
     "bio_memory_query": _exec_bio_memory_query,
+    "bio_sample_list": _exec_bio_sample_list,
+    "bio_sample_compare": _exec_bio_sample_compare,
     "bio_check_l2_sufficiency": _exec_bio_check_l2_sufficiency,
     "bio_run_spatial_eda": _exec_bio_run_spatial_eda,
     "bio_run_bulk_eda":    _exec_bio_run_bulk_eda,
@@ -741,7 +917,7 @@ def _get_google_client():
     return _google_client
 
 
-def _strip_schema_defaults(schema: dict) -> dict:  # type: ignore[type-arg]
+def _strip_schema_defaults(schema: dict[str, Any]) -> dict[str, Any]:
     """遞迴移除 types.Schema 不接受的 'default' 欄位。"""
     schema = {k: v for k, v in schema.items() if k != "default"}
     if "properties" in schema:
@@ -771,7 +947,7 @@ def _make_google_call(
             types.FunctionDeclaration(
                 name=t["name"],
                 description=t["description"],
-                parameters=types.Schema(**_strip_schema_defaults(t["input_schema"])),
+                parameters=types.Schema(**_strip_schema_defaults(dict(t["input_schema"]))),  # type: ignore[arg-type]
             )
             for t in BIO_TOOLS
         ])

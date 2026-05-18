@@ -45,7 +45,13 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
             analysis_done  BOOLEAN DEFAULT FALSE,
             added_by       VARCHAR,
             notes          VARCHAR,
-            last_updated   TIMESTAMP DEFAULT now()
+            last_updated   TIMESTAMP DEFAULT now(),
+            -- v2 metadata fields
+            condition      VARCHAR,    -- 實驗條件：control/tumor/treated/...
+            time_point     VARCHAR,    -- 時間點：0h/24h/day3/...
+            batch          VARCHAR,    -- 測序批次：batch_1/batch_2/...
+            donor_id       VARCHAR,    -- 供體 ID（連結同一個體多個樣本）
+            tags           VARCHAR[]   -- 標籤陣列：paper_figure/key_result/qc_only/...
         )
     """)
     print("Table: sample_registry — OK")
@@ -53,18 +59,22 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     # analysis_history
     con.execute("""
         CREATE TABLE IF NOT EXISTS analysis_history (
-            analysis_id   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            sample_id     VARCHAR REFERENCES sample_registry(sample_id),
-            analysis_type VARCHAR,    -- 'qc', 'spatial_gene', 'clustering', 'diff_expr'
-            parameters    JSON,
-            status        VARCHAR,    -- 'running', 'completed', 'failed'
-            result_path   VARCHAR,
-            l1_cache_id   UUID,
-            requested_by  VARCHAR,
-            started_at    TIMESTAMP,
-            completed_at  TIMESTAMP,
-            summary       VARCHAR,    -- max 50 chars, for token-efficient search
-            tool_id       UUID        -- reserved: FK to future tools table (NULL until scale-out)
+            analysis_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            sample_id        VARCHAR REFERENCES sample_registry(sample_id),
+            analysis_type    VARCHAR,    -- 'qc', 'spatial_gene', 'clustering', 'diff_expr'
+            parameters       JSON,
+            status           VARCHAR,    -- 'running', 'completed', 'failed'
+            result_path      VARCHAR,
+            l1_cache_id      UUID,
+            requested_by     VARCHAR,
+            started_at       TIMESTAMP,
+            completed_at     TIMESTAMP,
+            summary          VARCHAR,    -- max 50 chars, for token-efficient search
+            tool_id          UUID,       -- reserved: FK to future tools table (NULL until scale-out)
+            -- v2 metadata fields
+            analysis_version VARCHAR,    -- 分析函數版本：1.0/1.1/...
+            tool_version     VARCHAR,    -- 工具版本：scanpy 1.9/...
+            tags             VARCHAR[]   -- 標籤：paper_figure/baseline/...
         )
     """)
     # Idempotent migration: add tool_id column to pre-existing DBs (DuckDB ≥ 0.9)

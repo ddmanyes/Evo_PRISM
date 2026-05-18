@@ -117,6 +117,7 @@ def semantic_search(
     n: int = 5,
     threshold: float = L1_COSINE_THRESHOLD,
     sample_id: Optional[str] = None,
+    analysis_type: Optional[str] = None,
     cache_path: Optional[Path] = None,
     embedding_provider: Optional[str] = None,
 ) -> list[dict]:
@@ -124,11 +125,13 @@ def semantic_search(
     語意搜尋 L1 快取（HNSW cosine similarity）。
 
     Args:
-        query:      查詢字串（自然語言或基因名稱）
-        n:          回傳筆數上限
-        threshold:  相似度門檻（0~1），低於此值不回傳
-        sample_id:  若指定則只搜尋該樣本的記錄
-        cache_path: 覆蓋預設路徑（測試用）
+        query:          查詢字串（自然語言或基因名稱）
+        n:              回傳筆數上限
+        threshold:      相似度門檻（0~1），低於此值不回傳
+        sample_id:      若指定則只搜尋該樣本的記錄
+        analysis_type:  若指定則只搜尋該分析類型的記錄（需 memory_recent 有
+                        analysis_type 欄位；若欄位不存在則自動降級、記 warning）
+        cache_path:     覆蓋預設路徑（測試用）
         embedding_provider: 覆蓋 settings（測試用）
 
     Returns:
@@ -152,8 +155,39 @@ def semantic_search(
         if row_count == 0:
             return []
 
-        sample_filter = "AND sample_id = ?" if sample_id else ""
-        params: list = [query_vec, sample_id, n] if sample_id else [query_vec, n]
+        # 確認 memory_recent 是否有 analysis_type 欄位（migration 可能尚未執行）
+        has_analysis_type_col = False
+        if analysis_type:
+            try:
+                col_row = con.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'memory_recent' AND column_name = 'analysis_type'"
+                ).fetchone()
+                has_analysis_type_col = col_row is not None
+            except Exception:
+                has_analysis_type_col = False
+
+        if analysis_type and not has_analysis_type_col:
+            logger.warning(
+                "semantic_search: analysis_type=%r filter requested but column does not "
+                "exist in memory_recent; ignoring filter (run migration to add column)",
+                analysis_type,
+            )
+
+        # 組裝動態 WHERE 子句與參數列表
+        extra_filters: list[str] = []
+        extra_params: list = []
+
+        if sample_id:
+            extra_filters.append("AND sample_id = ?")
+            extra_params.append(sample_id)
+
+        if analysis_type and has_analysis_type_col:
+            extra_filters.append("AND analysis_type = ?")
+            extra_params.append(analysis_type)
+
+        filter_clause = " ".join(extra_filters)
+        params: list = [query_vec] + extra_params + [n]
 
         # DuckDB VSS array_cosine_similarity：1 = identical, 0 = orthogonal
         # HNSW ORDER BY + LIMIT 觸發近似最近鄰搜尋
@@ -170,15 +204,15 @@ def semantic_search(
                    array_cosine_similarity(embedding, ?::FLOAT[{_DIM}]) AS score
             FROM   memory_recent
             WHERE  expires_at > now()
-                   {sample_filter}
+                   {filter_clause}
             ORDER BY score DESC
             LIMIT ?
         """
         rows = con.execute(sql, params).fetchall()
 
-    cols = ["id", "sample_id", "query_text", "summary", "report_text",
-            "created_at", "expires_at", "score"]
-    results = [dict(zip(cols, row)) for row in rows if row[-1] >= threshold]
+    result_cols = ["id", "sample_id", "query_text", "summary", "report_text",
+                   "created_at", "expires_at", "score"]
+    results = [dict(zip(result_cols, row)) for row in rows if row[-1] >= threshold]
     return results
 
 
