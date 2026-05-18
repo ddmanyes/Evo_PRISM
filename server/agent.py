@@ -625,9 +625,23 @@ def _exec_bio_run_spatial_eda(args: dict) -> str:
                 report_text = _Path(report_path).read_text(encoding="utf-8")
             except Exception:
                 pass
+        analysis_id = result.get('analysis_id', '')
+        # Track which tool version produced this result
+        try:
+            from analysis.tool_registry import get_active_tool_id
+            with duckdb.connect(str(DUCKDB_PATH)) as _con:
+                _tool_id = get_active_tool_id(_con, "bio_run_spatial_eda")
+                if _tool_id and analysis_id:
+                    _con.execute(
+                        "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
+                        [_tool_id, analysis_id],
+                    )
+        except Exception as _te:
+            logger.warning("bio_run_spatial_eda: tool_id tracking failed: %s", _te)
+
         header = (
             f"EDA 完成。\n"
-            f"analysis_id: {result.get('analysis_id', '(無)')}\n"
+            f"analysis_id: {analysis_id}\n"
             f"summary: {summary}\n"
             f"report_path: {report_path}\n\n"
         )
@@ -664,7 +678,9 @@ def _exec_bio_register_sample(args: dict) -> str:
 
 
 def _exec_bio_run_bulk_eda(args: dict) -> str:
+    import duckdb
     from analysis.bulk_eda import generate_bulk_report
+    from config.settings import DUCKDB_PATH
     sample_id    = args["sample_id"]
     requested_by = args.get("requested_by", "agent")
     try:
@@ -677,6 +693,19 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
                 report_text = _Path(report_path).read_text(encoding="utf-8")
             except Exception:
                 pass
+        # Track which tool version produced this result
+        try:
+            from analysis.tool_registry import get_active_tool_id
+            with duckdb.connect(str(DUCKDB_PATH)) as _con:
+                _tool_id = get_active_tool_id(_con, "bio_run_bulk_eda")
+                if _tool_id and analysis_id:
+                    _con.execute(
+                        "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
+                        [_tool_id, analysis_id],
+                    )
+        except Exception as _te:
+            logger.warning("bio_run_bulk_eda: tool_id tracking failed: %s", _te)
+
         header = (
             f"Bulk EDA 完成。\n"
             f"analysis_id: {analysis_id}\n"

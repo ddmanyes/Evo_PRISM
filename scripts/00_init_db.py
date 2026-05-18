@@ -84,6 +84,35 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
         print(f"WARNING: could not ensure tool_id column: {e}")
     print("Table: analysis_history — OK")
 
+    # tools — versioned tool registry (content-hash based)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS tools (
+            tool_id        UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            tool_name      VARCHAR NOT NULL,
+            version        VARCHAR NOT NULL,
+            content_hash   VARCHAR(16) NOT NULL,
+            module_path    VARCHAR NOT NULL,
+            function_name  VARCHAR NOT NULL,
+            description    VARCHAR,
+            parameters     JSON,
+            status         VARCHAR DEFAULT 'active',  -- active | deprecated | candidate
+            created_at     TIMESTAMP DEFAULT now(),
+            deprecated_at  TIMESTAMP,
+            UNIQUE (tool_name, content_hash)
+        )
+    """)
+    print("Table: tools — OK")
+
+    # tool_dependencies — directed dependency graph between tools
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS tool_dependencies (
+            tool_id      UUID REFERENCES tools(tool_id),
+            depends_on   UUID REFERENCES tools(tool_id),
+            PRIMARY KEY (tool_id, depends_on)
+        )
+    """)
+    print("Table: tool_dependencies — OK")
+
     # analysis_index view (0-token compact browsing)
     con.execute("""
         CREATE OR REPLACE VIEW analysis_index AS
