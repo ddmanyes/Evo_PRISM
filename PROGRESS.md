@@ -10,7 +10,7 @@
 **里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：（待回填）
+**commit**：c087d04
 
 ---
 
