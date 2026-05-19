@@ -10,7 +10,7 @@
 **里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1 全清
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：（待回填）
+**commit**：b7db709
 
 ---
 
