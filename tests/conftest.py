@@ -3,11 +3,12 @@ Pytest fixtures shared across all tests.
 """
 import pytest
 import duckdb
-import tempfile
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from config.settings import L3_ROOT  # noqa: E402
 
 
 @pytest.fixture
@@ -21,8 +22,12 @@ def tmp_db(tmp_path):
 
 @pytest.fixture
 def l3_crc_path():
-    """Path to CRC test data (read-only L3)."""
-    path = Path("/Volumes/NO NAME/bio_DB/crc_visium_data/official_v4")
+    """Path to CRC test data (read-only L3).
+
+    Resolves via ``config.settings.L3_ROOT`` so the fixture is portable across
+    machines. Skips the test if the CRC test bundle is not present locally.
+    """
+    path = L3_ROOT / "official_v4"
     if not path.exists():
-        pytest.skip("CRC test data not available")
+        pytest.skip(f"CRC test data not available at {path}")
     return path

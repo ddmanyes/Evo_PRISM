@@ -59,32 +59,36 @@ crc_visium_data/  bulk_rna_data/  proteome_data/
 ### 安裝
 
 ```bash
-# 1. 建立 venv（ExFAT 磁碟不支援 symlink，venv 必須建在 APFS）
-python3 -m venv ~/.venvs/hermes-bio-memory
-ln -s ~/.venvs/hermes-bio-memory "/Volumes/NO NAME/bio_DB/.venv"
+# 將 BIO_DB_ROOT 設為你 clone 後的專案根目錄
+export BIO_DB_ROOT="$(pwd)"
+
+# 1. 建立 venv（若專案位於 ExFAT 或雲端同步資料夾，venv 必須建在 APFS / 本機檔案系統）
+python3 -m venv ~/.venvs/bioagent
+ln -s ~/.venvs/bioagent "$BIO_DB_ROOT/.venv"
 
 # 2. 安裝依賴
-cd "/Volumes/NO NAME/bio_DB"
+cd "$BIO_DB_ROOT"
 uv sync --no-install-project
 
 # 3. 設定環境變數
 cp .env.example .env
 # 填入 ANTHROPIC_API_KEY（使用 Claude 後端時才需要）
 # 填入 GOOGLE_API_KEY（使用 Google 後端時才需要）
+# 注意：BIO_DB_ROOT / DUCKDB_PATH 等 4 個路徑保持註解狀態即可（settings.py 會自動偵測）
 
 # 4. 初始化資料庫 Schema
-~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
+.venv/bin/python scripts/00_init_db.py
 
 # 5. 執行所有 Schema migration（v9 → v19）
 for script in scripts/[12][0-9]_migrate_schema_*.py; do
-    ~/.venvs/hermes-bio-memory/bin/python "$script"
+    .venv/bin/python "$script"
 done
 ```
 
 ### 啟動系統
 
 ```bash
-cd "/Volumes/NO NAME/bio_DB"
+cd "$BIO_DB_ROOT"
 bash start_bioagent.sh
 ```
 
@@ -158,7 +162,7 @@ curl -s -X POST http://localhost:8000/mcp \
 ### 獨立啟動 MCP HTTP Server（不依賴 Web UI）
 
 ```bash
-~/.venvs/hermes-bio-memory/bin/python server/bio_memory_server.py \
+.venv/bin/python server/bio_memory_server.py \
   --transport http --port 8082
 ```
 
@@ -182,8 +186,8 @@ curl -s -X POST http://localhost:8000/mcp \
 {
   "mcpServers": {
     "bio-memory": {
-      "command": "/Users/zhanqiru/.venvs/hermes-bio-memory/bin/python",
-      "args": ["/Volumes/NO NAME/bio_DB/server/bio_memory_server.py"]
+      "command": "/ABSOLUTE/PATH/TO/bio_DB/.venv/bin/python",
+      "args": ["/ABSOLUTE/PATH/TO/bio_DB/server/bio_memory_server.py"]
     }
   }
 }
@@ -194,8 +198,8 @@ curl -s -X POST http://localhost:8000/mcp \
 ## 測試
 
 ```bash
-cd "/Volumes/NO NAME/bio_DB"
-~/.venvs/hermes-bio-memory/bin/python -m pytest tests/ -v --tb=short
+cd "$BIO_DB_ROOT"
+.venv/bin/python -m pytest tests/ -v --tb=short
 ```
 
 預期結果（共 293 tests collected）：**283 passed / 5 skipped**（5 個 sandbox 相關 `FileNotFoundError` 為環境依賴，非邏輯失敗）
@@ -257,10 +261,10 @@ cd "/Volumes/NO NAME/bio_DB"
 
 ```bash
 # 健檢（確認 sample / history / stale 數量）
-~/.venvs/hermes-bio-memory/bin/python config/db_utils.py
+.venv/bin/python config/db_utils.py
 
 # 確認 L2 Parquet 資料正確
-~/.venvs/hermes-bio-memory/bin/python -c "
+.venv/bin/python -c "
 import duckdb
 r = duckdb.execute(\"\"\"
     SELECT COUNT(*) as bins, COUNT(DISTINCT gene_name) as genes
@@ -272,7 +276,7 @@ print(f'bins={r[0]}, genes={r[1]}')
 # 預期：bins≈516880, genes≈18000
 
 # 列出資料庫所有表格
-~/.venvs/hermes-bio-memory/bin/python -c "
+.venv/bin/python -c "
 import duckdb
 con = duckdb.connect('bio_memory.duckdb', read_only=True)
 print(con.execute('SHOW TABLES').fetchall())
@@ -321,8 +325,8 @@ bio_DB/
 手動備份與還原：
 
 ```bash
-~/.venvs/hermes-bio-memory/bin/python scheduler/backup_db.py            # 備份
-~/.venvs/hermes-bio-memory/bin/python scheduler/backup_db.py --restore  # 還原最新備份
+.venv/bin/python scheduler/backup_db.py            # 備份
+.venv/bin/python scheduler/backup_db.py --restore  # 還原最新備份
 ```
 
 ---
