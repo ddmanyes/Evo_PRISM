@@ -38,13 +38,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from config.settings import BIO_DB_ROOT
-from config.db_utils import db_health_check
+from config.db_utils import db_health_check, open_db
 
 logger = logging.getLogger(__name__)
 
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # 啟動時清理殭屍 running 記錄（server 重啟 = 舊進程已死）
+    # 用 BaseException 而非 Exception — DuckDB FatalException 是 C++ exception，
+    # 不繼承 Python Exception，except Exception 抓不到會直接 abort process。
+    try:
+        from config.db_utils import cleanup_stale_runs
+        with open_db() as _con:
+            n = cleanup_stale_runs(_con, hours=0)
+            if n:
+                logger.info("startup: cleared %d zombie running records", n)
+    except BaseException as _e:
+        logger.warning("startup cleanup failed (non-fatal): %s", _e)
+
     async def _cleanup_loop():
         while True:
             await asyncio.sleep(3600)

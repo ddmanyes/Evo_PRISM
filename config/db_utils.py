@@ -6,6 +6,7 @@ cleanup_stale_runs() — 清理 > 24h 的殭屍 running 狀態
 get_connection()    — 統一連線入口，確保單一寫入者
 """
 
+import contextlib
 import duckdb
 from pathlib import Path
 import sys
@@ -34,6 +35,28 @@ def _bootstrap_vss(con: duckdb.DuckDBPyConnection, read_only: bool = False) -> N
             con.execute("SET hnsw_enable_experimental_persistence = true")
         except Exception:
             pass
+
+
+@contextlib.contextmanager
+def open_db(path: "Path | str | None" = None, *, read_only: bool = False):
+    """Context manager that opens a DuckDB connection with VSS pre-loaded.
+
+    Replaces bare `with duckdb.connect(...) as con:` throughout the codebase
+    so VSS is always loaded before any HNSW INSERT or CHECKPOINT.
+
+    Usage:
+        with open_db() as con:          # writes to DUCKDB_PATH
+            safe_write(con, ...)
+        with open_db(read_only=True) as con:
+            con.execute("SELECT ...")
+    """
+    target = Path(path) if path else DUCKDB_PATH
+    con = duckdb.connect(str(target), read_only=read_only)
+    try:
+        _bootstrap_vss(con, read_only=read_only)
+        yield con
+    finally:
+        con.close()
 
 
 def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
