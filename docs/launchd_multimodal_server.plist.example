@@ -17,7 +17,8 @@
       -m /Users/zhanqiru/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
       --mmproj /Users/zhanqiru/mmproj-BF16.gguf \
       --port 8080 --ctx-size 8192 --n-gpu-layers 99 \
-      --flash-attn -ctk q8_0 -ctv q8_0
+      --flash-attn on -ctk q8_0 -ctv q8_0 \
+      --reasoning-budget 100
 
   確認在線：
     curl http://localhost:8080/health
@@ -41,10 +42,13 @@
         <string>--n-gpu-layers</string>
         <string>99</string>
         <string>--flash-attn</string>
+        <string>on</string>
         <string>--cache-type-k</string>
         <string>q8_0</string>
         <string>--cache-type-v</string>
         <string>q8_0</string>
+        <string>--reasoning-budget</string>
+        <string>100</string>
         <string>--host</string>
         <string>127.0.0.1</string>
     </array>
