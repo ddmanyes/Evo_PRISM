@@ -31,6 +31,12 @@ htmlcov/
 Thumbs.db
 # macOS resource forks（ExFAT 產生）
 ._*
+# Office 臨時鎖檔
+~$*
+
+# Runtime logs / status（每次執行都會變，不進 git）
+logs/*.log
+logs/*_status.json
 
 # 大型數據目錄（L3 原始數據，不進 git）
 crc_visium_data/
