@@ -79,7 +79,7 @@ class RateLimitExceeded(RuntimeError):
 
 # 需要 rate limit 保護的工具（會打 embedding server 或耗用 llama 資源）
 _RATE_LIMITED_TOOLS = frozenset(
-    {"bio_history_search", "bio_memory_query", "bio_memory_write"}
+    {"bio_history_search", "bio_memory_query", "bio_memory_write", "bio_artifact_search"}
 )
 
 _METRICS_SCHEMA_READY = False
@@ -343,6 +343,59 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["sample_id", "data_type", "l3_path"],
             },
         ),
+        types.Tool(
+            name="bio_artifact_search",
+            description=(
+                "搜尋 ENGRAM 分析產出（圖、CSV、報告）— RRF hybrid（exact subtype + HNSW cosine）。"
+                "回傳 artifact 列表含 score、file_path、artifact_subtype、analysis_id；不含檔案內容。"
+                "需要 embedding server 在線（port 8081）；artifact_subtype 提供時走 Layer 1 + Layer 2 融合。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "自然語言查詢，例如「腫瘤微環境細胞密度圖」。",
+                    },
+                    "n": {
+                        "type": "integer",
+                        "description": "回傳筆數上限（預設 5）。",
+                        "default": 5,
+                    },
+                    "threshold": {
+                        "type": "number",
+                        "description": "RRF 分數門檻（預設 0.01；範圍約 0.008–0.033）。",
+                        "default": 0.01,
+                    },
+                    "artifact_subtype": {
+                        "type": "string",
+                        "description": "限定 subtype（Layer 1 exact match），例如 gene_spatial_map | qc_stats。",
+                    },
+                    "sample_id": {
+                        "type": "string",
+                        "description": "限定樣本 ID（可選，透過 JOIN analysis_history 過濾）。",
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        types.Tool(
+            name="bio_artifact_summary",
+            description=(
+                "回傳指定樣本的 ENGRAM artifact 概覽（0 token，純 SQL）。"
+                "顯示總執行次數、總 artifact 數、各 subtype 分佈、最新一次執行資訊。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "樣本 ID，例如 crc_official_v4。",
+                    },
+                },
+                "required": ["sample_id"],
+            },
+        ),
     ]
 
 
@@ -586,6 +639,75 @@ async def _handle_bio_register_sample(args: dict) -> str:
     return f"樣本 {sample_id!r} 已登記至 sample_registry。\ndata_type: {args['data_type']}\nl3_path: {args['l3_path']}"
 
 
+async def _handle_bio_artifact_search(args: dict) -> str:
+    import duckdb
+    from analysis.artifact_registry import search_artifacts
+    from config.settings import DUCKDB_PATH
+
+    query = args["query"]
+    n = int(args.get("n", 5))
+    threshold = float(args.get("threshold", 0.01))
+    artifact_subtype = args.get("artifact_subtype")
+    sample_id = args.get("sample_id")
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        results = search_artifacts(
+            con,
+            query,
+            n=n,
+            threshold=threshold,
+            artifact_subtype=artifact_subtype,
+            sample_id=sample_id,
+        )
+
+    if not results:
+        return (
+            f"ENGRAM 搜尋無命中（query={query!r}, threshold={threshold}, "
+            f"subtype={artifact_subtype!r}）。"
+        )
+
+    lines = [f"ENGRAM 命中 {len(results)} 筆（threshold={threshold}）\n"]
+    for i, r in enumerate(results, 1):
+        lines.append(
+            f"{i}. [{r['score']:.4f}] {r.get('artifact_subtype', '')} — "
+            f"{r.get('label', '')}\n"
+            f"   artifact_id: {r['artifact_id']}\n"
+            f"   analysis_id: {r['analysis_id']}\n"
+            f"   file_path:   {r.get('file_path', '')}\n"
+            f"   layer:       {r.get('search_layer', '')}"
+        )
+    return "\n".join(lines)
+
+
+async def _handle_bio_artifact_summary(args: dict) -> str:
+    import duckdb
+    from analysis.artifact_registry import artifact_summary
+    from config.settings import DUCKDB_PATH
+
+    sample_id = args["sample_id"]
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        summary = artifact_summary(con, sample_id)
+
+    if summary["total_runs"] == 0:
+        return f"樣本 {sample_id!r} 尚無已完成分析或 artifact 記錄。"
+
+    by_subtype_lines = "\n".join(
+        f"  - {st}: {ct}" for st, ct in sorted(summary["by_subtype"].items())
+    ) or "  （無 subtype 記錄）"
+    latest = summary["latest_run"] or {}
+    return (
+        f"sample_id: {summary['sample_id']}\n"
+        f"total_runs: {summary['total_runs']}\n"
+        f"total_artifacts: {summary['total_artifacts']}\n"
+        f"by_subtype:\n{by_subtype_lines}\n"
+        f"latest_run:\n"
+        f"  analysis_id:   {latest.get('analysis_id', '')}\n"
+        f"  analysis_type: {latest.get('analysis_type', '')}\n"
+        f"  completed_at:  {latest.get('completed_at', '')}\n"
+        f"  artifact_count: {latest.get('artifact_count', 0)}"
+    )
+
+
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
 
 _HANDLERS = {
@@ -596,6 +718,8 @@ _HANDLERS = {
     "bio_memory_query": _handle_bio_memory_query,
     "bio_memory_write": _handle_bio_memory_write,
     "bio_register_sample": _handle_bio_register_sample,
+    "bio_artifact_search": _handle_bio_artifact_search,
+    "bio_artifact_summary": _handle_bio_artifact_summary,
 }
 
 

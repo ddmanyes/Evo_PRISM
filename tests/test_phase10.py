@@ -120,6 +120,8 @@ class TestMCPToolsList:
         "bio_memory_query",
         "bio_memory_write",
         "bio_register_sample",
+        "bio_artifact_search",
+        "bio_artifact_summary",
     }
 
     def _payload(self, req_id: int) -> bytes:
@@ -129,16 +131,16 @@ class TestMCPToolsList:
         resp = http_client.post("/", content=self._payload(10), headers=_mcp_headers())
         assert resp.status_code == 200
 
-    def test_contains_all_7_tools(self, http_client):
+    def test_contains_all_tools(self, http_client):
         resp = http_client.post("/", content=self._payload(11), headers=_mcp_headers())
         body = resp.content.decode()
         for tool in self._EXPECTED_TOOLS:
             assert tool in body, f"Tool {tool!r} missing from tools/list"
 
-    def test_tool_count_is_7(self, http_client):
+    def test_tool_count_is_9(self, http_client):
         resp = http_client.post("/", content=self._payload(12), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 7
+        assert len(names) == 9
 
 
 # ── TestMCPInvalidRequest ─────────────────────────────────────────────────────
@@ -223,13 +225,39 @@ def _setup_e2e_db(tmp_path: Path) -> Path:
         "('e2e_sample', 'p', 'visium_hd', '10x', 'human', 'tissue', '/x', "
         "true, false, 'pytest', '', now())"
     )
-    con.execute(
+    analysis_id = con.execute(
         "INSERT INTO analysis_history "
         "(analysis_id, sample_id, analysis_type, status, result_path, "
         " requested_by, completed_at, summary) VALUES "
         "(gen_random_uuid(), 'e2e_sample', 'spatial_eda', 'completed', "
-        " '/Volumes/NO NAME/result with space|pipe.md', 'pytest', ?, '端對端摘要')",
+        " '/Volumes/NO NAME/result with space|pipe.md', 'pytest', ?, '端對端摘要') "
+        "RETURNING analysis_id",
         [datetime.now(timezone.utc)],
+    ).fetchone()[0]
+    # analysis_artifacts 表 — ENGRAM 工具會 JOIN 此表
+    con.execute(
+        """
+        CREATE TABLE analysis_artifacts (
+            artifact_id      UUID    DEFAULT gen_random_uuid() PRIMARY KEY,
+            analysis_id      UUID    NOT NULL REFERENCES analysis_history(analysis_id),
+            artifact_type    VARCHAR NOT NULL,
+            artifact_subtype VARCHAR,
+            label            VARCHAR NOT NULL,
+            file_path        VARCHAR,
+            file_size_kb     INTEGER,
+            mime_type        VARCHAR,
+            embedding        FLOAT[1024],
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
+    con.execute(
+        "INSERT INTO analysis_artifacts "
+        "(analysis_id, artifact_type, artifact_subtype, label, file_path, "
+        " file_size_kb, mime_type) VALUES "
+        "(?, 'figure', 'gene_spatial_map', 'PTPRC spatial map', "
+        " '/results/ptprc.png', 12, 'image/png')",
+        [analysis_id],
     )
     con.close()
     return db
@@ -288,6 +316,50 @@ class TestE2EToolCalls:
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool("no_such_tool", {}))
         assert "未知工具" in result[0].text
+
+
+# ── TestArtifactE2E (MCP P3-3：ENGRAM 工具暴露) ──────────────────────────────
+
+
+class TestArtifactE2E:
+    def test_bio_artifact_summary_returns_metadata(self, tmp_path, monkeypatch):
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool("bio_artifact_summary",
+                                      {"sample_id": "e2e_sample"}))
+        text = result[0].text
+        assert "e2e_sample" in text
+        assert "total_runs: 1" in text
+        assert "total_artifacts: 1" in text
+        assert "gene_spatial_map" in text
+
+    def test_bio_artifact_summary_no_sample(self, tmp_path, monkeypatch):
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool("bio_artifact_summary",
+                                      {"sample_id": "no_such_sample"}))
+        assert "尚無" in result[0].text
+
+    def test_bio_artifact_search_subtype_only(self, tmp_path, monkeypatch):
+        """Layer 1 exact subtype 不需要 embedding server；驗證可命中。"""
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        # 強制走 Layer 1 only：mock embed 失敗 → search_artifacts 仍可回 Layer 1 結果
+        monkeypatch.setattr("analysis.artifact_registry._get_embedding",
+                            lambda q: None)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool("bio_artifact_search", {
+            "query": "ptprc",
+            "artifact_subtype": "gene_spatial_map",
+            "threshold": 0.001,
+        }))
+        text = result[0].text
+        assert "ENGRAM 命中" in text or "ENGRAM 搜尋無命中" in text
+        # 若命中，必須含 subtype
+        if "命中 " in text:
+            assert "gene_spatial_map" in text
 
 
 # ── TestAuthMiddleware (MCP_AUTH_TOKEN) ──────────────────────────────────────

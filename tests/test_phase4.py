@@ -130,7 +130,7 @@ class TestListTools:
     def test_tool_count(self):
         from server.bio_memory_server import list_tools
         tools = run(list_tools())
-        assert len(tools) == 7
+        assert len(tools) == 9
 
     def test_tool_names(self):
         from server.bio_memory_server import list_tools
@@ -140,6 +140,7 @@ class TestListTools:
             "bio_history_lookup", "bio_history_timeline", "bio_history_check",
             "bio_history_search", "bio_memory_query", "bio_memory_write",
             "bio_register_sample",
+            "bio_artifact_search", "bio_artifact_summary",
         }
         assert names == expected
 

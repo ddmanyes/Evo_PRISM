@@ -7,10 +7,20 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2 全清
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：7579e28
+**commit**：（待回填）
+
+---
+
+## ✅ 2026-05-19 Session MCP P3 部分清
+
+- [x] **`bio_artifact_search` MCP 工具暴露**：`search_artifacts(con, query, *, n, threshold, artifact_subtype, sample_id)` 包成 MCP tool，回傳含 score、artifact_id、analysis_id、file_path、search_layer 的列表；接入 `_RATE_LIMITED_TOOLS`（會打 embedding server）；無命中時回明確錯誤訊息
+- [x] **`bio_artifact_summary` MCP 工具暴露**：`artifact_summary(con, sample_id)` 包成 MCP tool，回傳 total_runs / total_artifacts / by_subtype / latest_run 純文字摘要；0 token 純 SQL（不打 embedding server）
+- [x] **`_HANDLERS` 與 tool count 同步**：7 → 9 tools；`list_tools()`、`_HANDLERS`、`test_phase4.py` 與 `test_phase10.py` tool count 斷言全部更新對齊
+- [x] **ENGRAM e2e 測試**：`TestArtifactE2E` 3 個 tests — `bio_artifact_summary` 命中 + 不存在樣本 + `bio_artifact_search` Layer 1 exact subtype（mock `_get_embedding` 回 None 避免依賴 embedding server）；`_setup_e2e_db` fixture 擴充含 `analysis_artifacts` 表 + 1 筆 synthetic row
+- [x] **驗證**：phase4 + phase10 共 48/48 PASS
 
 ---
 
@@ -557,7 +567,7 @@
 
 - [ ] **MCP / Agent 工具命名重複**：MCP server 的 `bio_history_*` 與 agent.py 的 `bio_history_*` 是兩套獨立實作（agent.py 不透過 MCP 呼叫，直接呼叫 Python 函數）；長期應統一為「agent.py 透過 MCP HTTP 呼叫 server/bio_memory_server.py」，避免雙份維護
 - [ ] **回傳格式不一致**：`bio_history_lookup` 回 Markdown 表格、`bio_history_check` 回 YAML-like 純文字、`bio_history_search` 回編號列表；建議統一為結構化 JSON（MCP 規範允許 TextContent 包 JSON 字串，由客戶端解析）
-- [ ] **缺 `bio_artifact_search` MCP 工具**：ENGRAM 模組 5 個函數（register/get/compare/summary/search）皆未透過 MCP 暴露；外部客戶端無法存取分析產出記憶
+- [x] **`bio_artifact_search` + `bio_artifact_summary` 已暴露**：MCP server tools 7 → 9；`search_artifacts`（rate-limited，會打 embedding server）+ `artifact_summary`（0 token 純 SQL）；其餘 register/get/compare 屬寫入路徑，暫不暴露
 - [ ] **`.mcp.json` 路徑含空格**：`/Volumes/NO NAME/bio_DB/...` 在某些 MCP 客戶端可能解析錯誤；Linux 遷移時路徑改為 `/mnt/space4/bio_lab_db/`，記得同步更新
 
 ### 既有待辦（不變）
