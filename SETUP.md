@@ -74,11 +74,21 @@ GOOGLE_MODEL=gemini-2.0-flash     # Google Gemini 模型版本
 若要全新建立（例如磁碟路徑不同），執行：
 
 ```bash
+# 1) 建立基本 Schema
 ~/.venvs/bioagent/bin/python scripts/00_init_db.py
+
+# 2) 套用所有後續 migration（v9 → v19）
+#    包含 ENGRAM artifact 表、HELIX 工具版本表、BM25 FTS 索引、Star Schema views
+for script in scripts/[12][0-9]_migrate_schema_*.py; do
+    ~/.venvs/bioagent/bin/python "$script"
+done
+
+# 3) 登記樣本
 ~/.venvs/bioagent/bin/python scripts/01_register_sample.py
 ```
 
 > **注意**：`sample_registry` 內的 `l3_path` 存放絕對路徑，換機器後若磁碟掛載點不同需重新登記。
+> 跳過 step 2 會造成 ENGRAM 搜尋、HELIX 版本追蹤、Star Schema views 全部不可用。
 
 ---
 
@@ -159,3 +169,5 @@ bash start_bioagent.sh
 | [CLAUDE.md](CLAUDE.md) | 專案憲法（規範、架構、路徑） |
 | [plan_zh.md](plan_zh.md) | 完整系統設計 |
 | [PROGRESS.md](PROGRESS.md) | 當前進度與待辦事項 |
+| [docs/STAR_SCHEMA.md](docs/STAR_SCHEMA.md) | Star Schema views 設計與使用範例 |
+| [docs/PREFILTER_VERIFICATION.md](docs/PREFILTER_VERIFICATION.md) | ENGRAM metadata pre-filter pushdown 驗證 |

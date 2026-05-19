@@ -38,7 +38,7 @@ crc_visium_data/  bulk_rna_data/  proteome_data/
 **核心模組**：
 
 - **HELIX**（`analysis/tool_registry.py`）：工具版本管理、熱區偵測、穩定化迭代
-- **ENGRAM**（`analysis/artifact_registry.py`）：分析產出永久記憶，支援 Hybrid RRF 語意搜尋
+- **ENGRAM**（`analysis/artifact_registry.py`）：分析產出永久記憶，支援 Hybrid 3-way RRF 語意搜尋（exact + HNSW + BM25 FTS）
 - **MCP Server**（`server/bio_memory_server.py`）：stdio + HTTP 雙 transport，可供外部客戶端呼叫
 
 ---
@@ -75,8 +75,8 @@ cp .env.example .env
 # 4. 初始化資料庫 Schema
 ~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
 
-# 5. 執行所有 Schema migration（v9 → v17）
-for script in scripts/1[0-9]_migrate_schema_*.py; do
+# 5. 執行所有 Schema migration（v9 → v19）
+for script in scripts/[12][0-9]_migrate_schema_*.py; do
     ~/.venvs/hermes-bio-memory/bin/python "$script"
 done
 ```
@@ -198,21 +198,22 @@ cd "/Volumes/NO NAME/bio_DB"
 ~/.venvs/hermes-bio-memory/bin/python -m pytest tests/ -v --tb=short
 ```
 
-預期結果：**228 / 228 PASSED，3 skipped**
+預期結果（共 293 tests collected）：**283 passed / 5 skipped**（5 個 sandbox 相關 `FileNotFoundError` 為環境依賴，非邏輯失敗）
 
 | 測試檔 | 測試數 | 涵蓋範圍 |
 | ------ | ------ | -------- |
 | `test_init_db.py` | 4 | Schema + Views 正確性 |
 | `test_phase2b.py` | 14 | 歷史查詢 + 報告生成 |
 | `test_phase3.py` | 15 | L1 快取 + HNSW |
-| `test_phase4.py` | 19 | MCP Server stdio 工具 |
+| `test_phase4.py` | 35 | MCP Server stdio 工具 |
 | `test_phase5.py` | 28 | Agent Loop + 沙盒執行 |
 | `test_phase6.py` | 23 | Telegram Bot 指令與訊息分派 |
-| `test_artifact_registry.py` | 36 | ENGRAM artifact 搜尋 + Provenance |
-| `test_tool_registry.py` | 32 | HELIX 版本管理 + 穩定化 |
+| `test_artifact_registry.py` | 44 | ENGRAM artifact 搜尋（3-way RRF）+ Provenance |
+| `test_tool_registry.py` | 56 | HELIX 版本管理 + 穩定化 |
 | `test_tool_visualizer.py` | 15 | HELIX 視覺快照 + 降採樣 |
-| `test_phase10.py` | 15 | MCP HTTP transport |
-| 其他 | 27 | migration / spatial / bulk |
+| `test_phase10.py` | 30 | MCP HTTP transport |
+| `test_star_schema.py` | 10 | Star Schema views（throughput / stability signal） |
+| 其他 | 19 | migration / spatial / bulk |
 
 ---
 
@@ -285,7 +286,7 @@ print(con.execute('SHOW TABLES').fetchall())
 ```text
 bio_DB/
 ├── config/              ← 路徑與 API key 集中設定
-├── scripts/             ← 一次性 L3→L2 轉換 + Schema migration（v0–v17）
+├── scripts/             ← 一次性 L3→L2 轉換 + Schema migration（v0–v19，含 ENGRAM BM25 FTS 與 Star Schema views）
 ├── analysis/            ← 分析函式庫（Agent 呼叫）
 │   ├── artifact_registry.py   ← ENGRAM-Core（永久記憶）
 │   ├── tool_registry.py       ← HELIX-Core（版本管理）
@@ -313,7 +314,7 @@ bio_DB/
 | ---- | ---- | ---- |
 | `scheduler/backup_db.py` | 每日 02:00 | EXPORT DATABASE → `~/bio_db_backups/`（保留 7 天） |
 | `scheduler/cleanup_l1_cache.py` | 每日 03:30 | 清理 L1 TTL 到期快取 |
-| `scheduler/rebuild_hnsw.py` | 每週日 03:00 | 重建 HNSW 索引 |
+| `scheduler/rebuild_hnsw.py` | 每週日 03:00 | 重建 HNSW + ENGRAM BM25 FTS 索引 |
 | `scheduler/scan_new_samples.py` | 每 30 分鐘 | 掃描並登記新樣本至 sample_registry |
 | `scheduler/helix_expire_snapshots.py` | 每週日 04:00 | HELIX 視覺快照遺忘曲線降採樣 |
 
@@ -347,6 +348,9 @@ bio_DB/
 | [presentation.md](presentation.md) | 系統簡報（Marp 格式，13 張） |
 | [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md) | 跨專案數據整合指南 |
 | [docs/L3_DATA_INGEST_GUIDE.md](docs/L3_DATA_INGEST_GUIDE.md) | 新增 L3 樣本操作指南 |
+| [docs/STAR_SCHEMA.md](docs/STAR_SCHEMA.md) | Star Schema views 設計與使用範例（P1-C） |
+| [docs/PREFILTER_VERIFICATION.md](docs/PREFILTER_VERIFICATION.md) | ENGRAM metadata pre-filter pushdown 驗證（P0-A） |
+| [docs/DB114_MODULE_11_12_REVIEW.md](docs/DB114_MODULE_11_12_REVIEW.md) | DB114 Module 11/12 架構建議評估 |
 
 ---
 
