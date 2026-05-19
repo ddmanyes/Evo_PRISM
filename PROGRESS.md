@@ -7,14 +7,63 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + 兩輪安全性審查全部修復（19 項問題）
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1 部分完成
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
 **commit**：(latest)
 
 ---
 
+## ✅ 2026-05-19 Session MCP P1 部分完成（封存點）
+
+- [x] **`bio_memory_write` sample_id 驗證**：`_SAMPLE_ID_RE = ^[a-z0-9_-]+$`，與 `bio_register_sample` 對齊；格式不符 raise ValueError
+- [x] **rate limit / correlation ID 基礎設施**：模組層 `_rate_limit_check(key)` token bucket（預設 30 calls/min，env `MCP_RATE_LIMIT_PER_MIN` 可調）、`uuid` import 預留 — 尚未接入 `call_tool` 與 HTTP handler
+- [ ] **下輪續做**：`call_tool` 例外重構（區分 ValueError vs 系統例外 + correlation ID）、`MCP_AUTH_TOKEN` HTTP 認證、`cleanup_stale_runs` 啟動時呼叫、`_rate_limit_check` 接入 embedding/search 工具
+
 ---
+
+## ✅ 2026-05-19 Session 穩定性 P2 全清
+
+- [x] **WAL pre-flight check**：`config/db_utils.wal_preflight_check()` 在 `web_app._lifespan` 最早期執行；read-only 試開失敗時 rename `.wal → .wal.corrupt.<ts>`，狀態寫 `logs/wal_preflight_status.json`，並上報 `/health.wal_preflight`；驗證 `wal_preflight.ok=true checked_at=2026-05-19T10:49:57`
+- [x] **每週 round-trip 還原測試**：新增 `scheduler/weekly_restore_test.py`（INSTALL/LOAD vss + `hnsw_enable_experimental_persistence`）+ launchd 範本 + `com.hermes.weekly_restore_test`（週日 05:00）；手動執行 91 samples / 16 history 與主庫一致
+- [x] **agent.py safe_write 合規審查**：發現 `bio_run_spatial_eda` / `bio_run_bulk_eda` 兩處 `analysis_history UPDATE tool_id` 繞過 `safe_write`，已改走 `safe_write`（含 CHECKPOINT）；`bio_execute_code` INSERT 早已合規；全檔僅剩 SELECT 直接 `con.execute`
+
+---
+
+## ✅ 2026-05-19 Session 穩定性 P1 全清
+
+- [x] **launchd 排程批次安裝**：6 個 plist 全部 load 成功（cleanup_l1 / rebuild_hnsw / scan_samples / helix_expire / embedding_server / multimodal_server）；連同原有 webserver + backup 共 8 個 hermes job
+- [x] **plist Label 命名正規化**：`launchd_helix_expire.plist.example` 與 `launchd_multimodal_server.plist.example` 範本 Label 從舊 `com.bioagent.*` 改為 `com.hermes.*` 命名一致；Log 目錄 `~/Library/Logs/bioagent/` 補建
+- [x] **embedding/multimodal server 自動拉起**：兩個 llama-server 由 launchd KeepAlive 接管，crash 後自動 restart；驗證 8081 `{"status":"ok"}`、8080 `200`
+- [x] **`/health` 端點擴充**：新增 `embedding_server_ok` / `multimodal_server_ok` / `backup.{last_success_at, last_success_age_hours, last_size_bytes, last_error, fresh}` / `disk_free_gb`；`ok` 總判定 = DB ok + embedding ok + 備份 < 36h 新鮮度；觀測閉環完成
+
+---
+
+## ✅ 2026-05-19 Session 後續修復（P0 全清）
+
+- [x] **歷史資料遺失盤點**（穩定性 P0-1）：比對 `~/bio_db_backups/20260515_1253/analysis_history.csv` 僅 1 筆（最早 l2_convert），現行 DB 16 筆，**無資料遺失**。先前推測「30+ → 16」不成立；5/15 之後從未有完整備份，但 DB 主檔本身未掉資料
+- [x] **`scheduler/backup_db.py` 加固**（穩定性 P0-2 + P0-3）：新增 `MIN_BACKUP_BYTES=100KB` 門檻、失敗自動刪空目錄、`logs/backup_status.json` 記錄 `last_success_at`/`last_failure_at`/`last_size_bytes`/`last_error`、失敗時 `sys.exit(1)`；新增 `--prune-empty` 子命令一次清掉 6 個歷史 0-byte 目錄；驗證 0.8 MB 成功備份寫入 status JSON
+- [x] **MCP HTTP 500 修復**（MCP P0-1）：根因為 `FastAPI.mount()` 不傳遞 lifespan 給子 ASGI app，`session_manager.run()` 從未啟動；改 `create_http_app()` 回傳 `(handler, lifespan_cm)` tuple，由 `web_app._lifespan` 統一驅動。重啟後 `/mcp/` initialize + tools/list 皆 200，7 工具完整列出
+- [x] **`docs/MCP_HTTP_GUIDE.md`**（Phase 10 P10-5）：curl 與 httpx 範例、Accept header 規範、7 工具表、6 類常見錯誤排查、部署注意（綁定/認證/rate limit）
+- [x] **`bio_history_search` threshold 統一**（MCP P0-3）：schema 預設 `0.5 → 0.88`、實作 fallback 改讀 `L1_COSINE_THRESHOLD`；MCP/Agent 雙端 Cache Hit Protocol 對齊
+
+---
+
+## ✅ 2026-05-19 Session 封存
+
+### WAL crash 緊急修復與穩定性建置
+
+- [x] **DB 重建**：write-mode 開啟時 C++ FatalException duplicate key `372b4182`（WAL replay 失敗，無法在 Python catch）；以 read-only EXPORT → 刪除 → 重建 schema → reimport（FK ordering：samples→history）；最終 91 samples / 15 history / 2 tools 完整還原
+- [x] **`scheduler/backup_db.py` 修復**：`EXPORT DATABASE ?` placeholder 不被 DuckDB parser 接受 → 改 f-string；同步修正 `IMPORT DATABASE` 與 restore 段 pre-backup；5/16–5/18 連續四日備份失敗根因解除
+- [x] **`scripts/17_migrate_schema_v16.py` / `scripts/18_migrate_schema_v17.py`**：`tool_artifact_lineage` VIEW 內 `t.source_hash` → `t.content_hash`（tools 表正確欄位名）
+- [x] **`server/web_app.py` `_deferred_cleanup`**：改 read-only pre-check（先查 zombie 數，只在需要時開 write 連線觸發 WAL replay），降低 WAL 損壞風險
+- [x] **launchd 自動重啟**：建立 `~/bin/hermes_webserver.sh`（APFS，ExFAT 無法執行 launchd 腳本）+ `com.hermes.webserver.plist`（`KeepAlive=true`、`ThrottleInterval=5`）；kill→restart < 6s 驗證
+- [x] **`com.hermes.backup`**：已 load 且測試成功，`20260519_0938  0.8 MB`
+
+### Code Review 審查（兩份 PROGRESS.md 待辦清單）
+
+- [x] **穩定性審查**：14 項分 P0/P1/P2/P3 記錄（資料完整性、launchd 排程未完整安裝、`/health` 擴充、WAL pre-flight、每週還原驗證）
+- [x] **MCP server 審查**：15 項分 P0/P1/P2/P3 記錄（HTTP endpoint 500 bug、工具覆蓋不完整、threshold 不一致、雙份維護、ENGRAM 未暴露）
 
 ---
 
@@ -426,11 +475,73 @@
 
 ## ⏭️ 下一步（按優先順序）
 
+### 🔥 穩定性審查待辦（2026-05-19 補登，WAL crash 事件後）
+
+**P0 — 資料完整性與穩定性**
+- [x] **歷史資料遺失復原**：盤點結果為**無遺失** — 5/15 備份僅含 1 筆 l2_convert（當時 DB 起始狀態），現行 16 筆完整；先前「30+ → 16」推測不成立
+- [x] **`backup_db.py` 既往失敗清查**：實作 `MIN_BACKUP_BYTES=100KB` size 驗證 + 失敗自動刪空目錄；`--prune-empty` 一次清掉 6 個歷史 0-byte 備份
+- [x] **`com.hermes.backup` 監控**：失敗 `sys.exit(1)` + `logs/backup_status.json`（last_success_at / last_failure_at / last_size_bytes / last_error）；健檢端點可後續接讀此檔（/health 擴充見 P1）
+- [ ] **`_deferred_cleanup` 仍開 writable**：read-only pre-check 已加，但若有 zombie 記錄仍會開 write 連線觸發 WAL replay；可改用 `ATTACH ... (READ_ONLY)` 然後另開短連線只做 UPDATE，或直接接受此風險（zombie 罕見）
+
+**P1 — 排程與監控**
+- [x] **launchd 排程完整安裝**：6 個 plist 全部 `launchctl load` 成功，現共 8 個 hermes job：
+  - `com.hermes.cleanup_l1`（每日 03:30）
+  - `com.hermes.rebuild_hnsw`（每週日 03:00）
+  - `com.hermes.scan_samples`（每 30 min interval）
+  - `com.hermes.helix_expire`（每週日 04:00；Label 已從舊 `com.bioagent.*` 改 `com.hermes.*`）
+  - `com.hermes.embedding_server`（KeepAlive，已運行 PID 7750）
+  - `com.hermes.multimodal_server`（KeepAlive，Label 已正規化；Gemma 4 26B 模型載入 ~30s）
+- [x] **embedding/multimodal server 自動重啟**：兩個 llama-server 皆已納入 launchd KeepAlive，crash 後自動拉起
+- [x] **multimodal server 啟動**：port 8080 由 launchd 接管（Gemma 4 26B + mmproj BF16）
+- [x] **`/health` 端點擴充**：新增 `embedding_server_ok` / `multimodal_server_ok` / `backup.{last_success_at, last_success_age_hours, last_size_bytes, fresh}` / `disk_free_gb`；`ok` 總判定 = DB OK + embedding OK + 備份 < 36 小時新鮮度
+
+**P2 — DB 防護加固**
+- [x] **DuckDB safe_write 全面套用**：審查 `agent.py` 全部寫入點，發現 `bio_run_spatial_eda` / `bio_run_bulk_eda` 兩處 `analysis_history UPDATE tool_id` 繞過 `safe_write`，已改走 `safe_write`（含 CHECKPOINT 刷 WAL）；`bio_execute_code` INSERT 早已合規；其餘 `con.execute` 全為 SELECT
+- [x] **WAL pre-flight check**：`config/db_utils.wal_preflight_check()` 於 `web_app._lifespan` 最早期執行 — read-only 試開 DB，失敗時自動 rename `.wal → .wal.corrupt.<ts>`，狀態寫至 `logs/wal_preflight_status.json`，並上報 `/health.wal_preflight`
+- [x] **每週 round-trip 還原測試**：`scheduler/weekly_restore_test.py` + `docs/launchd_weekly_restore_test.plist.example` + `com.hermes.weekly_restore_test`（週日 05:00）；IMPORT 最新備份至 `/tmp/bio_memory_verify.duckdb`，驗證 sample/history > 0；首次手動執行 91/16 與主庫一致；狀態寫 `logs/restore_test_status.json`
+
+**P3 — 安全性殘留**
+- [ ] M4：API key 未設定時改為啟動時早期失敗（`config/settings.py`）
+- [ ] NH4 後續驗證：Google backend 多輪 tool history 修復後尚未端對端測試
+- [ ] SQL-6 NOT NULL 補齊（待 DuckDB 升級支援有 FK 表的 SET NOT NULL）
+- [ ] SQL-7/SQL-8 UNIQUE 約束與 STRUCT/EAV 重構（migration v18+）
+
+### 🔧 MCP Server 改善待辦（2026-05-19 補登，server/bio_memory_server.py review）
+
+**P0 — 功能性 Bug**
+
+- [x] **HTTP endpoint 500 error**：根因為 FastAPI 不傳遞 lifespan 給 mount 子 app，`session_manager.run()` 未啟動；`create_http_app()` 改回傳 `(handler, lifespan_cm)`，由 `web_app._lifespan` 統一驅動。`docs/MCP_HTTP_GUIDE.md` 已建立（含 Accept header 規範與 curl/httpx 範例）
+- [ ] **工具覆蓋不完整**：MCP server 只公開 7 個工具（history/memory/register），但 `agent.py BIO_TOOLS` 有 `bio_run_spatial_eda` / `bio_run_bulk_eda` / `bio_execute_code` / `bio_tool_health` / `bio_check_l2_sufficiency` 等核心分析工具未透過 MCP 暴露；外部客戶端（Claude Code CLI、curl）無法觸發分析。需評估是否補齊或記錄此限制為「Agent-only 工具」
+- [x] **`bio_history_search` threshold 不一致**：schema 預設 0.5 → 0.88，實作 fallback 改用 `L1_COSINE_THRESHOLD`，MCP/Agent 雙端對齊
+
+**P1 — 健壯性**
+
+- [ ] **`call_tool` 例外吞掉 traceback**：第 503–505 行 `logger.exception` 寫到 log 但回傳給客戶端只有 `[ERROR] {name} 執行失敗：{exc}`；建議區分使用者錯誤（ValueError → 4xx 風格訊息）與系統錯誤（內部 exception → 通用訊息 + log correlation ID）
+- [ ] **`bio_register_sample` 未走 `cleanup_stale_runs`**：MCP server 本身為長駐程序（HTTP mode），啟動時未呼叫 `cleanup_stale_runs(con)`，違反 CLAUDE.md §6「Agent 啟動時清理殭屍狀態」；應在 stdio/http 啟動入口加入
+- [ ] **HTTP mode 缺認證**：`MCP_BIND_HOST=127.0.0.1` 已修，但若部署到 Linux 伺服器需開放區網時，無 token/API key 驗證機制；建議加 `MCP_AUTH_TOKEN` env，缺則拒絕（與 web_app session_id 機制獨立）
+- [ ] **無 rate limiting**：`bio_history_search` / `bio_memory_query` 每次都打 embedding server，無速率限制；惡意客戶端可耗盡 llama-server 資源
+- [x] **`bio_memory_write` sample_id 格式驗證**：模組級 `_SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")` 與 `bio_register_sample` 對齊；格式不符直接 raise ValueError
+
+**P2 — 可觀測性與測試**
+
+- [ ] **HTTP transport 缺乏監控指標**：`engram_search_metrics` 表只記 ENGRAM 搜尋；MCP server 工具呼叫頻率/延遲/錯誤率無記錄；建議加 `mcp_tool_metrics` 表或 Prometheus endpoint
+- [ ] **`test_phase10.py` 只測 mount 與 initialize**：未測 7 個 tool 的實際呼叫端對端（讀真實 DB → 回傳結果）；HTTP endpoint 500 bug 就是因為缺此測試
+- [ ] **`fmt_table` 對長 summary 不截斷**：`bio_history_lookup` 把 result_path 完整寫出，遇到 ExFAT 含空格路徑會破壞 Markdown 表格欄位對齊
+- [ ] **`bio_history_timeline` SQL 寫死 `LIMIT 50`**：無 `limit` 參數可調；當 `n_days` 大時可能漏掉早期記錄
+
+**P3 — 介面一致性**
+
+- [ ] **MCP / Agent 工具命名重複**：MCP server 的 `bio_history_*` 與 agent.py 的 `bio_history_*` 是兩套獨立實作（agent.py 不透過 MCP 呼叫，直接呼叫 Python 函數）；長期應統一為「agent.py 透過 MCP HTTP 呼叫 server/bio_memory_server.py」，避免雙份維護
+- [ ] **回傳格式不一致**：`bio_history_lookup` 回 Markdown 表格、`bio_history_check` 回 YAML-like 純文字、`bio_history_search` 回編號列表；建議統一為結構化 JSON（MCP 規範允許 TextContent 包 JSON 字串，由客戶端解析）
+- [ ] **缺 `bio_artifact_search` MCP 工具**：ENGRAM 模組 5 個函數（register/get/compare/summary/search）皆未透過 MCP 暴露；外部客戶端無法存取分析產出記憶
+- [ ] **`.mcp.json` 路徑含空格**：`/Volumes/NO NAME/bio_DB/...` 在某些 MCP 客戶端可能解析錯誤；Linux 遷移時路徑改為 `/mnt/space4/bio_lab_db/`，記得同步更新
+
+### 既有待辦（不變）
+
 1. 端對端測試：Claude API 切換驗證（填入 `ANTHROPIC_API_KEY`）
-3. launchd 排程安裝（`launchctl load` × 5，plist 範本在 `docs/`）
-4. Linux 伺服器遷移（見 plan_zh.md checklist）
-5. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
-6. Telegram Bot token 申請（Phase 0 正式啟用）
+2. Linux 伺服器遷移（見 plan_zh.md checklist）
+3. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
+4. Telegram Bot token 申請（Phase 0 正式啟用）
 
 ---
 
@@ -621,6 +732,7 @@
 | 2026-05-18 | ENGRAM 模組完成 | analysis_artifacts + HNSW 索引、5 個 ENGRAM-Core 函數、23/23 tests、bulk_eda 自動登記、8 個 API 路由、engram.html Web UI |
 | 2026-05-18 | Phase 9-SQL + 9A 完成 | schema_migrations (v10)、ENUM 型別 (v11)、file_path 相對化 (v12)、composite index + UNIQUE (v13)、blob 拆表 (v14)、search_metrics (v15)；Hybrid RRF 搜尋；194/194 PASSED |
 | 2026-05-19 | Phase 10 完成 | MCP HTTP Transport：`bio_memory_server.py` 加 `streamable-http`（stateless）、`create_http_app()` 掛載至 `web_app.py /mcp`、`start_bioagent.sh` venv 路徑修正、15/15 tests；228/228 全套通過 |
+| 2026-05-19 | WAL crash 修復 + 穩定性建置 | DB write-mode FatalException 重建（91/15 還原）、`backup_db.py` placeholder bug 修復、`com.hermes.webserver` 自動重啟、`_deferred_cleanup` read-only pre-check、穩定性 14 項 + MCP 15 項待辦清單建立 |
 
 ---
 

@@ -125,6 +125,59 @@ def cleanup_stale_runs(con: duckdb.DuckDBPyConnection, hours: int = 24) -> int:
     return cleaned
 
 
+def wal_preflight_check(db_path: "Path | str | None" = None) -> dict:
+    """以 read-only 模式試開 DB，若 WAL replay 失敗就把 .wal rename 為 .wal.corrupt.<ts>。
+
+    用途：在 server / agent 啟動最早期呼叫，避免 write-mode 開啟時觸發 DuckDB
+    C++ FatalException 直接 abort 整個 process（無法在 Python 層 catch）。
+
+    狀態 JSON 寫至 logs/wal_preflight_status.json，供 /health 上報。
+
+    Returns:
+        dict: {"ok": bool, "wal_existed": bool, "renamed_to": str|None, "error": str|None}
+    """
+    import json as _json
+    from datetime import datetime as _dt
+
+    path = Path(db_path) if db_path else DUCKDB_PATH
+    wal = path.with_suffix(path.suffix + ".wal")
+    status_path = path.parent / "logs" / "wal_preflight_status.json"
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+
+    result: dict = {
+        "checked_at": _dt.now().isoformat(timespec="seconds"),
+        "db_path": str(path),
+        "wal_existed": wal.exists(),
+        "wal_size_bytes": wal.stat().st_size if wal.exists() else 0,
+        "renamed_to": None,
+        "ok": False,
+        "error": None,
+    }
+
+    if not path.exists():
+        result["error"] = "db file does not exist"
+        status_path.write_text(_json.dumps(result, indent=2))
+        return result
+
+    try:
+        with duckdb.connect(str(path), read_only=True) as _ro:
+            _ro.execute("SELECT 1").fetchone()
+        result["ok"] = True
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        if wal.exists():
+            ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+            corrupt = wal.with_suffix(f".wal.corrupt.{ts}")
+            try:
+                wal.rename(corrupt)
+                result["renamed_to"] = str(corrupt)
+            except OSError as rename_exc:
+                result["error"] += f" | rename failed: {rename_exc}"
+
+    status_path.write_text(_json.dumps(result, indent=2))
+    return result
+
+
 def db_health_check(con: duckdb.DuckDBPyConnection | None = None) -> dict:
     """
     快速健康檢查，回傳各表筆數與殭屍狀態統計。

@@ -32,7 +32,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 import sys
+import time
+import uuid
+from collections import deque
 from pathlib import Path
 
 from mcp.server import Server
@@ -45,6 +50,27 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 logger = logging.getLogger(__name__)
 
 server = Server("bio-memory")
+
+# sample_id 驗證規則，與 _handle_bio_register_sample 對齊
+_SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")
+
+# Rate limit：每 IP/process token bucket。embedding/search 路徑特別保護 llama-server
+_RATE_LIMIT_WINDOW_SEC = 60.0
+_RATE_LIMIT_MAX_CALLS = int(os.environ.get("MCP_RATE_LIMIT_PER_MIN", "30"))
+_rate_buckets: dict[str, deque[float]] = {}
+
+
+def _rate_limit_check(key: str) -> bool:
+    """Return True if request allowed; False if rate limit exceeded."""
+    now = time.monotonic()
+    bucket = _rate_buckets.setdefault(key, deque())
+    cutoff = now - _RATE_LIMIT_WINDOW_SEC
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+    if len(bucket) >= _RATE_LIMIT_MAX_CALLS:
+        return False
+    bucket.append(now)
+    return True
 
 
 # ── Tool 定義 ────────────────────────────────────────────────────────────────
@@ -140,8 +166,8 @@ async def list_tools() -> list[types.Tool]:
                     },
                     "threshold": {
                         "type": "number",
-                        "description": "相似度門檻 0~1（預設 0.5）。低於此值不回傳。",
-                        "default": 0.5,
+                        "description": "相似度門檻 0~1（預設 0.88，對齊 agent.py Cache Hit Protocol L1_COSINE_THRESHOLD）。",
+                        "default": 0.88,
                     },
                     "sample_id": {
                         "type": "string",
@@ -381,10 +407,11 @@ async def _handle_bio_history_check(args: dict) -> str:
 
 async def _handle_bio_history_search(args: dict) -> str:
     from analysis.l1_cache import semantic_search
+    from config.settings import L1_COSINE_THRESHOLD
 
     query = args["query"]
     n = int(args.get("n", 5))
-    threshold = float(args.get("threshold", 0.5))
+    threshold = float(args.get("threshold", L1_COSINE_THRESHOLD))
     sample_id = args.get("sample_id")
 
     results = semantic_search(query, n=n, threshold=threshold, sample_id=sample_id)
@@ -427,8 +454,14 @@ async def _handle_bio_memory_query(args: dict) -> str:
 async def _handle_bio_memory_write(args: dict) -> str:
     from analysis.l1_cache import write_to_l1_cache
 
+    sample_id = args["sample_id"]
+    if not _SAMPLE_ID_RE.match(sample_id):
+        raise ValueError(
+            f"sample_id {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號（對齊 bio_register_sample）"
+        )
+
     rec_id = write_to_l1_cache(
-        sample_id=args["sample_id"],
+        sample_id=sample_id,
         query_text=args["query_text"],
         report_text=args["report_text"],
         summary=args["summary"],
@@ -510,12 +543,21 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
 
 def create_http_app():
-    """回傳 Starlette ASGI app，可掛載至 FastAPI：app.mount('/mcp', create_http_app())。
+    """回傳 (asgi_handler, lifespan_cm)，供父 ASGI app 掛載並驅動 lifespan。
 
     session_manager 以 stateless=True 運行，每次請求獨立，不需要 session affinity。
+
+    用法（FastAPI）：
+        mcp_handler, mcp_lifespan = create_http_app()
+        # FastAPI 不會傳遞 lifespan 到 mount 的子 app，必須在父 lifespan 中驅動
+        @contextlib.asynccontextmanager
+        async def app_lifespan(_):
+            async with mcp_lifespan():
+                yield
+        app = FastAPI(lifespan=app_lifespan)
+        app.mount("/mcp", mcp_handler)
     """
     import contextlib
-    from starlette.applications import Starlette
 
     session_manager = StreamableHTTPSessionManager(
         app=server,
@@ -523,23 +565,25 @@ def create_http_app():
     )
 
     @contextlib.asynccontextmanager
-    async def _lifespan(_app: Starlette):
+    async def _mcp_lifespan():
         async with session_manager.run():
             yield
 
-    # session_manager.handle_request 本身就是 ASGI callable (scope, receive, send)
-    # 用 Starlette lifespan 包裝確保 session_manager.run() 正確啟動/關閉
-    class _MCPApp:
-        def __init__(self) -> None:
-            self._starlette = Starlette(lifespan=_lifespan)
+    async def _asgi_handler(scope, receive, send):
+        # lifespan 由父 app 透過 _mcp_lifespan 驅動，這裡只處理 HTTP 請求
+        if scope["type"] == "lifespan":
+            # 父 app 已在自己的 lifespan 中驅動 _mcp_lifespan，子 app 收到時直接回 ack
+            while True:
+                message = await receive()
+                if message["type"] == "lifespan.startup":
+                    await send({"type": "lifespan.startup.complete"})
+                elif message["type"] == "lifespan.shutdown":
+                    await send({"type": "lifespan.shutdown.complete"})
+                    return
+        else:
+            await session_manager.handle_request(scope, receive, send)
 
-        async def __call__(self, scope, receive, send):
-            if scope["type"] == "lifespan":
-                await self._starlette(scope, receive, send)
-            else:
-                await session_manager.handle_request(scope, receive, send)
-
-    return _MCPApp()
+    return _asgi_handler, _mcp_lifespan
 
 
 # ── 啟動 ─────────────────────────────────────────────────────────────────────
@@ -555,10 +599,22 @@ async def _run_stdio() -> None:
 
 
 def _run_http(port: int) -> None:
+    import contextlib
     import os
     import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
     host = os.environ.get("MCP_BIND_HOST", "127.0.0.1")
-    uvicorn.run(create_http_app(), host=host, port=port)
+    handler, mcp_lifespan = create_http_app()
+
+    @contextlib.asynccontextmanager
+    async def _lifespan(_app: Starlette):
+        async with mcp_lifespan():
+            yield
+
+    app = Starlette(routes=[Mount("/", app=handler)], lifespan=_lifespan)
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

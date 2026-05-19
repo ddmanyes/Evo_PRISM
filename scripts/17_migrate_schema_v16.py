@@ -285,7 +285,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 t.tool_id,
                 t.tool_name,
                 t.version         AS tool_version,
-                t.source_hash     AS tool_source_hash,
+                t.content_hash    AS tool_source_hash,
                 t.revision_count
             FROM   analysis_artifacts  aa
             JOIN   analysis_history    ah USING (analysis_id)

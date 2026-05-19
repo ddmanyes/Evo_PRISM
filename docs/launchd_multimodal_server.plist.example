@@ -9,8 +9,8 @@
 
   安裝：
     cp docs/launchd_multimodal_server.plist.example \
-       ~/Library/LaunchAgents/com.bioagent.multimodal_server.plist
-    launchctl load ~/Library/LaunchAgents/com.bioagent.multimodal_server.plist
+       ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
+    launchctl load ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
 
   手動啟動（不需 launchd）：
     ~/llama.cpp/build/bin/llama-server \
@@ -25,7 +25,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.bioagent.multimodal_server</string>
+    <string>com.hermes.multimodal_server</string>
 
     <key>ProgramArguments</key>
     <array>
