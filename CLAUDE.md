@@ -450,6 +450,8 @@ memory_recent(id UUID, sample_id, query_text, report_text,
 | [docs/L3_DATA_INGEST_GUIDE.md](docs/L3_DATA_INGEST_GUIDE.md) | 新增樣本到 L3 的操作指南 |
 | [docs/TEST_DATABASE_INDEX.md](docs/TEST_DATABASE_INDEX.md) | 測試資料庫總覽（數據位置、大小） |
 | [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md) | 跨專案數據與程式碼整合決策指南 |
+| [docs/MCP_JSON_SETUP.md](docs/MCP_JSON_SETUP.md) | `.mcp.json` 設定指南（env vars、安全建議、路徑處理） |
+| [docs/MCP_HTTP_GUIDE.md](docs/MCP_HTTP_GUIDE.md) | MCP HTTP transport 使用說明（curl 範例、Accept header、工具表） |
 | [docs/launchd_backup.plist.example](docs/launchd_backup.plist.example) | macOS 每日備份排程範本 |
 | [docs/launchd_scan_samples.plist.example](docs/launchd_scan_samples.plist.example) | macOS 每 30 分鐘掃描新樣本排程範本 |
 | [docs/launchd_helix_expire.plist.example](docs/launchd_helix_expire.plist.example) | macOS 每週日 04:00 HELIX snapshot 遺忘曲線降採樣排程範本 |

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "bio-memory": {
+      "command": "/ABSOLUTE/PATH/TO/.venvs/hermes-bio-memory/bin/python",
+      "args": ["/ABSOLUTE/PATH/TO/bio_DB/server/bio_memory_server.py"],
+      "env": {
+        "PYTHONPATH": "/ABSOLUTE/PATH/TO/bio_DB",
+        "MCP_AUTH_TOKEN": "",
+        "MCP_BIND_HOST": "127.0.0.1",
+        "MCP_RATE_LIMIT_PER_MIN": "30",
+        "MCP_ENABLE_DANGEROUS_TOOLS": "false"
+      }
+    }
+  }
+}

@@ -127,12 +127,26 @@ def run(coro):
 
 
 class TestListTools:
-    def test_tool_count(self):
+    def test_tool_count_default_hides_dangerous(self, monkeypatch):
+        """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（13 個）。"""
+        monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from server.bio_memory_server import list_tools
         tools = run(list_tools())
-        assert len(tools) == 9
+        assert len(tools) == 13
+        names = {t.name for t in tools}
+        assert "bio_execute_code" not in names
 
-    def test_tool_names(self):
+    def test_tool_count_with_dangerous_enabled(self, monkeypatch):
+        """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 14 個工具。"""
+        monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
+        from server.bio_memory_server import list_tools
+        tools = run(list_tools())
+        assert len(tools) == 14
+        names = {t.name for t in tools}
+        assert "bio_execute_code" in names
+
+    def test_tool_names(self, monkeypatch):
+        monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         from server.bio_memory_server import list_tools
         tools = run(list_tools())
         names = {t.name for t in tools}
@@ -141,6 +155,9 @@ class TestListTools:
             "bio_history_search", "bio_memory_query", "bio_memory_write",
             "bio_register_sample",
             "bio_artifact_search", "bio_artifact_summary",
+            "bio_check_l2_sufficiency",
+            "bio_run_spatial_eda", "bio_run_bulk_eda",
+            "bio_execute_code", "bio_tool_health",
         }
         assert names == expected
 
@@ -225,6 +242,212 @@ class TestBioHistoryTimeline:
             from server.bio_memory_server import _handle_bio_history_timeline
             result = run(_handle_bio_history_timeline({"n_days": 0}))
         assert "無分析記錄" in result or "0 天" in result
+
+
+# ── format=json 結構化回傳（P3 L612）──────────────────────────────────────────
+
+
+class TestFormatJson:
+    """3 個唯讀 history 工具支援 format=json，輸出可由 json.loads 解析的 string。"""
+
+    def test_history_check_json_exists(self, tmp_path):
+        import json
+        db = _make_main_db(tmp_path)
+        from server.bio_memory_server import _handle_bio_history_check
+        with patch("config.settings.DUCKDB_PATH", db):
+            result = run(_handle_bio_history_check({
+                "sample_id": "test_s1",
+                "analysis_type": "spatial_eda",
+                "format": "json",
+            }))
+        payload = json.loads(result)
+        assert payload["exists"] is True
+        assert payload["sample_id"] == "test_s1"
+        assert payload["analysis_type"] == "spatial_eda"
+        assert "analysis_id" in payload
+        assert "completed_at" in payload
+
+    def test_history_check_json_not_exists(self, tmp_path):
+        import json
+        db = _make_main_db(tmp_path)
+        from server.bio_memory_server import _handle_bio_history_check
+        with patch("config.settings.DUCKDB_PATH", db):
+            result = run(_handle_bio_history_check({
+                "sample_id": "test_s1",
+                "analysis_type": "bulk_eda",
+                "format": "json",
+            }))
+        payload = json.loads(result)
+        assert payload["exists"] is False
+        assert payload["sample_id"] == "test_s1"
+
+    def test_history_lookup_json(self, tmp_path, monkeypatch):
+        import json
+        db = _make_main_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        monkeypatch.setattr("analysis.history_query.DUCKDB_PATH", db)
+        from server.bio_memory_server import _handle_bio_history_lookup
+        result = run(_handle_bio_history_lookup({"sample_id": "test_s1", "format": "json"}))
+        payload = json.loads(result)
+        assert payload["count"] >= 1
+        assert any(r["sample_id"] == "test_s1" for r in payload["records"])
+        # 結構化欄位皆完整（不被 _fmt_table 的 80 字截斷影響）
+        rec = payload["records"][0]
+        assert set(rec.keys()) == {
+            "analysis_id", "sample_id", "analysis_type", "status",
+            "completed_at", "summary", "result_path",
+        }
+
+    def test_history_lookup_json_empty(self, tmp_path, monkeypatch):
+        import json
+        db = _make_main_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        monkeypatch.setattr("analysis.history_query.DUCKDB_PATH", db)
+        from server.bio_memory_server import _handle_bio_history_lookup
+        result = run(_handle_bio_history_lookup({"sample_id": "no_such", "format": "json"}))
+        payload = json.loads(result)
+        assert payload["count"] == 0
+        assert payload["records"] == []
+
+    def test_history_timeline_json(self, tmp_path):
+        import json
+        db = _make_main_db(tmp_path)
+        from server.bio_memory_server import _handle_bio_history_timeline
+        with patch("config.settings.DUCKDB_PATH", db):
+            result = run(_handle_bio_history_timeline({"n_days": 30, "format": "json"}))
+        payload = json.loads(result)
+        assert "count" in payload
+        assert "n_days" in payload
+        assert payload["n_days"] == 30
+        assert isinstance(payload["records"], list)
+
+    def test_unknown_format_falls_back_to_text(self, tmp_path):
+        """非 'json' 值（含 'yaml'、空字串）回 text 預設行為，向後相容。"""
+        db = _make_main_db(tmp_path)
+        from server.bio_memory_server import _handle_bio_history_check
+        with patch("config.settings.DUCKDB_PATH", db):
+            r1 = run(_handle_bio_history_check({
+                "sample_id": "test_s1",
+                "analysis_type": "spatial_eda",
+                "format": "yaml",  # 未支援，應 fallback text
+            }))
+        assert "exists: true" in r1
+        # 不應為合法 JSON
+        import json
+        try:
+            json.loads(r1)
+            assert False, "yaml fallback 應回 text，但回傳了合法 JSON"
+        except json.JSONDecodeError:
+            pass
+
+    def test_text_format_unchanged_when_omitted(self, tmp_path):
+        """未傳 format 時行為與舊版完全相同（向後相容）。"""
+        db = _make_main_db(tmp_path)
+        from server.bio_memory_server import _handle_bio_history_check
+        with patch("config.settings.DUCKDB_PATH", db):
+            r = run(_handle_bio_history_check({
+                "sample_id": "test_s1",
+                "analysis_type": "spatial_eda",
+            }))
+        assert "exists: true" in r
+        assert r.startswith("exists:")
+
+
+# ── bio_execute_code timeout clamp（P3 review M2）─────────────────────────────
+
+
+class TestExecuteCodeTimeoutClamp:
+    """`_handle_bio_execute_code` 必須將 timeout clamp 至 [1, 300]；
+    非法字串/None 等 fallback 為 60。"""
+
+    def _capture_timeout(self, args_passed: list):
+        """Returns a fake _exec_bio_execute_code that records args and returns OK."""
+        def _fake(args):
+            args_passed.append(args)
+            return "ok"
+        return _fake
+
+    def test_too_large_clamped_to_300(self):
+        from server import bio_memory_server as srv
+        captured = []
+        with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
+            run(srv._handle_bio_execute_code({
+                "code": "print(1)", "description": "x", "timeout": 10000,
+            }))
+        assert captured[0]["timeout"] == 300
+
+    def test_too_small_clamped_to_1(self):
+        from server import bio_memory_server as srv
+        captured = []
+        with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
+            run(srv._handle_bio_execute_code({
+                "code": "print(1)", "description": "x", "timeout": 0,
+            }))
+        assert captured[0]["timeout"] == 1
+
+    def test_invalid_string_falls_back_to_60(self):
+        from server import bio_memory_server as srv
+        captured = []
+        with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
+            run(srv._handle_bio_execute_code({
+                "code": "print(1)", "description": "x", "timeout": "abc",
+            }))
+        assert captured[0]["timeout"] == 60
+
+    def test_normal_value_passed_through(self):
+        from server import bio_memory_server as srv
+        captured = []
+        with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
+            run(srv._handle_bio_execute_code({
+                "code": "print(1)", "description": "x", "timeout": 120,
+            }))
+        assert captured[0]["timeout"] == 120
+
+    def test_omitted_defaults_to_60(self):
+        from server import bio_memory_server as srv
+        captured = []
+        with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
+            run(srv._handle_bio_execute_code({
+                "code": "print(1)", "description": "x",
+            }))
+        assert captured[0]["timeout"] == 60
+
+
+# ── Dangerous tool gate（P3 review M1）────────────────────────────────────────
+
+
+class TestDangerousToolGate:
+    """`bio_execute_code` 預設不被 list_tools 暴露、call_tool 也擋下。"""
+
+    def test_default_hidden_from_call_tool(self, monkeypatch):
+        from server.bio_memory_server import call_tool
+        monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
+        result = run(call_tool("bio_execute_code", {"code": "1", "description": "x"}))
+        assert len(result) == 1
+        text = result[0].text
+        assert "[ERROR]" in text
+        assert "高權限工具" in text or "MCP_ENABLE_DANGEROUS_TOOLS" in text
+
+    def test_enabled_passes_dangerous_gate(self, monkeypatch):
+        """env 啟用後 dangerous gate 不再擋；驗證 handler 確實被呼叫且回值正確傳出。"""
+        from server.bio_memory_server import call_tool
+        monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
+        with patch("server.agent._exec_bio_execute_code", return_value="ok"):
+            result = run(call_tool("bio_execute_code", {"code": "1", "description": "x"}))
+        text = result[0].text
+        assert "MCP_ENABLE_DANGEROUS_TOOLS" not in text
+        assert text == "ok", f"handler 結果未透傳，實際 {text!r}"
+
+    def test_env_value_case_insensitive(self, monkeypatch):
+        from server.bio_memory_server import _dangerous_tools_enabled
+        # truthy：常見三件套 + 大小寫變體
+        for val in ("true", "TRUE", "True", "1", "yes", "YES", "Yes"):
+            monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", val)
+            assert _dangerous_tools_enabled() is True, f"Failed for {val!r}"
+        # falsy：明確 falsy 字串 + 大小寫變體 + 空字串
+        for val in ("false", "FALSE", "False", "no", "NO", "No", "0", "", "off", "OFF"):
+            monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", val)
+            assert _dangerous_tools_enabled() is False, f"Failed for {val!r}"
 
 
 # ── bio_register_sample ───────────────────────────────────────────────────────
