@@ -954,10 +954,12 @@ def _exec_bio_run_spatial_eda(args: dict) -> str:
         # Track which tool version produced this result
         try:
             from analysis.tool_registry import get_active_tool_id
+            from config.db_utils import safe_write
             with duckdb.connect(str(DUCKDB_PATH)) as _con:
                 _tool_id = get_active_tool_id(_con, "bio_run_spatial_eda")
                 if _tool_id and analysis_id:
-                    _con.execute(
+                    safe_write(
+                        _con,
                         "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
                         [_tool_id, analysis_id],
                     )
@@ -1023,10 +1025,12 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
         # Track which tool version produced this result
         try:
             from analysis.tool_registry import get_active_tool_id
+            from config.db_utils import safe_write
             with duckdb.connect(str(DUCKDB_PATH)) as _con:
                 _tool_id = get_active_tool_id(_con, "bio_run_bulk_eda")
                 if _tool_id and analysis_id:
-                    _con.execute(
+                    safe_write(
+                        _con,
                         "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
                         [_tool_id, analysis_id],
                     )

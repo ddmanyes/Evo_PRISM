@@ -43,8 +43,35 @@ from config.db_utils import db_health_check
 logger = logging.getLogger(__name__)
 
 
+# MCP HTTP transport — 必須在 FastAPI 建立前就建立 handler，
+# 因為 FastAPI 不會把 lifespan 傳遞給 mount 的子 ASGI app，
+# 故 mcp_lifespan 需在父 lifespan 中驅動 session_manager。
+_mcp_handler = None
+_mcp_lifespan_cm = None
+try:
+    from server.bio_memory_server import create_http_app as _create_mcp_app
+    _mcp_handler, _mcp_lifespan_cm = _create_mcp_app()
+except Exception as _e:
+    logger.warning("MCP HTTP create_http_app failed (non-fatal): %s", _e)
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # WAL pre-flight：read-only 試開 DB，若損壞自動 rename .wal → .wal.corrupt.<ts>
+    # 避免後續 write 連線觸發 DuckDB C++ FatalException（無法 Python catch）
+    try:
+        from config.db_utils import wal_preflight_check
+        _pf = wal_preflight_check()
+        if _pf["ok"]:
+            logger.info("WAL preflight ok (wal_existed=%s)", _pf["wal_existed"])
+        else:
+            logger.warning(
+                "WAL preflight FAIL: %s | renamed_to=%s",
+                _pf["error"], _pf["renamed_to"],
+            )
+    except Exception as _e:
+        logger.exception("WAL preflight raised (non-fatal): %s", _e)
+
     # 殭屍 running 記錄由背景 task 延遲清理（60 秒後）。
     # 直接 UPDATE 不做 CHECKPOINT，避免損壞連線狀態觸發 DuckDB C++ abort。
     async def _deferred_cleanup():
@@ -52,12 +79,15 @@ async def _lifespan(_app: FastAPI):
         try:
             import duckdb as _duckdb
             from config.settings import DUCKDB_PATH as _DB
-            with _duckdb.connect(str(_DB)) as _con:
-                _con.execute("LOAD vss")
-                n = _con.execute(
+            # Read-only pre-check: avoids opening write connection (and WAL replay)
+            # unless there are actually zombie records to fix.
+            with _duckdb.connect(str(_DB), read_only=True) as _ro:
+                n = _ro.execute(
                     "SELECT COUNT(*) FROM analysis_history WHERE status='running'"
                 ).fetchone()[0]
-                if n:
+            if n:
+                with _duckdb.connect(str(_DB)) as _con:
+                    _con.execute("LOAD vss")
                     _con.execute(
                         "UPDATE analysis_history SET status='stale' WHERE status='running'"
                     )
@@ -69,9 +99,14 @@ async def _lifespan(_app: FastAPI):
         while True:
             await asyncio.sleep(3600)
             _cleanup_old_sessions()
+
     cleanup_task = asyncio.create_task(_deferred_cleanup())
     session_task = asyncio.create_task(_cleanup_loop())
-    yield
+
+    # 驅動 MCP session_manager.run() — 否則 /mcp 任何請求會 500
+    async with (_mcp_lifespan_cm() if _mcp_lifespan_cm else contextlib.nullcontext()):
+        yield
+
     cleanup_task.cancel()
     session_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -91,12 +126,12 @@ app.add_middleware(
 )
 
 # MCP HTTP transport — 掛載於 /mcp，供外部客戶端直接呼叫 MCP 工具
-try:
-    from server.bio_memory_server import create_http_app as _create_mcp_app
-    app.mount("/mcp", _create_mcp_app())
+# handler 與 lifespan 在檔案上方已建立，這裡只做 mount
+if _mcp_handler is not None:
+    app.mount("/mcp", _mcp_handler)
     logger.info("MCP HTTP transport mounted at /mcp")
-except Exception as _e:
-    logger.warning("MCP HTTP mount failed (non-fatal): %s", _e)
+else:
+    logger.warning("MCP HTTP mount skipped (handler not available)")
 
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
@@ -277,13 +312,91 @@ async def report_page(analysis_id: str):
 
 # ── 路由：API ─────────────────────────────────────────────────────────────────
 
+def _check_llama_server(port: int, timeout: float = 1.5) -> bool:
+    """探活 llama-server，回 True 表示 /health 200。"""
+    try:
+        import httpx
+        r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=timeout)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _read_backup_status() -> dict:
+    """讀 logs/backup_status.json；若不存在/壞檔回 {}。"""
+    p = Path(__file__).parent.parent / "logs" / "backup_status.json"
+    if not p.exists():
+        return {}
+    try:
+        import json as _json
+        data = _json.loads(p.read_text())
+        if data.get("last_success_at"):
+            try:
+                last = datetime.fromisoformat(data["last_success_at"])
+                age_hours = (datetime.now() - last).total_seconds() / 3600
+                data["last_success_age_hours"] = round(age_hours, 2)
+            except (ValueError, TypeError):
+                data["last_success_age_hours"] = None
+        return data
+    except Exception:
+        return {}
+
+
+def _disk_free_gb(path: Path) -> float | None:
+    try:
+        import shutil as _sh
+        return round(_sh.disk_usage(path).free / 1024**3, 2)
+    except Exception:
+        return None
+
+
 @app.get("/health")
 async def health():
+    backup = _read_backup_status()
+    embedding_ok = _check_llama_server(8081)
+    multimodal_ok = _check_llama_server(8080)
+    disk_free = _disk_free_gb(BIO_DB_ROOT)
+    age_h = backup.get("last_success_age_hours")
+    # 健康準則：DB OK + embedding OK + 最近 36 小時內有成功備份
     try:
         stats = db_health_check()
-        return {"ok": True, "db": stats}
+        db_ok = True
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        stats = {"error": str(e)}
+        db_ok = False
+    backup_fresh = age_h is not None and age_h < 36
+    overall = db_ok and embedding_ok and backup_fresh
+    # WAL pre-flight status (written at lifespan startup)
+    wal_status: dict = {}
+    try:
+        import json as _json
+        _wp = Path(__file__).parent.parent / "logs" / "wal_preflight_status.json"
+        if _wp.exists():
+            wal_status = _json.loads(_wp.read_text())
+    except Exception:
+        wal_status = {}
+
+    return {
+        "ok": overall,
+        "db": stats,
+        "embedding_server_ok": embedding_ok,
+        "multimodal_server_ok": multimodal_ok,
+        "backup": {
+            "last_success_at": backup.get("last_success_at"),
+            "last_success_age_hours": age_h,
+            "last_size_bytes": backup.get("last_size_bytes"),
+            "last_error": backup.get("last_error"),
+            "fresh": backup_fresh,
+        },
+        "wal_preflight": {
+            "checked_at": wal_status.get("checked_at"),
+            "ok": wal_status.get("ok"),
+            "wal_existed": wal_status.get("wal_existed"),
+            "renamed_to": wal_status.get("renamed_to"),
+            "error": wal_status.get("error"),
+        },
+        "disk_free_gb": disk_free,
+    }
 
 
 @app.get("/api/backend")
