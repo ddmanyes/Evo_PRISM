@@ -72,6 +72,15 @@ async def _lifespan(_app: FastAPI):
     except Exception as _e:
         logger.exception("WAL preflight raised (non-fatal): %s", _e)
 
+    # M4: API key 早期警告 — backend 非 local 但 key 缺，啟動就 log warning
+    # 此處只 warn 不 raise，允許本機 local-only 部署
+    try:
+        from config.settings import validate_inference_backend, INFERENCE_BACKEND
+        validate_inference_backend()
+        logger.info("inference backend ok: %s", INFERENCE_BACKEND)
+    except RuntimeError as _e:
+        logger.warning("inference backend startup check FAIL: %s", _e)
+
     # 殭屍 running 記錄由背景 task 延遲清理（60 秒後）。
     # 直接 UPDATE 不做 CHECKPOINT，避免損壞連線狀態觸發 DuckDB C++ abort。
     async def _deferred_cleanup():

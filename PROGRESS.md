@@ -7,10 +7,21 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清 + 安全性 M4 完成
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：911f130
+**commit**：（待回填）
+
+---
+
+## ✅ 2026-05-19 Session 安全性 M4 完成
+
+- [x] **`config/settings.validate_inference_backend(backend=None)`**：新增 helper，`backend` 為 `claude`/`google` 但對應 API key 為空字串時 raise `RuntimeError`；`backend` 為 None 時讀 env；大小寫不敏感
+- [x] **`server.agent._get_claude_client` / `_get_google_client` 接入驗證**：在 SDK client 建立前呼叫 `validate_inference_backend("claude"/"google")`，缺 key 立即 raise，不讓 SDK 收到空字串造成延遲到第一次呼叫才出現 401
+- [x] **`server.web_app._lifespan` 早期警告**：啟動時呼叫 `validate_inference_backend()`，僅 `logger.warning`（不 raise）讓本機 local-only 部署仍可啟動；缺 key 部署立即在 startup log 出現提示
+- [x] **`tests/test_validate_inference_backend.py`**：新檔 10 tests — `TestValidateInferenceBackend` 8 個（local 過 / claude 缺 key 炸 / claude 有 key 過 / google 缺 key 炸 / google 有 key 過 / env 解析 / explicit 覆蓋 env / case-insensitive）+ `TestAgentClientFactoryFailFast` 2 個（claude / google client factory raise）
+- [x] **測試隔離 helper**：`tests/test_phase10.py` 新增 `_patch_db_path(monkeypatch, db)`，同步 patch `config.settings.DUCKDB_PATH` 與 `analysis.history_query.DUCKDB_PATH`（解決 import 順序後 module-level binding 仍指真 DB 的問題）；10 個 callsite 改用此 helper
+- [x] **驗證**：M4 + phase4 + phase10 共 58/58 PASS
 
 ---
 
@@ -535,7 +546,7 @@
 - [x] **每週 round-trip 還原測試**：`scheduler/weekly_restore_test.py` + `docs/launchd_weekly_restore_test.plist.example` + `com.hermes.weekly_restore_test`（週日 05:00）；IMPORT 最新備份至 `/tmp/bio_memory_verify.duckdb`，驗證 sample/history > 0；首次手動執行 91/16 與主庫一致；狀態寫 `logs/restore_test_status.json`
 
 **P3 — 安全性殘留**
-- [ ] M4：API key 未設定時改為啟動時早期失敗（`config/settings.py`）
+- [x] M4：API key 未設定時改為啟動時早期失敗（`config.settings.validate_inference_backend()` + agent client factory + web_app lifespan early-warn；10 tests 覆蓋）
 - [ ] NH4 後續驗證：Google backend 多輪 tool history 修復後尚未端對端測試
 - [ ] SQL-6 NOT NULL 補齊（待 DuckDB 升級支援有 FK 表的 SET NOT NULL）
 - [ ] SQL-7/SQL-8 UNIQUE 約束與 STRUCT/EAV 重構（migration v18+）

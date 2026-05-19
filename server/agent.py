@@ -1200,7 +1200,8 @@ def _get_claude_client():
     global _claude_client
     if _claude_client is None:
         import anthropic
-        from config.settings import ANTHROPIC_API_KEY
+        from config.settings import ANTHROPIC_API_KEY, validate_inference_backend
+        validate_inference_backend("claude")  # 缺 key 立即 raise，不讓 SDK 收到空 key
         _claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     return _claude_client
 
@@ -1271,7 +1272,8 @@ def _get_google_client():
     global _google_client
     if _google_client is None:
         from google import genai
-        from config.settings import GOOGLE_API_KEY
+        from config.settings import GOOGLE_API_KEY, validate_inference_backend
+        validate_inference_backend("google")  # 缺 key 立即 raise，不讓 SDK 收到空 key
         _google_client = genai.Client(api_key=GOOGLE_API_KEY)
     return _google_client
 

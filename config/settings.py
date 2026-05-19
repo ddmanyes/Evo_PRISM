@@ -45,6 +45,30 @@ GOOGLE_API_KEY    = os.getenv("GOOGLE_API_KEY", "")
 GOOGLE_MODEL      = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
 OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
 
+
+def validate_inference_backend(backend: str | None = None) -> None:
+    """在啟動或選定 backend 時呼叫，缺對應 API key 立即 raise。
+
+    避免「執行時打 API → 收到 401 → 對使用者看起來像產品 bug」的延遲失敗。
+
+    Args:
+        backend: 指定要驗證的 backend；None 時讀取 INFERENCE_BACKEND env。
+
+    Raises:
+        RuntimeError: backend 為 claude/google 但對應 API key 為空字串。
+    """
+    resolved = (backend or INFERENCE_BACKEND or "local").lower()
+    if resolved == "claude" and not ANTHROPIC_API_KEY:
+        raise RuntimeError(
+            "INFERENCE_BACKEND=claude 但 ANTHROPIC_API_KEY 未設定。"
+            "請於 .env 或 shell env 補上後重啟。"
+        )
+    if resolved == "google" and not GOOGLE_API_KEY:
+        raise RuntimeError(
+            "INFERENCE_BACKEND=google 但 GOOGLE_API_KEY 未設定。"
+            "請於 .env 或 shell env 補上後重啟。"
+        )
+
 # ── L1 快取參數 ────────────────────────────────────────────
 L1_COSINE_THRESHOLD = 0.88
 L1_TTL_DAYS         = 7
