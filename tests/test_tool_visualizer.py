@@ -20,23 +20,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers — imported from non-test module so pytest assertion rewriting
+# does not break `inspect.getsource()` for these stubs.
 # ---------------------------------------------------------------------------
 
-def _simple_fn():
-    x = 1
-    y = 2
-    return x + y
-
-
-def _branchy_fn(x):
-    if x > 0:
-        if x > 10:
-            return "big"
-        return "small"
-    elif x < 0:
-        return "negative"
-    return "zero"
+from tests._visualizer_stubs import simple_fn as _simple_fn  # noqa: E402
+from tests._visualizer_stubs import branchy_fn as _branchy_fn  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
