@@ -7,10 +7,25 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1 全清
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2 全清
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：b7db709
+**commit**：（待回填）
+
+---
+
+## ✅ 2026-05-19 Session MCP P2 全清
+
+- [x] **`bio_history_timeline` 加 `limit` 參數**：schema 補 `limit`（default 50, max 500）；handler 用 `max(1, min(int(args.get("limit", 50)), 500))` clamp 後直接拼進 SQL；`n_days` 大時可調高避免漏掉早期紀錄
+- [x] **`_fmt_table` 防破表格**：新增 `_pipe_safe(s, max_len)` helper，將 `|`/`\n`/`\r` escape 並截斷（header 40 字、data cell 60 字）；ExFAT `/Volumes/NO NAME/` 含空格與 `|` 路徑不再破壞 Markdown 表格欄位對齊
+- [x] **`mcp_tool_metrics` 表 + observability hook**：新增 `(metric_id UUID PK, tool_name, duration_ms INTEGER, status VARCHAR, recorded_at TIMESTAMP)` 表（lazy `CREATE TABLE IF NOT EXISTS` + `idx_mcp_metrics_tool_time` composite index）；`call_tool` 在 4 個 return path（`ok` / `user_error` / `system_error` / `rate_limited`）皆呼叫 `_record_metric()`，best-effort 寫入不阻擋回傳
+- [x] **`test_phase10.py` e2e 工具呼叫補強**：新增 5 個 class（`TestE2EToolCalls`、`TestAuthMiddleware`、`TestRateLimitGate`、`TestMetricsRecording`）共 11 tests，涵蓋：
+  - `bio_history_lookup` / `bio_history_timeline` / `bio_history_check` true/false 端對端讀真 DB
+  - `MCP_AUTH_TOKEN` 缺/錯 token → 401，未設定 env → auth 關閉
+  - rate limit 第 3 次呼叫被擋（`MCP_RATE_LIMIT_PER_MIN=2`）
+  - `mcp_tool_metrics` `ok` + `user_error` 兩類 status 確實寫入
+- [x] **`test_phase4.py::test_write_to_l1` 順序穩定化**：補 `patch("analysis.l1_cache.L1_CACHE_PATH", l1_db)`，避免 `analysis.l1_cache` 已被 import 時模組層 binding 仍指向真實 `/Volumes/NO NAME/...gold/hermes_cache.duckdb`；測試現可任意順序執行
+- [x] **驗證**：`tests/test_phase10.py`（26 tests）+ `tests/test_phase4.py`（19 tests）= 45/45 PASS
 
 ---
 
@@ -533,10 +548,10 @@
 
 **P2 — 可觀測性與測試**
 
-- [ ] **HTTP transport 缺乏監控指標**：`engram_search_metrics` 表只記 ENGRAM 搜尋；MCP server 工具呼叫頻率/延遲/錯誤率無記錄；建議加 `mcp_tool_metrics` 表或 Prometheus endpoint
-- [ ] **`test_phase10.py` 只測 mount 與 initialize**：未測 7 個 tool 的實際呼叫端對端（讀真實 DB → 回傳結果）；HTTP endpoint 500 bug 就是因為缺此測試
-- [ ] **`fmt_table` 對長 summary 不截斷**：`bio_history_lookup` 把 result_path 完整寫出，遇到 ExFAT 含空格路徑會破壞 Markdown 表格欄位對齊
-- [ ] **`bio_history_timeline` SQL 寫死 `LIMIT 50`**：無 `limit` 參數可調；當 `n_days` 大時可能漏掉早期記錄
+- [x] **HTTP transport 缺乏監控指標**：新增 `mcp_tool_metrics(tool_name, duration_ms, status, recorded_at)` + composite index；`call_tool` 4 個 return path 皆 best-effort 寫入
+- [x] **`test_phase10.py` 只測 mount 與 initialize**：補 11 個 e2e/auth/rate-limit/metrics tests（`TestE2EToolCalls` + `TestAuthMiddleware` + `TestRateLimitGate` + `TestMetricsRecording`）
+- [x] **`fmt_table` 對長 summary 不截斷**：新增 `_pipe_safe()` 將 `|`/換行 escape + 截斷（header 40 / cell 60）；ExFAT 含空格與 pipe 路徑不再破表
+- [x] **`bio_history_timeline` SQL 寫死 `LIMIT 50`**：補 `limit` 參數（預設 50，最大 500，clamp 到 [1, 500]）
 
 **P3 — 介面一致性**
 

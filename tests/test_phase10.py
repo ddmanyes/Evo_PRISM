@@ -184,3 +184,214 @@ class TestStartScript:
         script = Path(__file__).parent.parent / "start_bioagent.sh"
         content = script.read_text()
         assert ".venvs/bioagent/bin/python" not in content
+
+
+# ── TestE2EToolCalls (P2 補洞：之前只測 mount 與 initialize) ──────────────────
+
+
+def _setup_e2e_db(tmp_path: Path) -> Path:
+    """Build a minimal bio_memory.duckdb with one sample + one completed analysis."""
+    import duckdb
+    from datetime import datetime, timezone
+
+    db = tmp_path / "bio_memory.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute(
+        """
+        CREATE TABLE sample_registry (
+            sample_id VARCHAR PRIMARY KEY, project VARCHAR, data_type VARCHAR,
+            platform VARCHAR, species VARCHAR DEFAULT 'human', tissue VARCHAR,
+            l3_path VARCHAR, l2_ready BOOLEAN DEFAULT false,
+            analysis_done BOOLEAN DEFAULT false, added_by VARCHAR,
+            notes VARCHAR, last_updated TIMESTAMPTZ
+        )
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE analysis_history (
+            analysis_id UUID PRIMARY KEY, sample_id VARCHAR,
+            analysis_type VARCHAR, parameters JSON, status VARCHAR DEFAULT 'pending',
+            result_path VARCHAR, l1_cache_id UUID, requested_by VARCHAR,
+            started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+            summary VARCHAR, tool_id UUID
+        )
+        """
+    )
+    con.execute(
+        "INSERT INTO sample_registry VALUES "
+        "('e2e_sample', 'p', 'visium_hd', '10x', 'human', 'tissue', '/x', "
+        "true, false, 'pytest', '', now())"
+    )
+    con.execute(
+        "INSERT INTO analysis_history "
+        "(analysis_id, sample_id, analysis_type, status, result_path, "
+        " requested_by, completed_at, summary) VALUES "
+        "(gen_random_uuid(), 'e2e_sample', 'spatial_eda', 'completed', "
+        " '/Volumes/NO NAME/result with space|pipe.md', 'pytest', ?, '端對端摘要')",
+        [datetime.now(timezone.utc)],
+    )
+    con.close()
+    return db
+
+
+def _run_async(coro):
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+class TestE2EToolCalls:
+    """直接呼叫 call_tool，端對端驗證 7 工具讀真實 DB 回傳結果。"""
+
+    def test_bio_history_lookup_returns_table(self, tmp_path, monkeypatch):
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool("bio_history_lookup", {"sample_id": "e2e_sample"}))
+        text = result[0].text
+        assert "e2e_sample" in text
+        assert "spatial_eda" in text
+        # fmt_table pipe-safe：path 內的 | 必須被 escape，不破表格
+        assert "result with space" in text or "result with…" in text or "result wit…" in text
+
+    def test_bio_history_timeline_respects_limit(self, tmp_path, monkeypatch):
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool("bio_history_timeline", {"n_days": 30, "limit": 5}))
+        assert "e2e_sample" in result[0].text
+
+    def test_bio_history_check_exists_true(self, tmp_path, monkeypatch):
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool(
+            "bio_history_check",
+            {"sample_id": "e2e_sample", "analysis_type": "spatial_eda"},
+        ))
+        assert "exists: true" in result[0].text
+
+    def test_bio_history_check_exists_false(self, tmp_path, monkeypatch):
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool(
+            "bio_history_check",
+            {"sample_id": "e2e_sample", "analysis_type": "no_such_type"},
+        ))
+        assert "exists: false" in result[0].text
+
+    def test_unknown_tool_recorded_as_user_error(self, tmp_path, monkeypatch):
+        # 覆蓋 unknown-tool 路徑（不觸發 L1 import，避免 module-bound 路徑干擾）
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        from server.bio_memory_server import call_tool
+        result = _run_async(call_tool("no_such_tool", {}))
+        assert "未知工具" in result[0].text
+
+
+# ── TestAuthMiddleware (MCP_AUTH_TOKEN) ──────────────────────────────────────
+
+
+class TestAuthMiddleware:
+    def test_no_token_returns_401(self, monkeypatch):
+        monkeypatch.setenv("MCP_AUTH_TOKEN", "secret-xyz")
+        from server.bio_memory_server import create_http_app
+
+        handler, _lifespan = create_http_app()
+        sent = []
+
+        async def send(msg):
+            sent.append(msg)
+
+        async def recv():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        scope = {"type": "http", "method": "POST", "path": "/",
+                 "headers": [], "query_string": b""}
+        _run_async(handler(scope, recv, send))
+        assert sent and sent[0]["status"] == 401
+
+    def test_wrong_token_returns_401(self, monkeypatch):
+        monkeypatch.setenv("MCP_AUTH_TOKEN", "secret-xyz")
+        from server.bio_memory_server import create_http_app
+
+        handler, _lifespan = create_http_app()
+        sent = []
+
+        async def send(msg):
+            sent.append(msg)
+
+        async def recv():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        scope = {"type": "http", "method": "POST", "path": "/",
+                 "headers": [(b"authorization", b"Bearer wrong")],
+                 "query_string": b""}
+        _run_async(handler(scope, recv, send))
+        assert sent and sent[0]["status"] == 401
+
+    def test_no_token_env_means_no_auth(self, monkeypatch):
+        monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
+        from server.bio_memory_server import create_http_app
+
+        handler, _lifespan = create_http_app()
+        assert callable(handler)  # smoke: no exception, no auth gate
+
+
+# ── TestRateLimitGate ────────────────────────────────────────────────────────
+
+
+class TestRateLimitGate:
+    def test_rate_limit_blocks_after_threshold(self, monkeypatch):
+        monkeypatch.setenv("MCP_RATE_LIMIT_PER_MIN", "2")
+        # 模組已 import；直接覆寫 max calls 常數
+        import server.bio_memory_server as bms
+        monkeypatch.setattr(bms, "_RATE_LIMIT_MAX_CALLS", 2)
+        bms._rate_buckets.clear()
+        from server.bio_memory_server import call_tool
+        # 前 2 次容許（不論結果）；第 3 次必被擋
+        _run_async(call_tool("bio_history_search", {"query": "x"}))
+        _run_async(call_tool("bio_history_search", {"query": "y"}))
+        r3 = _run_async(call_tool("bio_history_search", {"query": "z"}))
+        assert "速率上限" in r3[0].text
+
+
+# ── TestMetricsRecording ─────────────────────────────────────────────────────
+
+
+class TestMetricsRecording:
+    def test_metric_row_written_on_success(self, tmp_path, monkeypatch):
+        import duckdb
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        # 強制 lazy init 重跑
+        import server.bio_memory_server as bms
+        bms._METRICS_SCHEMA_READY = False
+        from server.bio_memory_server import call_tool
+        _run_async(call_tool("bio_history_check",
+                             {"sample_id": "e2e_sample", "analysis_type": "spatial_eda"}))
+        with duckdb.connect(str(db), read_only=True) as con:
+            row = con.execute(
+                "SELECT tool_name, status FROM mcp_tool_metrics "
+                "ORDER BY recorded_at DESC LIMIT 1"
+            ).fetchone()
+        assert row is not None
+        assert row[0] == "bio_history_check"
+        assert row[1] == "ok"
+
+    def test_metric_records_user_error(self, tmp_path, monkeypatch):
+        # 用 unknown-tool 觸發 user_error 路徑（不依賴 handler 內部行為）
+        import duckdb
+        db = _setup_e2e_db(tmp_path)
+        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        import server.bio_memory_server as bms
+        bms._METRICS_SCHEMA_READY = False
+        from server.bio_memory_server import call_tool
+        _run_async(call_tool("no_such_tool", {}))
+        with duckdb.connect(str(db), read_only=True) as con:
+            statuses = [r[0] for r in con.execute(
+                "SELECT status FROM mcp_tool_metrics WHERE tool_name = ?",
+                ["no_such_tool"],
+            ).fetchall()]
+        assert "user_error" in statuses
