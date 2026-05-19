@@ -7,10 +7,18 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：c087d04
+**commit**：（待回填）
+
+---
+
+## ✅ 2026-05-19 Session Repo housekeeping
+
+- [x] **`.gitignore` 擴充**：新增 `~$*`（Office 鎖檔）、`logs/*.log`、`logs/*_status.json` — runtime 產物不再進 git
+- [x] **untrack 既有 log 檔**：`git rm --cached logs/{embed_server,llama_server,web_app}.log`（物理檔保留磁碟）；同時清掉殘留 `~$presentation_0517.pptx` lock 檔
+- [x] **commit**：`f582c79`（5 files changed, 6 insertions(+), 749 deletions(-)）
 
 ---
 
