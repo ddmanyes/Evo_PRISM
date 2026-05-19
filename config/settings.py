@@ -17,6 +17,7 @@ L2_ROOT      = BIO_DB_ROOT / "silver"
 L1_ROOT      = BIO_DB_ROOT / "gold"
 RESULTS_ROOT = BIO_DB_ROOT / "results_ana"
 DATA_ROOT    = BIO_DB_ROOT / "data_ana"
+DYNAMIC_CODE_DIR = BIO_DB_ROOT / "results" / "dynamic_code"
 
 # ── DuckDB ─────────────────────────────────────────────────
 DUCKDB_PATH    = Path(os.getenv("DUCKDB_PATH",   BIO_DB_ROOT / "bio_memory.duckdb"))
