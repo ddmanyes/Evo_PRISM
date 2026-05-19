@@ -136,20 +136,6 @@ bash start_bioagent.sh
 
 ---
 
-## 健檢
-
-```bash
-~/.venvs/bioagent/bin/python config/db_utils.py
-```
-
-正常輸出示例：
-
-```
-{'sample_count': 4, 'history_count': 1, 'stale_count': 0, 'l2_ready_count': 1}
-```
-
----
-
 ## 步驟八：設定 MCP Server（讓 Claude Code / Antigravity / Web UI 共用）
 
 MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 14 個工具，跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
@@ -244,6 +230,20 @@ cp .mcp.json.example .mcp.json
 - 已 review `server/code_executor.py` 的 `BLOCKED_PATTERNS` 白名單
 
 詳細安全建議見 [docs/MCP_JSON_SETUP.md](docs/MCP_JSON_SETUP.md)。
+
+---
+
+## 健檢
+
+```bash
+~/.venvs/bioagent/bin/python config/db_utils.py
+```
+
+正常輸出示例：
+
+```text
+{'sample_count': 4, 'history_count': 1, 'stale_count': 0, 'l2_ready_count': 1}
+```
 
 ---
 

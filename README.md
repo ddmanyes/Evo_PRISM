@@ -130,6 +130,14 @@ MCP（Model Context Protocol）讓外部 AI 客戶端直接呼叫 bio_DB 的 14 
 
 ### 三種客戶端的設定
 
+> **共通前置（stdio 客戶端必看）**：若專案位於 Google Drive 或路徑含中文 / 空格，先建 symlink 避開：
+>
+> ```bash
+> ln -sfn "/Users/<you>/Library/CloudStorage/.../我的雲端硬碟/PJ_save/bio_DB" ~/bio_DB
+> ```
+>
+> 後續 B/C 段的 `.mcp.json` 與 Antigravity 設定都以 `/Users/<you>/bio_DB/...` 純 ASCII 路徑為例。Web UI（A 段）走 HTTP，不受路徑影響可略過此前置。
+
 #### A. Web UI（最簡單，無需額外設定）
 
 `bash start_bioagent.sh` 啟動後，MCP HTTP endpoint 自動掛載於 `http://localhost:8000/mcp`。瀏覽器開啟 <http://localhost:8000> 直接用聊天介面，背後就是 MCP 工具鏈。
@@ -189,13 +197,6 @@ cp .mcp.json.example .mcp.json
 
 下次在專案目錄啟動 `claude` CLI 時自動連接，輸入 `/mcp` 即可看到 `bio-memory` server 狀態與工具列表。
 
-**處理含中文路徑**：Google Drive 同步資料夾含「我的雲端硬碟」與空格，先建 symlink 避開：
-
-```bash
-ln -sfn "/Users/zhanqiru/Library/CloudStorage/.../我的雲端硬碟/PJ_save/bio_DB" ~/bio_DB
-# 然後 .mcp.json 全部用 /Users/zhanqiru/bio_DB/... 路徑
-```
-
 #### C. Antigravity IDE（stdio）
 
 開啟 Antigravity 的 **Settings → MCP Servers**（或直接編輯 `~/Library/Application Support/Antigravity/User/settings.json`），新增條目：
@@ -218,7 +219,6 @@ ln -sfn "/Users/zhanqiru/Library/CloudStorage/.../我的雲端硬碟/PJ_save/bio
 
 存檔後 **重啟 Antigravity**。工具列應出現 14 個 `bio_*` 工具。Antigravity 內建 Gemini 推理直接呼叫，跳過 web_app 的雙輪 Agent 流程，回應更快且不會發生「列表類查詢被第 2 輪 LLM 截斷」的問題。
 
-> 路徑含中文或空格時，先建 `~/bio_DB` symlink（同 Claude Code 段）。
 > 若 IDE 啟動後看不到工具，檢查 stderr log：通常是 `PYTHONPATH` 缺失導致 `from server.agent import ...` ImportError。
 
 ### 可用 MCP 工具（預設 14 個 / 啟用沙盒後 15 個）
