@@ -458,6 +458,38 @@ def _build_all_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="bio_read_report",
+            description=(
+                "讀取分析報告（.md/.txt/.log）原文。路徑必須位於 results/ 或 results_ana/ 內，"
+                "其他路徑會被沙盒拒絕。超過 max_chars 時自動截斷為 head+tail 兩段。"
+                "用於：使用者問「報告裡寫了什麼」「打開 xxx.md」等需要原文佐證的請求。"
+                "禁止憑檔名推測內容——務必呼叫此工具取得真實文字。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "result_path": {
+                        "type": "string",
+                        "description": (
+                            "報告路徑。可絕對路徑或 BIO_DB_ROOT-relative，"
+                            "例如 results/bulk_eda/bulk_eda_xxx.md。"
+                        ),
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "回傳字元數上限（預設 8000）。",
+                        "default": 8000,
+                    },
+                    "head_fraction": {
+                        "type": "number",
+                        "description": "head 比例（預設 0.75，其餘為 tail）。",
+                        "default": 0.75,
+                    },
+                },
+                "required": ["result_path"],
+            },
+        ),
+        types.Tool(
             name="bio_check_l2_sufficiency",
             description=(
                 "確認樣本的 L2 Parquet 是否已就緒（l2_ready = true）。"
@@ -1026,6 +1058,30 @@ async def _handle_bio_tool_health(args: dict) -> str:
     return await asyncio.to_thread(_exec_bio_tool_health, args)
 
 
+async def _handle_bio_read_report(args: dict) -> str:
+    from analysis.report_reader import read_report, ReportReadError
+
+    def _sync() -> str:
+        try:
+            r = read_report(
+                args["result_path"],
+                max_chars=int(args.get("max_chars", 8000)),
+                head_fraction=float(args.get("head_fraction", 0.75)),
+            )
+        except ReportReadError as exc:
+            return f"[ERROR] bio_read_report 失敗：{exc}"
+        meta = (
+            f"path: {r.path}\n"
+            f"total_chars: {r.total_chars} | truncated: {r.truncated}\n"
+            f"note: {r.note}\n"
+        )
+        if r.tail:
+            return f"{meta}--- HEAD ---\n{r.head}\n--- TAIL ---\n{r.tail}"
+        return f"{meta}--- CONTENT ---\n{r.head}"
+
+    return await asyncio.to_thread(_sync)
+
+
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
 
 _HANDLERS = {
@@ -1043,6 +1099,7 @@ _HANDLERS = {
     "bio_run_bulk_eda": _handle_bio_run_bulk_eda,
     "bio_execute_code": _handle_bio_execute_code,
     "bio_tool_health": _handle_bio_tool_health,
+    "bio_read_report": _handle_bio_read_report,
 }
 
 
