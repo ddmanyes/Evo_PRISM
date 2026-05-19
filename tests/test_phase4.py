@@ -344,10 +344,14 @@ class TestBioHistorySearch:
 
 
 class TestCallToolDispatch:
-    def test_unknown_tool_raises(self):
+    def test_unknown_tool_returns_error(self):
+        # 改為回傳 error TextContent，不 raise（避免 MCP transport 中斷）
         from server.bio_memory_server import call_tool
-        with pytest.raises(ValueError, match="Unknown tool"):
-            run(call_tool("no_such_tool", {}))
+        from mcp import types
+        result = run(call_tool("no_such_tool", {}))
+        assert isinstance(result, list)
+        assert isinstance(result[0], types.TextContent)
+        assert "未知工具" in result[0].text or "Unknown" in result[0].text
 
     def test_call_tool_returns_text_content(self, tmp_path):
         db = _make_main_db(tmp_path)

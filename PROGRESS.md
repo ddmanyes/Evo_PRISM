@@ -7,18 +7,27 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1 部分完成
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1 全清
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：d548573
+**commit**：（待回填）
 
 ---
 
-## ✅ 2026-05-19 Session MCP P1 部分完成（封存點）
+## ✅ 2026-05-19 Session MCP P1 全清
+
+- [x] **`call_tool` 例外重構**：未知工具改為回 `[ERROR] 未知工具：...`（不再 raise，避免 MCP transport 中斷）；新增 `(ValueError, KeyError, TypeError) → [ERROR] {name} 參數錯誤：...`（log level info）與 `Exception → [ERROR] ... 系統錯誤（correlation_id=<8-char hex>）`（log level error，server-side stack trace 對照）；`RateLimitExceeded` 自定例外類別預留 handler 內部使用
+- [x] **`_rate_limit_check` 接入**：模組層 `_RATE_LIMITED_TOOLS = {bio_history_search, bio_memory_query, bio_memory_write}`；`call_tool` 進 handler 前 gate，超限回 `[ERROR] {name} 已達速率上限（N calls / 60s）`；env `MCP_RATE_LIMIT_PER_MIN` 可調（預設 30）
+- [x] **`MCP_AUTH_TOKEN` HTTP 認證**：`create_http_app()` 內檢查 `Authorization: Bearer <token>` header，缺失/不符回 401 plain-text；env 未設定時自動關閉（向後相容 web_app 內部 mount）；新增 `_send_auth_error()` / `_extract_bearer_token()` helper；smoke 測試 no-auth/bad-token 雙路徑 → 401
+- [x] **`cleanup_stale_runs` 啟動時呼叫**：新增 `_startup_cleanup_stale_runs()`；stdio/http 兩條入口（`_run_stdio` + `_mcp_lifespan`）皆呼叫；DB 不存在或失敗為 non-fatal warning（不阻擋 server 啟動）
+- [x] **`test_phase10.py` 更新**：套用 `create_http_app() → (handler, lifespan_cm)` tuple API；新增 `_build_starlette_app()` helper 用 Starlette 父 app 驅動 lifespan；3 個既有失敗測試（`test_returns_asgi_callable` / `test_has_asgi_call_signature` / `test_idempotent_creation`）改為 tuple-aware 並全部通過；15/15 PASS（先前 3 fail + 8 error → 0 fail）
+- [x] **`test_phase4.py` 更新**：`test_unknown_tool_raises` 改名 `test_unknown_tool_returns_error`，斷言 TextContent 包含 `未知工具`；17/17 PASS（先前 1 fail → 0 fail）
+- [x] **驗證**：rate-limit smoke（`MCP_RATE_LIMIT_PER_MIN=2` 第 3 次呼叫即被擋）+ auth smoke（401 雙路徑）+ phase4/phase10 共 34/34 tests PASS
+
+### 上一輪 MCP P1 部分完成（封存於前一 commit d548573）
 
 - [x] **`bio_memory_write` sample_id 驗證**：`_SAMPLE_ID_RE = ^[a-z0-9_-]+$`，與 `bio_register_sample` 對齊；格式不符 raise ValueError
-- [x] **rate limit / correlation ID 基礎設施**：模組層 `_rate_limit_check(key)` token bucket（預設 30 calls/min，env `MCP_RATE_LIMIT_PER_MIN` 可調）、`uuid` import 預留 — 尚未接入 `call_tool` 與 HTTP handler
-- [ ] **下輪續做**：`call_tool` 例外重構（區分 ValueError vs 系統例外 + correlation ID）、`MCP_AUTH_TOKEN` HTTP 認證、`cleanup_stale_runs` 啟動時呼叫、`_rate_limit_check` 接入 embedding/search 工具
+- [x] **rate limit / correlation ID 基礎設施**：模組層 `_rate_limit_check(key)` token bucket（預設 30 calls/min，env `MCP_RATE_LIMIT_PER_MIN` 可調）、`uuid` import 預留
 
 ---
 
@@ -516,10 +525,10 @@
 
 **P1 — 健壯性**
 
-- [ ] **`call_tool` 例外吞掉 traceback**：第 503–505 行 `logger.exception` 寫到 log 但回傳給客戶端只有 `[ERROR] {name} 執行失敗：{exc}`；建議區分使用者錯誤（ValueError → 4xx 風格訊息）與系統錯誤（內部 exception → 通用訊息 + log correlation ID）
-- [ ] **`bio_register_sample` 未走 `cleanup_stale_runs`**：MCP server 本身為長駐程序（HTTP mode），啟動時未呼叫 `cleanup_stale_runs(con)`，違反 CLAUDE.md §6「Agent 啟動時清理殭屍狀態」；應在 stdio/http 啟動入口加入
-- [ ] **HTTP mode 缺認證**：`MCP_BIND_HOST=127.0.0.1` 已修，但若部署到 Linux 伺服器需開放區網時，無 token/API key 驗證機制；建議加 `MCP_AUTH_TOKEN` env，缺則拒絕（與 web_app session_id 機制獨立）
-- [ ] **無 rate limiting**：`bio_history_search` / `bio_memory_query` 每次都打 embedding server，無速率限制；惡意客戶端可耗盡 llama-server 資源
+- [x] **`call_tool` 例外吞掉 traceback**：改為 `(ValueError/KeyError/TypeError) → 參數錯誤訊息（info log）`；`Exception → 系統錯誤 + correlation_id（exception log）`；未知工具不再 raise
+- [x] **`bio_register_sample` 未走 `cleanup_stale_runs`**：`_startup_cleanup_stale_runs()` 已在 `_run_stdio` 與 `_mcp_lifespan` 兩條啟動路徑呼叫
+- [x] **HTTP mode 缺認證**：`MCP_AUTH_TOKEN` env 已實作；`create_http_app` 內檢查 `Authorization: Bearer <token>`，缺/不符回 401；未設定 token 時 auth 關閉維持向後相容
+- [x] **無 rate limiting**：`_RATE_LIMITED_TOOLS = {bio_history_search, bio_memory_query, bio_memory_write}` 已 gate；`MCP_RATE_LIMIT_PER_MIN` env 可調（預設 30）
 - [x] **`bio_memory_write` sample_id 格式驗證**：模組級 `_SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")` 與 `bio_register_sample` 對齊；格式不符直接 raise ValueError
 
 **P2 — 可觀測性與測試**

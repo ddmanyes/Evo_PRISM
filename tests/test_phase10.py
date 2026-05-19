@@ -23,12 +23,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
+def _build_starlette_app():
+    """create_http_app() 回傳 (handler, lifespan_cm) tuple，需以 Starlette 父 app 驅動 lifespan。"""
+    import contextlib
+    from server.bio_memory_server import create_http_app
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    handler, mcp_lifespan = create_http_app()
+
+    @contextlib.asynccontextmanager
+    async def _lifespan(_app):
+        async with mcp_lifespan():
+            yield
+
+    return Starlette(routes=[Mount("/", app=handler)], lifespan=_lifespan)
+
+
 @pytest.fixture()
 def http_client():
-    """每個測試建新 _MCPApp 實例，因為 StreamableHTTPSessionManager.run() 只能呼叫一次。"""
-    from server.bio_memory_server import create_http_app
+    """每個測試建新 app，因為 StreamableHTTPSessionManager.run() 每實例只能呼叫一次。"""
     from starlette.testclient import TestClient
-    with TestClient(create_http_app(), raise_server_exceptions=False) as client:
+    with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
         yield client
 
 
@@ -40,22 +56,27 @@ def _mcp_headers():
 
 
 class TestCreateHttpApp:
-    def test_returns_asgi_callable(self):
+    def test_returns_handler_and_lifespan_tuple(self):
         from server.bio_memory_server import create_http_app
-        assert callable(create_http_app())
+        result = create_http_app()
+        assert isinstance(result, tuple) and len(result) == 2
+        handler, lifespan_cm = result
+        assert callable(handler)
+        assert callable(lifespan_cm)
 
-    def test_has_asgi_call_signature(self):
+    def test_handler_has_asgi_call_signature(self):
         import inspect
         from server.bio_memory_server import create_http_app
-        sig = inspect.signature(create_http_app().__call__)
+        handler, _ = create_http_app()
+        sig = inspect.signature(handler)
         assert list(sig.parameters) == ["scope", "receive", "send"]
 
     def test_idempotent_creation(self):
         from server.bio_memory_server import create_http_app
-        app1 = create_http_app()
-        app2 = create_http_app()
-        assert callable(app1)
-        assert callable(app2)
+        h1, l1 = create_http_app()
+        h2, l2 = create_http_app()
+        assert callable(h1) and callable(l1)
+        assert callable(h2) and callable(l2)
 
 
 # ── TestMCPInitialize ─────────────────────────────────────────────────────────

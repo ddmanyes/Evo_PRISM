@@ -73,6 +73,16 @@ def _rate_limit_check(key: str) -> bool:
     return True
 
 
+class RateLimitExceeded(RuntimeError):
+    """Embedding/search 路徑被 rate limit 拒絕；call_tool 視為使用者錯誤回傳。"""
+
+
+# 需要 rate limit 保護的工具（會打 embedding server 或耗用 llama 資源）
+_RATE_LIMITED_TOOLS = frozenset(
+    {"bio_history_search", "bio_memory_query", "bio_memory_write"}
+)
+
+
 # ── Tool 定義 ────────────────────────────────────────────────────────────────
 
 
@@ -530,22 +540,86 @@ _HANDLERS = {
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     handler = _HANDLERS.get(name)
     if handler is None:
-        raise ValueError(f"Unknown tool: {name!r}")
+        # 未知工具 — 使用者錯誤，不需要 correlation ID
+        return [types.TextContent(type="text", text=f"[ERROR] 未知工具：{name!r}")]
+
+    # Rate limit gate（僅針對打 embedding server 的工具）
+    if name in _RATE_LIMITED_TOOLS and not _rate_limit_check(f"tool:{name}"):
+        logger.warning("Rate limit exceeded for tool %r", name)
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"[ERROR] {name} 已達速率上限"
+                    f"（{_RATE_LIMIT_MAX_CALLS} calls / {int(_RATE_LIMIT_WINDOW_SEC)}s）。"
+                    "請稍後再試，或調整 MCP_RATE_LIMIT_PER_MIN env。"
+                ),
+            )
+        ]
+
     try:
         result = await handler(arguments)
+    except RateLimitExceeded as exc:
+        logger.warning("Tool %r rate limited: %s", name, exc)
+        return [types.TextContent(type="text", text=f"[ERROR] {name}: {exc}")]
+    except (ValueError, KeyError, TypeError) as exc:
+        # 使用者錯誤：參數驗證失敗、缺欄位、型別錯 — 直接回訊息，不需要 correlation ID
+        logger.info("Tool %r user error: %s", name, exc)
+        return [
+            types.TextContent(type="text", text=f"[ERROR] {name} 參數錯誤：{exc}")
+        ]
     except Exception as exc:
-        logger.exception("Tool %r failed: %s", name, exc)
-        result = f"[ERROR] {name} 執行失敗：{exc}"
+        # 系統錯誤：產生 correlation ID 方便對照 server log
+        corr_id = uuid.uuid4().hex[:8]
+        logger.exception("Tool %r system error [corr=%s]: %s", name, corr_id, exc)
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"[ERROR] {name} 系統錯誤（correlation_id={corr_id}）。"
+                    "請聯絡管理員並提供此 ID 對照 server log。"
+                ),
+            )
+        ]
     return [types.TextContent(type="text", text=result)]
 
 
 # ── HTTP transport ────────────────────────────────────────────────────────────
 
 
+async def _send_auth_error(send, status: int, msg: str) -> None:
+    body = msg.encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"text/plain; charset=utf-8"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+def _extract_bearer_token(scope: dict) -> str | None:
+    for name, value in scope.get("headers", []):
+        if name == b"authorization":
+            text = value.decode("latin-1", errors="ignore").strip()
+            if text.lower().startswith("bearer "):
+                return text[7:].strip()
+            return text
+    return None
+
+
 def create_http_app():
     """回傳 (asgi_handler, lifespan_cm)，供父 ASGI app 掛載並驅動 lifespan。
 
     session_manager 以 stateless=True 運行，每次請求獨立，不需要 session affinity。
+
+    認證：若 env `MCP_AUTH_TOKEN` 已設定，所有非 lifespan 請求必須帶
+    `Authorization: Bearer <token>`；缺失或不符回 401。未設定 token 時 auth 關閉，
+    維持向後相容（Web UI mount /mcp 時可不啟用）。
 
     用法（FastAPI）：
         mcp_handler, mcp_lifespan = create_http_app()
@@ -563,9 +637,15 @@ def create_http_app():
         app=server,
         stateless=True,
     )
+    auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip() or None
 
     @contextlib.asynccontextmanager
     async def _mcp_lifespan():
+        # Agent 啟動時清理殭屍狀態（CLAUDE.md §6）
+        try:
+            _startup_cleanup_stale_runs()
+        except Exception as exc:  # pragma: no cover - non-fatal best effort
+            logger.warning("startup cleanup_stale_runs failed: %s", exc)
         async with session_manager.run():
             yield
 
@@ -581,15 +661,43 @@ def create_http_app():
                     await send({"type": "lifespan.shutdown.complete"})
                     return
         else:
+            if auth_token is not None:
+                presented = _extract_bearer_token(scope)
+                if not presented:
+                    await _send_auth_error(
+                        send, 401, "Unauthorized: missing Bearer token"
+                    )
+                    return
+                if presented != auth_token:
+                    await _send_auth_error(
+                        send, 401, "Unauthorized: invalid token"
+                    )
+                    return
             await session_manager.handle_request(scope, receive, send)
 
     return _asgi_handler, _mcp_lifespan
+
+
+def _startup_cleanup_stale_runs() -> None:
+    """MCP server 為長駐程序，啟動時清理 > 24h 仍為 running 的紀錄（CLAUDE.md §6）。"""
+    import duckdb
+    from config.db_utils import cleanup_stale_runs
+    from config.settings import DUCKDB_PATH
+
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
+        n = cleanup_stale_runs(con)
+        if n:
+            logger.info("Startup cleanup: marked %d stale running rows", n)
 
 
 # ── 啟動 ─────────────────────────────────────────────────────────────────────
 
 
 async def _run_stdio() -> None:
+    try:
+        _startup_cleanup_stale_runs()
+    except Exception as exc:  # pragma: no cover - non-fatal best effort
+        logger.warning("startup cleanup_stale_runs failed: %s", exc)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
