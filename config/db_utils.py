@@ -60,6 +60,9 @@ def safe_write(con: duckdb.DuckDBPyConnection, sql: str, params: list = None) ->
     縮小斷電損壞視窗：損壞頂多丟失「上次 CHECKPOINT 之後的寫入」。
     """
     con.execute(sql, params or [])
+    # CHECKPOINT 時 DuckDB 需要序列化所有 index，包含 HNSW（analysis_artifacts）。
+    # 若 VSS 未載入會拋 FatalException，因此在 CHECKPOINT 前確保已載入。
+    _bootstrap_vss(con)
     con.execute("CHECKPOINT")
 
 
