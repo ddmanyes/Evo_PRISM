@@ -444,3 +444,90 @@ class TestHandleMessage:
 
         # 第二次呼叫的 messages 應比第一次多（assistant tool_calls + tool result）
         assert len(captured_messages[1]) > len(captured_messages[0])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Part 4 — bio_execute_code 歸檔（完整保存：code/output/traceback/meta/figs）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestDynamicCodeArchive:
+    """驗證 bio_execute_code 跑出的程式碼會落地歸檔，含成功 / 失敗 / SecurityError。"""
+
+    def test_success_archives_code_output_meta(self):
+        import json as _json
+        from server.agent import execute_tool
+        from config.settings import DYNAMIC_CODE_DIR, BIO_DB_ROOT
+
+        result = execute_tool("bio_execute_code", {
+            "code": "print('archived ok')\nx = 1 + 2\nprint(x)",
+            "description": "archive smoke",
+            "timeout": 10,
+        })
+
+        assert "執行成功" in result
+        assert "歸檔" in result
+        rel_line = [ln for ln in result.splitlines() if ln.startswith("歸檔：")][0]
+        rel = rel_line.split("：", 1)[1].rstrip("/")
+        archive_dir = BIO_DB_ROOT / rel
+        assert archive_dir.exists() and archive_dir.is_dir()
+        assert archive_dir.is_relative_to(DYNAMIC_CODE_DIR)
+        assert (archive_dir / "code.py").read_text(encoding="utf-8").startswith("print('archived ok')")
+        assert "archived ok" in (archive_dir / "output.txt").read_text(encoding="utf-8")
+        meta = _json.loads((archive_dir / "meta.json").read_text(encoding="utf-8"))
+        assert meta["status"] == "completed"
+        assert meta["code_lines"] == 3
+        assert meta["error_summary"] is None
+
+    def test_failure_archives_traceback_and_history(self):
+        import json as _json
+        import duckdb as _ddb
+        from server.agent import execute_tool
+        from config.settings import DYNAMIC_CODE_DIR, DUCKDB_PATH, BIO_DB_ROOT
+
+        result = execute_tool("bio_execute_code", {
+            "code": "raise ValueError('boom-archive-test')",
+            "description": "fail smoke",
+            "timeout": 10,
+        })
+        assert "執行失敗" in result
+        rel_line = [ln for ln in result.splitlines() if ln.startswith("歸檔（含 traceback）：")][0]
+        rel = rel_line.split("：", 1)[1].rstrip("/")
+        archive_dir = BIO_DB_ROOT / rel
+        assert archive_dir.is_relative_to(DYNAMIC_CODE_DIR)
+        assert (archive_dir / "traceback.txt").exists()
+        assert "boom-archive-test" in (archive_dir / "traceback.txt").read_text(encoding="utf-8")
+        meta = _json.loads((archive_dir / "meta.json").read_text(encoding="utf-8"))
+        assert meta["status"] == "failed"
+        assert meta["error_summary"] is not None
+
+        analysis_id = meta["analysis_id"]
+        with _ddb.connect(str(DUCKDB_PATH), read_only=True) as con:
+            row = con.execute(
+                "SELECT status, summary FROM analysis_history WHERE analysis_id = ?",
+                [analysis_id],
+            ).fetchone()
+        assert row is not None, "failed run should still be archived in analysis_history"
+        assert row[0] == "failed"
+        assert row[1].startswith("[FAILED]")
+
+    def test_security_error_still_archived(self):
+        import json as _json
+        from server.agent import execute_tool
+        from config.settings import DYNAMIC_CODE_DIR, BIO_DB_ROOT
+
+        result = execute_tool("bio_execute_code", {
+            "code": "import os; os.system('ls')",
+            "description": "blocked",
+            "timeout": 5,
+        })
+        assert "SecurityError" in result
+        rel_line = [ln for ln in result.splitlines() if ln.startswith("歸檔：")][0]
+        rel = rel_line.split("：", 1)[1].rstrip("/")
+        archive_dir = BIO_DB_ROOT / rel
+        assert archive_dir.is_relative_to(DYNAMIC_CODE_DIR)
+        tb = (archive_dir / "traceback.txt").read_text(encoding="utf-8")
+        assert tb.startswith("SecurityError")
+        meta = _json.loads((archive_dir / "meta.json").read_text(encoding="utf-8"))
+        assert meta["status"] == "failed"
+        assert meta["error_summary"].startswith("SecurityError")

@@ -26,15 +26,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from config.settings import BIO_DB_ROOT, RESULTS_ROOT
+from config.settings import BIO_DB_ROOT, RESULTS_ROOT, DYNAMIC_CODE_DIR
 
 # `RESULTS_ROOT` is currently `results_ana/` (legacy MSseg outputs).
-# Live analysis reports land in `results/`. Allow both.
+# Live analysis reports land in `results/`. `DYNAMIC_CODE_DIR` archives
+# bio_execute_code runs (code.py / output.txt / traceback.txt / meta.json).
 ALLOWED_ROOTS: tuple[Path, ...] = (
     (BIO_DB_ROOT / "results").resolve(),
     RESULTS_ROOT.resolve(),
+    DYNAMIC_CODE_DIR.resolve(),
 )
-ALLOWED_SUFFIXES: frozenset[str] = frozenset({".md", ".txt", ".log"})
+# `.py` and `.json` enabled to support dynamic-code archive readback.
+ALLOWED_SUFFIXES: frozenset[str] = frozenset({".md", ".txt", ".log", ".py", ".json"})
 
 DEFAULT_MAX_CHARS: int = 8_000
 DEFAULT_HEAD_FRACTION: float = 0.75  # 75% head, 25% tail when truncating

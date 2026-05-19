@@ -1115,20 +1115,31 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
 
 def _exec_bio_execute_code(args: dict) -> str:
     from server.code_executor import sandbox_exec, SecurityError
-    import tempfile, base64, json
+    import base64, json, uuid as _uuid
+    from datetime import datetime, timezone
     from pathlib import Path as _Path
+    from config.settings import DYNAMIC_CODE_DIR, BIO_DB_ROOT
 
     code = args["code"]
     description = args.get("description", "")
     timeout = int(args.get("timeout", 60))
+    sample_id = args.get("sample_id") or None  # NULL 比 "unknown" 安全（FK 約束）
 
-    # SecurityError 在 sandbox_exec 內部檢查，preamble 為系統注入，不經 LLM 生成
-    with tempfile.TemporaryDirectory(prefix="hermes_fig_") as fig_dir:
-        preamble = f"""
+    analysis_id = str(_uuid.uuid4())
+    started_at = datetime.now(timezone.utc)
+    archive_dir = DYNAMIC_CODE_DIR / f"{started_at.strftime('%Y-%m-%d')}_{analysis_id[:8]}"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) Write code immediately so SecurityError-blocked runs are still archived.
+    (archive_dir / "code.py").write_text(code, encoding="utf-8")
+
+    # SecurityError 在 sandbox_exec 內部檢查；preamble 為系統注入，不經 LLM 生成。
+    # 圖檔直接落地到 archive_dir，省去 tempfile copy。
+    preamble = f"""
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as _plt_orig
-_hermes_fig_dir = {fig_dir!r}
+_hermes_fig_dir = {str(archive_dir)!r}
 _hermes_fig_idx = [0]
 _orig_show = _plt_orig.show
 def _hermes_show(*a, **kw):
@@ -1138,48 +1149,156 @@ def _hermes_show(*a, **kw):
     _plt_orig.close("all")
 _plt_orig.show = _hermes_show
 """
+    # SecurityError 提前歸檔並回傳，後續流程 result 保證非 None
+    try:
+        result = sandbox_exec(code, timeout=timeout, preamble=preamble)
+    except SecurityError as e:
+        completed_at = datetime.now(timezone.utc)
+        duration_sec = (completed_at - started_at).total_seconds()
+        err_msg = str(e)
+        (archive_dir / "traceback.txt").write_text(
+            f"SecurityError: {err_msg}\n", encoding="utf-8"
+        )
+        sec_meta = {
+            "analysis_id": analysis_id,
+            "description": description,
+            "status": "failed",
+            "duration_sec": duration_sec,
+            "code_lines": len(code.splitlines()),
+            "fig_count": 0,
+            "created_at": started_at.isoformat(),
+            "error_summary": f"SecurityError: {err_msg[:200]}",
+        }
+        (archive_dir / "meta.json").write_text(
+            json.dumps(sec_meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         try:
-            result = sandbox_exec(code, timeout=timeout, preamble=preamble)
-        except SecurityError as e:
-            return f"[SecurityError] 程式碼違反安全規則：{e}"
+            rel_sec = str(archive_dir.relative_to(BIO_DB_ROOT))
+        except ValueError:
+            rel_sec = str(archive_dir)
+        try:
+            import duckdb
+            from config.settings import DUCKDB_PATH
+            from config.db_utils import safe_write
+            with duckdb.connect(str(DUCKDB_PATH)) as con:
+                safe_write(
+                    con,
+                    """INSERT INTO analysis_history
+                           (analysis_id, sample_id, analysis_type, parameters, status,
+                            result_path, requested_by, started_at, completed_at, summary)
+                       VALUES (?, ?, 'dynamic_code', ?, 'failed', ?, 'agent', ?, ?, ?)""",
+                    [
+                        analysis_id, sample_id,
+                        json.dumps({
+                            "description": description,
+                            "code_lines": len(code.splitlines()),
+                            "fig_count": 0,
+                            "error_summary": f"SecurityError: {err_msg[:200]}",
+                        }),
+                        rel_sec, started_at, completed_at,
+                        f"[FAILED] {(description[:50] or 'dynamic code execution')}"[:50],
+                    ],
+                )
+        except Exception:
+            logger.warning("bio_execute_code: SecurityError 歸檔寫 history 失敗", exc_info=True)
+        return f"[SecurityError] 程式碼違反安全規則：{err_msg}\n歸檔：{rel_sec}/"
 
-        # Collect any saved figures as base64
-        fig_paths = sorted(_Path(fig_dir).glob("fig_*.png"))
-        fig_md = ""
-        for fp in fig_paths:
-            b64 = base64.b64encode(fp.read_bytes()).decode()
-            fig_md += f"\n![figure](data:image/png;base64,{b64})\n"
+    completed_at = datetime.now(timezone.utc)
+    duration_sec = (completed_at - started_at).total_seconds()
 
     if not result.success:
-        return f"執行失敗（{result.duration_sec}s）\n{result.traceback[:1000]}"
+        status = "failed"
+        tb_text = result.traceback or ""
+        (archive_dir / "traceback.txt").write_text(tb_text, encoding="utf-8")
+        if result.output:
+            (archive_dir / "output.txt").write_text(result.output, encoding="utf-8")
+        error_summary = tb_text.splitlines()[-1][:200] if tb_text.strip() else "unknown error"
+        fig_count = len(sorted(archive_dir.glob("fig_*.png")))
+        output_text = result.output or ""
+    else:
+        status = "completed"
+        (archive_dir / "output.txt").write_text(result.output or "", encoding="utf-8")
+        error_summary = None
+        fig_count = len(sorted(archive_dir.glob("fig_*.png")))
+        output_text = result.output or ""
 
-    # 寫入 analysis_history，讓 Code Promotion 框架可掃描重用紀錄
+    meta = {
+        "analysis_id": analysis_id,
+        "description": description,
+        "status": status,
+        "duration_sec": duration_sec,
+        "code_lines": len(code.splitlines()),
+        "fig_count": fig_count,
+        "created_at": started_at.isoformat(),
+        "error_summary": error_summary,
+    }
+    (archive_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # 相對 BIO_DB_ROOT 的路徑（跨機器可攜）
     try:
-        import duckdb, uuid as _uuid
-        from datetime import datetime, timezone
+        rel_archive = str(archive_dir.relative_to(BIO_DB_ROOT))
+    except ValueError:
+        rel_archive = str(archive_dir)
+
+    # 寫入 analysis_history（成功與失敗都寫；SecurityError 也寫，以便回溯）
+    try:
+        import duckdb
         from config.settings import DUCKDB_PATH
         from config.db_utils import safe_write
-        now = datetime.now(timezone.utc)
+        params_json = {
+            "description": description,
+            "code_lines": len(code.splitlines()),
+            "fig_count": fig_count,
+        }
+        if error_summary is not None:
+            params_json["error_summary"] = error_summary
+
+        summary_text = (description[:50] or "dynamic code execution")
+        if status == "failed":
+            summary_text = f"[FAILED] {summary_text}"[:50]
+
         with duckdb.connect(str(DUCKDB_PATH)) as con:
             safe_write(
                 con,
                 """INSERT INTO analysis_history
                        (analysis_id, sample_id, analysis_type, parameters, status,
-                        requested_by, started_at, completed_at, summary)
-                   VALUES (?, ?, 'dynamic_code', ?, 'completed', 'agent', ?, ?, ?)""",
+                        result_path, requested_by, started_at, completed_at, summary)
+                   VALUES (?, ?, 'dynamic_code', ?, ?, ?, 'agent', ?, ?, ?)""",
                 [
-                    str(_uuid.uuid4()),
-                    args.get("sample_id", "unknown"),
-                    json.dumps({"generated_code": code[:2000], "description": description}),
-                    now, now,
-                    description[:50] or "dynamic code execution",
+                    analysis_id,
+                    sample_id,
+                    json.dumps(params_json),
+                    status,
+                    rel_archive,
+                    started_at, completed_at,
+                    summary_text,
                 ],
             )
     except Exception:
         logger.warning("bio_execute_code: 寫入 analysis_history 失敗（不影響結果）", exc_info=True)
 
-    out = result.output[:2000] if len(result.output) > 2000 else result.output
-    return f"執行成功（{result.duration_sec}s）\n{out}{fig_md}"
+    # Collect figures as base64 for inline rendering
+    fig_md = ""
+    for fp in sorted(archive_dir.glob("fig_*.png")):
+        b64 = base64.b64encode(fp.read_bytes()).decode()
+        fig_md += f"\n![figure](data:image/png;base64,{b64})\n"
+
+    if status == "failed":
+        tb_preview = (result.traceback or "")[:1000]
+        return (
+            f"執行失敗（{result.duration_sec}s）\n"
+            f"歸檔（含 traceback）：{rel_archive}/\n"
+            f"{tb_preview}"
+        )
+
+    out = output_text[:2000] if len(output_text) > 2000 else output_text
+    return (
+        f"執行成功（{result.duration_sec}s）\n"
+        f"歸檔：{rel_archive}/\n"
+        f"{out}{fig_md}"
+    )
 
 
 def _exec_bio_read_report(args: dict) -> str:
