@@ -7,10 +7,110 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping
-**平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
-**最後更新**：2026-05-19
-**commit**：9fee16d（docs：housekeeping 封存）；最後程式碼 commit `f582c79`
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + **bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位**
+**平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
+**最後更新**：2026-05-20
+**commit**：f7e9043（refactor：_archive_history_insert helper + cleanup dry-run 統一）
+
+---
+
+## ✅ 2026-05-20 Session：bio_execute_code 完整歸檔 + MCP 文件三客戶端 + 推理鏈瓶頸定位
+
+### A. bio_execute_code 完整歸檔（commit `12c547c`）
+
+解決三個既有限制：
+
+1. **2000 字截斷** → `code.py` 完整落地，不截斷
+2. **無 result_path** → stdout 寫 `output.txt`、圖寫 `fig_NN.png`、`analysis_history.result_path` 指向目錄
+3. **失敗不歸檔** → 失敗（含 traceback）、SecurityError 全部寫進 history，前綴 `[FAILED]`
+
+歸檔結構：`results/dynamic_code/<YYYY-MM-DD>_<id前8碼>/` 內含：
+
+- `code.py` — 完整程式碼
+- `output.txt` 或 `traceback.txt`
+- `meta.json` — analysis_id / description / status / duration_sec / code_lines / fig_count / created_at(ISO8601 UTC) / error_summary
+- `fig_NN.png` — matplotlib 圖檔
+
+改動檔案：
+
+- `config/settings.py`：新增 `DYNAMIC_CODE_DIR` 常數
+- `server/agent.py:_exec_bio_execute_code`：重寫；SecurityError 提前 return 解 type narrowing
+- `analysis/report_reader.py`：ALLOWED_ROOTS 加 `DYNAMIC_CODE_DIR`；ALLOWED_SUFFIXES 加 `.py` / `.json`
+- `scheduler/cleanup_dynamic_code.py`（新）：90 天自動清理
+- `docs/launchd_cleanup_dynamic_code.plist.example`（新）：每日 04:30 排程範本
+- `tests/test_phase5.py::TestDynamicCodeArchive`：3 個歸檔測試（成功 / 失敗 / SecurityError）
+
+`sample_id` FK 修正：`args.get("sample_id") or None`，NULL 比 `"unknown"` 安全（FK 約束）。
+
+### B. launchd 啟用 cleanup 排程
+
+- symlink `~/bio_DB` → Google Drive 實體路徑（避中文 + 空格 path 帶來的 launchd 解析問題）
+- plist 載入 `~/Library/LaunchAgents/com.hermes.cleanup_dynamic_code.plist`
+- 驗證：`launchctl start` 後 `LastExitStatus = 0`，log 寫入正常
+
+### C. MCP 三客戶端文件（commit `a7bec47` + `c0343f1`）
+
+`README.md` 與 `SETUP.md` 補寫 MCP 設定段：
+
+- **A. Web UI**：HTTP transport，`bash start_bioagent.sh` 自動掛載 `:8000/mcp`
+- **B. Claude Code CLI**：stdio transport，`.mcp.json` 範例 + symlink 處理含中文路徑
+- **C. Antigravity IDE**：stdio transport，`~/Library/Application Support/Antigravity/User/settings.json` 範例
+- 完整工具表 14/15 個（含 `bio_read_report` / `bio_artifact_search` 等之前漏列工具）
+- 環境變數速查表（`MCP_AUTH_TOKEN` / `BIND_HOST` / `RATE_LIMIT` / `DANGEROUS_TOOLS`）
+
+`SETUP.md` 章節順序整理：步驟七 → 步驟八（MCP）→ 健檢。
+
+### D. Gemma 本機推理瓶頸定位（perf commit 已回滾）
+
+對 web_app 真實查詢 17s 做拆解：
+
+- **首 token**：4500 token SYSTEM_PROMPT + 無 prompt cache（`cached_tokens: 0`）→ prompt eval 12s
+- **生成**：32 tok/s × 280 token = 8.8s
+- **多輪 tool call**：第 1 輪 LLM 決定 tool → 跑 tool → 第 2 輪 LLM 整理 → 兩輪 round-trip
+- Apple M3 Pro / Gemma 26B IQ2_M 硬體上限 ~32 tok/s
+
+嘗試的優化（commit `3a91607`）：`--reasoning-budget 100` + SYSTEM_PROMPT「回答長度」規則 → 8.2s → 2.9s（warm）。
+
+**但發現副作用**：列表類查詢（如「列出 50 筆名稱」）Gemma 為了遵守長度上限**自我截斷列表**，使用者實際只看到 7 筆 + 「(其餘依序排列...)」——資料完整但呈現截斷。
+
+**處置**：完整回滾 commit（`c6ac5a4`）。教訓：給 IQ2_M 量化模型加文字長度規則時，list 類輸出會被誤判截斷；正解應為 fast-path（跳過第 2 輪 LLM）或改 prompt-cache，而非裁長度。
+
+### E. Code review 反饋兩輪改善
+
+**第一輪（commit `a08e602`）**：
+
+- `tests/test_phase5.py::TestDynamicCodeArchive` 改用 `isolated_archive` fixture（monkeypatch `DUCKDB_PATH` / `DYNAMIC_CODE_DIR` / `BIO_DB_ROOT`），測試不再污染專案 DB
+- README `bio_read_report` 工具說明補「失敗執行可能無 output.txt」
+
+**第二輪（commit `f7e9043`）**：
+
+- `server/agent.py`：抽 `_archive_history_insert` helper，SecurityError 與主流程 INSERT 邏輯統一，schema 變更只動一處
+- `scheduler/cleanup_dynamic_code.py`：`cleanup_old_archives(days, *, dry_run=False)` 統一介面回傳 `(removed_count, candidates)`，CLI 不再重複 iterdir 邏輯
+
+### 驗證
+
+- 109 tests passed（phase4 + phase5 + phase10 + report_reader），無回歸
+- working tree clean
+- launchd job 實測 `LastExitStatus = 0`
+
+### Commit 鏈
+
+```text
+f7e9043 refactor: _archive_history_insert helper + cleanup_dynamic_code dry-run 統一
+a08e602 refactor: TestDynamicCodeArchive tmp_path 隔離；README 補 output.txt 註記
+c0343f1 docs: 整理 MCP 段落結構
+a7bec47 docs: README/SETUP 補上 MCP 三客戶端設定
+12c547c feat: bio_execute_code 完整歸檔 — code/output/traceback/figs/meta 全落地
+c6ac5a4 Revert "perf: Gemma 限制 reasoning-budget + 回答長度規則..."
+3a91607 perf: Gemma 限制 reasoning-budget + 回答長度規則（已 revert）
+6a9ba69 perf: web_app startup 加 embedding warmup 避免使用者踩冷啟動
+```
+
+### 後續可選改善
+
+- **fast-path 跳過第 2 輪 LLM**：列表類 tool 結果直接回 client，省 10+ 秒（17s → ~5s）。需動 `handle_message`，與第 2 輪 LLM 整理回答的設計權衡
+- **CLAUDE.md** 補一條 dynamic_code 歸檔規則（若未來其他 tool 也用此模式）
+- **Antigravity 實測**：本 session 只寫文件，使用者尚未實際在 Antigravity 連 MCP server 跑生資工具
 
 ---
 
