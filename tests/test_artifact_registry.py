@@ -736,3 +736,107 @@ class TestMatryoshkaEmbedding:
         # Should still return via exact layer (no embedding needed)
         results = search_artifacts(eng_con, "volcano", artifact_subtype="volcano")
         assert len(results) == 1
+
+
+# ---------------------------------------------------------------------------
+# P0-B: FTS BM25 Layer 3 in search_artifacts()
+# ---------------------------------------------------------------------------
+
+class TestFtsLayer:
+    """Layer 3 BM25 ranker — verifies 3-way RRF fusion (P0-B)."""
+
+    @staticmethod
+    def _create_fts_index(con):
+        """Apply migration v18 equivalent on the in-memory fixture."""
+        con.execute("INSTALL fts")
+        con.execute("LOAD fts")
+        con.execute(
+            "PRAGMA create_fts_index("
+            "'analysis_artifacts', 'artifact_id', "
+            "'label', 'artifact_subtype', 'artifact_type', "
+            "overwrite=1)"
+        )
+
+    def test_fts_availability_detection(self, eng_con):
+        """_fts_artifacts_available returns False before FTS index, True after."""
+        from analysis.artifact_registry import _fts_artifacts_available
+        assert _fts_artifacts_available(eng_con) is False
+        self._create_fts_index(eng_con)
+        assert _fts_artifacts_available(eng_con) is True
+
+    def test_fts_layer_returns_keyword_hit(self, eng_con, tmp_path, monkeypatch):
+        """BM25 finds a label match even when embedding is unavailable."""
+        from analysis.artifact_registry import register_artifact, search_artifacts
+        monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
+
+        aid = _insert_analysis(eng_con)
+        f = tmp_path / "pca.png"
+        f.write_bytes(b"PNG")
+        register_artifact(eng_con, aid, f, "figure", "PCA principal component plot",
+                          artifact_subtype="pca")
+
+        # Build FTS index AFTER registering artifacts (snapshot semantics).
+        self._create_fts_index(eng_con)
+
+        # Search by keyword that lives in label but not in artifact_subtype param —
+        # would miss Layer 1; only FTS can rescue it.
+        results = search_artifacts(eng_con, "principal", n=5, threshold=0.0)
+        assert len(results) == 1
+        assert results[0]["artifact_subtype"] == "pca"
+        assert results[0]["search_layer"] == "fts"
+
+    def test_rrf_combines_exact_and_fts(self, eng_con, tmp_path, monkeypatch):
+        """Artifact hit by both exact-subtype and FTS keyword scores as 'rrf'."""
+        from analysis.artifact_registry import register_artifact, search_artifacts
+        monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
+
+        aid = _insert_analysis(eng_con)
+        f = tmp_path / "volcano.png"
+        f.write_bytes(b"PNG")
+        register_artifact(eng_con, aid, f, "figure", "volcano differential plot",
+                          artifact_subtype="volcano")
+        self._create_fts_index(eng_con)
+
+        results = search_artifacts(
+            eng_con, "volcano", n=5, threshold=0.0, artifact_subtype="volcano"
+        )
+        assert len(results) == 1
+        # Both layers contributed → search_layer should be "rrf"
+        assert results[0]["search_layer"] == "rrf"
+        # RRF score ≥ 2/(60+1) ≈ 0.0328
+        assert results[0]["score"] >= 1 / 61
+
+    def test_fts_silently_skipped_when_index_absent(self, eng_con, tmp_path, monkeypatch):
+        """Without migration v18, Layer 3 is silently skipped; 2-layer flow works."""
+        from analysis.artifact_registry import register_artifact, search_artifacts
+        monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
+
+        aid = _insert_analysis(eng_con)
+        f = tmp_path / "v.png"
+        f.write_bytes(b"PNG")
+        register_artifact(eng_con, aid, f, "figure", "火山圖",
+                          artifact_subtype="volcano")
+        # NOTE: no _create_fts_index() call.
+
+        results = search_artifacts(eng_con, "火山圖", artifact_subtype="volcano")
+        assert len(results) == 1
+        assert results[0]["search_layer"] == "exact"
+
+    def test_fts_layer_respects_sample_id_filter(self, eng_con, tmp_path, monkeypatch):
+        """sample_id filter must apply to the FTS query path."""
+        from analysis.artifact_registry import register_artifact, search_artifacts
+        monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
+
+        aid_s1 = _insert_analysis(eng_con, sample_id="s1")
+        aid_s2 = _insert_analysis(eng_con, sample_id="s2")
+        for aid, name in [(aid_s1, "p1.png"), (aid_s2, "p2.png")]:
+            f = tmp_path / name
+            f.write_bytes(b"PNG")
+            register_artifact(eng_con, aid, f, "figure", "principal component plot",
+                              artifact_subtype="pca")
+        self._create_fts_index(eng_con)
+
+        results = search_artifacts(eng_con, "principal", n=10,
+                                   threshold=0.0, sample_id="s1")
+        assert len(results) == 1
+        assert results[0]["analysis_id"] == aid_s1

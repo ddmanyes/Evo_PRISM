@@ -69,6 +69,30 @@ _MIME = {
 # RRF smoothing constant (Cormack et al. SIGIR 2009)
 _RRF_K = 60
 
+# DuckDB FTS sidecar schema name created by migration v18 (P0-B)
+_FTS_SCHEMA_ARTIFACTS = "fts_main_analysis_artifacts"
+
+
+def _fts_artifacts_available(con: duckdb.DuckDBPyConnection) -> bool:
+    """Check whether the FTS BM25 index on analysis_artifacts is present.
+
+    Returns True only when migration v18 has been applied AND the fts
+    extension is loadable. Failure modes (extension missing, schema absent)
+    are silently caught so search_artifacts() degrades to 2-layer RRF.
+    """
+    try:
+        con.execute("LOAD fts")
+    except Exception:
+        return False
+    try:
+        row = con.execute(
+            "SELECT 1 FROM information_schema.schemata WHERE schema_name = ?",
+            [_FTS_SCHEMA_ARTIFACTS],
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -649,14 +673,19 @@ def search_artifacts(
     artifact_subtype: Optional[str] = None,
     sample_id: Optional[str] = None,
 ) -> list[dict]:
-    """Hybrid RRF search across artifact embeddings (9A-2).
+    """Hybrid RRF search across artifact embeddings (9A-2 + P0-B FTS).
 
-    Combines two retrieval layers via Reciprocal Rank Fusion (k=60):
+    Combines up to three retrieval layers via Reciprocal Rank Fusion (k=60):
       Layer 1 — exact match on artifact_subtype (SQL)
-      Layer 2 — HNSW cosine vector search
+      Layer 2 — HNSW cosine vector search (semantic)
+      Layer 3 — DuckDB FTS BM25 over label + subtype + type (keyword, P0-B)
 
-    RRF score range: ~0.008 (single layer, rank N) to ~0.033 (both layers rank 1).
-    threshold default 0.01 filters results ranking poorly in both layers.
+    Layer 3 activates automatically when migration v18 has run (the
+    fts_main_analysis_artifacts schema exists). It is silently skipped
+    otherwise, preserving backward compatibility.
+
+    RRF score range: ~0.008 (single layer, rank N) to ~0.050 (all layers rank 1).
+    threshold default 0.01 filters results ranking poorly in all layers.
 
     Args:
         con:              Open DuckDB connection (VSS loaded internally).
@@ -785,8 +814,41 @@ def search_artifacts(
         except Exception as exc:
             logger.warning("search_artifacts: HNSW search failed: %s", exc)
 
-    # ── RRF fusion ───────────────────────────────────────────────────────────
-    all_ids = set(exact_ranked) | set(hnsw_ranked)
+    # ── Layer 3: DuckDB FTS BM25 (P0-B) ──────────────────────────────────────
+    # Activated automatically when migration v18 has run. The FTS schema lookup
+    # is cheap; on absence we silently fall back to 2-layer RRF.
+    fts_ranked: dict[str, int] = {}
+    fts_rows_map: dict[str, dict] = {}
+
+    if _fts_artifacts_available(con):
+        try:
+            # match_bm25 returns NULL when query has no token hits; filter those out.
+            # sample_id filter is applied via JOIN if provided.
+            fts_sql = f"""
+                SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
+                       aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
+                       aa.file_size_kb, aa.mime_type, aa.created_at,
+                       {_FTS_SCHEMA_ARTIFACTS}.match_bm25(aa.artifact_id, ?) AS bm25
+                FROM   analysis_artifacts aa
+                {sample_join}
+                WHERE  {_FTS_SCHEMA_ARTIFACTS}.match_bm25(aa.artifact_id, ?) IS NOT NULL
+                       {sample_where}
+                ORDER  BY bm25 DESC
+                LIMIT  ?
+            """
+            fts_rows = con.execute(
+                fts_sql,
+                [query, query] + sample_params + [n * 2],
+            ).fetchall()
+            for rank, row in enumerate(fts_rows, start=1):
+                aid = str(row[0])
+                fts_ranked[aid] = rank
+                fts_rows_map[aid] = dict(zip(cols, row[:len(cols)]))
+        except Exception as exc:
+            logger.warning("search_artifacts: FTS layer failed: %s", exc)
+
+    # ── RRF fusion (3-way) ───────────────────────────────────────────────────
+    all_ids = set(exact_ranked) | set(hnsw_ranked) | set(fts_ranked)
     if not all_ids:
         latency_ms = int((time.monotonic() - t_start) * 1000)
         _record_search_metric(con, query, 0, latency_ms, "none", threshold, sample_id)
@@ -796,8 +858,10 @@ def search_artifacts(
     for aid in all_ids:
         r_exact = exact_ranked.get(aid, None)
         r_hnsw  = hnsw_ranked.get(aid, None)
+        r_fts   = fts_ranked.get(aid, None)
         rrf = (1 / (_RRF_K + r_exact) if r_exact else 0.0) + \
-              (1 / (_RRF_K + r_hnsw)  if r_hnsw  else 0.0)
+              (1 / (_RRF_K + r_hnsw)  if r_hnsw  else 0.0) + \
+              (1 / (_RRF_K + r_fts)   if r_fts   else 0.0)
         scored.append((rrf, aid))
 
     scored.sort(reverse=True)
@@ -808,24 +872,29 @@ def search_artifacts(
         _record_search_metric(con, query, 0, latency_ms, "none", threshold, sample_id)
         return []
 
-    # Determine dominant layer for metrics (any() correctly handles dual-layer hits)
-    exact_contributed = any(aid in exact_ranked for _, aid in top)
-    hnsw_contributed  = any(aid in hnsw_ranked  for _, aid in top)
-    if exact_contributed and hnsw_contributed:
-        batch_layer = "rrf"
-    elif exact_contributed:
-        batch_layer = "exact"
-    else:
-        batch_layer = "hnsw"
+    # Determine dominant layer label for metric recording (multi-layer hits → "rrf")
+    contributed = []
+    if any(aid in exact_ranked for _, aid in top): contributed.append("exact")
+    if any(aid in hnsw_ranked  for _, aid in top): contributed.append("hnsw")
+    if any(aid in fts_ranked   for _, aid in top): contributed.append("fts")
+    batch_layer = "rrf" if len(contributed) > 1 else (contributed[0] if contributed else "none")
 
     results = []
     for rrf_score, aid in top:
-        row_dict = exact_rows_map.get(aid) or hnsw_rows_map.get(aid, {})
+        row_dict = (
+            exact_rows_map.get(aid)
+            or hnsw_rows_map.get(aid)
+            or fts_rows_map.get(aid, {})
+        )
         row_dict["score"] = round(rrf_score, 6)
-        # Per-item layer: artifact may appear in one or both layers
+        # Per-item layer attribution
         in_e = aid in exact_ranked
         in_h = aid in hnsw_ranked
-        row_dict["search_layer"] = "rrf" if (in_e and in_h) else ("exact" if in_e else "hnsw")
+        in_f = aid in fts_ranked
+        per_item = [
+            tag for tag, flag in (("exact", in_e), ("hnsw", in_h), ("fts", in_f)) if flag
+        ]
+        row_dict["search_layer"] = "rrf" if len(per_item) > 1 else per_item[0]
         results.append(row_dict)
 
     latency_ms = int((time.monotonic() - t_start) * 1000)
