@@ -38,22 +38,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from config.settings import BIO_DB_ROOT
-from config.db_utils import db_health_check, open_db
+from config.db_utils import db_health_check
 
 logger = logging.getLogger(__name__)
 
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    # 殭屍 running 記錄由背景 task 延遲清理（30 秒後），避免 startup 時
-    # DB WAL 尚未穩定導致 DuckDB C++ abort crash。
+    # 殭屍 running 記錄由背景 task 延遲清理（60 秒後）。
+    # 直接 UPDATE 不做 CHECKPOINT，避免損壞連線狀態觸發 DuckDB C++ abort。
     async def _deferred_cleanup():
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
         try:
-            from config.db_utils import cleanup_stale_runs
-            with open_db() as _con:
-                n = cleanup_stale_runs(_con, hours=0)
+            import duckdb as _duckdb
+            from config.settings import DUCKDB_PATH as _DB
+            with _duckdb.connect(str(_DB)) as _con:
+                _con.execute("LOAD vss")
+                n = _con.execute(
+                    "SELECT COUNT(*) FROM analysis_history WHERE status='running'"
+                ).fetchone()[0]
                 if n:
+                    _con.execute(
+                        "UPDATE analysis_history SET status='stale' WHERE status='running'"
+                    )
                     logger.info("deferred startup cleanup: cleared %d zombie running records", n)
         except Exception as _e:
             logger.warning("deferred startup cleanup failed (non-fatal): %s", _e)
