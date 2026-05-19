@@ -74,6 +74,12 @@ async def _lifespan(_app: FastAPI):
 
     _verify_static_files()
 
+    # Embedding server warmup — fire-and-forget。
+    # 冷啟動下第一次 embed 約 6–8 秒（GPU kernel 載入 + model warmup）。
+    # 啟動就 dispatch 一次 dummy embed，讓真實使用者的第一個 query 走 warm path（< 30 ms）。
+    # asyncio.create_task() = fire-and-forget；warmup 失敗不影響 server 啟動。
+    asyncio.create_task(_warmup_embedding())
+
     # M4: API key 早期警告 — backend 非 local 但 key 缺，啟動就 log warning
     # 此處只 warn 不 raise，允許本機 local-only 部署
     try:
@@ -155,6 +161,24 @@ else:
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+async def _warmup_embedding() -> None:
+    """Pre-warm the embedding server so the first real query doesn't pay cold-start.
+
+    Profile-measured: first embed call after server restart = ~6.8s
+    (GPU kernel JIT + model load). Subsequent calls = 12-30 ms.
+
+    Called fire-and-forget from `_lifespan` startup. Failures are logged but
+    never raised — embedding is only needed for L1 cache features, and the rest
+    of the app must remain reachable even if the local llama-server is down.
+    """
+    try:
+        from analysis.embed import embed_text
+        await asyncio.to_thread(embed_text, "warmup")
+        logger.info("embedding warmup ok")
+    except Exception as exc:
+        logger.warning("embedding warmup failed (non-fatal): %s", exc)
 
 
 def _verify_static_files() -> None:
