@@ -274,7 +274,10 @@ class TestBioMemoryWriteQuery:
 
     def test_write_to_l1(self, tmp_path):
         l1_db = _make_l1_db(tmp_path)
+        # analysis.l1_cache 在 import 時 from config.settings import L1_CACHE_PATH，
+        # 必須同時 patch 模組層綁定（patch config.settings 不會回流）。
         with patch("config.settings.L1_CACHE_PATH", l1_db), \
+             patch("analysis.l1_cache.L1_CACHE_PATH", l1_db), \
              patch("analysis.embed.embed_batch", return_value=[[0.9] * 1024]):
             from server.bio_memory_server import _handle_bio_memory_write
             result = run(_handle_bio_memory_write({

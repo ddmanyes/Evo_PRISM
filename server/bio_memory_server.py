@@ -82,6 +82,51 @@ _RATE_LIMITED_TOOLS = frozenset(
     {"bio_history_search", "bio_memory_query", "bio_memory_write"}
 )
 
+_METRICS_SCHEMA_READY = False
+
+
+def _ensure_metrics_table() -> None:
+    """首次寫入時建立 mcp_tool_metrics 表（lazy, idempotent）。"""
+    global _METRICS_SCHEMA_READY
+    if _METRICS_SCHEMA_READY:
+        return
+    import duckdb
+    from config.settings import DUCKDB_PATH
+
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mcp_tool_metrics (
+                metric_id    UUID    PRIMARY KEY DEFAULT uuid(),
+                tool_name    VARCHAR NOT NULL,
+                duration_ms  INTEGER NOT NULL,
+                status       VARCHAR NOT NULL,  -- ok | user_error | system_error | rate_limited
+                recorded_at  TIMESTAMP NOT NULL DEFAULT now()
+            )
+            """
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mcp_metrics_tool_time "
+            "ON mcp_tool_metrics(tool_name, recorded_at)"
+        )
+    _METRICS_SCHEMA_READY = True
+
+
+def _record_metric(tool_name: str, duration_ms: int, status: str) -> None:
+    """Best-effort metric write; never raise to caller."""
+    try:
+        _ensure_metrics_table()
+        import duckdb
+        from config.settings import DUCKDB_PATH
+
+        with duckdb.connect(str(DUCKDB_PATH)) as con:
+            con.execute(
+                "INSERT INTO mcp_tool_metrics (tool_name, duration_ms, status) VALUES (?, ?, ?)",
+                [tool_name, int(duration_ms), status],
+            )
+    except Exception as exc:  # pragma: no cover
+        logger.debug("metric write failed (%s): %s", tool_name, exc)
+
 
 # ── Tool 定義 ────────────────────────────────────────────────────────────────
 
@@ -128,6 +173,11 @@ async def list_tools() -> list[types.Tool]:
                         "type": "integer",
                         "description": "往回查幾天（預設 7）。",
                         "default": 7,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "回傳筆數上限（預設 50，最大 500）。n_days 大時可調高避免漏掉早期紀錄。",
+                        "default": 50,
                     },
                 },
                 "required": [],
@@ -299,16 +349,28 @@ async def list_tools() -> list[types.Tool]:
 # ── Tool 實作 ─────────────────────────────────────────────────────────────────
 
 
+def _pipe_safe(s: str, max_len: int = 60) -> str:
+    """Escape pipe chars and truncate; protects Markdown table columns from breakage.
+
+    含空格的 ExFAT 路徑（例如 `/Volumes/NO NAME/...`）會破壞表格欄位對齊；
+    `|` 會被當成欄位分隔符 — 一律轉成 `\\|` 並截斷。
+    """
+    s = str(s).replace("\n", " ").replace("\r", " ").replace("|", "\\|")
+    if len(s) > max_len:
+        s = s[: max_len - 1] + "…"
+    return s
+
+
 def _fmt_table(rows: list[dict]) -> str:
-    """將 list[dict] 格式化為 Markdown 表格字串。"""
+    """將 list[dict] 格式化為 Markdown 表格字串（每格 pipe-safe + 截斷）。"""
     if not rows:
         return "（無記錄）"
     headers = list(rows[0].keys())
     sep = " | ".join("---" for _ in headers)
-    head = " | ".join(str(h) for h in headers)
+    head = " | ".join(_pipe_safe(h, 40) for h in headers)
     lines = [f"| {head} |", f"| {sep} |"]
     for row in rows:
-        line = " | ".join(str(row.get(h, "")) for h in headers)
+        line = " | ".join(_pipe_safe(row.get(h, ""), 60) for h in headers)
         lines.append(f"| {line} |")
     return "\n".join(lines)
 
@@ -349,9 +411,10 @@ async def _handle_bio_history_timeline(args: dict) -> str:
     from config.settings import DUCKDB_PATH
 
     n_days = int(args.get("n_days", 7))
+    limit = max(1, min(int(args.get("limit", 50)), 500))
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         rows = con.execute(
-            """
+            f"""
             SELECT sample_id,
                    analysis_type,
                    status,
@@ -361,7 +424,7 @@ async def _handle_bio_history_timeline(args: dict) -> str:
             FROM   analysis_history
             WHERE  completed_at >= now() - (? * INTERVAL '1 day')
             ORDER  BY completed_at DESC
-            LIMIT  50
+            LIMIT  {limit}
             """,
             [n_days],
         ).fetchall()
@@ -540,12 +603,13 @@ _HANDLERS = {
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     handler = _HANDLERS.get(name)
     if handler is None:
-        # 未知工具 — 使用者錯誤，不需要 correlation ID
+        _record_metric(name, 0, "user_error")
         return [types.TextContent(type="text", text=f"[ERROR] 未知工具：{name!r}")]
 
     # Rate limit gate（僅針對打 embedding server 的工具）
     if name in _RATE_LIMITED_TOOLS and not _rate_limit_check(f"tool:{name}"):
         logger.warning("Rate limit exceeded for tool %r", name)
+        _record_metric(name, 0, "rate_limited")
         return [
             types.TextContent(
                 type="text",
@@ -557,19 +621,22 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             )
         ]
 
+    t0 = time.monotonic()
     try:
         result = await handler(arguments)
     except RateLimitExceeded as exc:
+        _record_metric(name, int((time.monotonic() - t0) * 1000), "rate_limited")
         logger.warning("Tool %r rate limited: %s", name, exc)
         return [types.TextContent(type="text", text=f"[ERROR] {name}: {exc}")]
     except (ValueError, KeyError, TypeError) as exc:
-        # 使用者錯誤：參數驗證失敗、缺欄位、型別錯 — 直接回訊息，不需要 correlation ID
+        _record_metric(name, int((time.monotonic() - t0) * 1000), "user_error")
+        # 使用者錯誤：參數驗證失敗、缺欄位、型別錯
         logger.info("Tool %r user error: %s", name, exc)
         return [
             types.TextContent(type="text", text=f"[ERROR] {name} 參數錯誤：{exc}")
         ]
     except Exception as exc:
-        # 系統錯誤：產生 correlation ID 方便對照 server log
+        _record_metric(name, int((time.monotonic() - t0) * 1000), "system_error")
         corr_id = uuid.uuid4().hex[:8]
         logger.exception("Tool %r system error [corr=%s]: %s", name, corr_id, exc)
         return [
@@ -581,6 +648,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 ),
             )
         ]
+    _record_metric(name, int((time.monotonic() - t0) * 1000), "ok")
     return [types.TextContent(type="text", text=result)]
 
 
