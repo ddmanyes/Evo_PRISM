@@ -234,3 +234,85 @@
 | `277dd9a` | feat: Phase 2B complete |
 | `ce6fab8` | feat: Phase 2A |
 | `bc84ef9` | feat: Phase 1 complete |
+
+---
+
+---
+
+## 2026-05-19 — Phase 10 執行記錄（MCP HTTP Transport）
+
+### 10.1 server/bio_memory_server.py — HTTP transport 接入
+
+- **結果**：✅ 成功
+- **新增**：`create_http_app()` — `StreamableHTTPSessionManager(stateless=True)` + `_MCPApp` ASGI class（lifespan 委託 Starlette，HTTP 請求直接交 `session_manager.handle_request`）
+- **新增**：`_run_http(port)` — 綁定 `MCP_BIND_HOST`（預設 `127.0.0.1`）+ `uvicorn.run`
+- **新增**：`__main__` argparse — `--transport stdio|http --port 8082`
+- **保留**：stdio 行為完全不變，`.mcp.json` 無需修改
+
+### 10.2 server/web_app.py — 掛載 /mcp
+
+- **結果**：✅ 成功
+- `app.mount("/mcp", create_http_app())` — Web UI 啟動即暴露 MCP HTTP endpoint
+- 非致命掛載：mount 失敗僅 warning，不阻止 web server 啟動
+
+### 10.3 start_bioagent.sh — venv 路徑修正
+
+- **結果**：✅ 成功
+- `VENV` 路徑從 `~/.venvs/bioagent` 修正為 `~/.venvs/hermes-bio-memory`
+
+### 10.4 tests/test_phase10.py
+
+- **結果**：✅ 15/15 PASSED
+  - TestCreateHttpApp（3）：ASGI callable、`__call__` 簽名、idempotent
+  - TestMCPInitialize（3）：HTTP 200、server name、protocol version
+  - TestMCPToolsList（3）：HTTP 200、7 工具全出現、tool count == 7
+  - TestMCPInvalidRequest（2）：unknown method / malformed JSON 均 < 500
+  - TestWebAppMCPMount（2）：`/mcp` 路由存在、app 非 None
+  - TestStartScript（2）：venv 路徑含 `hermes-bio-memory`、不含舊路徑
+- **關鍵修正**：
+  - `httpx.AsyncClient(app=...)` 在 httpx 0.28.1 已移除 → 改用 `starlette.testclient.TestClient`
+  - `StreamableHTTPSessionManager.run()` 只能呼叫一次 → fixture 改 function scope，每測試建新實例
+  - preamble 含 `savefig(` 被 BLOCKED_PATTERNS 攔截 → `sandbox_exec` 新增 `preamble=` kwarg
+
+### 10.5 全套測試
+
+總測試數：228/228 PASSED，3 skipped
+
+---
+
+## 2026-05-19 — 安全性審查修復記錄（第一輪）
+
+受影響檔案：`server/code_executor.py`、`server/bio_memory_server.py`、`server/web_app.py`、`server/agent.py`
+
+| 項目 | 說明 |
+|------|------|
+| CRITICAL-C1 | `duckdb`/`config` 從 `ALLOWED_IMPORTS` 移除 |
+| CRITICAL-C2 | `savefig(`/`to_csv(`/`to_parquet(`/`to_excel(`/`COPY`/`EXPORT`/`.write(` 加入 `BLOCKED_PATTERNS` |
+| CRITICAL-C3 | CORS 改讀 `CORS_ORIGINS` env var，部署時設定 |
+| HIGH-H1 | `_run_http` 改綁 `127.0.0.1`，`MCP_BIND_HOST` env 覆蓋 |
+| HIGH-H2 | `sandbox_exec` 新增 `preamble=` kwarg，`is_safe()` 只驗 LLM code |
+| HIGH-H3 | `session_id` 加 regex 驗證 + `_MAX_SESSIONS=200` 上限，超限回 503 |
+| HIGH-H5 | `@app.on_event("startup")` 改為 `asynccontextmanager` lifespan |
+| MEDIUM-M3 | `_cleanup_old_sessions` 改用 timezone-aware 比較 |
+
+---
+
+## 2026-05-19 — 安全性審查修復記錄（第二輪）
+
+受影響檔案：`server/code_executor.py`、`server/web_app.py`、`analysis/spatial_eda.py`、`server/agent.py`
+
+| 項目 | 說明 |
+|------|------|
+| CRITICAL-NC1 | `BLOCKED_PATTERNS` 新增 20+ pandas/numpy/scanpy/anndata 隱性 I/O 函式；`analysis.*` 限縮為安全子模組白名單；`glob` 移出白名單 |
+| CRITICAL-NC2 | `result_path` 讀取前加 `BIO_DB_ROOT.resolve()` 前綴檢查（`report_page` + `result_images`） |
+| CRITICAL-NC3 | `download_csv` 加 `sample_id` 格式驗證；`_l2_expr_glob`/`_l2_obs_path`/`_results_dir` 加路徑遍歷斷言 |
+| CRITICAL-NC4 | `engram_compare` 對每個 `analysis_id` 呼叫 `_require_analysis_id()` |
+| HIGH-NH1 | 加 `_sessions_dict_lock = threading.Lock()`；清理函數分為 `_unsafe`（持鎖）與公開版本 |
+| HIGH-NH2 | `glob.glob(`/`glob.iglob(` 加入 `BLOCKED_PATTERNS` |
+| HIGH-NH3 | `write_to_l1_cache(`/`safe_write(`/`register_tool(` 加入 `BLOCKED_PATTERNS` |
+| HIGH-NH4 | Google 多輪：`_google_native` loop 前預先建立，loop 內始終傳 `native_history=_google_native` |
+| MEDIUM-NM1 | Claude tool result 截斷至 800 字（與 google/local 一致） |
+| MEDIUM-NM2 | `_exec_bio_check_l2_sufficiency` venv 路徑 `bioagent` → `hermes-bio-memory` |
+| MEDIUM-NM5 | 正則修正含空格路徑；加 `BIO_DB_ROOT` 路徑限制 |
+
+總測試數：228/228 PASSED，3 skipped（全程不 regress）

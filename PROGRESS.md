@@ -7,9 +7,9 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：plan_zh.md 第一章至第四章重構（期刊風格改寫、三層架構圖、ER Diagram）
+**里程碑**：Phase 10 完成 + 兩輪安全性審查全部修復（19 項問題）
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
-**最後更新**：2026-05-18
+**最後更新**：2026-05-19
 **commit**：(latest)
 
 ---
@@ -414,13 +414,46 @@
 
 ---
 
+## ✅ Phase 10 完成（2026-05-19）
+
+- [x] `server/bio_memory_server.py` — 新增 `create_http_app()`（`StreamableHTTPSessionManager` stateless mode）+ `_run_http()` + `--transport http --port` CLI 參數；stdio 行為完全不變
+- [x] `server/web_app.py` — 掛載 `app.mount("/mcp", create_http_app())`，Web UI 啟動時自動暴露 MCP HTTP endpoint
+- [x] `start_bioagent.sh` — 修正 `VENV` 路徑（`bioagent` → `hermes-bio-memory`）
+- [x] `tests/test_phase10.py` — 15/15 PASSED（TestCreateHttpApp × 3 + TestMCPInitialize × 3 + TestMCPToolsList × 3 + TestMCPInvalidRequest × 2 + TestWebAppMCPMount × 2 + TestStartScript × 2）
+- **總測試數：228/228 PASSED，3 skipped**
+
+---
+
 ## ⏭️ 下一步（按優先順序）
 
 1. 端對端測試：Claude API 切換驗證（填入 `ANTHROPIC_API_KEY`）
-2. launchd 排程安裝（`launchctl load` × 5，plist 範本在 `docs/`）
-3. Linux 伺服器遷移（見 plan_zh.md checklist）
-4. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
-5. Telegram Bot token 申請（Phase 0 正式啟用）
+3. launchd 排程安裝（`launchctl load` × 5，plist 範本在 `docs/`）
+4. Linux 伺服器遷移（見 plan_zh.md checklist）
+5. Docker 沙盒替換 `code_executor.py`（Linux 部署用）
+6. Telegram Bot token 申請（Phase 0 正式啟用）
+
+---
+
+## 📐 Phase 10：MCP HTTP Transport 規劃
+
+> 目標：將現有 stdio-only MCP Server 升級為同時支援 HTTP transport，讓 Web UI 與非 Python 客戶端可統一透過 MCP 呼叫工具。
+
+### 背景
+
+| 客戶端 | 現況 | Phase 10 後 |
+| ------ | ---- | ----------- |
+| Claude Code CLI | ✅ stdio MCP | ✅ 維持 stdio |
+| Web UI (FastAPI) | 直接 import agent.py | ✅ 可選用 MCP HTTP |
+| Telegram Bot | 直接 import agent.py | ✅ 可選用 MCP HTTP |
+| 外部工具 / curl | ❌ 無法呼叫 | ✅ HTTP endpoint |
+
+### 實作項目
+
+- [ ] P10-1 `server/bio_memory_server.py` — 加 `streamable-http` transport（保留 stdio，`--transport` 參數切換）
+- [ ] P10-2 `start_bioagent.sh` — 以 HTTP mode 啟動 MCP Server（預設 port 8082）
+- [ ] P10-3 `server/web_app.py` — 新增 `/mcp` proxy 路由（可選，供前端直接呼叫 MCP 工具）
+- [ ] P10-4 `tests/test_phase10.py` — HTTP transport 端對端測試（工具呼叫 + 錯誤處理）
+- [ ] P10-5 `docs/MCP_HTTP_GUIDE.md` — 使用說明（curl 範例 + Python client 範例）
 
 ---
 
@@ -587,6 +620,50 @@
 | 2026-05-17 | agent.py 重大修復（3C + 8H） | Cache Hit Protocol 實作、enrichment UUID 型別修正、Code Promotion 寫入修復、startup cleanup、tempfile 洩漏修正、Claude backend 序列化、threshold 0.5→0.88、get_connection 統一 |
 | 2026-05-18 | ENGRAM 模組完成 | analysis_artifacts + HNSW 索引、5 個 ENGRAM-Core 函數、23/23 tests、bulk_eda 自動登記、8 個 API 路由、engram.html Web UI |
 | 2026-05-18 | Phase 9-SQL + 9A 完成 | schema_migrations (v10)、ENUM 型別 (v11)、file_path 相對化 (v12)、composite index + UNIQUE (v13)、blob 拆表 (v14)、search_metrics (v15)；Hybrid RRF 搜尋；194/194 PASSED |
+| 2026-05-19 | Phase 10 完成 | MCP HTTP Transport：`bio_memory_server.py` 加 `streamable-http`（stateless）、`create_http_app()` 掛載至 `web_app.py /mcp`、`start_bioagent.sh` venv 路徑修正、15/15 tests；228/228 全套通過 |
+
+---
+
+## 🔒 安全性與正確性審查記錄（2026-05-19，Code Review）
+
+### 審查範圍
+`server/agent.py`、`server/bio_memory_server.py`、`server/web_app.py`、`config/settings.py`、`server/code_executor.py`
+
+### 發現問題（修復狀態更新：2026-05-19）
+
+| 級別 | # | 問題 | 位置 | 狀態 |
+| ---- | - | ---- | ---- | ---- |
+| CRITICAL | C1 | `config` + `duckdb` 在沙盒白名單，LLM 生成程式碼可 DELETE/DROP 主資料庫 | `code_executor.py` | ✅ 已修 — 兩者從 `ALLOWED_IMPORTS` 移除 |
+| CRITICAL | C2 | `plt.savefig`、`to_csv`、`COPY TO` 繞過 `open()` 封鎖，可寫任意路徑 | `code_executor.py` | ✅ 已修 — 加入 `BLOCKED_PATTERNS` |
+| CRITICAL | C3 | CORS `allow_origins=["*"]`，部署前必須鎖定 | `web_app.py` | ✅ 已修 — 改讀 `CORS_ORIGINS` env var，預設 `*`（本機開發可接受），部署時設 env |
+| HIGH | H1 | MCP HTTP `_run_http` 綁定 `0.0.0.0` 無認證，區網任何主機可寫入 DB | `bio_memory_server.py` | ✅ 已修 — 預設 `127.0.0.1`，可透過 `MCP_BIND_HOST` env 覆蓋 |
+| HIGH | H2 | `is_safe()` 同時驗證 preamble 與 LLM 程式碼，架構混亂 | `agent.py` / `code_executor.py` | ✅ 已修 — `sandbox_exec` 新增 `preamble=` kwarg，只對 `code` 執行安全檢查 |
+| HIGH | H3 | `session_id` 無長度/格式驗證，可記憶體耗盡攻擊 | `web_app.py` | ✅ 已修 — 加 regex 驗證 + `_MAX_SESSIONS=200` 上限；超限回 503 |
+| HIGH | H5 | `@app.on_event("startup")` 已廢棄，與 MCP lifespan 可能衝突 | `web_app.py` | ✅ 已修 — 改用 `@contextlib.asynccontextmanager` lifespan，cleanup task 隨 app 生命週期 |
+| MEDIUM | M3 | `_cleanup_old_sessions` timezone 比較冗餘（`.replace(tzinfo=None)` 雙重去除） | `web_app.py` | ✅ 已修 — `_sessions_dict_lock` 重寫時改用 timezone-aware 比較 |
+| MEDIUM | M4 | API key 預設空字串，未設定時在首次呼叫才報錯而非啟動時早期失敗 | `settings.py` | ⏳ 待修（低優先） |
+
+**第二輪審查新發現（2026-05-19）：**
+
+| 級別 | # | 問題 | 位置 | 狀態 |
+| ---- | - | ---- | ---- | ---- |
+| CRITICAL | NC1 | pandas/numpy/anndata/scanpy 隱性 I/O 完全繞過沙盒（`pd.read_csv('/etc/passwd')`、`np.save()` 等） | `code_executor.py` | ✅ 已修 — 加入 20+ 函式名稱至 `BLOCKED_PATTERNS`；`analysis.*` 限縮至安全子模組 |
+| CRITICAL | NC2 | `result_path` 從 DB 讀出後直接 `read_text()`，無路徑遍歷防護 | `web_app.py` | ✅ 已修 — 加 `BIO_DB_ROOT.resolve()` 前綴檢查；`result_images` 端點同步修正 |
+| CRITICAL | NC3 | `sample_id` 未驗證直接插入 Parquet glob f-string | `web_app.py` / `spatial_eda.py` | ✅ 已修 — `download_csv` 加格式驗證；`_l2_expr_glob`/`_l2_obs_path`/`_results_dir` 加路徑斷言 |
+| CRITICAL | NC4 | `engram_compare` 的 `analysis_ids` 無格式驗證 | `web_app.py` | ✅ 已修 — 迴圈呼叫 `_require_analysis_id()` |
+| HIGH | NH1 | session 三個字典在清理迴圈與請求之間無互斥鎖，Python 3.11+ 會 `RuntimeError` | `web_app.py` | ✅ 已修 — 加 `_sessions_dict_lock = threading.Lock()`；清理函數分為 `_unsafe`（持鎖呼叫）與 `_cleanup_old_sessions`（公開） |
+| HIGH | NH2 | `glob` 在白名單允許目錄列舉 | `code_executor.py` | ✅ 已修 — 從 `ALLOWED_IMPORTS` 移除；`glob.glob(`/`glob.iglob(` 加入 `BLOCKED_PATTERNS` |
+| HIGH | NH3 | `analysis.*` 整包可呼叫 `write_to_l1_cache`/`safe_write` 等寫入函數 | `code_executor.py` | ✅ 已修 — 改為明確列出安全子模組白名單；`write_to_l1_cache(`/`safe_write(`/`register_tool(` 加入 `BLOCKED_PATTERNS` |
+| HIGH | NH4 | Google backend 多輪 tool history 丟失（OpenAI-format history 中 tool_call 結構被轉換掉） | `agent.py` | ✅ 已修 — `_google_native` 在 loop 前從 `messages` 預先建立，loop 內始終傳入 `native_history=_google_native` |
+| MEDIUM | NM1 | Claude backend 工具結果不截斷（三端不一致） | `agent.py` | ✅ 已修 — Claude tool_result 統一截斷至 800 字 |
+| MEDIUM | NM2 | `_exec_bio_check_l2_sufficiency` 舊 venv 路徑 `bioagent` | `agent.py` | ✅ 已修 — 改為 `hermes-bio-memory` |
+| MEDIUM | NM5 | `\S+` 截斷含空格路徑（ExFAT `/Volumes/NO NAME/`） | `web_app.py` | ✅ 已修 — 改為 `(.+?)(?:\n|$)`；順帶加 `BIO_DB_ROOT` 路徑限制 |
+
+### 後端接入確認（claude / google / local）
+
+- **Claude**：工具呼叫格式正確，但多輪工具結果不截斷（成本較高，M1 待修）
+- **Google**：單輪正確；多輪工具歷史丟失（H4 待修）
+- **Local（Gemma）**：正常
 
 ---
 

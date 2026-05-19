@@ -34,33 +34,52 @@ from config.settings import BIO_DB_ROOT
 # ── 安全策略 ──────────────────────────────────────────────────────────────────
 
 ALLOWED_IMPORTS = {
-    # 科學運算
-    "duckdb", "pandas", "numpy", "scipy", "scipy.stats",
+    # 科學運算（duckdb/config 移除；glob 移除：可列舉任意目錄）
+    "pandas", "numpy", "scipy", "scipy.stats",
     "matplotlib", "matplotlib.pyplot", "seaborn",
     "sklearn", "sklearn.preprocessing", "sklearn.decomposition",
-    # 生物資訊
+    # 生物資訊（唯計算用，不含 IO；scanpy/anndata 仍需但 IO 由 BLOCKED_PATTERNS 封鎖）
     "anndata", "scanpy", "squidpy",
-    # 專案模組
-    "analysis", "config",
-    # 標準庫（安全子集；pathlib 移除：Path.read_text() 可繞過 open() 封鎖）
+    # 專案分析模組：只允許 spatial_eda / bulk_eda 等唯讀分析函數；
+    # l1_cache / history_query / tool_registry 不開放（可寫 DB）
+    "analysis.spatial_eda", "analysis.bulk_eda",
+    "analysis.pathway_scoring", "analysis.multiomics_integration",
+    "analysis.bulk_timeseries", "analysis.report_generator",
+    # 標準庫安全子集（pathlib/glob/os 不開放）
     "json", "re", "math", "datetime", "collections",
     "itertools", "functools", "typing", "dataclasses",
-    "glob",  # 路徑 pattern 展開（唯讀，無寫入風險）
 }
 
 BLOCKED_PATTERNS = [
+    # 系統呼叫
     "os.system", "os.popen", "os.execv", "os.execve",
     "subprocess", "multiprocessing",
     "__import__",
     "eval(", "exec(",
     "compile(",
-    "open(",           # 禁止任意檔案開啟（應透過分析函數）
-    "socket",
-    "urllib", "requests", "httpx",  # 禁止外部網路
+    # 檔案 I/O（直接與間接）
+    "open(",
+    # pandas/numpy/scanpy/anndata 的隱性檔案 I/O — 繞過 open() 封鎖
+    "read_csv(", "read_parquet(", "read_excel(", "read_table(",
+    "read_json(", "read_hdf(", "read_feather(", "read_pickle(",
+    "np.load(", "np.fromfile(", "np.genfromtxt(", "np.loadtxt(",
+    "sc.read", "sc.read_h5ad(", "anndata.read",
+    # 寫入
+    "savefig(", "to_csv(", "to_parquet(", "to_excel(", "to_hdf(",
+    "to_feather(", "to_pickle(", "to_json(",
+    "np.save(", "np.savetxt(", "np.savez(",
+    ".write_h5ad(", ".write_zarr(", ".write(",
+    "COPY ", "EXPORT ",
+    # 網路
+    "socket", "urllib", "requests", "httpx",
+    # 路徑操作
     "shutil.rmtree", "shutil.move",
     "pathlib.Path.unlink", "pathlib.Path.rmdir",
+    "glob.glob(", "glob.iglob(",
+    # L1/DB 寫入（防止從 analysis.* 呼叫寫入函數）
+    "write_to_l1_cache(", "safe_write(", "register_tool(",
+    # builtin 繞過
     "importlib",
-    # 防止 builtin 繞過：getattr(__builtins__, "open") 等手法
     "getattr(", "__builtins__", "__class__", "__subclasses__", "vars(",
 ]
 
@@ -125,13 +144,14 @@ def is_safe(code: str) -> tuple[bool, str]:
 # ── 沙盒執行 ─────────────────────────────────────────────────────────────────
 
 
-def sandbox_exec(code: str, timeout: int = 60) -> ExecResult:
+def sandbox_exec(code: str, timeout: int = 60, *, preamble: str = "") -> ExecResult:
     """
     在受限環境執行 Python 程式碼。
 
     Args:
-        code:    要執行的 Python 程式碼字串
-        timeout: 執行超時秒數（預設 60）
+        code:     LLM 生成的程式碼（安全性檢查對象）
+        timeout:  執行超時秒數（預設 60）
+        preamble: 系統注入的前置程式碼（不經安全性檢查，由呼叫端負責）
 
     Returns:
         ExecResult(success, output, traceback, duration_sec)
@@ -144,6 +164,9 @@ def sandbox_exec(code: str, timeout: int = 60) -> ExecResult:
     ok, reason = is_safe(code)
     if not ok:
         raise SecurityError(reason)
+
+    if preamble:
+        code = preamble + "\n" + code
 
     # 最小化環境：不繼承 os.environ，避免洩漏 API 金鑰
     _safe_env = {
