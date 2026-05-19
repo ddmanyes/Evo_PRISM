@@ -268,12 +268,25 @@ def _run_async(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
 
 
+def _patch_db_path(monkeypatch, db):
+    """同時 patch settings 與 analysis.history_query 的 module-level binding。
+
+    analysis.history_query 在 import 時 `from config.settings import DUCKDB_PATH`，
+    若已被其它測試 import，純 patch config.settings 不會回流。"""
+    monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+    try:
+        import analysis.history_query as _hq
+        monkeypatch.setattr(_hq, "DUCKDB_PATH", db)
+    except ImportError:
+        pass
+
+
 class TestE2EToolCalls:
     """直接呼叫 call_tool，端對端驗證 7 工具讀真實 DB 回傳結果。"""
 
     def test_bio_history_lookup_returns_table(self, tmp_path, monkeypatch):
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool("bio_history_lookup", {"sample_id": "e2e_sample"}))
         text = result[0].text
@@ -284,14 +297,14 @@ class TestE2EToolCalls:
 
     def test_bio_history_timeline_respects_limit(self, tmp_path, monkeypatch):
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool("bio_history_timeline", {"n_days": 30, "limit": 5}))
         assert "e2e_sample" in result[0].text
 
     def test_bio_history_check_exists_true(self, tmp_path, monkeypatch):
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool(
             "bio_history_check",
@@ -301,7 +314,7 @@ class TestE2EToolCalls:
 
     def test_bio_history_check_exists_false(self, tmp_path, monkeypatch):
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool(
             "bio_history_check",
@@ -312,7 +325,7 @@ class TestE2EToolCalls:
     def test_unknown_tool_recorded_as_user_error(self, tmp_path, monkeypatch):
         # 覆蓋 unknown-tool 路徑（不觸發 L1 import，避免 module-bound 路徑干擾）
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool("no_such_tool", {}))
         assert "未知工具" in result[0].text
@@ -324,7 +337,7 @@ class TestE2EToolCalls:
 class TestArtifactE2E:
     def test_bio_artifact_summary_returns_metadata(self, tmp_path, monkeypatch):
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool("bio_artifact_summary",
                                       {"sample_id": "e2e_sample"}))
@@ -336,7 +349,7 @@ class TestArtifactE2E:
 
     def test_bio_artifact_summary_no_sample(self, tmp_path, monkeypatch):
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
         result = _run_async(call_tool("bio_artifact_summary",
                                       {"sample_id": "no_such_sample"}))
@@ -345,7 +358,7 @@ class TestArtifactE2E:
     def test_bio_artifact_search_subtype_only(self, tmp_path, monkeypatch):
         """Layer 1 exact subtype 不需要 embedding server；驗證可命中。"""
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         # 強制走 Layer 1 only：mock embed 失敗 → search_artifacts 仍可回 Layer 1 結果
         monkeypatch.setattr("analysis.artifact_registry._get_embedding",
                             lambda q: None)
@@ -436,7 +449,7 @@ class TestMetricsRecording:
     def test_metric_row_written_on_success(self, tmp_path, monkeypatch):
         import duckdb
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         # 強制 lazy init 重跑
         import server.bio_memory_server as bms
         bms._METRICS_SCHEMA_READY = False
@@ -456,7 +469,7 @@ class TestMetricsRecording:
         # 用 unknown-tool 觸發 user_error 路徑（不依賴 handler 內部行為）
         import duckdb
         db = _setup_e2e_db(tmp_path)
-        monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
+        _patch_db_path(monkeypatch, db)
         import server.bio_memory_server as bms
         bms._METRICS_SCHEMA_READY = False
         from server.bio_memory_server import call_tool
