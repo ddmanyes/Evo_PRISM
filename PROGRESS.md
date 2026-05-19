@@ -7,10 +7,20 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清 + 安全性 M4 完成
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
-**commit**：e2c3742
+**commit**：（待回填）
+
+---
+
+## ✅ 2026-05-19 Session SQL-7/9/10 文件對齊 + UNIQUE regression test
+
+- [x] **SQL-7 UNIQUE regression test**：新檔 `tests/test_artifact_unique_constraint.py` 4 tests — first insert OK、duplicate (analysis_id, subtype, label) 被 `ConstraintException` 擋、不同 subtype/同 label OK、不同 analysis/同 (subtype, label) OK；migration v14 `uq_artifacts_run_subtype_label` 未來改 schema 時不會悄悄消失
+- [x] **`sample_registry(project, sample_id)` UNIQUE 評估**：結論不需要 — `sample_id` 已是 PRIMARY KEY，全域唯一政策維持
+- [x] **SQL-9 文件對齊**：`analysis/tool_registry.register_tool()` 已加 assertion（line 265–286），對照 `tools.revision_count` vs `MAX(tool_change_log.revision_number)` 不一致 raise；PROGRESS.md 已勾選
+- [x] **SQL-10 文件對齊**：`config/db_utils._bootstrap_vss()` + `open_db()` / `get_connection()` 每次新連線都 LOAD vss + SET hnsw_enable_experimental_persistence；read_only 連線跳過 SET；PROGRESS.md 已勾選
+- [x] **驗證**：62/62 PASS（M4 + phase4 + phase10 + artifact_unique）
 
 ---
 
@@ -549,7 +559,7 @@
 - [x] M4：API key 未設定時改為啟動時早期失敗（`config.settings.validate_inference_backend()` + agent client factory + web_app lifespan early-warn；10 tests 覆蓋）
 - [ ] NH4 後續驗證：Google backend 多輪 tool history 修復後尚未端對端測試
 - [ ] SQL-6 NOT NULL 補齊（待 DuckDB 升級支援有 FK 表的 SET NOT NULL）
-- [ ] SQL-7/SQL-8 UNIQUE 約束與 STRUCT/EAV 重構（migration v18+）
+- [x] SQL-7 UNIQUE 約束（migration v14 + 4 tests regression）；SQL-8 STRUCT/EAV 仍延至 9A-3 評估後
 
 ### 🔧 MCP Server 改善待辦（2026-05-19 補登，server/bio_memory_server.py review）
 
@@ -666,12 +676,12 @@
 
 **P2（隨 9B/9C 一併處理）**
 
-- [ ] SQL-7 UNIQUE 約束：
-  - `analysis_artifacts(analysis_id, artifact_subtype, label)` — 防同分析重複登記
-  - `sample_registry(project, sample_id)` 評估是否需要（跨 project 同 sample_id 政策）
-- [ ] SQL-8 `analysis_history.parameters` JSON → STRUCT 或 EAV — 視 9A-3 embedding 強化需求決定
-- [ ] SQL-9 `tools.revision_count` derived data 同步保證 — 在 `tool_change_log` 寫入路徑加 assertion
-- [ ] SQL-10 HNSW persistence 設定移入 `config/db_utils.py` connection bootstrap，避免遺漏
+- [x] SQL-7 UNIQUE 約束：
+  - `analysis_artifacts(analysis_id, artifact_subtype, label)` — 已建立 `uq_artifacts_run_subtype_label` (migration v11/v13/v14)；`tests/test_artifact_unique_constraint.py` 4 tests regression（first insert / duplicate triple rejected / different subtype same label OK / different analysis same triple OK）
+  - `sample_registry(project, sample_id)` 評估結論：**不需要** — `sample_id` 已是 PRIMARY KEY，全域唯一政策不變
+- [ ] SQL-8 `analysis_history.parameters` JSON → STRUCT 或 EAV — 視 9A-3 embedding 強化需求決定（暫不阻塞）
+- [x] SQL-9 `tools.revision_count` derived data 同步保證 — `analysis/tool_registry.register_tool()` 第 265–286 行已加 assertion：對照 `tools.revision_count` vs `MAX(tool_change_log.revision_number)`，不一致 raise RuntimeError
+- [x] SQL-10 HNSW persistence 設定移入 `config/db_utils._bootstrap_vss()` — `open_db()` 與 `get_connection()` 每次新連線都 LOAD vss + SET hnsw_enable_experimental_persistence（read_only 連線跳過 SET）
 
 **P3（長期，不阻塞）**
 
