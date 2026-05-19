@@ -82,27 +82,35 @@ async def _lifespan(_app: FastAPI):
         logger.warning("inference backend startup check FAIL: %s", _e)
 
     # 殭屍 running 記錄由背景 task 延遲清理（60 秒後）。
-    # 直接 UPDATE 不做 CHECKPOINT，避免損壞連線狀態觸發 DuckDB C++ abort。
-    async def _deferred_cleanup():
-        await asyncio.sleep(60)
+    # Read-only pre-check：絕大多數啟動沒有 zombie，可完全避開 write 連線（不觸發 WAL replay）。
+    # 只在確實有 zombie 時才開短連線：不 LOAD vss、立即 CHECKPOINT 後 close，
+    # 縮小 WAL 損壞視窗（ExFAT 無日誌）。同步 I/O 包在 to_thread 避免阻塞 event loop。
+    def _do_deferred_cleanup() -> None:
+        import duckdb as _duckdb
+        from config.settings import DUCKDB_PATH as _DB
         try:
-            import duckdb as _duckdb
-            from config.settings import DUCKDB_PATH as _DB
-            # Read-only pre-check: avoids opening write connection (and WAL replay)
-            # unless there are actually zombie records to fix.
             with _duckdb.connect(str(_DB), read_only=True) as _ro:
                 n = _ro.execute(
                     "SELECT COUNT(*) FROM analysis_history WHERE status='running'"
                 ).fetchone()[0]
-            if n:
-                with _duckdb.connect(str(_DB)) as _con:
-                    _con.execute("LOAD vss")
-                    _con.execute(
-                        "UPDATE analysis_history SET status='stale' WHERE status='running'"
-                    )
-                    logger.info("deferred startup cleanup: cleared %d zombie running records", n)
+            if not n:
+                logger.debug("deferred cleanup: no zombie running records, write open skipped")
+                return
+            _con = _duckdb.connect(str(_DB))
+            try:
+                _con.execute(
+                    "UPDATE analysis_history SET status='stale' WHERE status='running'"
+                )
+                _con.execute("CHECKPOINT")
+            finally:
+                _con.close()
+            logger.info("deferred startup cleanup: cleared %d zombie running records", n)
         except Exception as _e:
             logger.warning("deferred startup cleanup failed (non-fatal): %s", _e)
+
+    async def _deferred_cleanup():
+        await asyncio.sleep(60)
+        await asyncio.to_thread(_do_deferred_cleanup)
 
     async def _cleanup_loop():
         while True:

@@ -1,20 +1,29 @@
 """
 Phase 4 — BioAgent MCP Server
 
-公開 7 個 MCP 工具供 Claude Code / Hermes Agent 呼叫：
+公開 14 個 MCP 工具供 Claude Code / Hermes Agent 呼叫：
 
 歷史查詢（0 token，SQL 直接回傳）：
-    bio_history_lookup   — 查詢樣本分析歷史表
-    bio_history_timeline — 時間軸摘要（最近 N 天）
-    bio_history_check    — 是否已有完成存檔（True/False）
+    bio_history_lookup        — 查詢樣本分析歷史表
+    bio_history_timeline      — 時間軸摘要（最近 N 天）
+    bio_history_check         — 是否已有完成存檔（True/False）
+    bio_check_l2_sufficiency  — L2 Parquet 是否就緒
 
 語意搜尋（少量 token，只傳 summary）：
-    bio_history_search   — L1 HNSW cosine 搜尋，回傳 summary 列表
+    bio_history_search        — L1 HNSW cosine 搜尋，回傳 summary 列表
+    bio_artifact_search       — ENGRAM artifact RRF hybrid 搜尋
+    bio_artifact_summary      — 0-token artifact 概覽
 
 記憶讀寫：
-    bio_memory_query     — L1 語意快取查詢（報告全文）
-    bio_memory_write     — 寫入 L1 語意快取
-    bio_register_sample  — 登記新樣本至 sample_registry
+    bio_memory_query          — L1 語意快取查詢（報告全文）
+    bio_memory_write          — 寫入 L1 語意快取
+    bio_register_sample       — 登記新樣本至 sample_registry
+
+分析執行（重量級，會寫 DB / 跑沙盒）：
+    bio_run_spatial_eda       — 空間轉錄體 EDA（10–30 秒，需 l2_ready=true）
+    bio_run_bulk_eda          — Bulk RNA EDA（10–60 秒）
+    bio_execute_code          — 沙盒執行 Python 程式碼（白名單 import，timeout=60s）
+    bio_tool_health           — HELIX 工具庫健康報告與穩定化迭代管理
 
 啟動方式：
     # stdio（Claude Code CLI，.mcp.json 設定）
@@ -31,6 +40,7 @@ Phase 4 — BioAgent MCP Server
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -77,10 +87,35 @@ class RateLimitExceeded(RuntimeError):
     """Embedding/search 路徑被 rate limit 拒絕；call_tool 視為使用者錯誤回傳。"""
 
 
-# 需要 rate limit 保護的工具（會打 embedding server 或耗用 llama 資源）
+# 需要 rate limit 保護的工具（會打 embedding server 或耗用大量資源）
 _RATE_LIMITED_TOOLS = frozenset(
-    {"bio_history_search", "bio_memory_query", "bio_memory_write", "bio_artifact_search"}
+    {
+        "bio_history_search",
+        "bio_memory_query",
+        "bio_memory_write",
+        "bio_artifact_search",
+        # 分析執行工具：寫 L1 cache（打 embedding server）+ 重量級運算
+        "bio_run_spatial_eda",
+        "bio_run_bulk_eda",
+        # 沙盒執行：CPU/I/O 重量級
+        "bio_execute_code",
+    }
 )
+
+# 高權限工具：可執行任意 Python（即使沙盒）；預設不對 MCP 客戶端暴露。
+# 設定 env MCP_ENABLE_DANGEROUS_TOOLS=true 才會出現在 list_tools 並可被呼叫。
+# 此 flag 為 defense in depth — 即使 MCP_AUTH_TOKEN 未設，也不會意外洩漏沙盒執行入口。
+_DANGEROUS_TOOLS = frozenset({"bio_execute_code"})
+
+
+def _dangerous_tools_enabled() -> bool:
+    """Read MCP_ENABLE_DANGEROUS_TOOLS env at runtime (no caching, by design).
+
+    Caching this value would break test isolation: pytest's monkeypatch.setenv
+    flips the env per-test, and every call site expects to see the fresh value.
+    Cost is one os.environ.get() lookup per list_tools / call_tool — negligible.
+    """
+    return os.environ.get("MCP_ENABLE_DANGEROUS_TOOLS", "").lower() in ("1", "true", "yes")
 
 _METRICS_SCHEMA_READY = False
 
@@ -133,6 +168,14 @@ def _record_metric(tool_name: str, duration_ms: int, status: str) -> None:
 
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
+    tools = _build_all_tools()
+    if not _dangerous_tools_enabled():
+        tools = [t for t in tools if t.name not in _DANGEROUS_TOOLS]
+    return tools
+
+
+def _build_all_tools() -> list[types.Tool]:
+    """Build full tool list. Dangerous tools are included here; filtering is in list_tools."""
     return [
         types.Tool(
             name="bio_history_lookup",
@@ -155,6 +198,12 @@ async def list_tools() -> list[types.Tool]:
                         "type": "integer",
                         "description": "最多回傳筆數（預設 20）。",
                         "default": 20,
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["text", "json"],
+                        "description": "回傳格式：text（Markdown 表格，預設）或 json（結構化字串，供客戶端解析）。",
+                        "default": "text",
                     },
                 },
                 "required": [],
@@ -179,6 +228,12 @@ async def list_tools() -> list[types.Tool]:
                         "description": "回傳筆數上限（預設 50，最大 500）。n_days 大時可調高避免漏掉早期紀錄。",
                         "default": 50,
                     },
+                    "format": {
+                        "type": "string",
+                        "enum": ["text", "json"],
+                        "description": "回傳格式：text（Markdown 表格，預設）或 json。",
+                        "default": "text",
+                    },
                 },
                 "required": [],
             },
@@ -200,6 +255,12 @@ async def list_tools() -> list[types.Tool]:
                     "analysis_type": {
                         "type": "string",
                         "description": "分析類型，例如 spatial_eda。",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["text", "json"],
+                        "description": "回傳格式：text（YAML-like，預設）或 json。",
+                        "default": "text",
                     },
                 },
                 "required": ["sample_id", "analysis_type"],
@@ -396,10 +457,166 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["sample_id"],
             },
         ),
+        types.Tool(
+            name="bio_check_l2_sufficiency",
+            description=(
+                "確認樣本的 L2 Parquet 是否已就緒（l2_ready = true）。"
+                "在執行 bio_run_spatial_eda 之前必須先呼叫；l2_ready=false 時回傳需要執行的轉換命令。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "樣本 ID，例如 crc_official_v4。",
+                    },
+                },
+                "required": ["sample_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_spatial_eda",
+            description=(
+                "對指定樣本執行空間轉錄體 EDA（QC 統計 + top genes + 報告生成）。"
+                "完成後自動寫入 analysis_history + L1 快取。需要 L2 Parquet 已轉換（l2_ready = true）。"
+                "耗時約 10–30 秒；rate-limited（會寫 embedding）。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "樣本 ID，例如 crc_official_v4。",
+                    },
+                    "requested_by": {
+                        "type": "string",
+                        "description": "請求者（預設 mcp_client）。",
+                        "default": "mcp_client",
+                    },
+                },
+                "required": ["sample_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_bulk_eda",
+            description=(
+                "對 Bulk RNA-seq 樣本集執行 EDA（QC 統計 + top genes + 樣本相關 + PCA）。"
+                "完成後自動寫入 analysis_history。需要先執行 scripts/bulk_rna/ pipeline 產生 gene_counts.tsv。"
+                "耗時約 10–60 秒；rate-limited（會寫 embedding）。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "樣本集 ID，例如 Kallisto_v1。",
+                    },
+                    "requested_by": {
+                        "type": "string",
+                        "description": "請求者（預設 mcp_client）。",
+                        "default": "mcp_client",
+                    },
+                },
+                "required": ["sample_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_execute_code",
+            description=(
+                "沙盒執行動態生成的 Python 程式碼（用於非標準分析）。"
+                "只允許白名單 import（duckdb 除外，pandas/numpy/scipy/anndata/scanpy 等）。"
+                "禁止 os.system, subprocess, open(), eval, exec, glob.glob 等危險操作。"
+                "timeout 預設 60 秒，最大 300 秒；rate-limited。"
+                "⚠️ 高權限工具：預設**不對外暴露**。必須設定 env `MCP_ENABLE_DANGEROUS_TOOLS=true` 才會出現在 tools/list；"
+                "同時建議搭配 `MCP_AUTH_TOKEN` 與 `MCP_BIND_HOST=127.0.0.1`。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "要執行的 Python 程式碼。",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "此程式碼的分析目的（用於 analysis_history 記錄）。",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "執行超時秒數（預設 60，最大 300）。",
+                        "default": 60,
+                    },
+                },
+                "required": ["code", "description"],
+            },
+        ),
+        types.Tool(
+            name="bio_tool_health",
+            description=(
+                "HELIX 工具庫健康報告與穩定化迭代管理。支援六個 action：\n"
+                "  'report'          — 健康狀態總覽（active/deprecated/熱區/進行中迭代/VLM 快照）\n"
+                "  'diagnose'        — 寫入 stability_note（需 tool_name + note）\n"
+                "  'stabilize'       — 開啟穩定化迭代（需 tool_name + diagnosis + action_taken）\n"
+                "  'close_stabilize' — 關閉迭代（需 log_id + outcome；outcome: stabilized/ongoing/reverted）\n"
+                "  'trend'           — 複雜度改善趨勢（可選 tool_name 過濾）\n"
+                "  'prune'           — 清理未被引用的 deprecated 紀錄（需 tool_name）"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["report", "diagnose", "stabilize", "close_stabilize", "trend", "prune"],
+                        "description": "操作類型。",
+                    },
+                    "tool_name": {
+                        "type": "string",
+                        "description": "diagnose/stabilize/prune 時必填。",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "diagnose 時必填：說明為何頻繁變動及穩定化方向。",
+                    },
+                    "diagnosis": {
+                        "type": "string",
+                        "description": "stabilize 時必填：問題診斷描述。",
+                    },
+                    "action_taken": {
+                        "type": "string",
+                        "description": "stabilize 時必填：計畫採取的行動。",
+                    },
+                    "log_id": {
+                        "type": "string",
+                        "description": "close_stabilize 時必填：open_stabilization 回傳的 UUID。",
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "enum": ["stabilized", "ongoing", "reverted"],
+                        "description": "close_stabilize 時必填：迭代結果。",
+                    },
+                },
+                "required": ["action"],
+            },
+        ),
     ]
 
 
 # ── Tool 實作 ─────────────────────────────────────────────────────────────────
+
+
+def _resolve_format_mode(args: dict) -> str:
+    """Pick output format mode for response serialization.
+
+    Returns one of {'text', 'json'}. Unknown / missing values fall back to 'text'
+    for safety so older clients that omit the field keep their previous behavior.
+    """
+    fmt = str(args.get("format") or "text").lower()
+    return "json" if fmt == "json" else "text"
+
+
+def _json_dump(payload: dict | list) -> str:
+    """JSON dump with stable ordering and non-ASCII preserved for Chinese summaries."""
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
 
 
 def _pipe_safe(s: str, max_len: int = 60) -> str:
@@ -434,6 +651,7 @@ async def _handle_bio_history_lookup(args: dict) -> str:
     sample_id = args.get("sample_id")
     analysis_type = args.get("analysis_type")
     limit = int(args.get("limit", 20))
+    fmt = _resolve_format_mode(args)
 
     if analysis_type:
         rows = find_by_type(analysis_type, sample_id=sample_id, limit=limit)
@@ -442,7 +660,27 @@ async def _handle_bio_history_lookup(args: dict) -> str:
 
     # rows is a pandas DataFrame
     if rows.empty:
+        if fmt == "json":
+            return _json_dump({"count": 0, "records": [], "sample_id": sample_id, "analysis_type": analysis_type})
         return f"無分析記錄（sample_id={sample_id!r}, analysis_type={analysis_type!r}）"
+
+    records = rows.to_dict("records")
+    if fmt == "json":
+        return _json_dump({
+            "count": len(records),
+            "records": [
+                {
+                    "analysis_id": str(r.get("analysis_id", "")),
+                    "sample_id": r.get("sample_id", ""),
+                    "analysis_type": r.get("analysis_type", ""),
+                    "status": r.get("status", ""),
+                    "completed_at": str(r.get("completed_at", "")),
+                    "summary": str(r.get("summary", "") or ""),
+                    "result_path": str(r.get("result_path", "") or ""),
+                }
+                for r in records
+            ],
+        })
 
     table_rows = [
         {
@@ -454,7 +692,7 @@ async def _handle_bio_history_lookup(args: dict) -> str:
             "summary": (str(r.get("summary", "")) or "")[:40],
             "result_path": str(r.get("result_path", "") or ""),
         }
-        for r in rows.to_dict("records")
+        for r in records
     ]
     return f"分析歷史（共 {len(rows)} 筆）\n\n" + _fmt_table(table_rows)
 
@@ -465,6 +703,7 @@ async def _handle_bio_history_timeline(args: dict) -> str:
 
     n_days = int(args.get("n_days", 7))
     limit = max(1, min(int(args.get("limit", 50)), 500))
+    fmt = _resolve_format_mode(args)
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         rows = con.execute(
             f"""
@@ -485,7 +724,26 @@ async def _handle_bio_history_timeline(args: dict) -> str:
         result_rows = [dict(zip(cols, r)) for r in rows]
 
     if not result_rows:
+        if fmt == "json":
+            return _json_dump({"count": 0, "n_days": n_days, "records": []})
         return f"最近 {n_days} 天無分析記錄。"
+
+    if fmt == "json":
+        return _json_dump({
+            "count": len(result_rows),
+            "n_days": n_days,
+            "records": [
+                {
+                    "sample_id": r["sample_id"],
+                    "analysis_type": r["analysis_type"],
+                    "status": r["status"],
+                    "requested_by": r["requested_by"] or "",
+                    "completed_at": r["completed_at"] or "",
+                    "summary": r["summary"] or "",
+                }
+                for r in result_rows
+            ],
+        })
 
     table_rows = [
         {
@@ -507,6 +765,7 @@ async def _handle_bio_history_check(args: dict) -> str:
 
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
+    fmt = _resolve_format_mode(args)
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         row = con.execute(
             """
@@ -521,6 +780,16 @@ async def _handle_bio_history_check(args: dict) -> str:
 
     if row:
         analysis_id, completed_at, result_path, summary = row
+        if fmt == "json":
+            return _json_dump({
+                "exists": True,
+                "sample_id": sample_id,
+                "analysis_type": analysis_type,
+                "analysis_id": str(analysis_id),
+                "completed_at": str(completed_at),
+                "result_path": result_path or "",
+                "summary": summary or "",
+            })
         return (
             f"exists: true\n"
             f"analysis_id: {analysis_id}\n"
@@ -528,6 +797,12 @@ async def _handle_bio_history_check(args: dict) -> str:
             f"result_path: {result_path or '（未記錄）'}\n"
             f"summary: {(summary or '')[:80]}"
         )
+    if fmt == "json":
+        return _json_dump({
+            "exists": False,
+            "sample_id": sample_id,
+            "analysis_type": analysis_type,
+        })
     return f"exists: false\nsample_id={sample_id!r}, analysis_type={analysis_type!r} 尚無完成存檔。"
 
 
@@ -708,6 +983,49 @@ async def _handle_bio_artifact_summary(args: dict) -> str:
     )
 
 
+# ── 分析工具委派至 agent.py（避免雙份維護；長時間 I/O 走 to_thread） ───────────
+#
+# 這些 _exec_* 函數本身是同步、回傳 str 的純 Python 函數（不需 LLM），
+# 因此可由 MCP server 直接呼叫，與 agent.py / web_app.py 共用同一份實作。
+#
+# 安全性備註：`server.agent` 模組本身沒有 import-time 副作用 —— Anthropic / Google /
+# OpenAI SDK 都包在 `_get_*_client()` 內部 lazy import；module-level 僅定義常數、
+# BIO_TOOLS schema 與函數。因此 stdio 啟動的冷啟動成本不會被連累。
+# 若未來重構 agent.py 時違反此契約，需同步調整本 wrapper（例如改成 subprocess）。
+
+
+async def _handle_bio_check_l2_sufficiency(args: dict) -> str:
+    from server.agent import _exec_bio_check_l2_sufficiency
+    return await asyncio.to_thread(_exec_bio_check_l2_sufficiency, args)
+
+
+async def _handle_bio_run_spatial_eda(args: dict) -> str:
+    from server.agent import _exec_bio_run_spatial_eda
+    return await asyncio.to_thread(_exec_bio_run_spatial_eda, args)
+
+
+async def _handle_bio_run_bulk_eda(args: dict) -> str:
+    from server.agent import _exec_bio_run_bulk_eda
+    return await asyncio.to_thread(_exec_bio_run_bulk_eda, args)
+
+
+async def _handle_bio_execute_code(args: dict) -> str:
+    from server.agent import _exec_bio_execute_code
+    # timeout clamp（防 MCP 客戶端傳大數）
+    t = args.get("timeout", 60)
+    try:
+        t = max(1, min(int(t), 300))
+    except (TypeError, ValueError):
+        t = 60
+    args = {**args, "timeout": t}
+    return await asyncio.to_thread(_exec_bio_execute_code, args)
+
+
+async def _handle_bio_tool_health(args: dict) -> str:
+    from server.agent import _exec_bio_tool_health
+    return await asyncio.to_thread(_exec_bio_tool_health, args)
+
+
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
 
 _HANDLERS = {
@@ -720,6 +1038,11 @@ _HANDLERS = {
     "bio_register_sample": _handle_bio_register_sample,
     "bio_artifact_search": _handle_bio_artifact_search,
     "bio_artifact_summary": _handle_bio_artifact_summary,
+    "bio_check_l2_sufficiency": _handle_bio_check_l2_sufficiency,
+    "bio_run_spatial_eda": _handle_bio_run_spatial_eda,
+    "bio_run_bulk_eda": _handle_bio_run_bulk_eda,
+    "bio_execute_code": _handle_bio_execute_code,
+    "bio_tool_health": _handle_bio_tool_health,
 }
 
 
@@ -729,6 +1052,18 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     if handler is None:
         _record_metric(name, 0, "user_error")
         return [types.TextContent(type="text", text=f"[ERROR] 未知工具：{name!r}")]
+
+    # Dangerous tool gate：即使 handler 存在，未開 env flag 也拒絕（defense in depth）
+    if name in _DANGEROUS_TOOLS and not _dangerous_tools_enabled():
+        _record_metric(name, 0, "user_error")
+        logger.warning("Dangerous tool %r called but MCP_ENABLE_DANGEROUS_TOOLS not set", name)
+        return [types.TextContent(
+            type="text",
+            text=(
+                f"[ERROR] {name} 為高權限工具，目前未啟用。"
+                "設定 env MCP_ENABLE_DANGEROUS_TOOLS=true 並重啟 server 才可呼叫。"
+            ),
+        )]
 
     # Rate limit gate（僅針對打 embedding server 的工具）
     if name in _RATE_LIMITED_TOOLS and not _rate_limit_check(f"tool:{name}"):
