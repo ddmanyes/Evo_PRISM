@@ -232,7 +232,7 @@ cp .mcp.json.example .mcp.json
 | `bio_memory_query` | L1 快取完整報告查詢 | 少量 |
 | `bio_memory_write` | 寫入 L1 語意快取 | 少量 |
 | `bio_register_sample` | 登記新樣本 | 0 token |
-| `bio_read_report` | 沙盒讀取分析報告原文（含 dynamic_code 歸檔） | 0 token |
+| `bio_read_report` | 沙盒讀取分析報告原文（含 dynamic_code 歸檔的 code.py / output.txt / traceback.txt / meta.json；失敗執行可能無 output.txt） | 0 token |
 | `bio_artifact_search` | ENGRAM 3-way RRF 語意搜尋 | 少量 |
 | `bio_artifact_summary` | ENGRAM artifact 摘要與 metadata | 0 token |
 | `bio_check_l2_sufficiency` | 檢查樣本 L2 是否就緒 | 0 token |
