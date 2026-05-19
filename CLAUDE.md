@@ -173,7 +173,8 @@ launchctl load ~/Library/LaunchAgents/com.bioagent.embedding_server.plist
   -m /Users/zhanqiru/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
   --mmproj /Users/zhanqiru/mmproj-BF16.gguf \
   --port 8080 --ctx-size 8192 --n-gpu-layers 99 \
-  --flash-attn -ctk q8_0 -ctv q8_0
+  --flash-attn on -ctk q8_0 -ctv q8_0 \
+  --reasoning-budget 100
 
 # 自動啟動
 cp docs/launchd_multimodal_server.plist.example \
