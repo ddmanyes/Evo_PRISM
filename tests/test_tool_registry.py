@@ -33,8 +33,36 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def helix_con(tmp_path):
-    """Fresh DuckDB with full HELIX schema — never touches real bio_memory.duckdb."""
+def helix_con(tmp_path, monkeypatch):
+    """Fresh DuckDB with full HELIX schema — never touches real bio_memory.duckdb.
+
+    Workaround for pytest assertion rewriting:
+        pytest rewrites AST of test modules and intercepts linecache, which
+        breaks ``inspect.getsource()`` for module-level stub functions defined
+        in the test file. This causes ``compute_tool_hash`` to return
+        ``"unavailable"`` and ``register_tool`` to raise RuntimeError.
+
+        We patch ``compute_tool_hash`` only within the fixture lifecycle so
+        production code paths remain untouched. Real source-based hashing is
+        preserved for any function whose source IS retrievable; only the
+        otherwise-"unavailable" branch falls back to a deterministic
+        ``module.qualname``-based hash so each distinct stub still gets a
+        distinct hash (which is what the tests exercise).
+    """
+    import hashlib
+    import analysis.tool_registry as tr
+
+    _orig_hash = tr.compute_tool_hash
+
+    def _safe_hash(fn):
+        h = _orig_hash(fn)
+        if h != "unavailable":
+            return h
+        key = f"{fn.__module__}.{fn.__qualname__}"
+        return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+    monkeypatch.setattr(tr, "compute_tool_hash", _safe_hash)
+
     db = tmp_path / "helix_test.duckdb"
     con = duckdb.connect(str(db))
     con.execute("""
