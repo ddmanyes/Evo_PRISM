@@ -452,12 +452,33 @@ class TestHandleMessage:
 
 
 class TestDynamicCodeArchive:
-    """驗證 bio_execute_code 跑出的程式碼會落地歸檔，含成功 / 失敗 / SecurityError。"""
+    """驗證 bio_execute_code 跑出的程式碼會落地歸檔，含成功 / 失敗 / SecurityError。
 
-    def test_success_archives_code_output_meta(self):
+    使用 tmp_path 隔離 DB 與歸檔目錄，避免污染 production DB。
+    """
+
+    @pytest.fixture()
+    def isolated_archive(self, tmp_path: Path, monkeypatch):
+        """建立 tmp DB（含必要 schema）+ tmp DYNAMIC_CODE_DIR，monkeypatch 進 config.settings。"""
+        from config import settings as _settings
+
+        tmp_db = _make_main_db(tmp_path)
+        tmp_archive = tmp_path / "results" / "dynamic_code"
+        tmp_archive.mkdir(parents=True, exist_ok=True)
+
+        # _exec_bio_execute_code 在函數內 import config.settings，monkeypatch 屬性即可生效
+        monkeypatch.setattr(_settings, "DUCKDB_PATH", tmp_db)
+        monkeypatch.setattr(_settings, "DYNAMIC_CODE_DIR", tmp_archive)
+        monkeypatch.setattr(_settings, "BIO_DB_ROOT", tmp_path)
+        return SimpleNamespace(db=tmp_db, archive=tmp_archive, root=tmp_path)
+
+    def _parse_rel(self, result: str, prefix: str) -> str:
+        line = next(ln for ln in result.splitlines() if ln.startswith(prefix))
+        return line.split("：", 1)[1].rstrip("/")
+
+    def test_success_archives_code_output_meta(self, isolated_archive):
         import json as _json
         from server.agent import execute_tool
-        from config.settings import DYNAMIC_CODE_DIR, BIO_DB_ROOT
 
         result = execute_tool("bio_execute_code", {
             "code": "print('archived ok')\nx = 1 + 2\nprint(x)",
@@ -466,12 +487,9 @@ class TestDynamicCodeArchive:
         })
 
         assert "執行成功" in result
-        assert "歸檔" in result
-        rel_line = [ln for ln in result.splitlines() if ln.startswith("歸檔：")][0]
-        rel = rel_line.split("：", 1)[1].rstrip("/")
-        archive_dir = BIO_DB_ROOT / rel
-        assert archive_dir.exists() and archive_dir.is_dir()
-        assert archive_dir.is_relative_to(DYNAMIC_CODE_DIR)
+        rel = self._parse_rel(result, "歸檔：")
+        archive_dir = isolated_archive.root / rel
+        assert archive_dir.is_relative_to(isolated_archive.archive)
         assert (archive_dir / "code.py").read_text(encoding="utf-8").startswith("print('archived ok')")
         assert "archived ok" in (archive_dir / "output.txt").read_text(encoding="utf-8")
         meta = _json.loads((archive_dir / "meta.json").read_text(encoding="utf-8"))
@@ -479,11 +497,10 @@ class TestDynamicCodeArchive:
         assert meta["code_lines"] == 3
         assert meta["error_summary"] is None
 
-    def test_failure_archives_traceback_and_history(self):
+    def test_failure_archives_traceback_and_history(self, isolated_archive):
         import json as _json
         import duckdb as _ddb
         from server.agent import execute_tool
-        from config.settings import DYNAMIC_CODE_DIR, DUCKDB_PATH, BIO_DB_ROOT
 
         result = execute_tool("bio_execute_code", {
             "code": "raise ValueError('boom-archive-test')",
@@ -491,18 +508,16 @@ class TestDynamicCodeArchive:
             "timeout": 10,
         })
         assert "執行失敗" in result
-        rel_line = [ln for ln in result.splitlines() if ln.startswith("歸檔（含 traceback）：")][0]
-        rel = rel_line.split("：", 1)[1].rstrip("/")
-        archive_dir = BIO_DB_ROOT / rel
-        assert archive_dir.is_relative_to(DYNAMIC_CODE_DIR)
-        assert (archive_dir / "traceback.txt").exists()
+        rel = self._parse_rel(result, "歸檔（含 traceback）：")
+        archive_dir = isolated_archive.root / rel
+        assert archive_dir.is_relative_to(isolated_archive.archive)
         assert "boom-archive-test" in (archive_dir / "traceback.txt").read_text(encoding="utf-8")
         meta = _json.loads((archive_dir / "meta.json").read_text(encoding="utf-8"))
         assert meta["status"] == "failed"
         assert meta["error_summary"] is not None
 
         analysis_id = meta["analysis_id"]
-        with _ddb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        with _ddb.connect(str(isolated_archive.db), read_only=True) as con:
             row = con.execute(
                 "SELECT status, summary FROM analysis_history WHERE analysis_id = ?",
                 [analysis_id],
@@ -511,10 +526,9 @@ class TestDynamicCodeArchive:
         assert row[0] == "failed"
         assert row[1].startswith("[FAILED]")
 
-    def test_security_error_still_archived(self):
+    def test_security_error_still_archived(self, isolated_archive):
         import json as _json
         from server.agent import execute_tool
-        from config.settings import DYNAMIC_CODE_DIR, BIO_DB_ROOT
 
         result = execute_tool("bio_execute_code", {
             "code": "import os; os.system('ls')",
@@ -522,10 +536,9 @@ class TestDynamicCodeArchive:
             "timeout": 5,
         })
         assert "SecurityError" in result
-        rel_line = [ln for ln in result.splitlines() if ln.startswith("歸檔：")][0]
-        rel = rel_line.split("：", 1)[1].rstrip("/")
-        archive_dir = BIO_DB_ROOT / rel
-        assert archive_dir.is_relative_to(DYNAMIC_CODE_DIR)
+        rel = self._parse_rel(result, "歸檔：")
+        archive_dir = isolated_archive.root / rel
+        assert archive_dir.is_relative_to(isolated_archive.archive)
         tb = (archive_dir / "traceback.txt").read_text(encoding="utf-8")
         assert tb.startswith("SecurityError")
         meta = _json.loads((archive_dir / "meta.json").read_text(encoding="utf-8"))
