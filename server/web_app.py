@@ -45,27 +45,32 @@ logger = logging.getLogger(__name__)
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    # 啟動時清理殭屍 running 記錄（server 重啟 = 舊進程已死）
-    # 用 BaseException 而非 Exception — DuckDB FatalException 是 C++ exception，
-    # 不繼承 Python Exception，except Exception 抓不到會直接 abort process。
-    try:
-        from config.db_utils import cleanup_stale_runs
-        with open_db() as _con:
-            n = cleanup_stale_runs(_con, hours=0)
-            if n:
-                logger.info("startup: cleared %d zombie running records", n)
-    except BaseException as _e:
-        logger.warning("startup cleanup failed (non-fatal): %s", _e)
+    # 殭屍 running 記錄由背景 task 延遲清理（30 秒後），避免 startup 時
+    # DB WAL 尚未穩定導致 DuckDB C++ abort crash。
+    async def _deferred_cleanup():
+        await asyncio.sleep(30)
+        try:
+            from config.db_utils import cleanup_stale_runs
+            with open_db() as _con:
+                n = cleanup_stale_runs(_con, hours=0)
+                if n:
+                    logger.info("deferred startup cleanup: cleared %d zombie running records", n)
+        except Exception as _e:
+            logger.warning("deferred startup cleanup failed (non-fatal): %s", _e)
 
     async def _cleanup_loop():
         while True:
             await asyncio.sleep(3600)
             _cleanup_old_sessions()
-    task = asyncio.create_task(_cleanup_loop())
+    cleanup_task = asyncio.create_task(_deferred_cleanup())
+    session_task = asyncio.create_task(_cleanup_loop())
     yield
-    task.cancel()
+    cleanup_task.cancel()
+    session_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
-        await task
+        await cleanup_task
+    with contextlib.suppress(asyncio.CancelledError):
+        await session_task
 
 
 app = FastAPI(title="BioAgent", version="1.0.0", lifespan=_lifespan)
