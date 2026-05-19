@@ -15,6 +15,10 @@ import duckdb
 import pandas as pd
 import pytest
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.settings import DUCKDB_PATH, L2_ROOT  # noqa: E402
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 SAMPLE_ID = "test_sample"
@@ -260,14 +264,14 @@ class TestReportGenerator:
 
 
 @pytest.mark.skipif(
-    not (Path("/Volumes/NO NAME/bio_DB/silver/crc_official_v4/obs_metadata.parquet")).exists(),
+    not (L2_ROOT / "crc_official_v4" / "obs_metadata.parquet").exists(),
     reason="CRC L2 silver data not available",
 )
 class TestSpatialEdaSmoke:
     """Smoke tests against real CRC L2 data — skipped if silver/ not present."""
 
     REAL_SAMPLE = "crc_official_v4"
-    REAL_DB = Path("/Volumes/NO NAME/bio_DB/bio_memory.duckdb")
+    REAL_DB = DUCKDB_PATH
 
     def test_top_genes_returns_dataframe(self):
         from analysis.spatial_eda import top_genes
