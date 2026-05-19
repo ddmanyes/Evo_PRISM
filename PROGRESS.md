@@ -7,10 +7,145 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清 + MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping
 **平台**：macOS `/Volumes/NO NAME/bio_DB/`（ExFAT）
 **最後更新**：2026-05-19
 **commit**：9fee16d（docs：housekeeping 封存）；最後程式碼 commit `f582c79`
+
+---
+
+## 🎯 下一步（DB114 Module 11/12 評估產出，2026-05-19）
+
+完整評估見 [docs/DB114_MODULE_11_12_REVIEW.md](docs/DB114_MODULE_11_12_REVIEW.md)。
+下一個 Sprint 依序執行 P0-A → P0-B → P1-C。
+
+### P0-A：Metadata Pre-filter 下推驗證（2026-05-19 完成）
+
+- [x] 建立 `scripts/verify_prefilter_pushdown.py`：對 `search_artifacts()` 三條路徑 + 1 條 control 跑 `EXPLAIN ANALYZE`
+- [x] 結論寫入 [docs/PREFILTER_VERIFICATION.md](docs/PREFILTER_VERIFICATION.md)
+- [x] 驗證結果：
+  - ✅ Filter 結構：三條路徑 `WHERE sample_id = ?` / `artifact_subtype = ?` 都是 **pre-filter**（plan 顯示 FILTER → TOP_N）
+  - ⚠️ **HNSW 索引在 JOIN + metadata filter 場景下未被 optimizer 採用**（plan 顯示 HASH_JOIN，無 `HNSW Index: idx_artifacts_hnsw`）；CTRL 路徑（無 JOIN）才看到 HNSW 啟用
+  - ✅ Matryoshka Phase 2 邏輯安全（Phase 1 已 filter），但缺防禦性 WHERE 重套——記入 TODO
+- [ ] **後續行動**（待資料量 > 1000 筆後重新驗證）：
+  - 評估改寫為「先 metadata filter 取 candidate id 集合 → 再對 candidates 跑 HNSW 純向量查詢」兩階段
+  - 或等 DuckDB VSS 更新對 JOIN + ORDER BY 的 optimizer 支援
+- **驗收**：✅ pre-filter 路徑明確、HNSW 索引行為已記錄、後續優化條件已定義
+
+### P0-B：DuckDB FTS (BM25) 加入 RRF 第三條 ranker（2026-05-19 完成）
+
+- [x] **Migration v18** [scripts/19_migrate_schema_v18.py](scripts/19_migrate_schema_v18.py)：`PRAGMA create_fts_index('analysis_artifacts', 'artifact_id', 'label', 'artifact_subtype', 'artifact_type', overwrite=1)`；無 schema 變更，建立 sidecar schema `fts_main_analysis_artifacts`
+- [x] **`search_artifacts()` Layer 3**：新增 `_fts_artifacts_available()` helper 與 BM25 query path，併入既有 RRF（3-way fusion，含 sample_id JOIN 支援）
+- [x] **`scheduler/rebuild_hnsw.py`** 擴充 `rebuild_artifact_fts()` + `fts_index_exists()`；`__main__` 同時跑 L1 HNSW 與 FTS 兩個重建
+- [x] **測試 [tests/test_artifact_registry.py::TestFtsLayer](tests/test_artifact_registry.py)**：5 個新測試（availability detection / keyword hit / 3-way RRF / silent fallback / sample_id filter），既有 39 個測試零 regression（44 passed）
+- [x] **Smoke test 真實 DB**：
+  - query `PCA` → rrf score 0.0328（hnsw+fts），對應 `PCA 主成分分析圖`
+  - query `eda` → rrf score 0.0328（hnsw+fts），對應 `Bulk EDA 分析報告`
+  - query `report 報告` 中英混雜 → 正確命中 EDA report
+  - query `unrelated_query_zzz` → FTS miss 自動 fallback 到 hnsw-only，行為向後相容
+- **設計重點**：
+  - FTS 偵測採 `information_schema.schemata` 查詢，migration v18 未套用時 layer 3 silently skip → backward compatible
+  - 無 schema 改動（不新增 `fts_text` 欄位），FTS sidecar 由擴充自管理
+  - jieba 中文斷詞**暫不導入**：bge-m3 dense layer 已涵蓋中文語意；BM25 對英文 gene symbol（EPCAM/HALLMARK_*）的 keyword match 才是核心價值
+- **後續行動**：
+  - [ ] 待 `analysis_artifacts > 100` 筆後，準備 20–30 條 A/B query set 量化 recall@10 改善
+  - [ ] launchd plist `docs/launchd_rebuild_hnsw.plist.example` 不需改動（已會呼叫 `python scheduler/rebuild_hnsw.py`，自動跑兩個 rebuild）
+- **驗收**：✅ 3-way RRF 在 fixture 與真實 DB 都正確運作；index rebuild 排程已就位
+
+### P1-C：HELIX / ENGRAM Star Schema View（2026-05-19 完成）
+
+**範圍修正**：schema 檢查發現 `mcp_tool_metrics` 表**不存在**（誤判 Phase 10 內容）。`v_tool_perf_30d` 移至 **P1-D**（見下），等真實 metric 表建立後再做。本 sprint 完成 2 個 view。
+
+- [x] **Migration v19** [scripts/20_migrate_schema_v19.py](scripts/20_migrate_schema_v19.py)：CREATE OR REPLACE VIEW × 2，無 base table 改動
+- [x] **`v_analysis_throughput_by_sample_type`** — `analysis_history` × `sample_registry` 週聚合，含 `n_runs / avg_seconds / n_completed / n_failed / n_stale`
+- [x] **`v_tool_stability_signal`** — `tools` × `tool_change_log` × `tool_stabilization_log` 整合，產出 `signal ∈ {OK, WATCH, HOT, IN_PROGRESS, STALE_ITERATION}`
+- [x] **測試 [tests/test_star_schema.py](tests/test_star_schema.py)**：10 個測試（throughput aggregation × 4 + stability signal × 6），全 passed
+- [x] **文件 [docs/STAR_SCHEMA.md](docs/STAR_SCHEMA.md)**：ER 圖、view DDL、欄位 schema、use case 範例、`v_tool_perf_30d` 未來上線條件、為何不改 `bio_tool_health` 的理由
+- **真實 DB Smoke Test**：
+  - `v_analysis_throughput_by_sample_type`：2 種 sample data_type × 多週分桶，含 visium_hd eda_report、bulk_rnaseq bulk_eda 等
+  - `v_tool_stability_signal`：2 個 active tool（`bio_run_spatial_eda`、`bio_run_bulk_eda`），signal=OK
+- **不在範圍內**：`bio_tool_health` 改 view（既有 `tool_health_report()` 已涵蓋更豐富的訊號）
+- **驗收**：✅ 2 view 建立成功、pytest 通過、文件完整
+
+### P1-D：mcp_tool_metrics fact table + MCP server instrumentation（預估 1.5 天，P1-C 後或併行）
+
+P1-C 揭露的後續任務：`mcp_tool_metrics` 是 `v_tool_perf_30d` 的前置條件。
+
+- [ ] Migration v20：建立 `mcp_tool_metrics(metric_id, tool_name, tool_id, called_at, duration_ms, status, error_class, requested_by)`
+- [ ] `server/bio_memory_server.py::call_tool()` 加 instrumentation wrapper：捕捉 try/except + duration，寫入表（透過 `safe_write()`）
+- [ ] `tests/test_phase10.py` 補測試：每呼叫一次 MCP tool，`mcp_tool_metrics` 多一筆
+- [ ] 累積 ≥ 1 週實際呼叫後，回頭補 `v_tool_perf_30d` view
+- **驗收**：MCP 工具呼叫自動寫 metric、零效能 regression（< 5ms overhead）
+
+---
+
+## ✅ 2026-05-19 Session Code Review 反饋全清（HIGH/MEDIUM/LOW × 6）
+
+對 P3 殘留清理 commit 進行 code review 後，逐項處理 6 個建議：
+
+### HIGH
+
+- [x] **`pytest.importorskip("google.genai")`** — `tests/test_google_backend_multi_round.py` 開頭加入；避免日後缺 `google-genai` 套件的環境觸發 collection error
+
+### MEDIUM
+
+- [x] **`bio_execute_code` timeout clamp 測試** — `tests/test_phase4.py::TestExecuteCodeTimeoutClamp` 5 個測試：too_large→300 / too_small→1 / invalid_string→60 / normal_pass_through / omitted→60
+- [x] **`MCP_ENABLE_DANGEROUS_TOOLS` env flag**（defense in depth）：
+  - `bio_memory_server.py` 新增 `_DANGEROUS_TOOLS = {"bio_execute_code"}` + `_dangerous_tools_enabled()` helper
+  - `list_tools()` 預設過濾掉 dangerous tools（14 → 13 工具）；設 `true/1/yes/TRUE` 才暴露（case-insensitive）
+  - `call_tool()` 加 dangerous gate：handler 存在但 env 未開時回 `[ERROR] ... 高權限工具未啟用`
+  - `bio_execute_code` description 同步註記必須 env 啟用
+  - test_phase4 `TestDangerousToolGate` 3 tests + test_phase10 拆 `test_tool_count_is_14_when_dangerous_enabled` / `test_tool_count_is_13_by_default`
+  - `.mcp.json.example` 加上 `MCP_ENABLE_DANGEROUS_TOOLS: "false"` 預留欄位
+
+### LOW
+
+- [x] **註解 agent.py 無 import 副作用**：`bio_memory_server.py` 委派區塊加說明，避免未來重構誤踩（Anthropic/Google/OpenAI SDK 都在 `_get_*_client()` 內 lazy import）
+- [x] **`_normalize_format` → `_resolve_format_mode`**：原名易誤解為「規範化任意值」，改為「解析格式模式」更精準；docstring 同步擴充說明 fallback 設計（3 個 callsite + 定義同步更新）
+- [x] **`.mcp.json.example` 移除 `_comment`**：改為純 JSON；說明遷移至 `docs/MCP_JSON_SETUP.md`（含 env vars 表、安全建議、路徑空格/中文處理、Linux 遷移建議）
+
+### 驗證
+
+- [x] `tests/test_phase4.py`（37） + `test_phase10.py`（31）+ `test_google_backend_multi_round.py`（2）+ `test_validate_inference_backend.py`（10）+ `test_artifact_unique_constraint.py`（4）= **81/81 PASS**
+- [x] 較前次（71/71）淨增 10 個測試：5 timeout clamp + 3 dangerous gate + 2 phase10 拆分
+
+### 第二輪 review 反饋修復（M2 / L1 / L2 / L4 / M1 docstring）
+
+- [x] **M2**：`test_env_value_case_insensitive` 補大寫 falsy 變體 — truthy 加 `"Yes"`；falsy 加 `"FALSE"` / `"False"` / `"NO"` / `"No"` / `"OFF"`，徹底覆蓋 case-insensitive 契約
+- [x] **L4**：`test_enabled_passes_dangerous_gate` 補 `assert text == "ok"`，確認 handler 結果確實透傳（不只驗證 gate 訊息消失）
+- [x] **M1 docstring**：`_dangerous_tools_enabled()` 加 docstring 註明「no caching, by design」— 防止未來有人手癢加 `@lru_cache` 破壞測試隔離
+- [x] **L1**：`CLAUDE.md` 第 9 章「相關文件」表加上 `docs/MCP_JSON_SETUP.md` 與 `docs/MCP_HTTP_GUIDE.md` 兩行 link，避免文件成為孤兒
+- [x] **L2**：`test_contains_all_safe_tools` 改用顯式 `TestClient(_build_starlette_app())`，與 `test_tool_count_is_14_when_dangerous_enabled` / `test_tool_count_is_13_by_default` 寫法一致，去掉 fixture vs monkeypatch 執行序的隱含假設
+
+---
+
+## ✅ 2026-05-19 Session P3 殘留清理（.mcp.json + format=json + Google e2e）
+
+- [x] **L614 `.mcp.json` 路徑修正**：舊路徑 `/Volumes/NO NAME/bio_DB/` 已不存在；改為當前實際絕對路徑（含 Google Drive 中文路徑，JSON 字串無需特殊跳脫）。同時建立 `.mcp.json.example` 模板（佔位符 + 多行 `_comment` 說明，含 `MCP_AUTH_TOKEN` / `MCP_BIND_HOST` / `MCP_RATE_LIMIT_PER_MIN` env 預留）
+- [x] **L612 format=json 結構化回傳**：`bio_history_lookup` / `bio_history_check` / `bio_history_timeline` 三個唯讀工具加 `format` 參數（enum: text|json，預設 text 向後相容）；
+  - 新增 `_normalize_format()` + `_json_dump()` helper（ensure_ascii=False 保中文、sort_keys 穩定輸出）
+  - 7 個新測試 `TestFormatJson`：lookup/check/timeline JSON 結構驗證 + empty case + 未知值 fallback text + 省略向後相容
+  - 餘下 5 個工具（search / memory / artifact_*）已有結構化欄位，暫不擴充
+- [x] **L582 NH4 Google backend 多輪 tool history mock e2e**：新檔 `tests/test_google_backend_multi_round.py`（2 tests）
+  - `test_native_history_preserves_function_call_and_response` — 三段 mock：Call 0 pre-build、Call 1 回 FunctionCall、Call 2 純文字終止；驗證 Call 2 `contents` 含 model role FunctionCall part + user role FunctionResponse part（NH4 regression guard）
+  - `test_native_history_carries_prior_messages` — 驗證 history 中既有 user/assistant 訊息在 Call 0 就已建入 native history
+- [x] **新發現待辦**：google backend 每次 `handle_message` 多浪費 1 次 API 呼叫（pre-build 階段的 response 被丟棄）— 應拆 `_make_google_call` 為純函數 `_build_google_history(messages)` + 真正呼叫，避免額外 token 費用；風險中等，記為長期項
+- [x] **L611 MCP / Agent 工具雙份維護**：已部分解決（5 個重量級工具透過 `asyncio.to_thread` 委派 `_exec_*`）；歷史/記憶/搜尋工具仍雙份維護，需 agent.py 改為透過 MCP HTTP 呼叫，屬於大重構，記為長期項
+- [x] **驗證**：phase4 (26) + phase10 (29) + google_backend_multi_round (2) = **57/57 PASS**
+
+---
+
+## ✅ 2026-05-19 Session 穩定性 P0 殘留 + MCP P0 工具覆蓋全清
+
+- [x] **穩定性 P0 `_deferred_cleanup` 完整修復**：write 連線僅在 read-only pre-check 確認有 zombie 時才開；UPDATE 後 `CHECKPOINT` 立即刷 WAL 並關閉，縮小 ExFAT 無日誌下的損壞視窗；不再 `LOAD vss`（UPDATE 不需向量擴充）；同步 DuckDB I/O 包入 `asyncio.to_thread` 避免阻塞 event loop
+- [x] **MCP P0 工具覆蓋補齊**：MCP server 9 → 14 工具，新暴露：
+  - `bio_check_l2_sufficiency`（read-only SQL）
+  - `bio_run_spatial_eda` / `bio_run_bulk_eda`（分析執行，加入 `_RATE_LIMITED_TOOLS`）
+  - `bio_execute_code`（沙盒執行，rate-limited + description 警示需 `MCP_AUTH_TOKEN` 鎖定；timeout clamp 至 [1, 300]）
+  - `bio_tool_health`（HELIX 健康管理）
+- [x] **避免雙份維護**：5 個 `_handle_*` async wrapper 透過 `asyncio.to_thread` 委派至 `server.agent._exec_*`，共用同一份實作（順便解決 P3「MCP / Agent 工具命名重複」的一半）
+- [x] **測試對齊**：`test_phase4.py::TestListTools` tool count 9 → 14、expected set 加 5 個；`test_phase10.py::TestMCPToolsList._EXPECTED_TOOLS` 同步擴充；`test_tool_count_is_9` → `test_tool_count_is_14`
+- [x] **驗證**：phase4 + phase10 共 48/48 PASS（未引入新失敗；test_tool_registry/test_phase5 既有 pre-existing failure 與本次無關）
 
 ---
 
@@ -544,7 +679,7 @@
 - [x] **歷史資料遺失復原**：盤點結果為**無遺失** — 5/15 備份僅含 1 筆 l2_convert（當時 DB 起始狀態），現行 16 筆完整；先前「30+ → 16」推測不成立
 - [x] **`backup_db.py` 既往失敗清查**：實作 `MIN_BACKUP_BYTES=100KB` size 驗證 + 失敗自動刪空目錄；`--prune-empty` 一次清掉 6 個歷史 0-byte 備份
 - [x] **`com.hermes.backup` 監控**：失敗 `sys.exit(1)` + `logs/backup_status.json`（last_success_at / last_failure_at / last_size_bytes / last_error）；健檢端點可後續接讀此檔（/health 擴充見 P1）
-- [ ] **`_deferred_cleanup` 仍開 writable**：read-only pre-check 已加，但若有 zombie 記錄仍會開 write 連線觸發 WAL replay；可改用 `ATTACH ... (READ_ONLY)` 然後另開短連線只做 UPDATE，或直接接受此風險（zombie 罕見）
+- [x] **`_deferred_cleanup` 仍開 writable**：write 連線只在 read-only pre-check 確認有 zombie 時才開；不再 `LOAD vss`、UPDATE 後立即 `CHECKPOINT` 並 close 縮小 WAL 損壞視窗；同步 I/O 包入 `asyncio.to_thread` 避免阻塞 event loop（`server/web_app.py:86-114`）
 
 **P1 — 排程與監控**
 - [x] **launchd 排程完整安裝**：6 個 plist 全部 `launchctl load` 成功，現共 8 個 hermes job：
@@ -565,7 +700,7 @@
 
 **P3 — 安全性殘留**
 - [x] M4：API key 未設定時改為啟動時早期失敗（`config.settings.validate_inference_backend()` + agent client factory + web_app lifespan early-warn；10 tests 覆蓋）
-- [ ] NH4 後續驗證：Google backend 多輪 tool history 修復後尚未端對端測試
+- [x] NH4 後續驗證：Google backend 多輪 tool history `tests/test_google_backend_multi_round.py` 2 個 mock e2e 測試完成；驗證 model FunctionCall + user FunctionResponse parts 在 Round 1 contents 中保留（regression guard）
 - [ ] SQL-6 NOT NULL 補齊（待 DuckDB 升級支援有 FK 表的 SET NOT NULL）
 - [x] SQL-7 UNIQUE 約束（migration v14 + 4 tests regression）；SQL-8 STRUCT/EAV 仍延至 9A-3 評估後
 
@@ -574,7 +709,7 @@
 **P0 — 功能性 Bug**
 
 - [x] **HTTP endpoint 500 error**：根因為 FastAPI 不傳遞 lifespan 給 mount 子 app，`session_manager.run()` 未啟動；`create_http_app()` 改回傳 `(handler, lifespan_cm)`，由 `web_app._lifespan` 統一驅動。`docs/MCP_HTTP_GUIDE.md` 已建立（含 Accept header 規範與 curl/httpx 範例）
-- [ ] **工具覆蓋不完整**：MCP server 只公開 7 個工具（history/memory/register），但 `agent.py BIO_TOOLS` 有 `bio_run_spatial_eda` / `bio_run_bulk_eda` / `bio_execute_code` / `bio_tool_health` / `bio_check_l2_sufficiency` 等核心分析工具未透過 MCP 暴露；外部客戶端（Claude Code CLI、curl）無法觸發分析。需評估是否補齊或記錄此限制為「Agent-only 工具」
+- [x] **工具覆蓋不完整**：MCP server 從 9 → 14 工具，新暴露 `bio_check_l2_sufficiency` / `bio_run_spatial_eda` / `bio_run_bulk_eda` / `bio_execute_code` / `bio_tool_health`；5 個 `_handle_*` async wrapper 透過 `asyncio.to_thread` 委派至 `server.agent._exec_*`（共用同一份實作，順便解決 P3「雙份維護」問題的一半）；重量級工具（run_*、execute_code）加入 `_RATE_LIMITED_TOOLS`；`bio_execute_code` description 警示需 `MCP_AUTH_TOKEN` 鎖定；timeout clamp 至 [1, 300]；test_phase4 / test_phase10 tool count 斷言 9 → 14 同步更新；48/48 PASS
 - [x] **`bio_history_search` threshold 不一致**：schema 預設 0.5 → 0.88，實作 fallback 改用 `L1_COSINE_THRESHOLD`，MCP/Agent 雙端對齊
 
 **P1 — 健壯性**
@@ -594,10 +729,10 @@
 
 **P3 — 介面一致性**
 
-- [ ] **MCP / Agent 工具命名重複**：MCP server 的 `bio_history_*` 與 agent.py 的 `bio_history_*` 是兩套獨立實作（agent.py 不透過 MCP 呼叫，直接呼叫 Python 函數）；長期應統一為「agent.py 透過 MCP HTTP 呼叫 server/bio_memory_server.py」，避免雙份維護
-- [ ] **回傳格式不一致**：`bio_history_lookup` 回 Markdown 表格、`bio_history_check` 回 YAML-like 純文字、`bio_history_search` 回編號列表；建議統一為結構化 JSON（MCP 規範允許 TextContent 包 JSON 字串，由客戶端解析）
+- [ ] **MCP / Agent 工具命名重複**：部分解決 — 5 個重量級工具（`bio_run_spatial_eda` / `bio_run_bulk_eda` / `bio_execute_code` / `bio_tool_health` / `bio_check_l2_sufficiency`）已改為 MCP handler 委派 `agent._exec_*`；歷史/記憶/搜尋 9 個工具仍雙份維護，長期目標為 agent.py 改透過 MCP HTTP 呼叫 — 大重構，風險中等，留為長期項
+- [x] **回傳格式不一致**：3 個唯讀 history 工具加 `format=json` 參數（向後相容，預設仍 text）；結構化 JSON 含完整 `analysis_id`、`completed_at`、`summary` 不被表格截斷；7 個新測試覆蓋。其餘 search / memory / artifact_* 工具原本就有結構化欄位（score / cosine / artifact_id），暫不擴充
 - [x] **`bio_artifact_search` + `bio_artifact_summary` 已暴露**：MCP server tools 7 → 9；`search_artifacts`（rate-limited，會打 embedding server）+ `artifact_summary`（0 token 純 SQL）；其餘 register/get/compare 屬寫入路徑，暫不暴露
-- [ ] **`.mcp.json` 路徑含空格**：`/Volumes/NO NAME/bio_DB/...` 在某些 MCP 客戶端可能解析錯誤；Linux 遷移時路徑改為 `/mnt/space4/bio_lab_db/`，記得同步更新
+- [x] **`.mcp.json` 路徑修正**：舊路徑 `/Volumes/NO NAME/bio_DB/...` 已不存在；更新為當前實際絕對路徑（Google Drive 中文路徑，JSON 字串可直接含空格與中文）。建立 `.mcp.json.example` 範本供新機器/Linux 部署使用（含 MCP_AUTH_TOKEN / MCP_BIND_HOST / MCP_RATE_LIMIT_PER_MIN env 預留與多行 `_comment` 說明）
 
 ### 既有待辦（不變）
 
@@ -623,11 +758,11 @@
 
 ### 實作項目
 
-- [ ] P10-1 `server/bio_memory_server.py` — 加 `streamable-http` transport（保留 stdio，`--transport` 參數切換）
-- [ ] P10-2 `start_bioagent.sh` — 以 HTTP mode 啟動 MCP Server（預設 port 8082）
-- [ ] P10-3 `server/web_app.py` — 新增 `/mcp` proxy 路由（可選，供前端直接呼叫 MCP 工具）
-- [ ] P10-4 `tests/test_phase10.py` — HTTP transport 端對端測試（工具呼叫 + 錯誤處理）
-- [ ] P10-5 `docs/MCP_HTTP_GUIDE.md` — 使用說明（curl 範例 + Python client 範例）
+- [x] P10-1 `server/bio_memory_server.py` — 加 `streamable-http` transport（保留 stdio，`--transport` 參數切換）
+- [x] P10-2 `start_bioagent.sh` — 以 HTTP mode 啟動 MCP Server（預設 port 8082）
+- [x] P10-3 `server/web_app.py` — 新增 `/mcp` proxy 路由（可選，供前端直接呼叫 MCP 工具）
+- [x] P10-4 `tests/test_phase10.py` — HTTP transport 端對端測試（工具呼叫 + 錯誤處理）
+- [x] P10-5 `docs/MCP_HTTP_GUIDE.md` — 使用說明（curl 範例 + Python client 範例）
 
 ---
 
@@ -722,24 +857,24 @@
 
 ### Phase 9B：Provenance & Lineage（P1 — 小幅 schema 變動）
 
-- [ ] 9B-1 `analysis_artifacts` 增 `input_data_hash` / `code_hash` / `env_hash`（migration v11）
-- [ ] 9B-2 `artifact_relations(src, dst, relation_type)` 表 — bulk_eda 自動連結（PCA → DEG → volcano）
-- [ ] 9B-3 `tool_artifact_lineage` materialized view — 三表預先 join，HELIX↔ENGRAM 反向追溯
-- [ ] 9B-4 `register_artifact()` 自動計算三個 hash
-- [ ] 9B 測試：覆蓋 hash 計算 + relation insert + lineage view
+- [x] 9B-1 `analysis_artifacts` 增 `input_data_hash` / `code_hash` / `env_hash`（已於 migration v16 完成）
+- [x] 9B-2 `artifact_relations(src, dst, relation_type)` 表 — `link_artifacts()` 已實作（migration v16）
+- [x] 9B-3 `tool_artifact_lineage` view — 三表預先 join（migration v16，content_hash 修正於 v17）
+- [x] 9B-4 `register_artifact()` 自動計算三個 hash（`_hash_input_data` / `_hash_function_source` / `_hash_env`）
+- [x] 9B 測試：13 個新測試（TestProvenanceHashes × 6 + TestLinkArtifacts × 3 + TestGetLineage × 4）
 
 ### Phase 9C：HELIX 精進（P2 — 選做）
 
-- [ ] 9C-1 AST-normalized `source_hash` — `ast.parse` → `ast.dump` 後再 SHA256，消除 whitespace 噪音
+- [x] 9C-1 AST-normalized `source_hash` — `compute_tool_hash()` 改用 `ast.parse` → `ast.dump`；3 個 TestAstNormalizedHash 測試覆蓋
 - [ ] 9C-2 SVG snapshot 取代部分 PNG（diff-friendly，文字檔可 git track）
 - [ ] 9C-3 OpenLineage event emitter — `register_tool()` / `register_artifact()` 同步輸出標準事件
 
 ### Phase 9D：Matryoshka 雙層索引（P2 — 中等風險）
 
-- [ ] 9D-1 啟用 bge-m3 Matryoshka 模式 — 同步產生 1024 與 256 維 embedding
-- [ ] 9D-2 新建 256 維 HNSW 粗篩索引 `idx_artifacts_hnsw_256`
-- [ ] 9D-3 `search_artifacts()` 改兩階段 — 256 粗篩 top-50 → 1024 精排 top-N
-- [ ] 9D-4 Benchmark：HNSW 內存下降比例、recall@5 保留率
+- [x] 9D-1 啟用 bge-m3 Matryoshka 模式 — `register_artifact()` 自動截斷 `embedding[:256]` 寫入 `embedding_256`
+- [x] 9D-2 新建 256 維 HNSW 粗篩索引 `idx_artifacts_hnsw_256`（migration v17）
+- [x] 9D-3 `search_artifacts()` 改兩階段 — `MATRYOSHKA_ENABLED=true` 時 256 粗篩 top-50 → 1024 精排 top-N
+- [ ] 9D-4 Benchmark：HNSW 內存下降比例、recall@5 保留率（待補）
 
 ### 預估工時與優先
 
@@ -816,7 +951,7 @@
 | HIGH | H3 | `session_id` 無長度/格式驗證，可記憶體耗盡攻擊 | `web_app.py` | ✅ 已修 — 加 regex 驗證 + `_MAX_SESSIONS=200` 上限；超限回 503 |
 | HIGH | H5 | `@app.on_event("startup")` 已廢棄，與 MCP lifespan 可能衝突 | `web_app.py` | ✅ 已修 — 改用 `@contextlib.asynccontextmanager` lifespan，cleanup task 隨 app 生命週期 |
 | MEDIUM | M3 | `_cleanup_old_sessions` timezone 比較冗餘（`.replace(tzinfo=None)` 雙重去除） | `web_app.py` | ✅ 已修 — `_sessions_dict_lock` 重寫時改用 timezone-aware 比較 |
-| MEDIUM | M4 | API key 預設空字串，未設定時在首次呼叫才報錯而非啟動時早期失敗 | `settings.py` | ⏳ 待修（低優先） |
+| MEDIUM | M4 | API key 預設空字串，未設定時在首次呼叫才報錯而非啟動時早期失敗 | `settings.py` | ✅ 已修 — `validate_inference_backend()` + agent client factory + web_app lifespan early-warn（10 tests） |
 
 **第二輪審查新發現（2026-05-19）：**
 
