@@ -72,6 +72,8 @@ async def _lifespan(_app: FastAPI):
     except Exception as _e:
         logger.exception("WAL preflight raised (non-fatal): %s", _e)
 
+    _verify_static_files()
+
     # M4: API key 早期警告 — backend 非 local 但 key 缺，啟動就 log warning
     # 此處只 warn 不 raise，允許本機 local-only 部署
     try:
@@ -153,6 +155,29 @@ else:
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def _verify_static_files() -> None:
+    """Fail-fast 健檢：確認 static 資源可讀。
+
+    保護雲端同步資料夾（Google Drive / iCloud / Dropbox）或外接磁碟卸載
+    導致 ``Path(__file__).parent`` 解析失效的場景——當 uvicorn cwd 失效
+    時 STATIC_DIR 雖然字串存在但 ``.exists()`` 回 False，過去要等使用者
+    打 ``GET /`` 才會看到 ``index.html not found``。
+    """
+    required = ["index.html", "history.html", "engram.html"]
+    if not STATIC_DIR.exists():
+        logger.error(
+            "STATIC_DIR not accessible: %s "
+            "(cwd may be stale — restart uvicorn from the project root)",
+            STATIC_DIR,
+        )
+        return
+    missing = [f for f in required if not (STATIC_DIR / f).exists()]
+    if missing:
+        logger.error("Missing static files in %s: %s", STATIC_DIR, missing)
+    else:
+        logger.info("Static files OK (%s)", STATIC_DIR)
 
 RESULTS_DIR = BIO_DB_ROOT / "results"
 
@@ -284,12 +309,24 @@ def _render_report_html(analysis_id: str, md_text: str, sample_id: str, timestam
 
 # ── 路由：頁面 ────────────────────────────────────────────────────────────────
 
+def _static_missing_response(filename: str) -> HTMLResponse:
+    body = (
+        f"<h1>{filename} not found</h1>"
+        f"<p>STATIC_DIR={STATIC_DIR} exists={STATIC_DIR.exists()}</p>"
+        "<p>If the directory exists but files do not, the project tree may be incomplete. "
+        "If <code>exists=False</code>, uvicorn's cwd is likely stale "
+        "(e.g. Google Drive / iCloud re-mounted, or external disk ejected). "
+        "Restart uvicorn from the project root.</p>"
+    )
+    return HTMLResponse(body, status_code=500)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = STATIC_DIR / "index.html"
     if html_path.exists():
         return HTMLResponse(html_path.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>index.html not found</h1>", status_code=500)
+    return _static_missing_response("index.html")
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -297,7 +334,7 @@ async def history_page():
     html_path = STATIC_DIR / "history.html"
     if html_path.exists():
         return HTMLResponse(html_path.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>history.html not found</h1>", status_code=500)
+    return _static_missing_response("history.html")
 
 
 @app.get("/results/{analysis_id}", response_class=HTMLResponse)
@@ -716,7 +753,7 @@ async def engram_page():
     html_path = STATIC_DIR / "engram.html"
     if html_path.exists():
         return HTMLResponse(html_path.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>engram.html not found</h1>", status_code=500)
+    return _static_missing_response("engram.html")
 
 
 @app.get("/api/engram/samples")
