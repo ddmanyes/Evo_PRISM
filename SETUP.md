@@ -150,6 +150,103 @@ bash start_bioagent.sh
 
 ---
 
+## 步驟八：設定 MCP Server（讓 Claude Code / Antigravity / Web UI 共用）
+
+MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 14 個工具，跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
+
+### 共通前置：建 symlink 避開含空格 / 中文路徑（macOS Google Drive 必做）
+
+```bash
+ln -sfn "/path/to/bio_DB" ~/bio_DB
+# 後續所有 MCP 設定都用 /Users/<you>/bio_DB/... 純 ASCII 路徑
+```
+
+> Linux / 本機目錄純 ASCII 路徑可略過。
+
+### A. Web UI（HTTP transport，自動掛載）
+
+不需額外設定。`bash start_bioagent.sh` 啟動 FastAPI 時，MCP server 自動掛載於 `http://localhost:8000/mcp`。
+
+驗證：
+
+```bash
+curl -s -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -c 200
+```
+
+預期：JSON 內含 `bio_history_lookup` 等工具名稱。
+
+### B. Claude Code CLI（stdio transport）
+
+```bash
+cd ~/bio_DB
+cp .mcp.json.example .mcp.json
+```
+
+編輯 `.mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "bio-memory": {
+      "command": "/Users/<you>/bio_DB/.venv/bin/python",
+      "args": ["/Users/<you>/bio_DB/server/bio_memory_server.py"],
+      "env": {
+        "PYTHONPATH": "/Users/<you>/bio_DB",
+        "MCP_AUTH_TOKEN": "",
+        "MCP_BIND_HOST": "127.0.0.1",
+        "MCP_RATE_LIMIT_PER_MIN": "30",
+        "MCP_ENABLE_DANGEROUS_TOOLS": "false"
+      }
+    }
+  }
+}
+```
+
+下次在 `~/bio_DB` 啟動 `claude` CLI 時自動連 MCP server。CLI 內輸入 `/mcp` 驗證連線狀態與工具列表。
+
+### C. Antigravity IDE（stdio transport）
+
+開啟 Antigravity，**Settings → MCP Servers**，新增條目（或直接編輯 `~/Library/Application Support/Antigravity/User/settings.json`）：
+
+```json
+{
+  "mcpServers": {
+    "bio-memory": {
+      "command": "/Users/<you>/bio_DB/.venv/bin/python",
+      "args": ["/Users/<you>/bio_DB/server/bio_memory_server.py"],
+      "env": {
+        "PYTHONPATH": "/Users/<you>/bio_DB",
+        "MCP_BIND_HOST": "127.0.0.1",
+        "MCP_ENABLE_DANGEROUS_TOOLS": "false"
+      }
+    }
+  }
+}
+```
+
+存檔後 **重啟 Antigravity**。Tool palette 應出現 14 個 `bio_*` 工具。
+
+### 想啟用 `bio_execute_code` 沙盒（dangerous）
+
+預設關閉。要讓 MCP client 跑沙盒 Python（產出自動歸檔到 `results/dynamic_code/`）：
+
+```json
+"MCP_ENABLE_DANGEROUS_TOOLS": "true"
+```
+
+僅在以下條件全部成立時開啟：
+
+- 客戶端是本機（`MCP_BIND_HOST=127.0.0.1`）
+- 對外暴露時搭配 `MCP_AUTH_TOKEN`
+- 已 review `server/code_executor.py` 的 `BLOCKED_PATTERNS` 白名單
+
+詳細安全建議見 [docs/MCP_JSON_SETUP.md](docs/MCP_JSON_SETUP.md)。
+
+---
+
 ## 常見問題
 
 | 問題 | 解法 |

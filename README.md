@@ -119,11 +119,22 @@ pkill -f "llama-server" && pkill -f "uvicorn"
 
 ---
 
-## MCP HTTP 使用方式
+## MCP Server 設定
 
-Web UI 啟動後，MCP 工具同時透過 HTTP 暴露於 `http://localhost:8000/mcp`，任何外部客戶端皆可呼叫，不需要 Python 環境。
+MCP（Model Context Protocol）讓外部 AI 客戶端直接呼叫 bio_DB 的 14 個生資工具（含 `bio_read_report` 讀回任何歷史分析全文、`bio_artifact_search` 等）。本系統同時提供兩種 transport：
 
-### curl 範例
+| Transport | 適用場景 | 啟動方式 |
+| --------- | -------- | -------- |
+| **stdio** | 桌面 IDE（Claude Code、Antigravity、Claude Desktop） | IDE 自動 spawn 子 process |
+| **HTTP** | 跨機器、curl 測試、Web UI 內嵌 | `bash start_bioagent.sh` 自動掛載到 `:8000/mcp`；或獨立 `python ... --transport http` |
+
+### 三種客戶端的設定
+
+#### A. Web UI（最簡單，無需額外設定）
+
+`bash start_bioagent.sh` 啟動後，MCP HTTP endpoint 自動掛載於 `http://localhost:8000/mcp`。瀏覽器開啟 <http://localhost:8000> 直接用聊天介面，背後就是 MCP 工具鏈。
+
+對外部客戶端用 curl 測試：
 
 ```bash
 # 列出所有可用工具
@@ -136,37 +147,81 @@ curl -s -X POST http://localhost:8000/mcp \
 curl -s -X POST http://localhost:8000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc": "2.0", "id": 2,
-    "method": "tools/call",
-    "params": {
-      "name": "bio_history_lookup",
-      "arguments": {"sample_id": "crc_official_v4", "limit": 5}
-    }
-  }'
-
-# 確認某分析是否已完成（0 token）
-curl -s -X POST http://localhost:8000/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc": "2.0", "id": 3,
-    "method": "tools/call",
-    "params": {
-      "name": "bio_history_check",
-      "arguments": {"sample_id": "crc_official_v4", "analysis_type": "spatial_eda"}
-    }
-  }'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
+       "params":{"name":"bio_history_lookup",
+                 "arguments":{"sample_id":"crc_official_v4","limit":5}}}'
 ```
 
-### 獨立啟動 MCP HTTP Server（不依賴 Web UI）
+獨立啟動 MCP HTTP Server（不需 Web UI）：
 
 ```bash
-.venv/bin/python server/bio_memory_server.py \
-  --transport http --port 8082
+.venv/bin/python server/bio_memory_server.py --transport http --port 8082
 ```
 
-### 可用 MCP 工具
+#### B. Claude Code CLI（stdio）
+
+專案根目錄已有 `.mcp.json.example`。複製成 `.mcp.json`（gitignored）並填入絕對路徑：
+
+```bash
+cp .mcp.json.example .mcp.json
+# 編輯把 /ABSOLUTE/PATH/TO/... 換成實際路徑（建議用 ~/bio_DB symlink 避開中文/空格）
+```
+
+最終 `.mcp.json` 範例：
+
+```json
+{
+  "mcpServers": {
+    "bio-memory": {
+      "command": "/Users/zhanqiru/bio_DB/.venv/bin/python",
+      "args": ["/Users/zhanqiru/bio_DB/server/bio_memory_server.py"],
+      "env": {
+        "PYTHONPATH": "/Users/zhanqiru/bio_DB",
+        "MCP_AUTH_TOKEN": "",
+        "MCP_BIND_HOST": "127.0.0.1",
+        "MCP_RATE_LIMIT_PER_MIN": "30",
+        "MCP_ENABLE_DANGEROUS_TOOLS": "false"
+      }
+    }
+  }
+}
+```
+
+下次在專案目錄啟動 `claude` CLI 時自動連接，輸入 `/mcp` 即可看到 `bio-memory` server 狀態與工具列表。
+
+**處理含中文路徑**：Google Drive 同步資料夾含「我的雲端硬碟」與空格，先建 symlink 避開：
+
+```bash
+ln -sfn "/Users/zhanqiru/Library/CloudStorage/.../我的雲端硬碟/PJ_save/bio_DB" ~/bio_DB
+# 然後 .mcp.json 全部用 /Users/zhanqiru/bio_DB/... 路徑
+```
+
+#### C. Antigravity IDE（stdio）
+
+開啟 Antigravity 的 **Settings → MCP Servers**（或直接編輯 `~/Library/Application Support/Antigravity/User/settings.json`），新增條目：
+
+```json
+{
+  "mcpServers": {
+    "bio-memory": {
+      "command": "/Users/zhanqiru/bio_DB/.venv/bin/python",
+      "args": ["/Users/zhanqiru/bio_DB/server/bio_memory_server.py"],
+      "env": {
+        "PYTHONPATH": "/Users/zhanqiru/bio_DB",
+        "MCP_BIND_HOST": "127.0.0.1",
+        "MCP_ENABLE_DANGEROUS_TOOLS": "false"
+      }
+    }
+  }
+}
+```
+
+存檔後 **重啟 Antigravity**。工具列應出現 14 個 `bio_*` 工具。Antigravity 內建 Gemini 推理直接呼叫，跳過 web_app 的雙輪 Agent 流程，回應更快且不會發生「列表類查詢被第 2 輪 LLM 截斷」的問題。
+
+> 路徑含中文或空格時，先建 `~/bio_DB` symlink（同 Claude Code 段）。
+> 若 IDE 啟動後看不到工具，檢查 stderr log：通常是 `PYTHONPATH` 缺失導致 `from server.agent import ...` ImportError。
+
+### 可用 MCP 工具（預設 14 個 / 啟用沙盒後 15 個）
 
 | 工具 | 說明 | Token 消耗 |
 | ---- | ---- | ---------- |
@@ -177,21 +232,25 @@ curl -s -X POST http://localhost:8000/mcp \
 | `bio_memory_query` | L1 快取完整報告查詢 | 少量 |
 | `bio_memory_write` | 寫入 L1 語意快取 | 少量 |
 | `bio_register_sample` | 登記新樣本 | 0 token |
+| `bio_read_report` | 沙盒讀取分析報告原文（含 dynamic_code 歸檔） | 0 token |
+| `bio_artifact_search` | ENGRAM 3-way RRF 語意搜尋 | 少量 |
+| `bio_artifact_summary` | ENGRAM artifact 摘要與 metadata | 0 token |
+| `bio_check_l2_sufficiency` | 檢查樣本 L2 是否就緒 | 0 token |
+| `bio_run_spatial_eda` | 觸發空間 EDA 分析 | 高 |
+| `bio_run_bulk_eda` | 觸發 Bulk RNA EDA 分析 | 高 |
+| `bio_tool_health` | HELIX 工具版本健檢 | 0 token |
+| `bio_execute_code` ⚠️ | 沙盒 Python 執行（需 `MCP_ENABLE_DANGEROUS_TOOLS=true`，產出自動歸檔到 `results/dynamic_code/`） | 高 |
 
-### Claude Code 整合（stdio，已設定）
+### 環境變數速查
 
-`.mcp.json` 已設定，Claude Code CLI 啟動時自動連接 MCP Server：
+| Env Var | 預設 | 說明 |
+| ------- | ---- | ---- |
+| `MCP_AUTH_TOKEN` | 空（auth 關閉） | HTTP transport 對外暴露時必填 |
+| `MCP_BIND_HOST` | `127.0.0.1` | 設 `0.0.0.0` 開放區網**必須**搭配 token |
+| `MCP_RATE_LIMIT_PER_MIN` | `30` | 重量級工具速率上限 |
+| `MCP_ENABLE_DANGEROUS_TOOLS` | 未設 | `true` 才啟用 `bio_execute_code` |
 
-```json
-{
-  "mcpServers": {
-    "bio-memory": {
-      "command": "/ABSOLUTE/PATH/TO/bio_DB/.venv/bin/python",
-      "args": ["/ABSOLUTE/PATH/TO/bio_DB/server/bio_memory_server.py"]
-    }
-  }
-}
-```
+詳細安全建議與 transport 細節見 [docs/MCP_JSON_SETUP.md](docs/MCP_JSON_SETUP.md) 與 [docs/MCP_HTTP_GUIDE.md](docs/MCP_HTTP_GUIDE.md)。
 
 ---
 
