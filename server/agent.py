@@ -1583,13 +1583,17 @@ def handle_message(
 
 
 def _startup_cleanup() -> None:
-    """Agent 啟動時清理殭屍 running 狀態（> 24h 標為 stale）。"""
+    """Agent 啟動時清理殭屍 running 狀態。
+
+    hours=0 表示清理所有 running 記錄——server 重啟本身就代表之前的進程已終止，
+    任何殘留的 running 狀態都是殭屍。
+    """
     try:
-        from config.db_utils import cleanup_stale_runs, get_connection
-        con = get_connection()
-        cleaned = cleanup_stale_runs(con)
-        if cleaned:
-            logger.info("啟動清理：%d 筆殭屍 running → stale", cleaned)
+        from config.db_utils import cleanup_stale_runs, open_db
+        with open_db() as con:
+            cleaned = cleanup_stale_runs(con, hours=0)
+            if cleaned:
+                logger.info("啟動清理：%d 筆殭屍 running → stale", cleaned)
     except Exception as e:
         logger.warning("startup cleanup 失敗（不影響啟動）：%s", e)
 
