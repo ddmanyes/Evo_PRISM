@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import json
 import logging
+import os
 import re
 import threading
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -27,7 +28,7 @@ from typing import Optional
 import mistune
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -41,22 +42,37 @@ from config.db_utils import db_health_check
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BioAgent", version="1.0.0")
 
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    async def _cleanup_loop():
+        while True:
+            await asyncio.sleep(3600)
+            _cleanup_old_sessions()
+    task = asyncio.create_task(_cleanup_loop())
+    yield
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+app = FastAPI(title="BioAgent", version="1.0.0", lifespan=_lifespan)
+
+_cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()] or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-async def _start_session_cleanup():
-    async def _cleanup_loop():
-        while True:
-            await asyncio.sleep(3600)  # every hour
-            _cleanup_old_sessions()
-    asyncio.create_task(_cleanup_loop())
+# MCP HTTP transport — 掛載於 /mcp，供外部客戶端直接呼叫 MCP 工具
+try:
+    from server.bio_memory_server import create_http_app as _create_mcp_app
+    app.mount("/mcp", _create_mcp_app())
+    logger.info("MCP HTTP transport mounted at /mcp")
+except Exception as _e:
+    logger.warning("MCP HTTP mount failed (non-fatal): %s", _e)
 
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
@@ -67,27 +83,36 @@ RESULTS_DIR = BIO_DB_ROOT / "results"
 # ── Session 管理 ──────────────────────────────────────────────────────────────
 
 _MAX_HISTORY = 24  # 12 輪 = 24 messages
+_MAX_SESSIONS = 200  # 防止記憶體耗盡
+_SESSION_TTL_HOURS = 24
+_SESSION_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]{1,64}$')
 _sessions: dict[str, collections.deque] = {}
 _session_locks: dict[str, threading.Lock] = {}
 _sessions_meta: dict[str, datetime] = {}
+_sessions_dict_lock = threading.Lock()  # 保護以上三個字典的並發存取
 
 
 def _get_session(session_id: str) -> tuple[collections.deque, threading.Lock]:
-    if session_id not in _sessions:
-        _sessions[session_id] = collections.deque(maxlen=_MAX_HISTORY)
-        _session_locks[session_id] = threading.Lock()
-    _sessions_meta[session_id] = datetime.now(timezone.utc)
-    return _sessions[session_id], _session_locks[session_id]
+    if not _SESSION_ID_RE.match(session_id):
+        raise ValueError(f"Invalid session_id format: {session_id!r}")
+    with _sessions_dict_lock:
+        if session_id not in _sessions:
+            if len(_sessions) >= _MAX_SESSIONS:
+                _cleanup_old_sessions_unsafe()
+            if len(_sessions) >= _MAX_SESSIONS:
+                raise RuntimeError("Session limit reached; retry later")
+            _sessions[session_id] = collections.deque(maxlen=_MAX_HISTORY)
+            _session_locks[session_id] = threading.Lock()
+        _sessions_meta[session_id] = datetime.now(timezone.utc)
+        return _sessions[session_id], _session_locks[session_id]
 
 
-_SESSION_TTL_HOURS = 24
-
-def _cleanup_old_sessions() -> None:
-    """Remove sessions inactive for more than _SESSION_TTL_HOURS hours."""
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None)
+def _cleanup_old_sessions_unsafe() -> None:
+    """Remove expired sessions. Caller must hold _sessions_dict_lock."""
+    now = datetime.now(timezone.utc)
     expired = [
         sid for sid, last in _sessions_meta.items()
-        if (cutoff - last.replace(tzinfo=None)).total_seconds() > _SESSION_TTL_HOURS * 3600
+        if (now - last).total_seconds() > _SESSION_TTL_HOURS * 3600
     ]
     for sid in expired:
         _sessions.pop(sid, None)
@@ -95,6 +120,12 @@ def _cleanup_old_sessions() -> None:
         _sessions_meta.pop(sid, None)
     if expired:
         logger.info("Cleaned up %d expired sessions", len(expired))
+
+
+def _cleanup_old_sessions() -> None:
+    """Public wrapper — acquires lock before cleaning."""
+    with _sessions_dict_lock:
+        _cleanup_old_sessions_unsafe()
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -211,7 +242,11 @@ async def report_page(analysis_id: str):
     if not result_path or not Path(result_path).exists():
         raise HTTPException(status_code=404, detail="報告檔案不存在")
 
-    md_text = Path(result_path).read_text(encoding="utf-8")
+    resolved = Path(result_path).resolve()
+    if not str(resolved).startswith(str(BIO_DB_ROOT.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    md_text = resolved.read_text(encoding="utf-8")
     ts = completed_at.strftime("%Y-%m-%d %H:%M UTC") if completed_at else ""
     return HTMLResponse(_render_report_html(analysis_id, md_text, sample_id, ts))
 
@@ -301,7 +336,11 @@ async def download_csv(analysis_id: str):
         raise HTTPException(status_code=404, detail="分析記錄不存在")
 
     sample_id = row[0]
-    expr_glob = str(L2_ROOT / sample_id / "expression" / "*.parquet")
+    if not re.match(r'^[a-z0-9_-]+$', sample_id):
+        raise HTTPException(status_code=422, detail="資料庫中 sample_id 格式不合法")
+    expr_glob = str((L2_ROOT / sample_id / "expression").resolve() / "*.parquet")
+    if not expr_glob.startswith(str(L2_ROOT.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     try:
         with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
@@ -341,8 +380,9 @@ async def result_images(analysis_id: str):
         ).fetchone()
     if not row or not row[0]:
         return []
-    # Reuse existing _extract_images_from_tool_calls logic by reading the md directly
-    md_path = Path(row[0])
+    md_path = Path(row[0]).resolve()
+    if not str(md_path).startswith(str(BIO_DB_ROOT.resolve())):
+        return []
     if not md_path.exists() or md_path.suffix != ".md":
         return []
     try:
@@ -369,7 +409,12 @@ async def result_images(analysis_id: str):
 async def chat(req: ChatRequest):
     from server.agent import handle_message
 
-    history_deque, lock = _get_session(req.session_id)
+    try:
+        history_deque, lock = _get_session(req.session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     async def event_stream():
         yield _sse("status", {"phase": "thinking"})
@@ -466,10 +511,11 @@ def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
         _extract_from_text(result, f"fig_{call_idx:02d}")
 
         # 來源 2：result_path 指向的 .md 報告檔案
-        match = re.search(r'(?:result_path|report_path):\s*(\S+)', result)
+        match = re.search(r'(?:result_path|report_path):\s*(.+?)(?:\n|$)', result)
         if match:
-            md_path = Path(match.group(1))
-            if md_path.exists() and md_path.suffix == ".md":
+            md_path = Path(match.group(1).strip()).resolve()
+            if (str(md_path).startswith(str(BIO_DB_ROOT.resolve()))
+                    and md_path.exists() and md_path.suffix == ".md"):
                 try:
                     _extract_from_text(md_path.read_text(encoding="utf-8"), f"report_{call_idx:02d}")
                 except Exception:
@@ -655,6 +701,8 @@ async def engram_compare(
     analysis_ids = [i.strip() for i in ids.split(",") if i.strip()]
     if not analysis_ids:
         return {}
+    for aid in analysis_ids:
+        _require_analysis_id(aid)
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         return compare_analyses(con, analysis_ids,
                                 artifact_subtype=artifact_subtype,

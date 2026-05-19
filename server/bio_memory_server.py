@@ -16,10 +16,16 @@ Phase 4 — BioAgent MCP Server
     bio_memory_write     — 寫入 L1 語意快取
     bio_register_sample  — 登記新樣本至 sample_registry
 
-啟動方式（stdio）：
+啟動方式：
+    # stdio（Claude Code CLI，.mcp.json 設定）
     python server/bio_memory_server.py
 
-或透過 .claude/settings.json mcpServers 設定自動啟動。
+    # HTTP（Web UI / 外部客戶端，port 8082）
+    python server/bio_memory_server.py --transport http --port 8082
+
+掛載至現有 FastAPI app（由 web_app.py 呼叫）：
+    from server.bio_memory_server import create_http_app
+    app.mount("/mcp", create_http_app())
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from pathlib import Path
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp import types
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -499,10 +506,46 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=result)]
 
 
+# ── HTTP transport ────────────────────────────────────────────────────────────
+
+
+def create_http_app():
+    """回傳 Starlette ASGI app，可掛載至 FastAPI：app.mount('/mcp', create_http_app())。
+
+    session_manager 以 stateless=True 運行，每次請求獨立，不需要 session affinity。
+    """
+    import contextlib
+    from starlette.applications import Starlette
+
+    session_manager = StreamableHTTPSessionManager(
+        app=server,
+        stateless=True,
+    )
+
+    @contextlib.asynccontextmanager
+    async def _lifespan(_app: Starlette):
+        async with session_manager.run():
+            yield
+
+    # session_manager.handle_request 本身就是 ASGI callable (scope, receive, send)
+    # 用 Starlette lifespan 包裝確保 session_manager.run() 正確啟動/關閉
+    class _MCPApp:
+        def __init__(self) -> None:
+            self._starlette = Starlette(lifespan=_lifespan)
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "lifespan":
+                await self._starlette(scope, receive, send)
+            else:
+                await session_manager.handle_request(scope, receive, send)
+
+    return _MCPApp()
+
+
 # ── 啟動 ─────────────────────────────────────────────────────────────────────
 
 
-async def main() -> None:
+async def _run_stdio() -> None:
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -511,6 +554,24 @@ async def main() -> None:
         )
 
 
+def _run_http(port: int) -> None:
+    import os
+    import uvicorn
+    host = os.environ.get("MCP_BIND_HOST", "127.0.0.1")
+    uvicorn.run(create_http_app(), host=host, port=port)
+
+
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())
+
+    parser = argparse.ArgumentParser(description="BioAgent MCP Server")
+    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
+    parser.add_argument("--port", type=int, default=8082)
+    args = parser.parse_args()
+
+    if args.transport == "http":
+        _run_http(args.port)
+    else:
+        asyncio.run(_run_stdio())

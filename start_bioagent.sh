@@ -7,7 +7,7 @@ set -euo pipefail
 #   bash start_bioagent.sh --local   # Gemma 4 Vision + embedding
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV="$HOME/.venvs/bioagent/bin/python"
+VENV="$HOME/.venvs/hermes-bio-memory/bin/python"
 LLAMA_BIN="$HOME/llama.cpp/build/bin/llama-server"
 EMBED_MODEL="$HOME/llama.cpp/models/bge-m3-Q8_0.gguf"
 VISION_MODEL="$HOME/gemma-4-26B-A4B-it-UD-IQ2_M.gguf"

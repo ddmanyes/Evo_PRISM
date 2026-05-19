@@ -168,4 +168,60 @@ bio_history_search / bio_memory_query / bio_memory_write / bio_register_sample
 
 ---
 
+## Phase 10 — MCP HTTP Transport（完成）
+
+### [x] 10.1 server/bio_memory_server.py（✅ 完成）
+
+- `create_http_app()` — `StreamableHTTPSessionManager(stateless=True)` + `_MCPApp` ASGI class
+- `_run_http(port)` — 綁定 `MCP_BIND_HOST`（預設 `127.0.0.1`）
+- `--transport stdio|http --port` CLI 參數；stdio 行為完全不變
+
+### [x] 10.2 server/web_app.py — 掛載 /mcp（✅ 完成）
+
+- `app.mount("/mcp", create_http_app())` — Web UI 啟動即暴露 MCP HTTP endpoint
+- `asynccontextmanager` lifespan 取代廢棄的 `@app.on_event("startup")`
+
+### [x] 10.3 start_bioagent.sh — venv 路徑修正（✅ 完成）
+
+- `VENV` 從 `~/.venvs/bioagent` 修正為 `~/.venvs/hermes-bio-memory`
+
+### [x] 10.4 tests/test_phase10.py — 15/15 PASSED（✅ 完成）
+
+---
+
+## 安全性審查修復（第一輪 + 第二輪，2026-05-19，完成）
+
+### [x] 第一輪：8 項修復（✅ 完成）
+
+| 項目 | 檔案 |
+|------|------|
+| CRITICAL-C1 `duckdb`/`config` 移出白名單 | `code_executor.py` |
+| CRITICAL-C2 隱性寫入函式加入黑名單 | `code_executor.py` |
+| CRITICAL-C3 CORS 改讀 `CORS_ORIGINS` env | `web_app.py` |
+| HIGH-H1 MCP HTTP 改綁 `127.0.0.1` | `bio_memory_server.py` |
+| HIGH-H2 `preamble=` kwarg 隔離安全檢查 | `code_executor.py` / `agent.py` |
+| HIGH-H3 session_id 驗證 + MAX_SESSIONS=200 | `web_app.py` |
+| HIGH-H5 lifespan context manager | `web_app.py` |
+| MEDIUM-M3 timezone-aware session 清理 | `web_app.py` |
+
+### [x] 第二輪：11 項修復（✅ 完成）
+
+| 項目 | 檔案 |
+|------|------|
+| CRITICAL-NC1 20+ pandas/numpy/scanpy I/O 封鎖；analysis 限縮子模組；glob 移除 | `code_executor.py` |
+| CRITICAL-NC2 result_path 路徑遍歷防護 | `web_app.py` |
+| CRITICAL-NC3 sample_id 格式驗證；路徑遍歷斷言 | `web_app.py` / `spatial_eda.py` |
+| CRITICAL-NC4 engram_compare analysis_ids 驗證 | `web_app.py` |
+| HIGH-NH1 session 字典加 threading.Lock | `web_app.py` |
+| HIGH-NH2 glob.glob/iglob 加入黑名單 | `code_executor.py` |
+| HIGH-NH3 L1/DB 寫入函式加入黑名單 | `code_executor.py` |
+| HIGH-NH4 Google 多輪 tool history 修復 | `agent.py` |
+| MEDIUM-NM1 Claude tool result 截斷至 800 字 | `agent.py` |
+| MEDIUM-NM2 venv 路徑 bioagent → hermes-bio-memory | `agent.py` |
+| MEDIUM-NM5 含空格路徑正則修正 + 路徑限制 | `web_app.py` |
+
+總測試數：228/228 PASSED，3 skipped
+
+---
+
 ## 執行日誌 → execution_trace.md

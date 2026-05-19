@@ -907,7 +907,7 @@ def _exec_bio_check_l2_sufficiency(args: dict) -> str:
     if l2_ready:
         return f"l2_ready=true。樣本 {sample_id!r} 的 L2 Parquet 已就緒，可直接執行分析。"
     cmd = (
-        f"~/.venvs/bioagent/bin/python scripts/02_spatial_to_parquet.py --sample-id {sample_id}"
+        f"~/.venvs/hermes-bio-memory/bin/python scripts/02_spatial_to_parquet.py --sample-id {sample_id}"
         if data_type in ("visium_hd", "visium")
         else f"# data_type={data_type!r}，請手動執行對應的 L2 轉換腳本。"
     )
@@ -1068,10 +1068,8 @@ def _hermes_show(*a, **kw):
     _plt_orig.close("all")
 _plt_orig.show = _hermes_show
 """
-        augmented_code = preamble + "\n" + code
-
         try:
-            result = sandbox_exec(augmented_code, timeout=timeout)
+            result = sandbox_exec(code, timeout=timeout, preamble=preamble)
         except SecurityError as e:
             return f"[SecurityError] 程式碼違反安全規則：{e}"
 
@@ -1418,7 +1416,15 @@ def handle_message(
     all_tool_calls: list[dict] = []
     total_input = 0
     total_output = 0
-    _google_native: list = []  # accumulates native Gemini Content objects across tool rounds
+
+    # Pre-build Google native history from messages once before the loop.
+    # This ensures prior tool-call turns in `history` are not silently dropped
+    # by the round-0 conversion path inside _make_google_call.
+    _google_native: list = []
+    if resolved_backend == "google":
+        _google_native = _make_google_call(
+            messages, resolved_model, max_tokens, native_history=None
+        )[4]  # index 4 = history_contents built from messages
 
     for _round in range(max_tool_rounds):
         if resolved_backend == "claude":
@@ -1440,7 +1446,8 @@ def handle_message(
                 tool_result = execute_tool(block.name, block.input)
                 logger.info("Tool %r called: %s…", block.name, str(tool_result)[:60])
                 all_tool_calls.append({"name": block.name, "input": block.input, "result": tool_result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": tool_result})
+                truncated = tool_result if len(tool_result) <= 800 else tool_result[:800] + "\n…（已截斷，完整內容見 result_path）"
+                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": truncated})
             serializable_blocks = [
                 b.model_dump() if hasattr(b, "model_dump") else b
                 for b in content_blocks
@@ -1453,11 +1460,10 @@ def handle_message(
         if resolved_backend == "google":
             from google.genai import types as _gtypes
 
-            # First iteration builds history from messages; subsequent iterations
-            # pass the accumulated native_history so FunctionCall parts are preserved.
+            # Always pass accumulated native history (pre-built before loop).
             finish, resp, in_tok, out_tok, _google_native = _make_google_call(
                 messages, resolved_model, max_tokens,
-                native_history=_google_native if _round > 0 else None,
+                native_history=_google_native,
             )
             total_input  += in_tok
             total_output += out_tok
