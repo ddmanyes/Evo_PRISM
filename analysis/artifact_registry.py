@@ -29,6 +29,15 @@ from typing import Optional
 
 import duckdb
 
+
+def _ensure_vss(con: duckdb.DuckDBPyConnection) -> None:
+    """Load VSS extension before any CHECKPOINT or HNSW operation. Silently skipped on failure."""
+    try:
+        con.execute("LOAD vss")
+        con.execute("SET hnsw_enable_experimental_persistence = true")
+    except Exception:
+        pass
+
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -360,6 +369,9 @@ def register_artifact(
 
     use_provenance = _provenance_col_exists(con)
 
+    # INSERT into analysis_artifacts updates the HNSW index — VSS must be loaded first.
+    _ensure_vss(con)
+
     if use_provenance and use_matryoshka:
         con.execute(
             """
@@ -438,7 +450,9 @@ def register_artifact(
             logger.warning("register_artifact: blob insert failed: %s", exc)
 
     # CHECKPOINT after every write — ExFAT has no journal (CLAUDE.md §6)
+    # Must LOAD vss first; analysis_artifacts has an HNSW index.
     try:
+        _ensure_vss(con)
         con.execute("CHECKPOINT")
     except Exception as exc:
         logger.warning("register_artifact: CHECKPOINT failed: %s", exc)
