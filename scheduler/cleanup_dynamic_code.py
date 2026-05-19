@@ -25,12 +25,20 @@ from config.settings import DYNAMIC_CODE_DIR  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
-def cleanup_old_archives(days: int = 90) -> int:
-    """刪除 created_at 早於 N 天前的歸檔目錄，回傳刪除數量。"""
+def cleanup_old_archives(
+    days: int = 90, *, dry_run: bool = False
+) -> tuple[int, list[tuple[str, str]]]:
+    """掃描 DYNAMIC_CODE_DIR 找出 created_at 早於 N 天前的歸檔。
+
+    Returns:
+        (removed_count, candidates) — candidates 為 [(dir_name, created_at_iso), ...]。
+        dry_run=True 時 removed_count 永遠是 0；False 時等於 len(candidates)。
+    """
     if not DYNAMIC_CODE_DIR.exists():
-        return 0
+        return 0, []
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    candidates: list[tuple[str, str]] = []
     removed = 0
 
     for entry in DYNAMIC_CODE_DIR.iterdir():
@@ -45,14 +53,18 @@ def cleanup_old_archives(days: int = 90) -> int:
         except (ValueError, KeyError, json.JSONDecodeError):
             logger.warning("跳過無法解析的歸檔：%s", entry)
             continue
-        if created_at < cutoff:
+        if created_at >= cutoff:
+            continue
+
+        candidates.append((entry.name, created_at.isoformat()))
+        if not dry_run:
             shutil.rmtree(entry)
             removed += 1
             logger.info(
                 "已刪除過期歸檔：%s (created_at=%s)", entry.name, created_at.isoformat()
             )
 
-    return removed
+    return removed, candidates
 
 
 if __name__ == "__main__":
@@ -65,28 +77,16 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    if not DYNAMIC_CODE_DIR.exists():
+        print(f"DYNAMIC_CODE_DIR 不存在：{DYNAMIC_CODE_DIR}")
+        sys.exit(0)
+
+    removed, candidates = cleanup_old_archives(days=args.days, dry_run=args.dry_run)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
+
     if args.dry_run:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
-        if not DYNAMIC_CODE_DIR.exists():
-            print(f"DYNAMIC_CODE_DIR 不存在：{DYNAMIC_CODE_DIR}")
-            sys.exit(0)
-        candidates = []
-        for entry in DYNAMIC_CODE_DIR.iterdir():
-            if not entry.is_dir():
-                continue
-            meta_path = entry / "meta.json"
-            if not meta_path.exists():
-                continue
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                created_at = datetime.fromisoformat(meta["created_at"])
-            except Exception:
-                continue
-            if created_at < cutoff:
-                candidates.append((entry.name, created_at.isoformat()))
         print(f"[dry-run] 將刪除 {len(candidates)} 個目錄（cutoff = {cutoff.isoformat()}）：")
         for name, ts in candidates:
             print(f"  {name}  (created_at={ts})")
     else:
-        n = cleanup_old_archives(days=args.days)
-        print(f"已刪除 {n} 個過期歸檔（保留 {args.days} 天內）")
+        print(f"已刪除 {removed} 個過期歸檔（保留 {args.days} 天內）")

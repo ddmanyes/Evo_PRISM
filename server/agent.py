@@ -1113,6 +1113,53 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
         return f"Bulk EDA 執行失敗：{e}"
 
 
+def _archive_history_insert(
+    *,
+    analysis_id: str,
+    sample_id: Optional[str],
+    description: str,
+    code_lines: int,
+    fig_count: int,
+    error_summary: Optional[str],
+    status: str,           # "completed" | "failed"
+    rel_path: str,
+    started_at,            # datetime aware UTC
+    completed_at,          # datetime aware UTC
+) -> None:
+    """寫一筆 dynamic_code 歸檔記錄到 analysis_history；失敗只 log 不 raise。"""
+    import duckdb, json as _json
+    from config.settings import DUCKDB_PATH
+    from config.db_utils import safe_write
+
+    params_json: dict[str, Any] = {
+        "description": description,
+        "code_lines": code_lines,
+        "fig_count": fig_count,
+    }
+    if error_summary is not None:
+        params_json["error_summary"] = error_summary
+
+    summary_text = description[:50] or "dynamic code execution"
+    if status == "failed":
+        summary_text = f"[FAILED] {summary_text}"[:50]
+
+    try:
+        with duckdb.connect(str(DUCKDB_PATH)) as con:
+            safe_write(
+                con,
+                """INSERT INTO analysis_history
+                       (analysis_id, sample_id, analysis_type, parameters, status,
+                        result_path, requested_by, started_at, completed_at, summary)
+                   VALUES (?, ?, 'dynamic_code', ?, ?, ?, 'agent', ?, ?, ?)""",
+                [
+                    analysis_id, sample_id, _json.dumps(params_json),
+                    status, rel_path, started_at, completed_at, summary_text,
+                ],
+            )
+    except Exception:
+        logger.warning("bio_execute_code: 寫入 analysis_history 失敗（不影響結果）", exc_info=True)
+
+
 def _exec_bio_execute_code(args: dict) -> str:
     from server.code_executor import sandbox_exec, SecurityError
     import base64, json, uuid as _uuid
@@ -1176,31 +1223,18 @@ _plt_orig.show = _hermes_show
             rel_sec = str(archive_dir.relative_to(BIO_DB_ROOT))
         except ValueError:
             rel_sec = str(archive_dir)
-        try:
-            import duckdb
-            from config.settings import DUCKDB_PATH
-            from config.db_utils import safe_write
-            with duckdb.connect(str(DUCKDB_PATH)) as con:
-                safe_write(
-                    con,
-                    """INSERT INTO analysis_history
-                           (analysis_id, sample_id, analysis_type, parameters, status,
-                            result_path, requested_by, started_at, completed_at, summary)
-                       VALUES (?, ?, 'dynamic_code', ?, 'failed', ?, 'agent', ?, ?, ?)""",
-                    [
-                        analysis_id, sample_id,
-                        json.dumps({
-                            "description": description,
-                            "code_lines": len(code.splitlines()),
-                            "fig_count": 0,
-                            "error_summary": f"SecurityError: {err_msg[:200]}",
-                        }),
-                        rel_sec, started_at, completed_at,
-                        f"[FAILED] {(description[:50] or 'dynamic code execution')}"[:50],
-                    ],
-                )
-        except Exception:
-            logger.warning("bio_execute_code: SecurityError 歸檔寫 history 失敗", exc_info=True)
+        _archive_history_insert(
+            analysis_id=analysis_id,
+            sample_id=sample_id,
+            description=description,
+            code_lines=len(code.splitlines()),
+            fig_count=0,
+            error_summary=f"SecurityError: {err_msg[:200]}",
+            status="failed",
+            rel_path=rel_sec,
+            started_at=started_at,
+            completed_at=completed_at,
+        )
         return f"[SecurityError] 程式碼違反安全規則：{err_msg}\n歸檔：{rel_sec}/"
 
     completed_at = datetime.now(timezone.utc)
@@ -1242,42 +1276,20 @@ _plt_orig.show = _hermes_show
     except ValueError:
         rel_archive = str(archive_dir)
 
-    # 寫入 analysis_history（成功與失敗都寫；SecurityError 也寫，以便回溯）
-    try:
-        import duckdb
-        from config.settings import DUCKDB_PATH
-        from config.db_utils import safe_write
-        params_json = {
-            "description": description,
-            "code_lines": len(code.splitlines()),
-            "fig_count": fig_count,
-        }
-        if error_summary is not None:
-            params_json["error_summary"] = error_summary
-
-        summary_text = (description[:50] or "dynamic code execution")
-        if status == "failed":
-            summary_text = f"[FAILED] {summary_text}"[:50]
-
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
-            safe_write(
-                con,
-                """INSERT INTO analysis_history
-                       (analysis_id, sample_id, analysis_type, parameters, status,
-                        result_path, requested_by, started_at, completed_at, summary)
-                   VALUES (?, ?, 'dynamic_code', ?, ?, ?, 'agent', ?, ?, ?)""",
-                [
-                    analysis_id,
-                    sample_id,
-                    json.dumps(params_json),
-                    status,
-                    rel_archive,
-                    started_at, completed_at,
-                    summary_text,
-                ],
-            )
-    except Exception:
-        logger.warning("bio_execute_code: 寫入 analysis_history 失敗（不影響結果）", exc_info=True)
+    # 寫入 analysis_history（成功與失敗都寫；SecurityError 也走同個 helper，
+    # 透過 _archive_history_insert 集中管理 schema 與 [FAILED] summary 前綴）
+    _archive_history_insert(
+        analysis_id=analysis_id,
+        sample_id=sample_id,
+        description=description,
+        code_lines=len(code.splitlines()),
+        fig_count=fig_count,
+        error_summary=error_summary,
+        status=status,
+        rel_path=rel_archive,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
 
     # Collect figures as base64 for inline rendering
     fig_md = ""
