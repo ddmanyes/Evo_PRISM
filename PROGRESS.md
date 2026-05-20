@@ -10,10 +10,11 @@
 **里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ 控制面板 Phase 2（手動操作端點）+ **控制面板 Phase 3（動態程式碼畢業助手）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-20
+**commit**：9bb01bc（feat(dashboard)：Phase 3 — 動態程式碼畢業助手 候選門檻 + 骨架生成）
 
 ---
 
-## ✅ 2026-05-20 Session E：控制面板 Phase 3 — 動態程式碼畢業助手
+## ✅ 2026-05-20 Session E：控制面板 Phase 3 — 動態程式碼畢業助手（commit `9bb01bc`）
 
 **動機**：dynamic_code 反覆跑同一段分析時，該「畢業」成正式 `analysis/` 函數
 （消除重複、納入 HELIX 版本管理）。Phase 3 在面板上引導這個流程。
