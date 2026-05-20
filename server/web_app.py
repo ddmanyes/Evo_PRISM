@@ -267,6 +267,84 @@ class ChatRequest(BaseModel):
 _md = mistune.create_markdown(plugins=["table", "strikethrough"])
 
 
+def _synthesize_archive_markdown(archive_dir: Path) -> str:
+    """
+    把目錄類 result_path（dynamic_code / l2_convert 等）合成成可渲染的 markdown。
+
+    優先吸收已知檔案：meta.json / code.py / output.txt / traceback.txt / *.md / *.log /
+    fig_*.png（inline base64），其餘檔案只列檔名與大小。
+    """
+    import base64
+    import json as _json
+
+    parts: list[str] = [f"# Archive: `{archive_dir.name}`\n"]
+
+    # meta.json 放最前面（dynamic_code 必備）
+    meta = archive_dir / "meta.json"
+    if meta.is_file():
+        try:
+            m = _json.loads(meta.read_text(encoding="utf-8"))
+            parts.append("## Meta\n")
+            parts.append("```json\n" + _json.dumps(m, ensure_ascii=False, indent=2) + "\n```\n")
+        except Exception as e:
+            parts.append(f"_meta.json parse 失敗：{e}_\n")
+
+    # code.py
+    code = archive_dir / "code.py"
+    if code.is_file():
+        parts.append("## code.py\n")
+        parts.append("```python\n" + code.read_text(encoding="utf-8", errors="replace") + "\n```\n")
+
+    # output.txt / traceback.txt（成功與失敗互斥；都顯示）
+    for name, lang in (("output.txt", "text"), ("traceback.txt", "text")):
+        f = archive_dir / name
+        if f.is_file():
+            txt = f.read_text(encoding="utf-8", errors="replace")
+            if txt.strip():
+                parts.append(f"## {name}\n")
+                parts.append(f"```{lang}\n{txt}\n```\n")
+
+    # 圖片：inline base64
+    figs = sorted(archive_dir.glob("fig_*.png"))
+    if figs:
+        parts.append("## Figures\n")
+        for fp in figs:
+            b64 = base64.b64encode(fp.read_bytes()).decode()
+            parts.append(f"### {fp.name}\n\n![{fp.name}](data:image/png;base64,{b64})\n")
+
+    # 任意 .md / .log 內容
+    for f in sorted(archive_dir.iterdir()):
+        if f.suffix.lower() in (".md", ".log") and f.is_file():
+            parts.append(f"## {f.name}\n")
+            parts.append(f.read_text(encoding="utf-8", errors="replace") + "\n")
+
+    # 其他檔（parquet 等）只列檔名 + 大小
+    known = {"meta.json", "code.py", "output.txt", "traceback.txt"}
+    extras = [
+        f for f in sorted(archive_dir.iterdir())
+        if f.is_file()
+        and f.name not in known
+        and not f.name.startswith("fig_")
+        and f.suffix.lower() not in (".md", ".log")
+    ]
+    if extras:
+        parts.append("## 其他檔案\n")
+        for f in extras:
+            kb = f.stat().st_size / 1024
+            parts.append(f"- `{f.name}` ({kb:.1f} KB)")
+        parts.append("")
+
+    return "\n".join(parts)
+
+
+def _resolve_result_path(result_path: str) -> Path:
+    """把 DB 的 result_path 解析成絕對 Path。相對路徑以 BIO_DB_ROOT 為基底（不依賴 CWD）。"""
+    p = Path(result_path)
+    if not p.is_absolute():
+        p = BIO_DB_ROOT / p
+    return p.resolve()
+
+
 def _render_report_html(analysis_id: str, md_text: str, sample_id: str, timestamp: str) -> str:
     body = _md(md_text)
     csv_url = f"/api/results/{analysis_id}/csv"
@@ -396,16 +474,31 @@ async def report_page(analysis_id: str):
         raise HTTPException(status_code=404, detail="分析記錄不存在")
 
     sample_id, result_path, completed_at, summary = row
-    if not result_path or not Path(result_path).exists():
-        raise HTTPException(status_code=404, detail="報告檔案不存在")
+    if not result_path:
+        raise HTTPException(status_code=404, detail="此分析無 result_path 記錄")
 
-    resolved = Path(result_path).resolve()
+    resolved = _resolve_result_path(result_path)
     if not str(resolved).startswith(str(BIO_DB_ROOT.resolve())):
         raise HTTPException(status_code=403, detail="Access denied")
+    if not resolved.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"報告檔案不存在：{result_path}（可能為舊絕對路徑，專案已搬遷）",
+        )
 
-    md_text = resolved.read_text(encoding="utf-8")
     ts = completed_at.strftime("%Y-%m-%d %H:%M UTC") if completed_at else ""
-    return HTMLResponse(_render_report_html(analysis_id, md_text, sample_id, ts))
+
+    # 目錄類 result_path（dynamic_code / l2_convert 等）→ 合成 archive 視圖
+    if resolved.is_dir():
+        md_text = _synthesize_archive_markdown(resolved)
+        return HTMLResponse(_render_report_html(analysis_id, md_text, sample_id, ts))
+
+    # 檔案類（.md / .txt 報告）→ 原本流程
+    if resolved.is_file():
+        md_text = resolved.read_text(encoding="utf-8")
+        return HTMLResponse(_render_report_html(analysis_id, md_text, sample_id, ts))
+
+    raise HTTPException(status_code=404, detail="result_path 既非檔案也非目錄")
 
 
 # ── 路由：API ─────────────────────────────────────────────────────────────────

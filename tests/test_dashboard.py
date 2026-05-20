@@ -186,19 +186,15 @@ def test_full_snapshot_aggregates_all(con, monkeypatch):
     assert set(snap.keys()) == {"overview", "helix", "dynamic_code", "cache", "system"}
 
 
-def test_dashboard_routes():
+def test_dashboard_routes(web_app_client):
     """HTTP 整合：/dashboard 回 HTML、/api/dashboard 回 JSON。
     用真實 settings.DUCKDB_PATH（本機/CI 皆已建好）；只驗 status code 與形狀。
     """
-    from starlette.testclient import TestClient
-    from server import web_app as wa
+    r1 = web_app_client.get("/dashboard")
+    assert r1.status_code == 200
+    assert "<title>BioAgent 控制面板</title>" in r1.text
 
-    with TestClient(wa.app) as client:
-        r1 = client.get("/dashboard")
-        assert r1.status_code == 200
-        assert "<title>BioAgent 控制面板</title>" in r1.text
-
-        r2 = client.get("/api/dashboard")
-        assert r2.status_code == 200
-        data = r2.json()
-        assert set(data.keys()) == {"overview", "helix", "dynamic_code", "cache", "system"}
+    r2 = web_app_client.get("/api/dashboard")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert set(data.keys()) == {"overview", "helix", "dynamic_code", "cache", "system"}

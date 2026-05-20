@@ -20,6 +20,21 @@ def tmp_db(tmp_path):
     con.close()
 
 
+@pytest.fixture(scope="session")
+def web_app_client():
+    """Session-scoped TestClient for server.web_app.app。
+
+    `bio_memory_server.StreamableHTTPSessionManager.run()` 每實例只能呼叫一次，
+    且 `web_app.app` 是 module 級 singleton——多個測試各自建 TestClient(app)
+    會撞到 RuntimeError。session 內共用單一 client 即可。
+    """
+    from starlette.testclient import TestClient
+    from server.web_app import app
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
 @pytest.fixture
 def l3_crc_path():
     """Path to CRC test data (read-only L3).
