@@ -63,8 +63,10 @@ bio_DB/
 │   ├── figure_cache.py         ← ✅ MCP 邊界 base64 剝離 + bio_get_figure 索取
 │   └── artifact_resources.py   ← ✅ MCP Resources：分析數據檔交付（artifact:// URI）
 │
-├── server/                 ← MCP Server（Phase 5，尚未實作）
-│   └── bio_memory_server.py
+├── server/                 ← MCP Server + Web UI（含控制面板）
+│   ├── bio_memory_server.py
+│   ├── web_app.py              ← FastAPI（對話/歷史/ENGRAM/control panel /dashboard）
+│   └── dashboard.py            ← ✅ 控制面板資料層（overview/helix/dynamic/cache/system）
 │
 ├── scheduler/              ← 排程任務
 │   ├── backup_db.py            ← ✅ 每日 02:00 EXPORT DATABASE 備份（已啟用 launchd）

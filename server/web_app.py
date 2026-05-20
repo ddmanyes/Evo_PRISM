@@ -361,6 +361,26 @@ async def history_page():
     return _static_missing_response("history.html")
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page():
+    """控制面板：監控四大子系統（分析/HELIX/系統/快取）+ 手動操作（Phase 2 起）。"""
+    html_path = STATIC_DIR / "dashboard.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return _static_missing_response("dashboard.html")
+
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    """聚合所有 panel 一次回傳，供首屏載入。"""
+    import duckdb
+    from config.settings import DUCKDB_PATH
+    from server.dashboard import full_snapshot
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        return full_snapshot(con)
+
+
 @app.get("/results/{analysis_id}", response_class=HTMLResponse)
 async def report_page(analysis_id: str):
     import duckdb
