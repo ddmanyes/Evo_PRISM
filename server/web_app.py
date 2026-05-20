@@ -267,74 +267,213 @@ class ChatRequest(BaseModel):
 _md = mistune.create_markdown(plugins=["table", "strikethrough"])
 
 
-def _synthesize_archive_markdown(archive_dir: Path) -> str:
+def _synthesize_dynamic_code_view(archive_dir: Path) -> str:
     """
-    把目錄類 result_path（dynamic_code / l2_convert 等）合成成可渲染的 markdown。
+    Dynamic code 歸檔專屬視圖：description 當標題 + status badge + 執行統計 +
+    失敗橫幅 + 折疊 meta + code.py + output.txt + figures。
 
-    優先吸收已知檔案：meta.json / code.py / output.txt / traceback.txt / *.md / *.log /
-    fig_*.png（inline base64），其餘檔案只列檔名與大小。
+    預期目錄含 `meta.json` + `code.py`（由 bio_execute_code 寫入）。
+    與通用目錄瀏覽（l2_convert 等）分流，由 `_synthesize_archive_view` 派發。
     """
     import base64
+    import html as _html
     import json as _json
 
-    parts: list[str] = [f"# Archive: `{archive_dir.name}`\n"]
-
-    # meta.json 放最前面（dynamic_code 必備）
-    meta = archive_dir / "meta.json"
-    if meta.is_file():
+    # 讀 meta（失敗不致命）
+    meta_raw = ""
+    meta: dict = {}
+    meta_path = archive_dir / "meta.json"
+    if meta_path.is_file():
+        meta_raw = meta_path.read_text(encoding="utf-8", errors="replace")
         try:
-            m = _json.loads(meta.read_text(encoding="utf-8"))
-            parts.append("## Meta\n")
-            parts.append("```json\n" + _json.dumps(m, ensure_ascii=False, indent=2) + "\n```\n")
-        except Exception as e:
-            parts.append(f"_meta.json parse 失敗：{e}_\n")
+            meta = _json.loads(meta_raw)
+        except Exception:
+            meta = {}
+
+    description = (meta.get("description") or "").strip() or f"Archive: {archive_dir.name}"
+    status = (meta.get("status") or "").strip()
+    duration = meta.get("duration_sec")
+    code_lines = meta.get("code_lines")
+    fig_count = meta.get("fig_count")
+    error_summary = (meta.get("error_summary") or "").strip()
+
+    # status badge
+    if status == "completed":
+        badge_color, badge_bg, badge_label = "#065f46", "#d1fae5", "✓ 完成"
+    elif status == "failed":
+        badge_color, badge_bg, badge_label = "#991b1b", "#fee2e2", "× 失敗"
+    else:
+        badge_color, badge_bg, badge_label = "#374151", "#e5e7eb", status or "—"
+
+    badge_html = (
+        f'<span style="display:inline-block;padding:3px 10px;border-radius:10px;'
+        f'background:{badge_bg};color:{badge_color};font-size:12px;font-weight:600;">'
+        f'{_html.escape(badge_label)}</span>'
+    )
+
+    stats_bits: list[str] = []
+    if duration is not None:
+        stats_bits.append(f"⏱ {duration:g} s")
+    if code_lines is not None:
+        stats_bits.append(f"{code_lines} 行程式碼")
+    if fig_count:
+        stats_bits.append(f"{fig_count} 張圖")
+    stats_html = (
+        '<span style="color:#6c757d;font-size:13px;">'
+        + " · ".join(_html.escape(s) for s in stats_bits)
+        + "</span>"
+    ) if stats_bits else ""
+
+    # 頁面標頭（description 當 H1 + badge + stats + archive id）
+    header_html = (
+        f'<h1 style="margin-bottom:6px;">{_html.escape(description)}</h1>'
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
+        f'margin-bottom:18px;">'
+        f'{badge_html}{stats_html}'
+        f'<code style="font-size:12px;color:#6c757d;background:#f1f3f5;'
+        f'padding:2px 6px;border-radius:4px;">{_html.escape(archive_dir.name)}</code>'
+        f"</div>"
+    )
+
+    parts: list[str] = [header_html]
+
+    # 失敗橫幅（紅框 + error_summary 重點化 + traceback inline）
+    if status == "failed":
+        tb_path = archive_dir / "traceback.txt"
+        tb_text = tb_path.read_text(encoding="utf-8", errors="replace") if tb_path.is_file() else ""
+        parts.append(
+            '<div style="background:#fee2e2;border-left:4px solid #ef4444;'
+            'padding:14px 16px;border-radius:6px;margin-bottom:18px;">'
+            f'<div style="font-weight:700;color:#991b1b;margin-bottom:6px;">× 執行失敗</div>'
+            + (
+                f'<div style="color:#7f1d1d;font-size:14px;margin-bottom:8px;">'
+                f'{_html.escape(error_summary)}</div>'
+                if error_summary else ""
+            )
+            + (
+                f'<pre style="background:rgba(0,0,0,0.04);padding:10px;border-radius:4px;'
+                f'font-size:12px;overflow-x:auto;margin:0;color:#3f0a0a;">'
+                f'{_html.escape(tb_text)}</pre>'
+                if tb_text.strip() else ""
+            )
+            + "</div>"
+        )
+
+    # meta.json：折疊預設關
+    if meta_raw:
+        pretty = _json.dumps(meta, ensure_ascii=False, indent=2) if meta else meta_raw
+        parts.append(
+            "<details style=\"margin-bottom:18px;\">"
+            "<summary style=\"cursor:pointer;color:#6c757d;font-size:13px;\">"
+            "顯示 meta.json（原始）</summary>\n\n"
+            "```json\n" + pretty + "\n```\n"
+            "</details>"
+        )
 
     # code.py
     code = archive_dir / "code.py"
     if code.is_file():
-        parts.append("## code.py\n")
+        parts.append("## 程式碼\n")
         parts.append("```python\n" + code.read_text(encoding="utf-8", errors="replace") + "\n```\n")
 
-    # output.txt / traceback.txt（成功與失敗互斥；都顯示）
-    for name, lang in (("output.txt", "text"), ("traceback.txt", "text")):
-        f = archive_dir / name
-        if f.is_file():
-            txt = f.read_text(encoding="utf-8", errors="replace")
-            if txt.strip():
-                parts.append(f"## {name}\n")
-                parts.append(f"```{lang}\n{txt}\n```\n")
+    # output.txt（成功時才顯示；失敗已在橫幅）
+    out_path = archive_dir / "output.txt"
+    if out_path.is_file():
+        out_txt = out_path.read_text(encoding="utf-8", errors="replace")
+        if out_txt.strip():
+            parts.append("## 輸出\n")
+            parts.append("```text\n" + out_txt + "\n```\n")
 
     # 圖片：inline base64
     figs = sorted(archive_dir.glob("fig_*.png"))
     if figs:
-        parts.append("## Figures\n")
+        parts.append("## 圖\n")
         for fp in figs:
             b64 = base64.b64encode(fp.read_bytes()).decode()
             parts.append(f"### {fp.name}\n\n![{fp.name}](data:image/png;base64,{b64})\n")
 
-    # 任意 .md / .log 內容
-    for f in sorted(archive_dir.iterdir()):
-        if f.suffix.lower() in (".md", ".log") and f.is_file():
-            parts.append(f"## {f.name}\n")
-            parts.append(f.read_text(encoding="utf-8", errors="replace") + "\n")
+    return "\n".join(parts)
 
-    # 其他檔（parquet 等）只列檔名 + 大小
-    known = {"meta.json", "code.py", "output.txt", "traceback.txt"}
-    extras = [
-        f for f in sorted(archive_dir.iterdir())
-        if f.is_file()
-        and f.name not in known
-        and not f.name.startswith("fig_")
-        and f.suffix.lower() not in (".md", ".log")
+
+def _synthesize_directory_browser_view(directory: Path) -> str:
+    """
+    通用目錄瀏覽視圖：l2_convert 的 silver 資料夾、或任何非 dynamic_code 結構的目錄。
+
+    呈現：
+    - 目錄名當標題
+    - 列出所有檔案（依副檔名分組），每筆顯示大小
+    - 對 parquet 檔以 duckdb 讀 footer 取 schema（columns + types，不掃資料列）
+    """
+    import html as _html
+
+    files = [f for f in sorted(directory.iterdir()) if f.is_file()]
+    subdirs = [d for d in sorted(directory.iterdir()) if d.is_dir()]
+
+    parts: list[str] = [
+        f'<h1 style="margin-bottom:6px;">📁 {_html.escape(directory.name)}</h1>'
+        f'<div style="color:#6c757d;font-size:13px;margin-bottom:18px;">'
+        f"資料夾瀏覽 · {len(files)} 個檔案"
+        + (f" · {len(subdirs)} 個子資料夾" if subdirs else "")
+        + "</div>"
     ]
-    if extras:
-        parts.append("## 其他檔案\n")
-        for f in extras:
+
+    # 按副檔名分組
+    by_ext: dict[str, list[Path]] = {}
+    for f in files:
+        by_ext.setdefault(f.suffix.lower() or "(無副檔名)", []).append(f)
+
+    for ext, group in sorted(by_ext.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        parts.append(f"## {ext}（{len(group)}）\n")
+        rows = ["| 檔名 | 大小 |", "|---|---:|"]
+        for f in group:
             kb = f.stat().st_size / 1024
-            parts.append(f"- `{f.name}` ({kb:.1f} KB)")
+            size_str = f"{kb / 1024:.1f} MB" if kb >= 1024 else f"{kb:.1f} KB"
+            rows.append(f"| `{f.name}` | {size_str} |")
+        parts.append("\n".join(rows) + "\n")
+
+        # parquet：附 schema preview（最多前 3 個）
+        if ext == ".parquet":
+            for f in group[:3]:
+                schema_md = _parquet_schema_markdown(f)
+                if schema_md:
+                    parts.append(f"<details><summary style=\"cursor:pointer;color:#6c757d;font-size:13px;\">"
+                                 f"<code>{_html.escape(f.name)}</code> schema</summary>\n\n"
+                                 f"{schema_md}\n</details>\n")
+
+    if subdirs:
+        parts.append("## 子資料夾\n")
+        for d in subdirs:
+            parts.append(f"- `{d.name}/`")
         parts.append("")
 
+    if not files and not subdirs:
+        parts.append('<div style="color:#6c757d;font-size:14px;">資料夾為空。</div>')
+
     return "\n".join(parts)
+
+
+def _parquet_schema_markdown(path: Path) -> str:
+    """讀 parquet footer 取欄位 + 型別（不掃資料列）。失敗回空字串。"""
+    try:
+        import duckdb
+        rows = duckdb.execute(
+            "SELECT name, type FROM parquet_schema(?)", [str(path)]
+        ).fetchall()
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    lines = ["| 欄位 | 型別 |", "|---|---|"]
+    for name, dtype in rows:
+        lines.append(f"| `{name}` | `{dtype}` |")
+    return "\n".join(lines)
+
+
+def _synthesize_archive_view(directory: Path) -> str:
+    """目錄類 result_path 派發器：dynamic_code 結構 → 專屬視圖，其餘 → 通用瀏覽。"""
+    if (directory / "meta.json").is_file() and (directory / "code.py").is_file():
+        return _synthesize_dynamic_code_view(directory)
+    return _synthesize_directory_browser_view(directory)
 
 
 def _resolve_result_path(result_path: str) -> Path:
@@ -488,9 +627,10 @@ async def report_page(analysis_id: str):
 
     ts = completed_at.strftime("%Y-%m-%d %H:%M UTC") if completed_at else ""
 
-    # 目錄類 result_path（dynamic_code / l2_convert 等）→ 合成 archive 視圖
+    # 目錄類 result_path → 派發到對應視圖
+    # （dynamic_code 結構 → 專屬視圖；其餘 → 通用瀏覽，見 _synthesize_archive_view）
     if resolved.is_dir():
-        md_text = _synthesize_archive_markdown(resolved)
+        md_text = _synthesize_archive_view(resolved)
         return HTMLResponse(_render_report_html(analysis_id, md_text, sample_id, ts))
 
     # 檔案類（.md / .txt 報告）→ 原本流程
