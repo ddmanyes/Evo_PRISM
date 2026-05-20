@@ -34,8 +34,26 @@
   .main { max-width: 1280px; margin: 0 auto; padding: 24px; }
 
   h2 { font-size: 13px; font-weight: 700; color: var(--muted);
-       text-transform: uppercase; letter-spacing: 0.5px; margin: 28px 0 12px; }
+       text-transform: uppercase; letter-spacing: 0.5px; margin: 28px 0 12px;
+       display: flex; align-items: center; gap: 8px; }
   h2:first-of-type { margin-top: 0; }
+  h2 a.h2-link { color: var(--accent); font-weight: 600; text-decoration: none;
+                 font-size: 12px; text-transform: none; letter-spacing: 0;
+                 padding: 2px 8px; border-radius: 10px; background: var(--accent-light); }
+  h2 a.h2-link:hover { background: var(--accent); color: white; }
+
+  details.fold > summary { cursor: pointer; padding: 4px 0; font-weight: 600;
+                           list-style: none; user-select: none; }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::before { content: '▸'; display: inline-block;
+                                    margin-right: 6px; color: var(--muted);
+                                    transition: transform 0.15s; }
+  details.fold[open] > summary::before { transform: rotate(90deg); }
+  details.fold > summary .count { color: var(--muted); font-weight: 400;
+                                   font-size: 12px; margin-left: 6px; }
+  details.fold > .fold-body { margin-top: 10px; }
+
+  .hint { font-size: 11px; color: var(--muted); font-weight: 400; }
 
   .grid { display: grid; gap: 12px; }
   .grid-4 { grid-template-columns: repeat(4, 1fr); }
@@ -125,13 +143,14 @@
   <div class="row" style="margin-top: 12px;" id="helixTools"></div>
 
   <!-- Dynamic code -->
-  <h2>動態程式碼</h2>
+  <h2>動態程式碼 <a href="/history" class="h2-link">→ 歷史</a></h2>
   <div class="row" id="dynamicCandidates"></div>
   <div class="row" style="margin-top: 12px;" id="dynamicRecent"></div>
 
   <!-- Cache -->
-  <h2>快取 + Artifact</h2>
-  <div class="grid grid-2">
+  <h2>快取 + Artifact <a href="/engram" class="h2-link">→ ENGRAM</a></h2>
+  <div class="row" id="cacheImages"></div>
+  <div class="grid grid-2" style="margin-top: 12px;">
     <div class="row" id="cacheFig"></div>
     <div class="row" id="cacheL1"></div>
   </div>
@@ -222,39 +241,64 @@ function renderHelix(h) {
 
 function renderDynamic(d) {
   const cands = d.promotion_candidates || [];
+  const candBody = cands.length === 0
+    ? `<div class="empty">尚無重複動態分析</div>`
+    : `<table><thead><tr><th>description</th><th class="num">runs</th><th class="num">completed</th><th>last_run</th><th>sample archive</th></tr></thead><tbody>` +
+      cands.map(c => `<tr>
+        <td class="trunc">${esc(c.description || '(無描述)')}</td>
+        <td class="num"><b>${c.runs}</b></td>
+        <td class="num">${c.completed_runs}</td>
+        <td class="mono">${fmtDate(c.last_run)}</td>
+        <td class="mono trunc">${esc(c.sample_archive || '')}</td>
+      </tr>`).join('') + `</tbody></table>`;
+
   $('dynamicCandidates').innerHTML = `
-    <div class="title">畢業候選（同 description 跑過 ≥ 2 次 → 該進 HELIX）</div>` +
-    (cands.length === 0 ? `<div class="empty">尚無重複動態分析</div>` :
-    `<table><thead><tr><th>description</th><th class="num">runs</th><th class="num">completed</th><th>last_run</th><th>sample archive</th></tr></thead><tbody>` +
-    cands.map(c => `<tr>
-      <td class="trunc">${esc(c.description || '(無描述)')}</td>
-      <td class="num"><b>${c.runs}</b></td>
-      <td class="num">${c.completed_runs}</td>
-      <td class="mono">${fmtDate(c.last_run)}</td>
-      <td class="mono trunc">${esc(c.sample_archive || '')}</td>
-    </tr>`).join('') + `</tbody></table>`);
+    <details class="fold">
+      <summary>畢業候選 <span class="count">(${cands.length}) — 同 description 跑過 ≥ 2 次 → 該進 HELIX</span></summary>
+      <div class="fold-body">${candBody}</div>
+    </details>`;
 
   const recent = d.recent || [];
+  const recentBody = recent.length === 0
+    ? `<div class="empty">無紀錄</div>`
+    : `<table><thead><tr><th>started</th><th>status</th><th>summary</th><th class="num">lines</th><th class="num">figs</th><th>archive</th></tr></thead><tbody>` +
+      recent.map(r => `<tr>
+        <td class="mono">${fmtDate(r.started_at)}</td>
+        <td>${chip(r.status, r.status === 'completed' ? 'ok' : 'err')}</td>
+        <td class="trunc">${esc(r.summary || '')}</td>
+        <td class="num">${r.code_lines ?? '—'}</td>
+        <td class="num">${r.fig_count ?? '—'}</td>
+        <td class="mono trunc">${esc(r.result_path || '')}</td>
+      </tr>`).join('') + `</tbody></table>`;
+
   $('dynamicRecent').innerHTML = `
-    <div class="title">最近執行（${recent.length}）</div>` +
-    (recent.length === 0 ? `<div class="empty">無紀錄</div>` :
-    `<table><thead><tr><th>started</th><th>status</th><th>summary</th><th class="num">lines</th><th class="num">figs</th><th>archive</th></tr></thead><tbody>` +
-    recent.map(r => `<tr>
-      <td class="mono">${fmtDate(r.started_at)}</td>
-      <td>${chip(r.status, r.status === 'completed' ? 'ok' : 'err')}</td>
-      <td class="trunc">${esc(r.summary || '')}</td>
-      <td class="num">${r.code_lines ?? '—'}</td>
-      <td class="num">${r.fig_count ?? '—'}</td>
-      <td class="mono trunc">${esc(r.result_path || '')}</td>
-    </tr>`).join('') + `</tbody></table>`);
+    <details class="fold">
+      <summary>最近執行 <span class="count">(${recent.length})</span></summary>
+      <div class="fold-body">${recentBody}</div>
+    </details>`;
 }
 
 function renderCache(c) {
+  // 真實「分析產出圖檔」總覽 —— 比 figure_cache(MCP 副本)更貼近使用者直覺
+  const ai = c.analysis_images || {};
+  $('cacheImages').innerHTML = `
+    <div class="title">分析產出圖檔（artifact 表 + dynamic_code archive）</div>
+    <table><tbody>
+      <tr><td>總計</td><td class="num mono"><b>${ai.total ?? 0}</b> 張</td></tr>
+      <tr><td>由 ENGRAM 登記的 image artifact</td><td class="num mono">${ai.artifact_count ?? 0} 張 (${fmtKB(ai.artifact_total_kb)})</td></tr>
+      <tr><td>dynamic_code archive 內 fig_*.png</td><td class="num mono">${ai.dynamic_code_figs ?? 0} 張</td></tr>
+    </tbody></table>
+  `;
+
   const fc = c.figure_cache || {};
   $('cacheFig').innerHTML = `
-    <div class="title">Figure cache（gold/figure_cache/）</div>
+    <div class="title">MCP 圖片剝離快取
+      <span class="hint" title="MCP call_tool 出口剝離 inline base64 時的 content-addressed 副本，供 bio_get_figure 索取。沒人觸發 MCP 報告類工具時為空，屬正常。">
+        ⓘ gold/figure_cache/
+      </span>
+    </div>
     <table><tbody>
-      <tr><td>存在</td><td class="num">${fc.exists ? chip('yes','ok') : chip('no','mut')}</td></tr>
+      <tr><td>存在</td><td class="num">${fc.exists ? chip('yes','ok') : chip('empty','mut')}</td></tr>
       <tr><td>檔數</td><td class="num mono">${fc.total_files ?? '—'}</td></tr>
       <tr><td>總大小</td><td class="num mono">${fmtBytes(fc.total_bytes)}</td></tr>
     </tbody></table>

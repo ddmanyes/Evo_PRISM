@@ -157,7 +157,7 @@ def dynamic_code_panel(con, limit: int = 30) -> dict:
 # ── Panel：快取 + artifact ──────────────────────────────────────────────────
 
 def cache_panel(con) -> dict:
-    """figure_cache / L1 cache / artifact 大小狀態。"""
+    """figure_cache / L1 cache / artifact 大小狀態 + 分析產出的圖檔總數。"""
     from scheduler.cleanup_figure_cache import stats as fig_stats
     from scheduler.cleanup_l1_cache import stats as l1_stats
 
@@ -176,10 +176,31 @@ def cache_panel(con) -> dict:
         )
     )
 
+    # 真實的「分析產出圖檔」總數：兩個來源
+    #   1) analysis_artifacts 中 mime_type 為 image/* 的記錄（ENGRAM 系統登記的）
+    #   2) dynamic_code 各次執行的 fig_count 加總（archive 內的 fig_*.png）
+    img_artifacts = con.execute(
+        "SELECT COUNT(*), COALESCE(SUM(file_size_kb),0) "
+        "FROM analysis_artifacts WHERE mime_type LIKE 'image/%'"
+    ).fetchone()
+    dyn_figs = con.execute(
+        """
+        SELECT COALESCE(SUM(TRY_CAST(parameters->>'fig_count' AS INTEGER)), 0)
+        FROM analysis_history
+        WHERE analysis_type='dynamic_code' AND status='completed'
+        """
+    ).fetchone()[0]
+
     return {
         "figure_cache": figc,
         "l1_cache": l1,
         "artifacts_by_subtype": art_by_subtype,
+        "analysis_images": {
+            "artifact_count": img_artifacts[0],
+            "artifact_total_kb": int(img_artifacts[1]),
+            "dynamic_code_figs": int(dyn_figs or 0),
+            "total": img_artifacts[0] + int(dyn_figs or 0),
+        },
     }
 
 
