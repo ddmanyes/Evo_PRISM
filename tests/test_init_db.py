@@ -2,10 +2,8 @@
 Tests for scripts/00_init_db.py — verifies schema creation.
 """
 import importlib.util
-import sys
 from pathlib import Path
 
-import pytest
 
 # Load 00_init_db.py by path (numeric prefix prevents normal import)
 _script_path = Path(__file__).parent.parent / "scripts" / "00_init_db.py"

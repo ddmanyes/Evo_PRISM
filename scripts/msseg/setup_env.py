@@ -202,7 +202,7 @@ def main() -> None:
     if not missing:
         _print(f"[OK] Environment ready.  GPU={gpu.upper()}")
     else:
-        _print(f"[!!] Fix missing packages before running MSseg skills.")
+        _print("[!!] Fix missing packages before running MSseg skills.")
     _print("=" * 56)
 
 

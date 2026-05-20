@@ -181,7 +181,7 @@ def main() -> None:
     lines.append("")
     lines.append(f"**Generated**: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"**DB**: `{DUCKDB_PATH}`")
-    lines.append(f"**Script**: `scripts/verify_prefilter_pushdown.py`")
+    lines.append("**Script**: `scripts/verify_prefilter_pushdown.py`")
     lines.append("")
     lines.append("## Dataset Snapshot")
     lines.append("")

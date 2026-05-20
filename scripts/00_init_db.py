@@ -5,7 +5,6 @@ Verifies: DuckDB VSS extension (HNSW) loads correctly
 """
 
 import duckdb
-import sys
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / "bio_memory.duckdb"
@@ -14,7 +13,7 @@ DB_PATH = Path(__file__).parent.parent / "bio_memory.duckdb"
 def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.DuckDBPyConnection:
     if isinstance(db_path, duckdb.DuckDBPyConnection):
         con = db_path
-        print(f"Connected: <existing connection>")
+        print("Connected: <existing connection>")
     else:
         con = duckdb.connect(str(db_path))
         print(f"Connected: {db_path}")

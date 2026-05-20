@@ -2,8 +2,6 @@
 Tests for CRC Visium HD L3 data accessibility and L2 Parquet conversion.
 Skipped automatically if test data is not available.
 """
-import pytest
-from pathlib import Path
 
 
 def test_crc_official_structure(l3_crc_path):

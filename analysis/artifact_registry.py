@@ -874,9 +874,12 @@ def search_artifacts(
 
     # Determine dominant layer label for metric recording (multi-layer hits → "rrf")
     contributed = []
-    if any(aid in exact_ranked for _, aid in top): contributed.append("exact")
-    if any(aid in hnsw_ranked  for _, aid in top): contributed.append("hnsw")
-    if any(aid in fts_ranked   for _, aid in top): contributed.append("fts")
+    if any(aid in exact_ranked for _, aid in top):
+        contributed.append("exact")
+    if any(aid in hnsw_ranked for _, aid in top):
+        contributed.append("hnsw")
+    if any(aid in fts_ranked for _, aid in top):
+        contributed.append("fts")
     batch_layer = "rrf" if len(contributed) > 1 else (contributed[0] if contributed else "none")
 
     results = []

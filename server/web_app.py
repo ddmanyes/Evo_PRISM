@@ -344,7 +344,7 @@ def _synthesize_dynamic_code_view(archive_dir: Path) -> str:
         parts.append(
             '<div style="background:#fee2e2;border-left:4px solid #ef4444;'
             'padding:14px 16px;border-radius:6px;margin-bottom:18px;">'
-            f'<div style="font-weight:700;color:#991b1b;margin-bottom:6px;">× 執行失敗</div>'
+            '<div style="font-weight:700;color:#991b1b;margin-bottom:6px;">× 執行失敗</div>'
             + (
                 f'<div style="color:#7f1d1d;font-size:14px;margin-bottom:8px;">'
                 f'{_html.escape(error_summary)}</div>'
@@ -1061,7 +1061,7 @@ def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
 
     def _extract_from_text(text: str, label_prefix: str) -> None:
         for i, m in enumerate(IMG_RE.finditer(text)):
-            alt, data_uri, img_type, b64_raw = m.group(1), m.group(2), m.group(3), m.group(4)
+            alt, img_type, b64_raw = m.group(1), m.group(3), m.group(4)
             b64_clean = b64_raw.replace("\n", "").replace("\r", "")
             b64_hash = b64_clean[:32]
             if b64_hash in seen:

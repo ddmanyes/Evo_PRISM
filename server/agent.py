@@ -1127,7 +1127,8 @@ def _archive_history_insert(
     completed_at,          # datetime aware UTC
 ) -> None:
     """寫一筆 dynamic_code 歸檔記錄到 analysis_history；失敗只 log 不 raise。"""
-    import duckdb, json as _json
+    import duckdb
+    import json as _json
     from config.settings import DUCKDB_PATH
     from config.db_utils import safe_write
 
@@ -1162,9 +1163,10 @@ def _archive_history_insert(
 
 def _exec_bio_execute_code(args: dict) -> str:
     from server.code_executor import sandbox_exec, SecurityError
-    import base64, json, uuid as _uuid
+    import base64
+    import json
+    import uuid as _uuid
     from datetime import datetime, timezone
-    from pathlib import Path as _Path
     from config.settings import DYNAMIC_CODE_DIR, BIO_DB_ROOT
 
     code = args["code"]

@@ -776,7 +776,7 @@ class TestCacheInvalidation:
 
         monkeypatch.setattr("analysis.l1_cache.invalidate_tool_cache", _fake_invalidate)
 
-        import importlib, analysis.tool_registry as tr
+        import analysis.tool_registry as tr
         monkeypatch.setattr(tr, "invalidate_tool_cache" if hasattr(tr, "invalidate_tool_cache") else "__builtins__", _fake_invalidate, raising=False)
 
         # Patch at the import site inside register_tool's try block

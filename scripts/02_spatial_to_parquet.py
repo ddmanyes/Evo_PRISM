@@ -26,8 +26,6 @@ import anndata as ad
 import duckdb
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DUCKDB_PATH, L2_ROOT
