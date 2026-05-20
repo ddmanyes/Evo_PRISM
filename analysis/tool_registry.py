@@ -21,6 +21,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
@@ -293,6 +294,17 @@ def register_tool(
         invalidate_tool_cache(tool_name)
     except Exception as exc:  # cache file missing or VSS unavailable → non-fatal
         logger.warning("register_tool: cache invalidation skipped for %r: %s", tool_name, exc)
+
+    # 自動把（新註冊／畢業的）工具加進語意搜尋 catalog，讓 Agent 之後找得到、可重用。
+    # best-effort：embedding server 離線或 VSS 不可用時只記 warning，不拖累註冊。
+    # 測試環境跳過：register_tool 測試用 tmp 主庫，但 catalog 走 prod gold 路徑，
+    # 若不跳過會把測試工具名灌進共用的正式 catalog（index_registered_tool 本身仍可直測）。
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            from analysis.tool_search import index_registered_tool
+            index_registered_tool(tool_name, module_path, function_name, description)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("register_tool: tool_search indexing skipped for %r: %s", tool_name, exc)
 
     return new_tool_id
 
