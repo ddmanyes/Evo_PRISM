@@ -127,6 +127,7 @@ class TestMCPToolsList:
         "bio_run_bulk_eda",
         "bio_execute_code",
         "bio_tool_health",
+        "bio_get_figure",
     }
 
     def _payload(self, req_id: int) -> bytes:
@@ -159,7 +160,7 @@ class TestMCPToolsList:
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(12), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 15
+        assert len(names) == 16
 
     def test_tool_count_is_13_by_default(self, monkeypatch):
         """env 未設時，client 只看到 14 個（無 bio_execute_code）。"""
@@ -168,7 +169,7 @@ class TestMCPToolsList:
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(13), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 14
+        assert len(names) == 15
         assert "bio_execute_code" not in names
 
 

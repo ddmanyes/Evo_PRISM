@@ -75,6 +75,9 @@ L1_COSINE_THRESHOLD = 0.88
 L1_TTL_DAYS         = 7
 L1_SUMMARY_MAX_CHARS = 50
 
+# Figure cache（bio_get_figure 索取用；content-addressed，過期後報告重跑會自動重建）
+FIGURE_CACHE_TTL_DAYS = int(os.getenv("FIGURE_CACHE_TTL_DAYS", "14"))
+
 # ── Visium HD 解析度 ────────────────────────────────────────
 VISIUM_RESOLUTIONS = ["002um", "008um", "016um"]
 DEFAULT_RESOLUTION = "008um"
