@@ -716,7 +716,7 @@ async def report_page(analysis_id: str):
         raise HTTPException(status_code=404, detail="此分析無 result_path 記錄")
 
     resolved = _resolve_result_path(result_path)
-    if not str(resolved).startswith(str(BIO_DB_ROOT.resolve())):
+    if not resolved.is_relative_to(BIO_DB_ROOT.resolve()):
         raise HTTPException(status_code=403, detail="Access denied")
     if not resolved.exists():
         raise HTTPException(
@@ -905,9 +905,10 @@ async def download_csv(analysis_id: str):
     sample_id = row[0]
     if not re.match(r'^[a-z0-9_-]+$', sample_id):
         raise HTTPException(status_code=422, detail="資料庫中 sample_id 格式不合法")
-    expr_glob = str((L2_ROOT / sample_id / "expression").resolve() / "*.parquet")
-    if not expr_glob.startswith(str(L2_ROOT.resolve())):
+    expr_dir = (L2_ROOT / sample_id / "expression").resolve()
+    if not expr_dir.is_relative_to(L2_ROOT.resolve()):
         raise HTTPException(status_code=403, detail="Access denied")
+    expr_glob = str(expr_dir / "*.parquet")
 
     try:
         with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
@@ -948,7 +949,7 @@ async def result_images(analysis_id: str):
     if not row or not row[0]:
         return []
     md_path = Path(row[0]).resolve()
-    if not str(md_path).startswith(str(BIO_DB_ROOT.resolve())):
+    if not md_path.is_relative_to(BIO_DB_ROOT.resolve()):
         return []
     if not md_path.exists() or md_path.suffix != ".md":
         return []
@@ -1081,7 +1082,7 @@ def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
         match = re.search(r'(?:result_path|report_path):\s*(.+?)(?:\n|$)', result)
         if match:
             md_path = Path(match.group(1).strip()).resolve()
-            if (str(md_path).startswith(str(BIO_DB_ROOT.resolve()))
+            if (md_path.is_relative_to(BIO_DB_ROOT.resolve())
                     and md_path.exists() and md_path.suffix == ".md"):
                 try:
                     _extract_from_text(md_path.read_text(encoding="utf-8"), f"report_{call_idx:02d}")

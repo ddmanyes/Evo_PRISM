@@ -170,6 +170,21 @@ def test_read_archive_sandbox_escape(con):
         grad.read_archive(con, "66666666-6666-6666-6666-666666666666")
 
 
+def test_read_archive_sandbox_sibling_prefix(con):
+    """兄弟目錄前綴攻擊：sandbox=.../dynamic_code 時，.../dynamic_code_evil 不得放行。
+
+    回歸測試——舊的 str.startswith 會誤判前綴相符而放行；is_relative_to 正確拒絕。
+    刻意建出真實目錄與 code.py，證明擋下的是沙盒檢查而非「目錄不存在」。
+    """
+    sibling = grad.BIO_DB_ROOT / "results" / "dynamic_code_evil" / "x"
+    sibling.mkdir(parents=True)
+    (sibling / "code.py").write_text("print('pwned')", encoding="utf-8")
+    _insert(con, "88888888-8888-8888-8888-888888888888", "sibling", "completed", 5,
+            "results/dynamic_code_evil/x")
+    with pytest.raises(ValueError, match="逸出"):
+        grad.read_archive(con, "88888888-8888-8888-8888-888888888888")
+
+
 def test_read_archive_missing_dir(con):
     _insert(con, "77777777-7777-7777-7777-777777777777", "gone", "completed", 5,
             "results/dynamic_code/does_not_exist")
