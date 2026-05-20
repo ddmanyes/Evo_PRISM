@@ -7,10 +7,65 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ **控制面板 Phase 1（唯讀監控儀表板）**
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ **控制面板 Phase 2（手動操作端點）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-20
-**commit**：d0522f0（feat(dashboard)：UX 三項精緻 — 折疊長表 + h2 導航 + 釐清 figure_cache 命名）
+
+---
+
+## ✅ 2026-05-20 Session D：控制面板 Phase 2 — 手動操作端點
+
+**動機**：Phase 1 只有唯讀監控；Phase 2 補上「在 web 上手動觸發」入口，
+讓備份/清理/索引重建與 HELIX 操作不必每次回 CLI。
+
+**安全模型（defense in depth，三層）**：
+1. **env-gate**：`DASHBOARD_ACTIONS_ENABLED`（預設 `false`）— 未顯式開啟時所有 action 端點回 403
+2. **loopback-only**：即使啟用，預設僅放行來源為 `127.0.0.1/::1/localhost`；
+   設 `DASHBOARD_ACTIONS_ALLOW_REMOTE=true` 才放行遠端（僅供反向代理場景）
+3. **選用 token**：設 `DASHBOARD_ACTION_TOKEN` 後 POST 須帶 `X-Dashboard-Token` header 相符
+
+三層全在 web_app 路由層 `_dashboard_actions_guard()` 把關；操作邏輯層不做授權。
+
+### 新增模組
+
+- `server/dashboard_actions.py`（純操作邏輯，無 FastAPI，可單測）
+  - 8 個操作經 `ACTIONS` registry：
+    - scheduler 類（無參數）：`backup` / `cleanup_l1` / `cleanup_figure` / `cleanup_dynamic` / `rebuild_hnsw`
+    - HELIX 類（需參數）：`mark_stable`(tool_name, reason) / `close_stabilize`(log_id, outcome, action_taken?) / `prune_deprecated`(tool_name)（destructive）
+  - `dispatch(action, args)` 統一出口：永遠回 `{ok, action, result, message}`，
+    參數錯誤 → 友善訊息、其餘例外 → 系統錯誤（server 留完整 stack），不向外拋
+  - `list_actions()` 供前端渲染按鈕 metadata（含 `destructive` 旗標）
+  - scheduler 函數各自開連線；HELIX 走 `_helix_con()` write 連線（HELIX 寫入內部已 CHECKPOINT，見 CLAUDE.md 7.6，不需 safe_write）
+- `server/web_app.py`：
+  - `_dashboard_actions_guard(request)` — 三層防護，每次從 `config.settings` 讀現值（非 import 綁定）
+  - `GET /api/dashboard/actions` — 回 `{enabled, allow_remote, token_required, actions[]}`
+  - `POST /api/dashboard/action` — guard 過後 `asyncio.to_thread(dispatch)`；ok→200、否則 400
+- `server/static/dashboard.html`：新增「手動操作」面板
+  - 未啟用時顯示提示卡（教使用者設 `DASHBOARD_ACTIONS_ENABLED=true`）
+  - 啟用時渲染操作卡（scheduler 純按鈕；HELIX 帶 input/select 表單）
+  - 每次操作前 `confirm()`；destructive 操作（prune）按鈕紅色；結果寫入捲動 log；成功後自動 refresh 監控數字
+
+### 設定（config/settings.py）
+
+新增三個 env-gate：`DASHBOARD_ACTIONS_ENABLED` / `DASHBOARD_ACTIONS_ALLOW_REMOTE` / `DASHBOARD_ACTION_TOKEN`
+（`.env.example` 因檔案受權限保護無法寫入，環境變數說明改放 settings.py inline 注解）
+
+### 測試
+
+- `tests/test_dashboard_actions.py`：19 個測試
+  - dispatch/list_actions 純邏輯（monkeypatch scheduler/HELIX，不碰真 DB）×13
+  - guard 三層 HTTP 驗證：預設 disabled→403、非 loopback→403、缺 token→401、三層全過→進 dispatch、token 相符→200 ×6
+- 全套件 **370 passed, 3 skipped**（較 Phase 1 的 351 淨增 19，零 regression）
+
+### 待 Phase 3
+
+- **動態程式碼畢業**：列出 8 個畢業候選 → 讀 `code.py`+meta → 引導生成 `analysis/` 函數骨架 + 自動補 `register_tool()`
+
+### 仍待補（非阻塞）
+
+- **close_stabilize 不重算 complexity_after**：web 端關閉傳 `fn=None`（手動覆蓋；複雜度 delta 為選用）
+- **token UI**：目前前端不帶 `X-Dashboard-Token`，設了 token 須改用 curl 或反向代理注入；前端輸入框待補
+- **瀏覽器實測**：本 session 僅單元/HTTP 測試，尚未在瀏覽器點按各操作
 
 ---
 
