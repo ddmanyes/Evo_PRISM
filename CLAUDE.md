@@ -59,7 +59,9 @@ bio_DB/
 │   ├── bulk_eda.py             ← ✅ 整批 QC / PCA / EDA 報告
 │   ├── bulk_timeseries.py      ← ✅ 時間序列均值 + log2 FC
 │   ├── pathway_scoring.py      ← ✅ ssGSEA / Z-score 路徑評分（讀 gene_sets/ YAML）
-│   └── multiomics_integration.py ← ✅ RNA-Protein 時序整合 + Spearman 相關 + 滯後分析
+│   ├── multiomics_integration.py ← ✅ RNA-Protein 時序整合 + Spearman 相關 + 滯後分析
+│   ├── figure_cache.py         ← ✅ MCP 邊界 base64 剝離 + bio_get_figure 索取
+│   └── artifact_resources.py   ← ✅ MCP Resources：分析數據檔交付（artifact:// URI）
 │
 ├── server/                 ← MCP Server（Phase 5，尚未實作）
 │   └── bio_memory_server.py
@@ -268,6 +270,18 @@ return str(out_dir / "plot.png")
 > 這是為了避免 base64（一份多圖報告可達 20 萬 token）灌爆本機 LLM 的 context 視窗。
 > 模型需要視覺推理時呼叫 `bio_get_figure(figure_id)` → 走 MCP ImageContent 通道**單張**取回（多模態模型可見）。
 > 因此分析函數仍照常回傳 inline base64，**不需**自行剝離——剝離只發生在 LLM 邊界。
+
+### 分析數據檔交付（MCP Resources）
+
+使用者透過 MCP 取得「分析後的數據檔」走 **MCP 原生 Resources** 通道，而非 tool：
+- `server/bio_memory_server.py` 註冊 `@server.list_resources()` / `@server.read_resource()`，
+  核心邏輯在 `analysis/artifact_resources.py`
+- 每個 `analysis_artifacts` 紀錄暴露為 resource，URI = `artifact://<artifact_id>`
+- 文字類（csv/tsv/json/md）回 str；二進位（parquet/png）回 bytes（SDK 轉 base64 blob）
+- 沙盒：`file_path` 解析後必須落在 `BIO_DB_ROOT` 內;超過 `settings.ARTIFACT_RESOURCE_MAX_MB`
+  （預設 25 MB）拒絕 inline，引導改用 web_app 下載端點
+- ⚠️ **客戶端需支援 MCP resources**（部分輕量 client 只實作 tools）。驗證：
+  對 server 發 `resources/list` JSON-RPC 應回傳 artifact 清單。
 
 ### 大型檔案操作
 - **禁止** `cat` 或直接讀入 `.h5ad`、`.btf`、`.h5` 大型生信檔案

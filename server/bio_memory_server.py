@@ -176,6 +176,53 @@ async def list_tools() -> list[types.Tool]:
     return tools
 
 
+# ── MCP Resources：分析後數據檔交付（artifact:// URI）────────────────────────────
+
+@server.list_resources()
+async def list_resources() -> list[types.Resource]:
+    """列出已登記的分析 artifact 供客戶端取用（resources/list）。"""
+    import duckdb
+    from analysis.artifact_resources import list_artifact_resources
+    from config.settings import DUCKDB_PATH
+
+    def _sync() -> list[dict]:
+        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+            return list_artifact_resources(con)
+
+    items = await asyncio.to_thread(_sync)
+    return [
+        types.Resource(
+            uri=it["uri"],
+            name=it["name"],
+            description=it["description"],
+            mimeType=it["mime_type"],
+            size=(it["size_kb"] * 1024 if it["size_kb"] is not None else None),
+        )
+        for it in items
+    ]
+
+
+@server.read_resource()
+async def read_resource(uri):  # uri: pydantic AnyUrl
+    """依 artifact:// URI 取回數據檔內容（resources/read）。"""
+    from mcp.server.lowlevel.helper_types import ReadResourceContents
+    import duckdb
+    from analysis.artifact_resources import read_artifact_resource, ArtifactResourceError
+    from config.settings import DUCKDB_PATH
+
+    def _sync():
+        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+            return read_artifact_resource(con, str(uri))
+
+    try:
+        content, mime = await asyncio.to_thread(_sync)
+    except ArtifactResourceError as exc:
+        # 以文字內容回報錯誤，讓客戶端/使用者看到原因與下載備援
+        return [ReadResourceContents(content=f"[ERROR] {exc}", mime_type="text/plain")]
+
+    return [ReadResourceContents(content=content, mime_type=mime)]
+
+
 def _build_all_tools() -> list[types.Tool]:
     """Build full tool list. Dangerous tools are included here; filtering is in list_tools."""
     return [
