@@ -697,6 +697,31 @@ def _build_all_tools() -> list[types.Tool]:
                 "required": ["figure_id"],
             },
         ),
+        types.Tool(
+            name="bio_get_artifact",
+            description=(
+                "取得分析數據檔的取用 handle（任何 client 皆可用，含不支援 MCP resources 者）。"
+                "回傳檔案 metadata + 本地絕對路徑 + web_app 下載 URL + 文字檔的前幾行預覽。"
+                "用於：使用者想下載/取得分析產出的 csv/parquet/報告等數據檔。"
+                "artifact_id 由 bio_artifact_search 取得。"
+                "（支援 resources 的 client 可改用 resources/read artifact://<id> 直接取回內容。）"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "artifact_id": {
+                        "type": "string",
+                        "description": "artifact 的 UUID（來自 bio_artifact_search）。",
+                    },
+                    "preview_lines": {
+                        "type": "integer",
+                        "description": "文字檔預覽行數（預設 20）。",
+                        "default": 20,
+                    },
+                },
+                "required": ["artifact_id"],
+            },
+        ),
     ]
 
 
@@ -1162,6 +1187,38 @@ async def _handle_bio_get_figure(args: dict) -> list[types.ImageContent]:
     return [types.ImageContent(type="image", data=b64, mimeType=mime)]
 
 
+async def _handle_bio_get_artifact(args: dict) -> str:
+    """回傳分析數據檔的取用 handle（路徑 + 下載 URL + 預覽）；任何 client 皆可用。"""
+    import duckdb
+    from analysis.artifact_resources import get_artifact_handle, ArtifactResourceError
+    from config.settings import DUCKDB_PATH
+
+    artifact_id = args["artifact_id"]
+    preview_lines = int(args.get("preview_lines", 20))
+
+    def _sync() -> dict:
+        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+            return get_artifact_handle(con, artifact_id, preview_lines=preview_lines)
+
+    try:
+        h = await asyncio.to_thread(_sync)
+    except ArtifactResourceError as exc:
+        return f"[ERROR] bio_get_artifact: {exc}"
+
+    if not h.get("found"):
+        return f"artifact_id={artifact_id!r} 不存在於 analysis_artifacts。"
+
+    lines = [
+        f"label: {h['label']}",
+        f"subtype: {h['subtype']} | mime: {h['mime_type']} | size: {h['size_kb']} KB",
+        f"local_path: {h['local_path']}",
+        f"web_url: {h['web_url']}",
+    ]
+    if h.get("preview"):
+        lines.append(f"\n--- 預覽（前 {preview_lines} 行）---\n{h['preview']}")
+    return "\n".join(lines)
+
+
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
 
 _HANDLERS = {
@@ -1181,6 +1238,7 @@ _HANDLERS = {
     "bio_tool_health": _handle_bio_tool_health,
     "bio_read_report": _handle_bio_read_report,
     "bio_get_figure": _handle_bio_get_figure,
+    "bio_get_artifact": _handle_bio_get_artifact,
 }
 
 

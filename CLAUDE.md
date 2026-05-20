@@ -282,6 +282,9 @@ return str(out_dir / "plot.png")
   （預設 25 MB）拒絕 inline，引導改用 web_app 下載端點
 - ⚠️ **客戶端需支援 MCP resources**（部分輕量 client 只實作 tools）。驗證：
   對 server 發 `resources/list` JSON-RPC 應回傳 artifact 清單。
+- **備援(任何 client 皆可用)**：`bio_get_artifact(artifact_id)` tool 回傳檔案
+  metadata + 本地絕對路徑 + web_app 下載 URL(`settings.WEB_APP_BASE_URL`)+ 文字檔預覽。
+  不支援 resources 的 client(如部分 llama.cpp WebUI)走這條。
 
 ### 大型檔案操作
 - **禁止** `cat` 或直接讀入 `.h5ad`、`.btf`、`.h5` 大型生信檔案
