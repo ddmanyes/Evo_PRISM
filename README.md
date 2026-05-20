@@ -63,8 +63,8 @@ crc_visium_data/  bulk_rna_data/  proteome_data/
 export BIO_DB_ROOT="$(pwd)"
 
 # 1. 建立 venv（若專案位於 ExFAT 或雲端同步資料夾，venv 必須建在 APFS / 本機檔案系統）
-python3 -m venv ~/.venvs/bioagent
-ln -s ~/.venvs/bioagent "$BIO_DB_ROOT/.venv"
+python3 -m venv ~/.venvs/hermes-bio-memory
+ln -s ~/.venvs/hermes-bio-memory "$BIO_DB_ROOT/.venv"
 
 # 2. 安裝依賴
 cd "$BIO_DB_ROOT"

@@ -38,10 +38,10 @@ bio_DB/
 
 ```bash
 # 建立 venv（只需執行一次）
-python3 -m venv ~/.venvs/bioagent
+python3 -m venv ~/.venvs/hermes-bio-memory
 
 # 建立 symlink（路徑請換成你的實際路徑）
-ln -s ~/.venvs/bioagent "/path/to/bio_DB/.venv"
+ln -s ~/.venvs/hermes-bio-memory "/path/to/bio_DB/.venv"
 
 # 安裝依賴
 cd /path/to/bio_DB
@@ -75,16 +75,16 @@ GOOGLE_MODEL=gemini-2.0-flash     # Google Gemini 模型版本
 
 ```bash
 # 1) 建立基本 Schema
-~/.venvs/bioagent/bin/python scripts/00_init_db.py
+~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
 
 # 2) 套用所有後續 migration（v9 → v19）
 #    包含 ENGRAM artifact 表、HELIX 工具版本表、BM25 FTS 索引、Star Schema views
 for script in scripts/[12][0-9]_migrate_schema_*.py; do
-    ~/.venvs/bioagent/bin/python "$script"
+    ~/.venvs/hermes-bio-memory/bin/python "$script"
 done
 
 # 3) 登記樣本
-~/.venvs/bioagent/bin/python scripts/01_register_sample.py
+~/.venvs/hermes-bio-memory/bin/python scripts/01_register_sample.py
 ```
 
 > **注意**：`sample_registry` 內的 `l3_path` 存放絕對路徑，換機器後若磁碟掛載點不同需重新登記。
@@ -236,7 +236,7 @@ cp .mcp.json.example .mcp.json
 ## 健檢
 
 ```bash
-~/.venvs/bioagent/bin/python config/db_utils.py
+~/.venvs/hermes-bio-memory/bin/python config/db_utils.py
 ```
 
 正常輸出示例：
