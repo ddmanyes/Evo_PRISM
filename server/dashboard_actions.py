@@ -80,13 +80,21 @@ def _action_cleanup_dynamic(_args: dict) -> dict:
 
 
 def _action_rebuild_hnsw(_args: dict) -> dict:
-    from scheduler.rebuild_hnsw import rebuild_artifact_fts, rebuild_hnsw
+    from scheduler.rebuild_hnsw import (
+        rebuild_artifact_fts,
+        rebuild_hnsw,
+        refresh_tool_catalog,
+    )
 
     hnsw = rebuild_hnsw()
     fts = rebuild_artifact_fts()
+    catalog = refresh_tool_catalog()
     return {
-        "result": {"hnsw": hnsw, "fts": fts},
-        "message": f"索引重建完成：HNSW={hnsw.get('status')} · FTS={fts.get('status')}",
+        "result": {"hnsw": hnsw, "fts": fts, "tool_catalog": catalog},
+        "message": (
+            f"索引重建完成：HNSW={hnsw.get('status')} · FTS={fts.get('status')} · "
+            f"工具catalog indexed={catalog.get('indexed', '?')}"
+        ),
     }
 
 

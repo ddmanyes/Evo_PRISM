@@ -75,6 +75,11 @@ L1_COSINE_THRESHOLD = 0.88
 L1_TTL_DAYS         = 7
 L1_SUMMARY_MAX_CHARS = 50
 
+# ── 工具語意搜尋（tool discovery）參數 ──────────────────────
+# 門檻刻意比 L1（0.88，近重複才命中）寬鬆——發現要的是「相關工具」而非「同一筆」。
+TOOL_SEARCH_COSINE_THRESHOLD = float(os.getenv("TOOL_SEARCH_COSINE_THRESHOLD", "0.45"))
+TOOL_SEARCH_TOP_N            = int(os.getenv("TOOL_SEARCH_TOP_N", "5"))
+
 # Figure cache（bio_get_figure 索取用；content-addressed，過期後報告重跑會自動重建）
 FIGURE_CACHE_TTL_DAYS = int(os.getenv("FIGURE_CACHE_TTL_DAYS", "14"))
 

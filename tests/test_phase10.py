@@ -125,6 +125,7 @@ class TestMCPToolsList:
         "bio_check_l2_sufficiency",
         "bio_run_spatial_eda",
         "bio_run_bulk_eda",
+        "bio_find_tool",
         "bio_execute_code",
         "bio_tool_health",
         "bio_get_figure",
@@ -145,32 +146,33 @@ class TestMCPToolsList:
         from starlette.testclient import TestClient
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(11), headers=_mcp_headers())
-        body = resp.content.decode()
+        # 以工具「名稱」比對，而非 raw 子字串——工具描述可能合法提到別的工具名
+        # （如 bio_find_tool 描述提到 bio_execute_code），子字串檢查會誤判。
+        names = set(re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode()))
         safe_tools = self._EXPECTED_TOOLS - {"bio_execute_code"}
-        for tool in safe_tools:
-            assert tool in body, f"Safe tool {tool!r} missing from tools/list"
-        assert "bio_execute_code" not in body, (
+        assert safe_tools <= names, f"缺少 safe 工具：{safe_tools - names}"
+        assert "bio_execute_code" not in names, (
             "bio_execute_code 在預設 env 下應該被隱藏"
         )
 
     def test_tool_count_is_14_when_dangerous_enabled(self, monkeypatch):
-        """env=true 時，新建 client 應看到 15 個工具。"""
+        """env=true 時，新建 client 應看到 18 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         # 重新建 app 確保 env 生效
         from starlette.testclient import TestClient
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(12), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 17
+        assert len(names) == 18
 
     def test_tool_count_is_13_by_default(self, monkeypatch):
-        """env 未設時，client 只看到 14 個（無 bio_execute_code）。"""
+        """env 未設時，client 只看到 17 個（無 bio_execute_code）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from starlette.testclient import TestClient
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(13), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 16
+        assert len(names) == 17
         assert "bio_execute_code" not in names
 
 

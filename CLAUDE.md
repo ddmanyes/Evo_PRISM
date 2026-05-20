@@ -61,6 +61,7 @@ bio_DB/
 │   ├── pathway_scoring.py      ← ✅ ssGSEA / Z-score 路徑評分（讀 gene_sets/ YAML）
 │   ├── multiomics_integration.py ← ✅ RNA-Protein 時序整合 + Spearman 相關 + 滯後分析
 │   ├── figure_cache.py         ← ✅ MCP 邊界 base64 剝離 + bio_get_figure 索取
+│   ├── tool_search.py          ← ✅ 工具語意搜尋（bio_find_tool）：寫碼前找既有可重用函數
 │   └── artifact_resources.py   ← ✅ MCP Resources：分析數據檔交付（artifact:// URI）
 │
 ├── server/                 ← MCP Server + Web UI（含控制面板）

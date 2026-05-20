@@ -215,6 +215,19 @@ def index_exists(cache_path: Path | None = None) -> bool:
             return False
 
 
+def refresh_tool_catalog() -> dict:
+    """回填工具語意搜尋 catalog（既有 analysis.* 公開函數）。
+
+    register_tool() 會自動索引新註冊／畢業的工具；此函數負責「既有函數」的定期回填，
+    讓 bio_find_tool 找得到所有可重用函數。需 embedding server 在線（離線則回 error）。
+    """
+    try:
+        from analysis.tool_search import index_modules
+        return index_modules()
+    except Exception as exc:  # embedding server 離線等 → 非致命
+        return {"status": "error", "error": str(exc)}
+
+
 if __name__ == "__main__":
     force = "--force" in sys.argv
 
@@ -225,3 +238,6 @@ if __name__ == "__main__":
     result_fts = rebuild_artifact_fts(force=force)
     print("[rebuild_artifact_fts] result:", result_fts)
     print("[rebuild_artifact_fts] fts_index_exists:", fts_index_exists())
+
+    result_catalog = refresh_tool_catalog()
+    print("[refresh_tool_catalog] result:", result_catalog)

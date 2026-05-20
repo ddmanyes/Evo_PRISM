@@ -96,6 +96,8 @@ _RATE_LIMITED_TOOLS = frozenset(
         "bio_memory_query",
         "bio_memory_write",
         "bio_artifact_search",
+        # 工具語意搜尋：打 embedding server
+        "bio_find_tool",
         # 分析執行工具：寫 L1 cache（打 embedding server）+ 重量級運算
         "bio_run_spatial_eda",
         "bio_run_bulk_eda",
@@ -599,6 +601,30 @@ def _build_all_tools() -> list[types.Tool]:
                     },
                 },
                 "required": ["sample_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_find_tool",
+            description=(
+                "語意搜尋既有可重用的分析函數（tool discovery）。"
+                "寫 bio_execute_code 前務必先呼叫：描述分析意圖，回傳最相關的既有函數 "
+                "+ 簽名 + import 方式。命中就 import 重用，勿從零重寫。"
+                "本地 embedding + HNSW，0 LLM token；全 miss 才需自行撰寫。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "要做的分析意圖（自然語言）。",
+                    },
+                    "n": {
+                        "type": "integer",
+                        "description": "回傳候選數上限（預設 5）。",
+                        "default": 5,
+                    },
+                },
+                "required": ["query"],
             },
         ),
         types.Tool(
@@ -1150,6 +1176,11 @@ async def _handle_bio_tool_health(args: dict) -> str:
     return await asyncio.to_thread(_exec_bio_tool_health, args)
 
 
+async def _handle_bio_find_tool(args: dict) -> str:
+    from server.agent import _exec_bio_find_tool
+    return await asyncio.to_thread(_exec_bio_find_tool, args)
+
+
 async def _handle_bio_read_report(args: dict) -> str:
     from analysis.report_reader import read_report, ReportReadError
 
@@ -1235,6 +1266,7 @@ _HANDLERS = {
     "bio_run_spatial_eda": _handle_bio_run_spatial_eda,
     "bio_run_bulk_eda": _handle_bio_run_bulk_eda,
     "bio_execute_code": _handle_bio_execute_code,
+    "bio_find_tool": _handle_bio_find_tool,
     "bio_tool_health": _handle_bio_tool_health,
     "bio_read_report": _handle_bio_read_report,
     "bio_get_figure": _handle_bio_get_figure,
