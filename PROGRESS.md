@@ -10,7 +10,7 @@
 **里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ **控制面板 Phase 1（唯讀監控儀表板）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-20
-**commit**：265c91f（feat(dashboard)：Phase 1 — 唯讀監控控制面板 /dashboard）
+**commit**：d0522f0（feat(dashboard)：UX 三項精緻 — 折疊長表 + h2 導航 + 釐清 figure_cache 命名）
 
 ---
 
@@ -80,7 +80,29 @@
 真實 DB 驗證：dynamic_code 走 H1+badge+code 路徑；l2_convert 走 emoji+parquet_schema
 路徑（成功讀到 silver/<sample> 內的 parquet 欄位/型別）。測試 9 passed，全套件 350 passed。
 
-### 面板本身待補（UX 層，非阻塞）
+### 面板 UX 三項精緻化（commit `d0522f0`）
+
+實測時使用者反饋三點，全部處理：
+
+1. **折疊長表**（畢業候選 / 最近執行）
+   - 改用 `<details class="fold">` 預設關，summary 顯示計數（如 `畢業候選 (N) — 同 description 跑過 ≥ 2 次 → 該進 HELIX`）
+   - 自製 `▸ → ▾` 箭頭替代瀏覽器預設 marker
+
+2. **h2 標題加導航連結**（紫色 chip 樣式 `.h2-link`）
+   - 「動態程式碼 → 歷史」連 `/history`
+   - 「快取 + Artifact → ENGRAM」連 `/engram`
+   - 其他區塊（總覽 / 系統 / HELIX）暫無對應子頁，等 Phase 2/3 補
+
+3. **figure_cache 命名釐清 + 真實圖檔統計**
+   - 使用者看到 figure_cache=0 但 results 有圖檔，造成困惑（兩者完全不同：前者是 MCP 邊界 base64 剝離的副本快取，後者是 dynamic_code archive 內 matplotlib 落地的 png）
+   - 標題改為「**MCP 圖片剝離快取**」+ `ⓘ` tooltip 說明空為常態
+   - 新增獨立區塊「**分析產出圖檔**」聚合真實圖數（artifact_count + dynamic_code_figs + total）
+   - `server/dashboard.py::cache_panel` 新增 `analysis_images` dict（兩個來源：`analysis_artifacts WHERE mime_type LIKE 'image/%'` + `SUM(parameters->>'fig_count')`）
+   - 真實 DB：3 張 image artifact (495 KB) + 0 dynamic_code figs = 3 張
+
+測試 +1（`test_cache_panel_analysis_images_aggregates_artifact_and_dyn_figs`），全套件 **351 passed**。
+
+### 面板本身仍待補（非阻塞，後續迭代）
 
 - **能點進明細頁**：點動態程式碼跳到該 archive、點 artifact 下載、點工具看 change_log
 - **互動 UX**：欄位 hover 說明、表格排序/篩選/搜尋
