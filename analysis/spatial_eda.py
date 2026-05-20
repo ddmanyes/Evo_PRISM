@@ -53,21 +53,21 @@ def _validate_gene_name(name: str) -> None:
 
 def _l2_expr_glob(sample_id: str) -> str:
     base = (L2_ROOT / sample_id / "expression").resolve()
-    if not str(base).startswith(str(L2_ROOT.resolve())):
+    if not base.is_relative_to(L2_ROOT.resolve()):
         raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
     return str(base / "*.parquet")
 
 
 def _l2_obs_path(sample_id: str) -> str:
     p = (L2_ROOT / sample_id / "obs_metadata.parquet").resolve()
-    if not str(p).startswith(str(L2_ROOT.resolve())):
+    if not p.is_relative_to(L2_ROOT.resolve()):
         raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
     return str(p)
 
 
 def _results_dir(sample_id: str, analysis_type: str) -> Path:
     d = (BIO_DB_ROOT / "results" / sample_id / analysis_type).resolve()
-    if not str(d).startswith(str(BIO_DB_ROOT.resolve())):
+    if not d.is_relative_to(BIO_DB_ROOT.resolve()):
         raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
     d.mkdir(parents=True, exist_ok=True)
     return d

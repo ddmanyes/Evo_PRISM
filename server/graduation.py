@@ -100,7 +100,7 @@ def read_archive(con, analysis_id: str) -> dict[str, Any]:
 
     # 沙盒：必須落在 DYNAMIC_CODE_DIR 內
     sandbox = DYNAMIC_CODE_DIR.resolve()
-    if not str(archive).startswith(str(sandbox)):
+    if not archive.is_relative_to(sandbox):
         raise ValueError("result_path 逸出 dynamic_code 沙盒")
     if not archive.is_dir():
         raise ValueError(f"archive 目錄不存在：{result_path}（專案可能已搬遷）")
