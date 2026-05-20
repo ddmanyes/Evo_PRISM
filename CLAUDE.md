@@ -67,6 +67,7 @@ bio_DB/
 ├── scheduler/              ← 排程任務
 │   ├── backup_db.py            ← ✅ 每日 02:00 EXPORT DATABASE 備份（已啟用 launchd）
 │   ├── cleanup_l1_cache.py     ← ✅ 每日 03:30 清理 L1 TTL 過期記錄
+│   ├── cleanup_figure_cache.py ← ✅ 每日 03:35 清理 figure cache 過期圖檔（TTL 14 天）
 │   ├── rebuild_hnsw.py         ← ✅ 每週日 03:00 重建 HNSW 索引
 │   └── scan_new_samples.py     ← ✅ 每 30 分鐘掃描並登記新 Kallisto 樣本
 │
@@ -259,6 +260,14 @@ return str(out_dir / "plot.png")
 ```
 
 本地 `.png` 可同時保留（供 `result_path` 記錄），但回傳給 Agent / tool result 的字串必須包含 inline base64，才能在 Web UI 對話視窗中直接顯示。`spatial_eda.py` 已定義 `_fig_to_b64_md(fig, alt)` helper 可複用。
+
+> **MCP 邊界自動剝離 base64**：上述 inline base64 規則只適用於「分析函數 → Web UI 顯示層」。
+> 在 `server/bio_memory_server.py` 的 `call_tool` 統一出口，所有文字回傳會先過
+> `analysis.figure_cache.strip_base64_for_llm()`，把 inline 圖換成緊湊佔位符
+> `[圖片:<alt> | id=<figure_id> | 用 bio_get_figure 索取]`，並把原圖快取到 `gold/figure_cache/<id>.<ext>`。
+> 這是為了避免 base64（一份多圖報告可達 20 萬 token）灌爆本機 LLM 的 context 視窗。
+> 模型需要視覺推理時呼叫 `bio_get_figure(figure_id)` → 走 MCP ImageContent 通道**單張**取回（多模態模型可見）。
+> 因此分析函數仍照常回傳 inline base64，**不需**自行剝離——剝離只發生在 LLM 邊界。
 
 ### 大型檔案操作
 - **禁止** `cat` 或直接讀入 `.h5ad`、`.btf`、`.h5` 大型生信檔案
@@ -455,4 +464,5 @@ memory_recent(id UUID, sample_id, query_text, report_text,
 | [docs/launchd_backup.plist.example](docs/launchd_backup.plist.example) | macOS 每日備份排程範本 |
 | [docs/launchd_scan_samples.plist.example](docs/launchd_scan_samples.plist.example) | macOS 每 30 分鐘掃描新樣本排程範本 |
 | [docs/launchd_helix_expire.plist.example](docs/launchd_helix_expire.plist.example) | macOS 每週日 04:00 HELIX snapshot 遺忘曲線降採樣排程範本 |
+| [docs/launchd_cleanup_figure_cache.plist.example](docs/launchd_cleanup_figure_cache.plist.example) | macOS 每日 03:35 清理 figure cache 過期圖檔排程範本 |
 | [msseg_docs/CLAUDE.md](msseg_docs/CLAUDE.md) | MSseg 子專案開發規範 |

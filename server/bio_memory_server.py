@@ -55,6 +55,8 @@ from mcp.server.stdio import stdio_server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp import types
 
+from analysis.figure_cache import strip_base64_for_llm
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
@@ -630,6 +632,24 @@ def _build_all_tools() -> list[types.Tool]:
                 "required": ["action"],
             },
         ),
+        types.Tool(
+            name="bio_get_figure",
+            description=(
+                "依 figure_id 取回單張圖片（MCP image content，供多模態模型視覺推理）。"
+                "報告類工具回傳的文字裡，圖片以佔位符 [圖片:... | id=<figure_id> | 用 bio_get_figure 索取] 呈現——"
+                "base64 已從文字 context 剝除以節省 token。需要看某張圖時，用該 figure_id 呼叫此工具單張取回。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "figure_id": {
+                        "type": "string",
+                        "description": "佔位符中的 id（hex），例如 a1b2c3d4e5f6。",
+                    },
+                },
+                "required": ["figure_id"],
+            },
+        ),
     ]
 
 
@@ -1082,6 +1102,19 @@ async def _handle_bio_read_report(args: dict) -> str:
     return await asyncio.to_thread(_sync)
 
 
+async def _handle_bio_get_figure(args: dict) -> list[types.ImageContent]:
+    """依 figure_id 取回快取圖片，回傳 MCP ImageContent（多模態通道，不進文字 context）。"""
+    from analysis.figure_cache import load_figure_b64
+
+    figure_id = args["figure_id"]
+
+    def _sync() -> tuple[str, str]:
+        return load_figure_b64(figure_id)
+
+    b64, mime = await asyncio.to_thread(_sync)
+    return [types.ImageContent(type="image", data=b64, mimeType=mime)]
+
+
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
 
 _HANDLERS = {
@@ -1100,11 +1133,14 @@ _HANDLERS = {
     "bio_execute_code": _handle_bio_execute_code,
     "bio_tool_health": _handle_bio_tool_health,
     "bio_read_report": _handle_bio_read_report,
+    "bio_get_figure": _handle_bio_get_figure,
 }
 
 
 @server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
+async def call_tool(
+    name: str, arguments: dict
+) -> list[types.TextContent | types.ImageContent]:
     handler = _HANDLERS.get(name)
     if handler is None:
         _record_metric(name, 0, "user_error")
@@ -1165,7 +1201,11 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             )
         ]
     _record_metric(name, int((time.monotonic() - t0) * 1000), "ok")
-    return [types.TextContent(type="text", text=result)]
+    # 圖片類工具回傳 content block list（如 bio_get_figure 的 ImageContent）→ 直接送出
+    if isinstance(result, list):
+        return list(result)  # type: ignore[return-value]
+    # 文字結果統一出口：剝除 inline base64 圖片，避免爆 LLM context（換成 bio_get_figure 佔位符）
+    return [types.TextContent(type="text", text=strip_base64_for_llm(result))]
 
 
 # ── HTTP transport ────────────────────────────────────────────────────────────
