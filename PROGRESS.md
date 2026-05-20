@@ -7,10 +7,64 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ **控制面板 Phase 2（手動操作端點）**
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ 控制面板 Phase 2（手動操作端點）+ **控制面板 Phase 3（動態程式碼畢業助手）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-20
-**commit**：0c8c5ec（feat(dashboard)：Phase 2 — 手動操作端點 env-gate + loopback + token 三層防護）
+
+---
+
+## ✅ 2026-05-20 Session E：控制面板 Phase 3 — 動態程式碼畢業助手
+
+**動機**：dynamic_code 反覆跑同一段分析時，該「畢業」成正式 `analysis/` 函數
+（消除重複、納入 HELIX 版本管理）。Phase 3 在面板上引導這個流程。
+
+**現況觀察**：真實 DB 的「重複 ≥ 2 次」候選全是 smoke/test 噪音
+（`loop`/`test`/`t` = `print(1)`），故 Phase 3 的核心價值之一是
+**更聰明的候選門檻**——同時要求 completed 次數與 code_lines 達標。
+
+### 新增模組
+
+- `server/graduation.py`（純邏輯，無 FastAPI，可單測）
+  - `list_candidates(con, *, min_code_lines, min_completed)` — 嚴格門檻：
+    `completed_runs ≥ N` **且** `MAX(code_lines) ≥ M`（預設 2 / 3），過濾 1 行噪音；
+    用 `ARG_MAX(... FILTER (WHERE status='completed'))` 取最新成功執行為代表
+  - `read_archive(con, analysis_id)` — 讀 archive 的 code.py / meta.json / output(或 traceback)；
+    **沙盒**限定 `DYNAMIC_CODE_DIR` 內，路徑逸出 / 找不到 / 目錄不存在皆 raise ValueError
+  - `slugify()` — description → Python 識別字安全 snake_case（非 ASCII / 數字開頭 / 空字串都有 fallback）
+  - `generate_scaffold(description, code, *, analysis_id)` — 生成 `analysis/` 函數骨架：
+    縮排嵌入原始碼 + 審查清單 docstring（去硬編碼路徑 / 參數化 / 圖片 base64 / 寫 history）
+    + **註解形式的 `register_tool()` 片段**（避免誤執行；對齊 CLAUDE.md 7.1）
+  - `graduation_plan(con, analysis_id)` — read_archive + generate_scaffold 一次回傳
+- `server/web_app.py`：兩條**唯讀** route（不寫檔 → 無需 Phase 2 的 guard）
+  - `GET /api/dashboard/graduation` — 候選清單 + 門檻值
+  - `GET /api/dashboard/graduation/{analysis_id}` — 單筆 plan（archive + scaffold）；找不到回 404
+- `server/static/dashboard.html`：新增「動態程式碼畢業」區塊
+  - 候選表（description / completed / code_lines / last_run）+「生成骨架」按鈕
+  - 點擊 → fetch plan → 顯示建議模組/函數/工具名 + 可捲動 scaffold + **⧉ 複製骨架**
+
+### 設計取捨
+
+- **只生成片段、不自動寫檔**：把 Python 自動寫進 `analysis/`（還要補 register_tool、
+  去硬編碼、改圖片輸出）風險高 → 畢業助手只產「可複製骨架」交人工審。auto-write 列為未來選項。
+- 門檻可由 `GRADUATION_MIN_CODE_LINES` / `GRADUATION_MIN_COMPLETED_RUNS` env 覆蓋。
+
+### 測試與真實 DB 實測
+
+- `tests/test_graduation.py`：17 測試（slugify 參數化 / scaffold 結構 / 候選門檻過濾 +
+  override / read_archive 沙盒四態 / plan 組合 / 兩條 route）
+- 真實 DB：預設門檻下唯一達標候選 `archive smoke`（4 completed, 3 lines）→
+  `graduation_plan` 正確生成 `run_archive_smoke` / `bio_archive_smoke` 骨架
+- 全套件 **387 passed, 3 skipped**（較 Phase 2 的 370 淨增 17，零 regression）
+
+### 控制面板三階段完成
+
+Phase 1（唯讀監控）→ Phase 2（手動操作）→ Phase 3（畢業助手）全數落地。
+
+### 仍待補（非阻塞）
+
+- **auto-write 草稿**：可選把骨架寫入 `results/graduation_drafts/`（走 Phase 2 guard）
+- **瀏覽器實測**：Phase 2 / Phase 3 的前端互動尚未在瀏覽器點按驗證
+- **真實畢業案例**：等累積非 smoke 的多行重複分析後，跑一次完整畢業 → 驗證骨架實用度
 
 ---
 

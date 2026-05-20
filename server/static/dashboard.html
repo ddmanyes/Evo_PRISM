@@ -176,6 +176,11 @@
   <div class="row" id="dynamicCandidates"></div>
   <div class="row" style="margin-top: 12px;" id="dynamicRecent"></div>
 
+  <!-- Graduation (Phase 3) -->
+  <h2>動態程式碼畢業</h2>
+  <div class="row" id="graduation"></div>
+  <div id="gradPlan" class="row" style="margin-top:12px; display:none"></div>
+
   <!-- Cache -->
   <h2>快取 + Artifact <a href="/engram" class="h2-link">→ ENGRAM</a></h2>
   <div class="row" id="cacheImages"></div>
@@ -450,6 +455,65 @@ async function loadActions() {
   }
 }
 
+// ── 動態程式碼畢業（Phase 3）─────────────────────────────────────────
+function renderGraduation(d) {
+  const cands = d.candidates || [];
+  const note = `<div class="hint" style="margin-bottom:8px">畢業門檻：completed ≥ ${d.min_completed} 次且 code_lines ≥ ${d.min_code_lines}（過濾 smoke/test 噪音）</div>`;
+  if (cands.length === 0) {
+    $('graduation').innerHTML = note + `<div class="empty">目前無達標的畢業候選</div>`;
+    return;
+  }
+  const rows = cands.map(c => `<tr>
+      <td class="trunc">${esc(c.description || '(無描述)')}</td>
+      <td class="num">${c.completed_runs}</td>
+      <td class="num">${c.max_code_lines ?? '—'}</td>
+      <td class="mono">${fmtDate(c.last_run)}</td>
+      <td><button class="act-btn grad-btn" data-id="${esc(c.rep_analysis_id)}">生成骨架</button></td>
+    </tr>`).join('');
+  $('graduation').innerHTML = note +
+    `<table><thead><tr><th>description</th><th class="num">completed</th><th class="num">code_lines</th><th>last_run</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  $('graduation').querySelectorAll('.grad-btn').forEach(b =>
+    b.addEventListener('click', () => showGradPlan(b.dataset.id, b)));
+}
+
+async function showGradPlan(analysisId, btn) {
+  btn.disabled = true; btn.textContent = '生成中…';
+  try {
+    const r = await fetch('/api/dashboard/graduation/' + encodeURIComponent(analysisId));
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const p = await r.json();
+    const box = $('gradPlan');
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div class="title">畢業骨架 — ${esc(p.description)} <span class="hint">(${esc(p.archive_dir)})</span></div>
+      <table style="margin-bottom:10px"><tbody>
+        <tr><td>建議模組</td><td class="mono">${esc(p.suggested_path)}</td></tr>
+        <tr><td>函數 / 工具名</td><td class="mono">${esc(p.fn_name)} / ${esc(p.tool_name)}</td></tr>
+      </tbody></table>
+      <button class="act-btn" id="copyScaffold">⧉ 複製骨架</button>
+      <div class="pre" style="margin-top:8px; max-height:420px; overflow:auto" id="scaffoldText">${esc(p.scaffold)}</div>`;
+    $('copyScaffold').addEventListener('click', () => {
+      navigator.clipboard.writeText(p.scaffold).then(
+        () => { $('copyScaffold').textContent = '✓ 已複製'; },
+        () => { $('copyScaffold').textContent = '複製失敗'; });
+    });
+    box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  } catch (e) {
+    actLog(`畢業骨架生成失敗：${e.message}`, false);
+  } finally {
+    btn.disabled = false; btn.textContent = '生成骨架';
+  }
+}
+
+async function loadGraduation() {
+  try {
+    const r = await fetch('/api/dashboard/graduation');
+    renderGraduation(await r.json());
+  } catch (e) {
+    $('graduation').innerHTML = `<div class="empty">畢業候選載入失敗：${esc(e.message)}</div>`;
+  }
+}
+
 async function refresh() {
   $('errBanner').innerHTML = '';
   try {
@@ -476,6 +540,7 @@ $('refreshBtn').addEventListener('click', refresh);
 $('autoRefresh').addEventListener('change', setupAutoRefresh);
 
 loadActions();
+loadGraduation();
 refresh();
 setupAutoRefresh();
 </script>

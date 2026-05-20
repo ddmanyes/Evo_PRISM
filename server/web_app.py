@@ -662,6 +662,41 @@ async def api_dashboard_action(request: Request):
     return JSONResponse(result, status_code=200 if result.get("ok") else 400)
 
 
+# ── 動態程式碼畢業（Phase 3，唯讀）─────────────────────────────────────────────
+
+@app.get("/api/dashboard/graduation")
+async def api_graduation_candidates():
+    """畢業候選清單（同 description 多次 completed + 非 1 行噪音）。唯讀，無需 guard。"""
+    import duckdb
+
+    from config import settings
+    from config.settings import DUCKDB_PATH
+    from server.graduation import list_candidates
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        candidates = list_candidates(con)
+    return {
+        "candidates": candidates,
+        "min_code_lines": settings.GRADUATION_MIN_CODE_LINES,
+        "min_completed": settings.GRADUATION_MIN_COMPLETED_RUNS,
+    }
+
+
+@app.get("/api/dashboard/graduation/{analysis_id}")
+async def api_graduation_plan(analysis_id: str):
+    """單筆畢業計畫：archive（code/meta/output）+ 生成的 analysis/ 骨架。唯讀。"""
+    import duckdb
+
+    from config.settings import DUCKDB_PATH
+    from server.graduation import graduation_plan
+
+    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        try:
+            return graduation_plan(con, analysis_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+
 @app.get("/results/{analysis_id}", response_class=HTMLResponse)
 async def report_page(analysis_id: str):
     import duckdb
