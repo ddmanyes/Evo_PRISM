@@ -78,6 +78,10 @@ L1_SUMMARY_MAX_CHARS = 50
 # Figure cache（bio_get_figure 索取用；content-addressed，過期後報告重跑會自動重建）
 FIGURE_CACHE_TTL_DAYS = int(os.getenv("FIGURE_CACHE_TTL_DAYS", "14"))
 
+# MCP Resources：read_resource 單檔大小上限（MB）。超過時拒絕 inline 回傳，
+# 引導改用 web_app 下載端點（避免大型 parquet base64 灌爆傳輸/context）。
+ARTIFACT_RESOURCE_MAX_MB = float(os.getenv("ARTIFACT_RESOURCE_MAX_MB", "25"))
+
 # ── Visium HD 解析度 ────────────────────────────────────────
 VISIUM_RESOLUTIONS = ["002um", "008um", "016um"]
 DEFAULT_RESOLUTION = "008um"
