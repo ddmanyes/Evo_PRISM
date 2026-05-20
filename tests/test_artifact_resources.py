@@ -97,6 +97,32 @@ def test_read_oversize_rejected(con, monkeypatch):
         ar.read_artifact_resource(con, "artifact://11111111-1111-1111-1111-111111111111")
 
 
+def test_get_handle_text_includes_preview_and_urls(con):
+    h = ar.get_artifact_handle(con, "11111111-1111-1111-1111-111111111111", preview_lines=2)
+    assert h["found"] is True
+    assert h["label"] == "QC table"
+    assert h["local_path"].endswith("results/qc.csv")
+    assert h["web_url"].endswith("/api/engram/artifact/11111111-1111-1111-1111-111111111111/inline")
+    assert "gene,count" in h["preview"]
+    assert "EPCAM" not in h["preview"]  # 只取前 2 行
+
+
+def test_get_handle_binary_has_no_preview(con):
+    h = ar.get_artifact_handle(con, "22222222-2222-2222-2222-222222222222")
+    assert h["found"] is True
+    assert h["preview"] is None  # 二進位不預覽
+
+
+def test_get_handle_missing_returns_not_found(con):
+    h = ar.get_artifact_handle(con, "33333333-3333-3333-3333-333333333333")
+    assert h == {"found": False, "artifact_id": "33333333-3333-3333-3333-333333333333"}
+
+
+def test_get_handle_rejects_bad_id(con):
+    with pytest.raises(ar.ArtifactResourceError):
+        ar.get_artifact_handle(con, "not-a-uuid")
+
+
 def test_read_path_escape_rejected(con, tmp_path):
     # 注入一筆 file_path 指向 BIO_DB_ROOT 之外
     outside = tmp_path.parent / "secret.txt"

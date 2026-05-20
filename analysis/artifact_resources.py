@@ -24,6 +24,7 @@ import re
 from config.settings import (
     ARTIFACT_RESOURCE_MAX_MB,
     BIO_DB_ROOT,
+    WEB_APP_BASE_URL,
     resolve_artifact_path,
 )
 
@@ -145,3 +146,48 @@ def read_artifact_resource(con, uri: str) -> tuple[str | bytes, str]:
     if _is_text_mime(mime):
         return abs_path.read_text(encoding="utf-8", errors="replace"), mime
     return abs_path.read_bytes(), mime or "application/octet-stream"
+
+
+def get_artifact_handle(con, artifact_id: str, preview_lines: int = 20) -> dict:
+    """
+    取得 artifact 的「取用 handle」——給任何 MCP client（含不支援 resources 者）的備援。
+
+    回傳 metadata + 本地路徑 + web_app 下載 URL + 文字預覽（不倒整個檔案進 context）。
+
+    Returns dict:
+        {found, artifact_id, label, subtype, mime_type, size_kb,
+         local_path, web_url, preview}
+    """
+    if not _UUID_RE.match(artifact_id or ""):
+        raise ArtifactResourceError(f"artifact_id 格式錯誤：{artifact_id!r}")
+
+    row = con.execute(
+        """
+        SELECT label, artifact_subtype, mime_type, file_size_kb, file_path
+        FROM analysis_artifacts WHERE artifact_id = ?
+        """,
+        [artifact_id],
+    ).fetchone()
+    if not row:
+        return {"found": False, "artifact_id": artifact_id}
+
+    label, subtype, mime, size_kb, file_path = row
+    abs_path = resolve_artifact_path(file_path).resolve() if file_path else None
+
+    preview = None
+    if abs_path and abs_path.is_file() and _is_text_mime(mime):
+        with abs_path.open("r", encoding="utf-8", errors="replace") as fh:
+            head = [next(fh, "") for _ in range(preview_lines)]
+        preview = "".join(head).rstrip()
+
+    return {
+        "found": True,
+        "artifact_id": artifact_id,
+        "label": label,
+        "subtype": subtype,
+        "mime_type": mime,
+        "size_kb": size_kb,
+        "local_path": str(abs_path) if abs_path else None,
+        "web_url": f"{WEB_APP_BASE_URL}/api/engram/artifact/{artifact_id}/inline",
+        "preview": preview,
+    }

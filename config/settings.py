@@ -82,6 +82,9 @@ FIGURE_CACHE_TTL_DAYS = int(os.getenv("FIGURE_CACHE_TTL_DAYS", "14"))
 # 引導改用 web_app 下載端點（避免大型 parquet base64 灌爆傳輸/context）。
 ARTIFACT_RESOURCE_MAX_MB = float(os.getenv("ARTIFACT_RESOURCE_MAX_MB", "25"))
 
+# web_app 對外基底 URL（bio_get_artifact 組下載連結用；web_app 預設跑 port 8000）
+WEB_APP_BASE_URL = os.getenv("WEB_APP_BASE_URL", "http://localhost:8000").rstrip("/")
+
 # ── Visium HD 解析度 ────────────────────────────────────────
 VISIUM_RESOLUTIONS = ["002um", "008um", "016um"]
 DEFAULT_RESOLUTION = "008um"
