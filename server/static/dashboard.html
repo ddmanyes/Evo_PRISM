@@ -105,6 +105,28 @@
   .empty { color: var(--muted); font-size: 13px; padding: 12px; text-align: center; }
   .err-banner { background: #fee2e2; color: #991b1b; padding: 10px 14px; border-radius: 8px;
                 margin-bottom: 14px; font-size: 13px; }
+
+  .act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .act { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border);
+         border-radius: 8px; padding: 10px 12px; background: var(--card); }
+  .act .act-desc { font-size: 12px; color: var(--muted); }
+  .act button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--accent);
+                background: var(--accent-light); color: var(--accent); font-size: 13px;
+                font-weight: 600; cursor: pointer; align-self: flex-start; }
+  .act button:hover { background: var(--accent); color: #fff; }
+  .act button.danger { border-color: var(--err); background: #fee2e2; color: #991b1b; }
+  .act button.danger:hover { background: var(--err); color: #fff; }
+  .act button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .act-form { display: flex; flex-direction: column; gap: 5px; }
+  .act-form input { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+                    font-size: 12px; font-family: inherit; }
+  .act-log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+             background: var(--code-bg); padding: 10px 12px; border-radius: 6px; margin-top: 10px;
+             white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto; }
+  .act-log .ok-line  { color: #065f46; }
+  .act-log .err-line { color: #991b1b; }
+  .act-disabled { background: var(--code-bg); color: var(--muted); padding: 12px 14px;
+                  border-radius: 8px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -126,6 +148,13 @@
   <!-- Overview -->
   <h2>總覽</h2>
   <div class="grid grid-4" id="overview"></div>
+
+  <!-- Manual operations (Phase 2) -->
+  <h2>手動操作</h2>
+  <div class="row" id="actionsPanel">
+    <div class="empty">載入中…</div>
+  </div>
+  <div id="actLog" class="act-log" style="display:none"></div>
 
   <!-- System -->
   <h2>系統健康</h2>
@@ -325,6 +354,102 @@ function renderCache(c) {
     </tr>`).join('') + `</tbody></table>`);
 }
 
+// ── 手動操作（Phase 2）──────────────────────────────────────────────
+// 需參數的操作 → 欄位規格（無此 key 者為無參數的 scheduler 操作，純按鈕觸發）
+const ACTION_FIELDS = {
+  mark_stable:      [{name:'tool_name', ph:'tool_name（如 bio_run_bulk_eda）'},
+                     {name:'reason', ph:'標記為穩定的理由'}],
+  close_stabilize:  [{name:'log_id', ph:'stabilization log_id'},
+                     {name:'outcome', ph:'outcome', type:'select',
+                      opts:['stabilized','ongoing','reverted']},
+                     {name:'action_taken', ph:'action_taken（選填）', optional:true}],
+  prune_deprecated: [{name:'tool_name', ph:'tool_name'}],
+};
+
+function actLog(msg, ok) {
+  const box = $('actLog');
+  box.style.display = 'block';
+  const line = document.createElement('div');
+  line.className = ok ? 'ok-line' : 'err-line';
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.prepend(line);
+}
+
+async function runAction(action, btn) {
+  const fields = ACTION_FIELDS[action] || [];
+  const args = {};
+  for (const f of fields) {
+    const el = document.getElementById(`fld-${action}-${f.name}`);
+    const v = (el && el.value || '').trim();
+    if (!v && !f.optional) { actLog(`${action}：請填寫 ${f.name}`, false); el && el.focus(); return; }
+    if (v) args[f.name] = v;
+  }
+  if (!confirm(`確定執行「${action}」？`)) return;
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '執行中…';
+  try {
+    const r = await fetch('/api/dashboard/action', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action, args}),
+    });
+    const data = await r.json();
+    actLog(`${action} → ${data.message || (data.ok ? 'ok' : 'failed')}`, !!data.ok);
+    if (data.ok) refresh();  // 操作可能改變狀態 → 立即刷新監控數字
+  } catch (e) {
+    actLog(`${action} → 請求失敗：${e.message}`, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+function renderActions(meta) {
+  const panel = $('actionsPanel');
+  if (!meta.enabled) {
+    panel.innerHTML = `<div class="act-disabled">手動操作未啟用。設定環境變數
+      <span class="mono">DASHBOARD_ACTIONS_ENABLED=true</span> 後重啟 web_app 即可啟用；
+      預設僅允許本機 (loopback) 觸發。</div>`;
+    return;
+  }
+  const note = meta.token_required
+    ? `<div class="hint" style="margin-bottom:8px">⚠ 此面板需 X-Dashboard-Token——目前 UI 未帶 token，請改用 curl 或設定反向代理注入。</div>`
+    : (meta.allow_remote
+        ? `<div class="hint" style="margin-bottom:8px">⚠ 已允許遠端來源觸發（DASHBOARD_ACTIONS_ALLOW_REMOTE=true）。</div>`
+        : '');
+  const cards = (meta.actions || []).map(a => {
+    const fields = ACTION_FIELDS[a.action] || [];
+    const form = fields.map(f => {
+      const id = `fld-${a.action}-${f.name}`;
+      if (f.type === 'select') {
+        return `<select id="${id}" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">` +
+               f.opts.map(o => `<option value="${o}">${o}</option>`).join('') + `</select>`;
+      }
+      return `<input id="${id}" placeholder="${esc(f.ph)}">`;
+    }).join('');
+    const danger = a.destructive ? ' danger' : '';
+    return `<div class="act">
+      <div><b class="mono">${esc(a.action)}</b></div>
+      <div class="act-desc">${esc(a.description)}</div>
+      ${form ? `<div class="act-form">${form}</div>` : ''}
+      <button class="act-btn${danger}" data-action="${esc(a.action)}">執行</button>
+    </div>`;
+  }).join('');
+  panel.innerHTML = note + `<div class="act-grid">${cards}</div>`;
+  panel.querySelectorAll('.act-btn').forEach(b =>
+    b.addEventListener('click', () => runAction(b.dataset.action, b)));
+}
+
+async function loadActions() {
+  try {
+    const r = await fetch('/api/dashboard/actions');
+    renderActions(await r.json());
+  } catch (e) {
+    $('actionsPanel').innerHTML = `<div class="empty">操作清單載入失敗：${esc(e.message)}</div>`;
+  }
+}
+
 async function refresh() {
   $('errBanner').innerHTML = '';
   try {
@@ -350,6 +475,7 @@ function setupAutoRefresh() {
 $('refreshBtn').addEventListener('click', refresh);
 $('autoRefresh').addEventListener('change', setupAutoRefresh);
 
+loadActions();
 refresh();
 setupAutoRefresh();
 </script>

@@ -26,9 +26,9 @@ from pathlib import Path
 from typing import Optional
 
 import mistune
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -596,6 +596,70 @@ async def api_dashboard():
 
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         return full_snapshot(con)
+
+
+# ── 控制面板手動操作（Phase 2）────────────────────────────────────────────────
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _dashboard_actions_guard(request: Request) -> None:
+    """三層防護：env-gate → loopback-only → 選用 X-Dashboard-Token。
+
+    每次都從 config.settings 讀「現值」（非 import 時綁定），以便測試 monkeypatch
+    與 runtime 改 env 生效。任一層不過直接 raise HTTPException。
+    """
+    from config import settings
+
+    if not settings.DASHBOARD_ACTIONS_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail="控制面板手動操作未啟用（設環境變數 DASHBOARD_ACTIONS_ENABLED=true 後重啟）",
+        )
+
+    if not settings.DASHBOARD_ACTIONS_ALLOW_REMOTE:
+        host = request.client.host if request.client else None
+        if host not in _LOOPBACK_HOSTS:
+            raise HTTPException(
+                status_code=403,
+                detail="僅允許本機 (loopback) 觸發手動操作",
+            )
+
+    token = settings.DASHBOARD_ACTION_TOKEN
+    if token and request.headers.get("X-Dashboard-Token") != token:
+        raise HTTPException(status_code=401, detail="X-Dashboard-Token 缺失或不符")
+
+
+@app.get("/api/dashboard/actions")
+async def api_dashboard_actions_status():
+    """回報手動操作是否啟用 + 可用操作清單（供前端決定是否渲染操作面板）。"""
+    from config import settings
+    from server.dashboard_actions import list_actions
+
+    return {
+        "enabled": settings.DASHBOARD_ACTIONS_ENABLED,
+        "allow_remote": settings.DASHBOARD_ACTIONS_ALLOW_REMOTE,
+        "token_required": bool(settings.DASHBOARD_ACTION_TOKEN),
+        "actions": list_actions(),
+    }
+
+
+@app.post("/api/dashboard/action")
+async def api_dashboard_action(request: Request):
+    """執行單一手動操作。先過 guard，再委派 dashboard_actions.dispatch（threadpool）。"""
+    _dashboard_actions_guard(request)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    action = body.get("action") if isinstance(body, dict) else None
+    args = body.get("args") if isinstance(body, dict) else None
+
+    from server.dashboard_actions import dispatch
+
+    result = await asyncio.to_thread(dispatch, action, args or {})
+    return JSONResponse(result, status_code=200 if result.get("ok") else 400)
 
 
 @app.get("/results/{analysis_id}", response_class=HTMLResponse)

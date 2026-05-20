@@ -85,6 +85,18 @@ ARTIFACT_RESOURCE_MAX_MB = float(os.getenv("ARTIFACT_RESOURCE_MAX_MB", "25"))
 # web_app 對外基底 URL（bio_get_artifact 組下載連結用；web_app 預設跑 port 8000）
 WEB_APP_BASE_URL = os.getenv("WEB_APP_BASE_URL", "http://localhost:8000").rstrip("/")
 
+# ── 控制面板手動操作（dashboard Phase 2）──────────────────────
+# 手動操作會觸發備份/清理/HELIX 寫入等高權限動作 → 預設關閉，需顯式開啟。
+DASHBOARD_ACTIONS_ENABLED = (
+    os.getenv("DASHBOARD_ACTIONS_ENABLED", "false").lower() in ("true", "1", "yes")
+)
+# 即使啟用，預設僅允許 loopback 來源觸發；設 true 才放行遠端（不建議，僅供反向代理場景）。
+DASHBOARD_ACTIONS_ALLOW_REMOTE = (
+    os.getenv("DASHBOARD_ACTIONS_ALLOW_REMOTE", "false").lower() in ("true", "1", "yes")
+)
+# 選用：設定後 POST /api/dashboard/action 必須帶 X-Dashboard-Token header 相符（額外一層）。
+DASHBOARD_ACTION_TOKEN = os.getenv("DASHBOARD_ACTION_TOKEN", "")
+
 # ── Visium HD 解析度 ────────────────────────────────────────
 VISIUM_RESOLUTIONS = ["002um", "008um", "016um"]
 DEFAULT_RESOLUTION = "008um"
