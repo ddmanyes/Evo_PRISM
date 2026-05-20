@@ -97,6 +97,12 @@ DASHBOARD_ACTIONS_ALLOW_REMOTE = (
 # 選用：設定後 POST /api/dashboard/action 必須帶 X-Dashboard-Token header 相符（額外一層）。
 DASHBOARD_ACTION_TOKEN = os.getenv("DASHBOARD_ACTION_TOKEN", "")
 
+# ── 動態程式碼畢業（dashboard Phase 3）─────────────────────────
+# 畢業候選門檻：同 description 的 completed 次數 + 最大 code_lines 須同時達標，
+# 才視為「值得固化成正式 analysis/ 函數」。預設過濾掉 1 行的 smoke/test 噪音。
+GRADUATION_MIN_CODE_LINES    = int(os.getenv("GRADUATION_MIN_CODE_LINES", "3"))
+GRADUATION_MIN_COMPLETED_RUNS = int(os.getenv("GRADUATION_MIN_COMPLETED_RUNS", "2"))
+
 # ── Visium HD 解析度 ────────────────────────────────────────
 VISIUM_RESOLUTIONS = ["002um", "008um", "016um"]
 DEFAULT_RESOLUTION = "008um"
