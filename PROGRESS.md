@@ -45,10 +45,23 @@
 - **Phase 2**：手動操作 POST 端點 — 觸發 backup/cleanup/rebuild_hnsw、`mark_stable`/`close_stabilize`/`prune deprecated`；前端加確認對話框；需考慮 localhost-only 或 env-gate（destructive ops over web）
 - **Phase 3**：動態程式碼畢業 — 列出畢業候選 → 讀 `code.py` + meta → 引導生成 `analysis/` 函數骨架 + 自動補 `register_tool()`
 
-### ⚠️ 待使用者實測
+### ✅ 瀏覽器實測（2026-05-20）
 
-- 重啟 web_app（`bash start_bioagent.sh`）後 `/dashboard` 才會生效
-- 在瀏覽器確認各 panel 渲染正常、自動更新運作、HELIX/動態碼/快取數字符合預期
+- 重啟 web_app 後 `/dashboard` 正常生效
+- 五個區塊（總覽 / 系統 / HELIX / 動態程式碼 / 快取）全部渲染正常、數字符合預期、30 秒自動更新運作
+
+### 🐛 實測順帶發現的既有 bug（非本次改動引入）
+
+- **歷史記錄的報告頁打不開** —— 從 `/history` 點某筆分析進到 `/results/<analysis_id>` 時出現 **Internal Server Error**
+- 影響範圍：`server/web_app.py::report_page`（line 364 起）讀 `result_path` 渲染 markdown 的流程
+- 可能原因待排查：`result_path` 為相對路徑但程式仍以絕對處理、Google Drive 含中文字的路徑導致 `startswith(BIO_DB_ROOT.resolve())` 沙盒比對失敗、`.md` 內 inline base64 渲染 OOM 等
+- 優先順序：使用者體驗中斷，建議下一步先修這個 bug 再進 Phase 2
+
+### 面板本身待補（UX 層，非阻塞）
+
+- **能點進明細頁**：點動態程式碼跳到該 archive、點 artifact 下載、點工具看 change_log
+- **互動 UX**：欄位 hover 說明、表格排序/篩選/搜尋
+- **推播通知 / 即時提醒**：stale 分析 / failed dynamic_code / disk 低於 threshold 時跨頁顯眼提示，而非只是數字
 
 ---
 
