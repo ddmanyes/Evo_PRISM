@@ -7,10 +7,57 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + **bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位**
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + **MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-20
-**commit**：f7e9043（refactor：_archive_history_insert helper + cleanup dry-run 統一）
+**commit**：94a1250（feat：bio_get_artifact tool — 數據檔交付的 client 無關備援）
+
+---
+
+## ✅ 2026-05-20 Session B：MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）
+
+**背景**：以本機 llama.cpp WebUI 接 MCP 測效能時，報告類工具回傳的 inline base64 圖片
+讓單次請求達 218,215 token，遠超 16,384 context → `exceeds the available context size`。
+順勢補齊「圖片」與「數據檔」兩種產出的 MCP 交付通道。
+
+### A. MCP 邊界剝離 base64 + bio_get_figure（commit `3c6cf11`）
+
+- `analysis/figure_cache.py`（新）：`strip_base64_for_llm()` 在 `call_tool` 統一出口把 inline
+  `![alt](data:image/...;base64,...)` 換成佔位符 `[圖片:<alt> | id=<figure_id> | 用 bio_get_figure 索取]`，
+  原圖 content-addressed（sha256[:12]）快取到 `gold/figure_cache/<id>.<ext>`
+- `bio_get_figure(figure_id)` tool → 回傳 MCP **ImageContent**（多模態通道，Gemma 視覺模型可見）
+- `scheduler/cleanup_figure_cache.py`（新）：TTL 14 天（`FIGURE_CACHE_TTL_DAYS`）+ launchd 範本（每日 03:35）
+- 效果：一份多圖報告 ~21 萬 → 幾百 token；分析函數仍回 inline base64（剝離只在 LLM 邊界）
+
+### B. MCP Resources 交付數據檔（commit `204888a`）
+
+- `analysis/artifact_resources.py`（新）：`list_artifact_resources()` / `read_artifact_resource()`，
+  URI = `artifact://<artifact_id>`；文字回 str、二進位回 bytes（SDK 轉 base64 blob）
+- `server/bio_memory_server.py`：`@server.list_resources` / `@server.read_resource` → 自動宣告 resources capability
+- 沙盒（限 `BIO_DB_ROOT`）+ 大小上限 `ARTIFACT_RESOURCE_MAX_MB`（預設 25MB，超過引導 web_app 下載）
+- 驗證：`resources/list` 經 stdio 與 HTTP transport 皆回 6 筆 artifact
+
+### C. bio_get_artifact tool — client 無關備援（commit `94a1250`）
+
+- 部分輕量 client（如某些 llama.cpp WebUI）只實作 tools 不支援 resources → 純 tool 備援
+- `get_artifact_handle()`：回 metadata + 本地絕對路徑 + web_app 下載 URL（`WEB_APP_BASE_URL`）+ 文字檔預覽
+- 雙軌交付：支援 resources → `resources/read`；只支援 tools → `bio_get_artifact`
+
+### 工具數變化
+
+safe 工具 14 → 16（+`bio_get_figure` +`bio_get_artifact`）；dangerous-enabled 15 → 17。
+`tests/test_phase4.py` / `test_phase10.py` 計數與清單同步更新。
+
+### 測試與文件
+
+- 新增測試：`test_figure_cache.py`（13）、`test_artifact_resources.py`（15）→ 全套件 **334 passed, 3 skipped**
+- `CLAUDE.md`：第 6 節補「MCP 邊界剝離 base64」「分析數據檔交付（MCP Resources）」「bio_get_artifact 備援」三段規則
+- `config/settings.py`：新增 `FIGURE_CACHE_TTL_DAYS` / `ARTIFACT_RESOURCE_MAX_MB` / `WEB_APP_BASE_URL`
+
+### ⚠️ 待使用者實測
+
+- llama.cpp WebUI 是否支援 MCP resources 尚未確認；不支援則走 `bio_get_artifact`
+- 重啟 MCP server 後 `bio_get_figure` / `bio_get_artifact` / resources 才生效，WebUI 需重連
 
 ---
 
