@@ -63,6 +63,23 @@
 - **commit**：`197479c`
 - **未一併處理**：`bulk_eda` / `eda_report` 舊紀錄的 `result_path` 指向 `/Volumes/NO NAME/...`（專案搬到 Google Drive 前的絕對路徑）→ 現會以 404 回應並附「可能為舊絕對路徑，專案已搬遷」訊息。徹底修復需走遷移腳本把 `analysis_history.result_path` 批次改為相對路徑，**保留為下一個工作項**。
 
+#### 後續精緻化（commit `946e07c`）：dynamic_code vs 通用目錄瀏覽分流
+
+實測時使用者誤以為 dynamic_code 該長得跟 bulk_eda 那種「完整 md 報告」一樣；
+釐清後發現 `bio_execute_code` 本來就不產出 md，且原本 dynamic_code 跟 l2_convert
+共用同一個合成函數（兩者語意完全不同），l2_convert 落到「其他檔案」清單，UX 尷尬。
+
+拆成三條路（依目錄內容派發，不依賴 analysis_type 字串）：
+- `.md` 檔 → `_render_report_html`（不動）
+- 有 `meta.json` + `code.py` → **`_synthesize_dynamic_code_view`**（dynamic_code 專屬：
+  description H1 + status badge + 統計 + 失敗紅框 + 折疊 meta + code + output + 圖）
+- 其他目錄 → **`_synthesize_directory_browser_view`**（通用瀏覽：📁 標題 + 按副檔名分組
+  + parquet 自動附 schema preview，讀 footer 不掃資料列）
+- `_synthesize_archive_view(dir)`：依目錄內容判斷派發
+
+真實 DB 驗證：dynamic_code 走 H1+badge+code 路徑；l2_convert 走 emoji+parquet_schema
+路徑（成功讀到 silver/<sample> 內的 parquet 欄位/型別）。測試 9 passed，全套件 350 passed。
+
 ### 面板本身待補（UX 層，非阻塞）
 
 - **能點進明細頁**：點動態程式碼跳到該 archive、點 artifact 下載、點工具看 change_log
