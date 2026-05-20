@@ -7,10 +7,48 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + **MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）**
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ **控制面板 Phase 1（唯讀監控儀表板）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-20
-**commit**：94a1250（feat：bio_get_artifact tool — 數據檔交付的 client 無關備援）
+**commit**：265c91f（feat(dashboard)：Phase 1 — 唯讀監控控制面板 /dashboard）
+
+---
+
+## ✅ 2026-05-20 Session C：控制面板 Phase 1 — 唯讀監控儀表板（commit `265c91f`）
+
+**動機**：對話 webui 不是必要，但缺一個集中監控 + 手動操作的入口。HELIX 工具健康、
+動態程式碼活動、快取大小、server 在線狀態等通通沒有 web 介面，過去只能靠 CLI / MCP 工具查。
+
+**範圍**：純本機監控、不碰外部 API；建在現有 `web_app.py`（同 port 8000）；
+分三階段：Phase 1 監控（本次）→ Phase 2 手動操作 → Phase 3 動態程式碼畢業流程。
+
+### 新增模組
+
+- `server/dashboard.py`（純資料聚合層，無 FastAPI 依賴，可單元測試）
+  - `overview(con)` — 樣本/分析/動態碼/工具/artifacts/stale 計數
+  - `helix_panel(con)` — 直接複用 `tool_registry.tool_health_report()`（總覽/熱區/迭代/stale/prune/趨勢/建議）+ 工具版本帳本
+  - `dynamic_code_panel(con, limit)` — 最近執行 + **畢業候選**（同 description 跑過 ≥ 2 次）
+  - `cache_panel(con)` — figure_cache / L1 cache stats + artifacts by subtype
+  - `system_panel(con)` — embedding/multimodal 探活 + DB health + 備份 + 磁碟
+  - `full_snapshot(con)` — 一次聚合供首屏載入
+- `server/static/dashboard.html` — 單頁面 vanilla JS，30 秒自動更新；風格沿用 `engram.html` 的 CSS 變數（紫色 accent / status chip / 表格 / cards）
+- `server/web_app.py`：新增 `/dashboard`（HTML）+ `/api/dashboard`（聚合 JSON）兩條 route
+
+### 測試與真實 DB 實測
+
+- `tests/test_dashboard.py`：7 個測試（各 panel 計數 / 畢業候選邏輯 / HTTP 路由）
+- 全套件 **341 passed, 3 skipped**
+- 真實 DB 快照：91 樣本、124 分析（含 103 筆 dynamic_code）、2 active tools、6 artifacts、**8 個畢業候選**（Phase 3 確實有需求）
+
+### 待 Phase 2 / Phase 3
+
+- **Phase 2**：手動操作 POST 端點 — 觸發 backup/cleanup/rebuild_hnsw、`mark_stable`/`close_stabilize`/`prune deprecated`；前端加確認對話框；需考慮 localhost-only 或 env-gate（destructive ops over web）
+- **Phase 3**：動態程式碼畢業 — 列出畢業候選 → 讀 `code.py` + meta → 引導生成 `analysis/` 函數骨架 + 自動補 `register_tool()`
+
+### ⚠️ 待使用者實測
+
+- 重啟 web_app（`bash start_bioagent.sh`）後 `/dashboard` 才會生效
+- 在瀏覽器確認各 panel 渲染正常、自動更新運作、HELIX/動態碼/快取數字符合預期
 
 ---
 
