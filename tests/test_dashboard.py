@@ -163,6 +163,22 @@ def test_cache_panel_artifacts_grouped(con):
     assert "figure_cache" in c and "l1_cache" in c
 
 
+def test_cache_panel_analysis_images_aggregates_artifact_and_dyn_figs(con):
+    """analysis_images 應加總 image artifact + dynamic_code completed 的 fig_count。
+
+    測試 DB（見 fixture）：
+    - artifact：pca.png(300 KB image) + qc.csv(非 image) → 1 張 image artifact
+    - dynamic_code completed：2 筆 fig_count=1 + 1 筆 failed(忽略) → 2 張 fig
+    - total = 1 + 2 = 3
+    """
+    c = dash.cache_panel(con)
+    ai = c["analysis_images"]
+    assert ai["artifact_count"] == 1
+    assert ai["artifact_total_kb"] == 300
+    assert ai["dynamic_code_figs"] == 2
+    assert ai["total"] == 3
+
+
 def test_helix_panel_includes_tools_ledger(con):
     h = dash.helix_panel(con)
     assert h["total_active"] == 1
