@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BioAgent 控制面板</title>
+<style>
+  :root {
+    --bg: #f8f9fa; --card: #ffffff; --text: #212529;
+    --accent: #7c3aed; --accent-light: #ede9fe;
+    --border: #dee2e6; --muted: #6c757d; --code-bg: #f1f3f5;
+    --ok: #10b981; --warn: #f59e0b; --err: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: var(--text); line-height: 1.55; }
+
+  .toolbar { background: var(--card); border-bottom: 1px solid var(--border);
+             padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+             position: sticky; top: 0; z-index: 100; }
+  .toolbar .brand { font-weight: 700; font-size: 18px; color: var(--accent); letter-spacing: -0.5px; }
+  .toolbar .brand span { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .toolbar a { text-decoration: none; color: var(--muted); font-size: 14px; }
+  .toolbar a:hover { color: var(--accent); }
+  .toolbar .sep { color: var(--border); }
+  .spacer { flex: 1; }
+  .toolbar button { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+                    background: var(--card); color: var(--text); font-size: 13px;
+                    cursor: pointer; }
+  .toolbar button:hover { background: var(--bg); }
+  .toolbar label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .toolbar .ts { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+
+  h2 { font-size: 13px; font-weight: 700; color: var(--muted);
+       text-transform: uppercase; letter-spacing: 0.5px; margin: 28px 0 12px; }
+  h2:first-of-type { margin-top: 0; }
+
+  .grid { display: grid; gap: 12px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 900px) {
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 14px 16px; }
+  .card .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase;
+               letter-spacing: 0.5px; font-weight: 600; }
+  .card .val { font-size: 26px; font-weight: 700; margin-top: 4px;
+               font-variant-numeric: tabular-nums; }
+  .card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .row { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+         padding: 14px 16px; }
+  .row .title { font-weight: 600; margin-bottom: 8px; }
+
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+         vertical-align: middle; }
+  .dot.ok  { background: var(--ok); }
+  .dot.err { background: var(--err); }
+  .dot.warn{ background: var(--warn); }
+
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+          font-weight: 600; }
+  .chip.ok  { background: #d1fae5; color: #065f46; }
+  .chip.err { background: #fee2e2; color: #991b1b; }
+  .chip.warn{ background: #fef3c7; color: #92400e; }
+  .chip.mut { background: var(--code-bg); color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; background: var(--bg); color: var(--muted);
+       font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  td.trunc { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+         background: var(--code-bg); padding: 10px 12px; border-radius: 6px;
+         white-space: pre-wrap; word-break: break-all; }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 12px; text-align: center; }
+  .err-banner { background: #fee2e2; color: #991b1b; padding: 10px 14px; border-radius: 8px;
+                margin-bottom: 14px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="brand">BioAgent <span>控制面板</span></div>
+  <a href="/">對話</a><span class="sep">·</span>
+  <a href="/history">歷史</a><span class="sep">·</span>
+  <a href="/engram">ENGRAM</a>
+  <div class="spacer"></div>
+  <label><input type="checkbox" id="autoRefresh" checked> 自動更新（30s）</label>
+  <span class="ts" id="ts">—</span>
+  <button id="refreshBtn">⟳ 更新</button>
+</div>
+
+<div class="main">
+  <div id="errBanner"></div>
+
+  <!-- Overview -->
+  <h2>總覽</h2>
+  <div class="grid grid-4" id="overview"></div>
+
+  <!-- System -->
+  <h2>系統健康</h2>
+  <div class="grid grid-2">
+    <div class="row" id="systemServers"></div>
+    <div class="row" id="systemDb"></div>
+  </div>
+
+  <!-- HELIX -->
+  <h2>HELIX 工具健康</h2>
+  <div class="grid grid-2">
+    <div class="row" id="helixSummary"></div>
+    <div class="row" id="helixOpen"></div>
+  </div>
+  <div class="row" style="margin-top: 12px;" id="helixTools"></div>
+
+  <!-- Dynamic code -->
+  <h2>動態程式碼</h2>
+  <div class="row" id="dynamicCandidates"></div>
+  <div class="row" style="margin-top: 12px;" id="dynamicRecent"></div>
+
+  <!-- Cache -->
+  <h2>快取 + Artifact</h2>
+  <div class="grid grid-2">
+    <div class="row" id="cacheFig"></div>
+    <div class="row" id="cacheL1"></div>
+  </div>
+  <div class="row" style="margin-top: 12px;" id="cacheArtifacts"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtKB = (kb) => kb == null ? '—' : (kb >= 1024 ? (kb/1024).toFixed(1) + ' MB' : kb + ' KB');
+const fmtBytes = (b) => b == null ? '—' : (b >= 1048576 ? (b/1048576).toFixed(1) + ' MB' : (b/1024).toFixed(1) + ' KB');
+const fmtDate = (s) => !s ? '—' : String(s).replace('T', ' ').slice(0, 19);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+const chip = (txt, cls) => `<span class="chip ${cls}">${esc(txt)}</span>`;
+const dot = (ok) => `<span class="dot ${ok ? 'ok' : 'err'}"></span>`;
+
+function renderOverview(o) {
+  const card = (lbl, val, sub) =>
+    `<div class="card"><div class="lbl">${lbl}</div><div class="val">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  const byType = Object.entries(o.analyses_by_type || {})
+    .map(([k, v]) => `${esc(k)}:${v}`).join(' · ');
+  $('overview').innerHTML =
+    card('樣本', o.samples, `L2 ready ${o.l2_ready}`) +
+    card('分析總數', o.analyses_total, byType || '—') +
+    card('動態程式碼', o.dynamic_code.total,
+         `完成 ${o.dynamic_code.completed} · 失敗 ${o.dynamic_code.failed}`) +
+    card('工具 (HELIX)', o.tools.active,
+         `active · deprecated ${o.tools.deprecated}`) +
+    card('Artifacts', o.artifacts.count, fmtKB(o.artifacts.total_kb)) +
+    card('進行中分析', o.running, o.stale > 0 ? `⚠ stale ${o.stale}` : '無 stale');
+}
+
+function renderSystem(s) {
+  const e = s.servers.embedding_8081, m = s.servers.multimodal_8080;
+  $('systemServers').innerHTML = `
+    <div class="title">本機 servers</div>
+    <table><tbody>
+      <tr><td>${dot(e)} Embedding (llama.cpp :8081)</td><td class="num">${chip(e ? 'ok' : 'down', e ? 'ok' : 'err')}</td></tr>
+      <tr><td>${dot(m)} Multimodal (llama.cpp :8080)</td><td class="num">${chip(m ? 'ok' : 'down', m ? 'ok' : 'err')}</td></tr>
+    </tbody></table>
+  `;
+  const db = s.db || {};
+  $('systemDb').innerHTML = `
+    <div class="title">DB / 備份 / 磁碟</div>
+    <table><tbody>
+      <tr><td>${dot(s.db_ok)} DuckDB</td><td class="num">${s.db_ok ? chip('ok','ok') : chip('err','err')}</td></tr>
+      <tr><td>samples / history / l2_ready</td><td class="num mono">${db.sample_count}/${db.history_count}/${db.l2_ready_count}</td></tr>
+      <tr><td>stale / running</td><td class="num mono">${db.stale_count}/${db.running_count}</td></tr>
+      <tr><td>備份最後成功</td><td class="num mono">${fmtDate(s.backup && s.backup.last_success_at)}</td></tr>
+      <tr><td>磁碟剩餘</td><td class="num mono">${s.disk_free_gb == null ? '—' : s.disk_free_gb + ' GB'}</td></tr>
+    </tbody></table>
+  `;
+}
+
+function renderHelix(h) {
+  $('helixSummary').innerHTML = `
+    <div class="title">總覽</div>
+    <table><tbody>
+      <tr><td>active / deprecated</td><td class="num mono">${h.total_active}/${h.total_deprecated}</td></tr>
+      <tr><td>熱區工具 (revision ≥ 3)</td><td class="num">${(h.hot_zones||[]).length}</td></tr>
+      <tr><td>進行中穩定化迭代</td><td class="num">${(h.open_stabilizations||[]).length}</td></tr>
+      <tr><td>stale analyses</td><td class="num">${(h.stale_analyses||[]).length}</td></tr>
+      <tr><td>prune 候選</td><td class="num">${(h.prune_candidates||[]).length}</td></tr>
+    </tbody></table>
+    ${h.recommendation ? `<div class="pre" style="margin-top:10px">${esc(h.recommendation)}</div>` : ''}
+  `;
+  const open = h.open_stabilizations || [];
+  $('helixOpen').innerHTML = `
+    <div class="title">進行中迭代</div>` +
+    (open.length === 0 ? `<div class="empty">無進行中迭代</div>` :
+    `<table><thead><tr><th>tool</th><th>started</th><th class="mono">log_id</th></tr></thead><tbody>` +
+    open.map(o => `<tr><td>${esc(o.tool_name)}</td><td class="mono">${fmtDate(o.created_at)}</td><td class="mono">${esc(String(o.log_id).slice(0,8))}…</td></tr>`).join('') +
+    `</tbody></table>`);
+
+  const tools = h.tools || [];
+  $('helixTools').innerHTML = `
+    <div class="title">工具版本帳本（${tools.length}）</div>` +
+    (tools.length === 0 ? `<div class="empty">尚無註冊工具</div>` :
+    `<table><thead><tr><th>tool</th><th>version</th><th>status</th><th class="num">revisions</th><th>created</th><th>note</th></tr></thead><tbody>` +
+    tools.map(t => `<tr>
+      <td class="mono">${esc(t.tool_name)}</td>
+      <td class="mono">${esc(t.version)}</td>
+      <td>${chip(t.status, t.status === 'active' ? 'ok' : 'mut')}</td>
+      <td class="num">${t.revision_count}</td>
+      <td class="mono">${fmtDate(t.created_at)}</td>
+      <td class="trunc">${esc(t.stability_note || '')}</td>
+    </tr>`).join('') + `</tbody></table>`);
+}
+
+function renderDynamic(d) {
+  const cands = d.promotion_candidates || [];
+  $('dynamicCandidates').innerHTML = `
+    <div class="title">畢業候選（同 description 跑過 ≥ 2 次 → 該進 HELIX）</div>` +
+    (cands.length === 0 ? `<div class="empty">尚無重複動態分析</div>` :
+    `<table><thead><tr><th>description</th><th class="num">runs</th><th class="num">completed</th><th>last_run</th><th>sample archive</th></tr></thead><tbody>` +
+    cands.map(c => `<tr>
+      <td class="trunc">${esc(c.description || '(無描述)')}</td>
+      <td class="num"><b>${c.runs}</b></td>
+      <td class="num">${c.completed_runs}</td>
+      <td class="mono">${fmtDate(c.last_run)}</td>
+      <td class="mono trunc">${esc(c.sample_archive || '')}</td>
+    </tr>`).join('') + `</tbody></table>`);
+
+  const recent = d.recent || [];
+  $('dynamicRecent').innerHTML = `
+    <div class="title">最近執行（${recent.length}）</div>` +
+    (recent.length === 0 ? `<div class="empty">無紀錄</div>` :
+    `<table><thead><tr><th>started</th><th>status</th><th>summary</th><th class="num">lines</th><th class="num">figs</th><th>archive</th></tr></thead><tbody>` +
+    recent.map(r => `<tr>
+      <td class="mono">${fmtDate(r.started_at)}</td>
+      <td>${chip(r.status, r.status === 'completed' ? 'ok' : 'err')}</td>
+      <td class="trunc">${esc(r.summary || '')}</td>
+      <td class="num">${r.code_lines ?? '—'}</td>
+      <td class="num">${r.fig_count ?? '—'}</td>
+      <td class="mono trunc">${esc(r.result_path || '')}</td>
+    </tr>`).join('') + `</tbody></table>`);
+}
+
+function renderCache(c) {
+  const fc = c.figure_cache || {};
+  $('cacheFig').innerHTML = `
+    <div class="title">Figure cache（gold/figure_cache/）</div>
+    <table><tbody>
+      <tr><td>存在</td><td class="num">${fc.exists ? chip('yes','ok') : chip('no','mut')}</td></tr>
+      <tr><td>檔數</td><td class="num mono">${fc.total_files ?? '—'}</td></tr>
+      <tr><td>總大小</td><td class="num mono">${fmtBytes(fc.total_bytes)}</td></tr>
+    </tbody></table>
+  `;
+  const l1 = c.l1_cache || {};
+  $('cacheL1').innerHTML = `
+    <div class="title">L1 語意快取</div>
+    <table><tbody>
+      <tr><td>存在</td><td class="num">${l1.exists ? chip('yes','ok') : chip('no','mut')}</td></tr>
+      <tr><td>記錄數</td><td class="num mono">${l1.total_records ?? '—'}</td></tr>
+      <tr><td>最早過期</td><td class="num mono">${fmtDate(l1.earliest_expires)}</td></tr>
+      <tr><td>最晚過期</td><td class="num mono">${fmtDate(l1.latest_expires)}</td></tr>
+    </tbody></table>
+  `;
+  const arts = c.artifacts_by_subtype || [];
+  $('cacheArtifacts').innerHTML = `
+    <div class="title">Artifacts 分佈（按 subtype）</div>` +
+    (arts.length === 0 ? `<div class="empty">無 artifact</div>` :
+    `<table><thead><tr><th>subtype</th><th class="num">count</th><th class="num">總大小</th></tr></thead><tbody>` +
+    arts.map(a => `<tr>
+      <td class="mono">${esc(a.subtype)}</td>
+      <td class="num">${a.count}</td>
+      <td class="num mono">${fmtKB(a.total_kb)}</td>
+    </tr>`).join('') + `</tbody></table>`);
+}
+
+async function refresh() {
+  $('errBanner').innerHTML = '';
+  try {
+    const r = await fetch('/api/dashboard');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    renderOverview(data.overview);
+    renderSystem(data.system);
+    renderHelix(data.helix);
+    renderDynamic(data.dynamic_code);
+    renderCache(data.cache);
+    $('ts').textContent = '更新於 ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    $('errBanner').innerHTML = `<div class="err-banner">載入失敗：${esc(e.message)}</div>`;
+  }
+}
+
+let timer = null;
+function setupAutoRefresh() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if ($('autoRefresh').checked) timer = setInterval(refresh, 30000);
+}
+$('refreshBtn').addEventListener('click', refresh);
+$('autoRefresh').addEventListener('change', setupAutoRefresh);
+
+refresh();
+setupAutoRefresh();
+</script>
+</body>
+</html>
