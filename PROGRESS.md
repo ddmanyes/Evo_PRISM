@@ -50,12 +50,18 @@
 - 重啟 web_app 後 `/dashboard` 正常生效
 - 五個區塊（總覽 / 系統 / HELIX / 動態程式碼 / 快取）全部渲染正常、數字符合預期、30 秒自動更新運作
 
-### 🐛 實測順帶發現的既有 bug（非本次改動引入）
+### 🐛 實測順帶發現的既有 bug → **已修復**
 
-- **歷史記錄的報告頁打不開** —— 從 `/history` 點某筆分析進到 `/results/<analysis_id>` 時出現 **Internal Server Error**
-- 影響範圍：`server/web_app.py::report_page`（line 364 起）讀 `result_path` 渲染 markdown 的流程
-- 可能原因待排查：`result_path` 為相對路徑但程式仍以絕對處理、Google Drive 含中文字的路徑導致 `startswith(BIO_DB_ROOT.resolve())` 沙盒比對失敗、`.md` 內 inline base64 渲染 OOM 等
-- 優先順序：使用者體驗中斷，建議下一步先修這個 bug 再進 Phase 2
+- **原狀**：`/results/<analysis_id>` 對 `dynamic_code` / `l2_convert` 分析回 **500 Internal Server Error**
+- **根因**：`report_page` 對 `Path(result_path).read_text()`——但這兩類的 `result_path` **是目錄**（dynamic_code 的 archive、l2_convert 的 silver 資料夾），對目錄呼叫 `read_text()` → `IsADirectoryError`
+- **修法**（`server/web_app.py`）：
+  - 新增 `_synthesize_archive_markdown(archive_dir)` 把目錄合成成可渲染的 markdown（meta.json + code.py + output/traceback + figures inline base64 + 其他檔案列表）
+  - 新增 `_resolve_result_path()` 把相對路徑以 `BIO_DB_ROOT` 為基底解析（不再依賴 uvicorn CWD）
+  - `report_page` 分流：`is_dir()` → 合成 archive 視圖；`is_file()` → 原 markdown 流程
+- **回歸保護**：`tests/test_report_page.py`（7 測試：helper 單元 + 四種 analysis_type HTTP 整合「不再 500」）
+- **共用 fixture**：`tests/conftest.py` 加 session-scoped `web_app_client`（解 `StreamableHTTPSessionManager.run()` per-instance 一次限制 → 多個測試共用同一 TestClient）
+- **commit**：`197479c`
+- **未一併處理**：`bulk_eda` / `eda_report` 舊紀錄的 `result_path` 指向 `/Volumes/NO NAME/...`（專案搬到 Google Drive 前的絕對路徑）→ 現會以 404 回應並附「可能為舊絕對路徑，專案已搬遷」訊息。徹底修復需走遷移腳本把 `analysis_history.result_path` 批次改為相對路徑，**保留為下一個工作項**。
 
 ### 面板本身待補（UX 層，非阻塞）
 
