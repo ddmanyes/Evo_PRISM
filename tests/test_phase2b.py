@@ -7,7 +7,6 @@ so tests run fast without requiring the full 416 MB CRC dataset.
 
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 

@@ -73,7 +73,7 @@ def rebuild_hnsw(
             ).fetchone()[0]
 
             if row_count == 0 and not force:
-                print(f"[rebuild_hnsw] Skipped — memory_recent is empty (use --force to override)")
+                print("[rebuild_hnsw] Skipped — memory_recent is empty (use --force to override)")
                 return {"status": "skipped", "reason": "empty table", "row_count": 0}
 
             print(f"[rebuild_hnsw] Rebuilding HNSW index ({row_count:,} rows)...")

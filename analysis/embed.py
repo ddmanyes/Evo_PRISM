@@ -170,7 +170,7 @@ if __name__ == "__main__":
         for t, v in zip(texts, vecs):
             print(f"  {t[:40]!r:42s} → dim={len(v)}, norm≈{sum(x**2 for x in v)**0.5:.3f}")
     else:
-        print(f"\n[embed] Server not available. Start with:")
-        print(f"  ~/llama.cpp/build/bin/llama-server \\")
-        print(f"    -m ~/llama.cpp/models/bge-m3-Q8_0.gguf \\")
-        print(f"    --embedding --port 8081 --ctx-size 8192")
+        print("\n[embed] Server not available. Start with:")
+        print("  ~/llama.cpp/build/bin/llama-server \\")
+        print("    -m ~/llama.cpp/models/bge-m3-Q8_0.gguf \\")
+        print("    --embedding --port 8081 --ctx-size 8192")

@@ -46,7 +46,6 @@ def pdf_to_markdown(pdf_path: Path, md_path: Path):
     cleaned = clean_text(raw)
 
     # Add a header banner
-    stem = pdf_path.stem
     header = f"> **Source PDF:** `references/pdfs/{pdf_path.name}`\n" \
              f"> Extracted with PyMuPDF. Equations and figures may be incomplete.\n\n---\n\n"
 

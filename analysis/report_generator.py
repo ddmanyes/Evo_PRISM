@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Optional
 
 import duckdb
-import pandas as pd
 
 import sys
 

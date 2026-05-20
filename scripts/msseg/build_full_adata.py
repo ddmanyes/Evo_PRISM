@@ -11,9 +11,6 @@ import logging
 from pathlib import Path
 
 import anndata as ad
-import numpy as np
-import pandas as pd
-import yaml
 
 
 def _find_root(start: Path) -> Path:

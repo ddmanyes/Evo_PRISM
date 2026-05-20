@@ -40,6 +40,7 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "ruff>=0.6.0",
     "jupyterlab>=4.0.0",
     "ipykernel>=6.0.0",
 ]
@@ -79,8 +80,39 @@ python_files = "test_*.py"
 python_functions = "test_*"
 asyncio_mode = "auto"
 
+# ── Coverage 基線（2026-05-20：整體 55%）──────────────────────────────────────
+# 不在預設 pytest 跑（會拖慢套件）；量基線時顯式加旗標：
+#   pytest --cov=analysis --cov=server --cov=config --cov=scheduler --cov-report=term-missing
+# 已知盲區（待補測試）：server/agent.py 33%、bulk_eda/pathway_scoring/multiomics 等 0%
+[tool.coverage.run]
+source = ["analysis", "server", "config", "scheduler"]
+omit = ["*/__pycache__/*", "*/candidates/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
 [dependency-groups]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "ruff>=0.6.0",
 ]
+
+# ── Ruff（lint + format）─────────────────────────────────────────────────────
+# 保守起步：只用預設規則集（E4/E7/E9/F：致命錯誤 + 明顯 bug），不開風格嚴選，
+# 避免 25k 行首次掃描被淹沒。日後可漸進加開。
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+# 參考用 / 第三方 / 執行期產物：不納入 lint（results/ 已由 .gitignore 排除）
+extend-exclude = [
+    "analysis_msseg", "backend_msseg", "msseg_docs",
+    "data_ana", "results_ana", "crc_visium_data",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"config/__init__.py" = ["F403"]            # 刻意 re-export settings（from .settings import *）
+"server/web_app.py" = ["E402"]             # sys.path 注入 + load_dotenv 後才 import
+"analysis/artifact_registry.py" = ["E402"] # 同上：先載 vss 擴充再 import
+"tests/*" = ["E402"]                        # 測試常在中段重組 import（mock 邊界）

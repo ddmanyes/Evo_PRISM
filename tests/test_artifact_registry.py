@@ -725,7 +725,6 @@ class TestMatryoshkaEmbedding:
         from analysis.artifact_registry import register_artifact, search_artifacts
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
         # Ensure env default is false
-        import analysis.artifact_registry as ar
         monkeypatch.setattr("config.settings.MATRYOSHKA_ENABLED", False)
 
         aid = _insert_analysis(eng_con)
