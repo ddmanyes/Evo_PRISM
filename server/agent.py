@@ -285,10 +285,93 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sample_id": {"type": "string", "description": "樣本集 ID，例如 Kallisto_v1"},
-                "requested_by": {"type": "string", "description": "請求者（預設 agent）", "default": "agent"},
+                "sample_id": {"type": "string", "description": "樣本集 ID,例如 Kallisto_v1"},
+                "requested_by": {"type": "string", "description": "請求者(預設 agent)", "default": "agent"},
             },
             "required": ["sample_id"],
+        },
+    },
+    {
+        "name": "bio_run_deg",
+        "description": (
+            "Bulk RNA-seq 差異表達分析(DESeq2 via omicverse.pyDEG)+ 火山圖。"
+            "對多組對照逐一跑 DEG,每組產出 DEG_<a>_vs_<b>.csv + Volcano_<a>_vs_<b>.png,"
+            "彙整報告寫入 analysis_history(analysis_type=bulk_deg)。"
+            "**對齊 ddmanyes/bulk-rnaseq-pipeline 的 DESeq2 流程**。先 bio_get_playbook(bulk_rnaseq)。"
+            "耗時依樣本數而定(84 樣本 × 1 對照 ≈ 1–3 分鐘)。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sample_id":      {"type": "string", "description": "已登記的樣本 ID"},
+                "counts_path":    {"type": "string", "description": "gene × sample counts CSV(如 bulk_rna_data/.../deseq2_counts.csv)"},
+                "coldata_path":   {"type": "string", "description": "sample × group 設計表(TSV/CSV,需 'group' 欄)"},
+                "comparisons":    {
+                    "type": "array",
+                    "description": "對照組清單,每筆 [treat, ctrl] 兩個 group 名,如 [['pw24hr','ctrl'],['pw48hr','ctrl']]",
+                    "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
+                    "minItems": 1,
+                },
+                "method":         {"type": "string", "description": "DEseq2 / ttest / wilcox", "default": "DEseq2"},
+                "fc_threshold":   {"type": "number", "description": "|log2FC| 顯著閾值", "default": 1.0},
+                "pval_threshold": {"type": "number", "description": "qvalue 顯著閾值", "default": 0.05},
+                "requested_by":   {"type": "string", "default": "agent"},
+            },
+            "required": ["sample_id", "counts_path", "coldata_path", "comparisons"],
+        },
+    },
+    {
+        "name": "bio_run_enrichment",
+        "description": (
+            "對 DEG 表跑 ORA 富集分析(gseapy.enrichr 線上 API)。"
+            "up/down 兩方向 × N 個 library(預設 GO_BP / KEGG / Reactome)各自命中通路 + dot plot。"
+            "寫入 analysis_history(analysis_type=bulk_enrichment)。"
+            "**需網路連線 Enrichr API**;deg_table_path 需指向 bio_run_deg 產出的 CSV。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sample_id":      {"type": "string"},
+                "deg_table_path": {"type": "string", "description": "bio_run_deg 產出的 DEG_<a>_vs_<b>.csv 絕對或相對路徑"},
+                "libraries":      {
+                    "type": "array",
+                    "description": "Enrichr gene set library 名稱清單;省略則用預設 GO/KEGG/Reactome",
+                    "items": {"type": "string"},
+                },
+                "organism":       {"type": "string", "default": "human"},
+                "fc_threshold":   {"type": "number", "default": 1.0},
+                "pval_threshold": {"type": "number", "default": 0.05},
+                "top_term":       {"type": "integer", "description": "dot plot 顯示前 N 條 term", "default": 10},
+                "requested_by":   {"type": "string", "default": "agent"},
+            },
+            "required": ["sample_id", "deg_table_path"],
+        },
+    },
+    {
+        "name": "bio_run_heatmaps",
+        "description": (
+            "為 Bulk RNA-seq 產出兩張熱圖:(1) 顯著基因熱圖(union of DEG 顯著基因),"
+            "(2) Top N 變異基因熱圖(預設 top 50)。皆 z-score normalized,含階層聚類(sns.clustermap)。"
+            "寫入 analysis_history(analysis_type=bulk_heatmap)。"
+            "對齊 ddmanyes/bulk-rnaseq-pipeline 的 Heatmap_Significant_Genes / Heatmap_Top50_Variable_Genes。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sample_id":      {"type": "string"},
+                "counts_path":    {"type": "string", "description": "gene × sample counts CSV"},
+                "deg_tables":     {
+                    "type": "array",
+                    "description": "一張或多張 DEG CSV 路徑;會 union 後抽顯著基因",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+                "top_n":          {"type": "integer", "default": 50},
+                "fc_threshold":   {"type": "number", "default": 1.0},
+                "pval_threshold": {"type": "number", "default": 0.05},
+                "requested_by":   {"type": "string", "default": "agent"},
+            },
+            "required": ["sample_id", "counts_path", "deg_tables"],
         },
     },
     {
@@ -1226,6 +1309,137 @@ def _exec_bio_run_mcseg_qc(args: dict) -> str:
         return f"MCseg QC 執行失敗：{e}"
 
 
+def _backfill_tool_id(tool_name: str, analysis_id: Optional[str]) -> None:
+    """為 bulk_deg / enrichment / heatmap 等工具回填 analysis_history.tool_id（HELIX 追蹤）。"""
+    if not analysis_id:
+        return
+    try:
+        import duckdb
+        from analysis.tool_registry import get_active_tool_id
+        from config.db_utils import safe_write
+        from config.settings import DUCKDB_PATH
+        with duckdb.connect(str(DUCKDB_PATH)) as _con:
+            tid = get_active_tool_id(_con, tool_name)
+            if tid:
+                safe_write(
+                    _con,
+                    "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
+                    [tid, analysis_id],
+                )
+    except Exception as exc:
+        logger.warning("%s: tool_id backfill failed: %s", tool_name, exc)
+
+
+def _exec_bio_run_deg(args: dict) -> str:
+    """DEG 多組對照（DESeq2 via omicverse.pyDEG）+ 火山圖。"""
+    from pathlib import Path as _Path
+    from analysis.bulk_deg import run_deg_analysis
+    sample_id = args["sample_id"]
+    counts_path = _Path(args["counts_path"])
+    coldata_path = _Path(args["coldata_path"])
+    raw_comparisons = args["comparisons"]
+    # comparisons 接受 [["a","b"], ...] 或 [{"group_a":"a","group_b":"b"}, ...]
+    comparisons: list[tuple[str, str]] = []
+    for c in raw_comparisons:
+        if isinstance(c, dict):
+            comparisons.append((c["group_a"], c["group_b"]))
+        else:
+            comparisons.append((c[0], c[1]))
+    try:
+        analysis_id, report_path = run_deg_analysis(
+            sample_id,
+            counts_path=counts_path,
+            coldata_path=coldata_path,
+            comparisons=comparisons,
+            method=args.get("method", "DEseq2"),
+            fc_threshold=float(args.get("fc_threshold", 1.0)),
+            pval_threshold=float(args.get("pval_threshold", 0.05)),
+            requested_by=args.get("requested_by", "agent"),
+        )
+        _backfill_tool_id("bio_run_deg", analysis_id)
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"DEG 分析完成。\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except FileNotFoundError as e:
+        return f"DEG 無法執行：{e}"
+    except Exception as e:
+        return f"DEG 執行失敗：{e}"
+
+
+def _exec_bio_run_enrichment(args: dict) -> str:
+    """ORA 富集分析（gseapy.enrichr）對 DEG 表 up/down × N library。"""
+    from pathlib import Path as _Path
+    from analysis.enrichment import run_ora, DEFAULT_LIBRARIES
+    sample_id = args["sample_id"]
+    deg_path = _Path(args["deg_table_path"])
+    libraries = tuple(args.get("libraries") or DEFAULT_LIBRARIES)
+    try:
+        analysis_id, report_path = run_ora(
+            sample_id,
+            deg_table_path=deg_path,
+            libraries=libraries,
+            organism=args.get("organism", "human"),
+            fc_threshold=float(args.get("fc_threshold", 1.0)),
+            pval_threshold=float(args.get("pval_threshold", 0.05)),
+            top_term=int(args.get("top_term", 10)),
+            requested_by=args.get("requested_by", "agent"),
+        )
+        _backfill_tool_id("bio_run_enrichment", analysis_id)
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"富集分析完成。\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except FileNotFoundError as e:
+        return f"富集無法執行：{e}"
+    except Exception as e:
+        return f"富集執行失敗：{e}"
+
+
+def _exec_bio_run_heatmaps(args: dict) -> str:
+    """產出顯著基因熱圖 + top variable heatmap。"""
+    from pathlib import Path as _Path
+    from analysis.bulk_heatmap import run_bulk_heatmaps
+    sample_id = args["sample_id"]
+    counts_path = _Path(args["counts_path"])
+    deg_tables = [_Path(p) for p in args["deg_tables"]]
+    try:
+        analysis_id, report_path = run_bulk_heatmaps(
+            sample_id,
+            counts_path=counts_path,
+            deg_tables=deg_tables,
+            top_n=int(args.get("top_n", 50)),
+            fc_threshold=float(args.get("fc_threshold", 1.0)),
+            pval_threshold=float(args.get("pval_threshold", 0.05)),
+            requested_by=args.get("requested_by", "agent"),
+        )
+        _backfill_tool_id("bio_run_heatmaps", analysis_id)
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"Heatmap 完成。\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except Exception as e:
+        return f"Heatmap 執行失敗：{e}"
+
+
 def _archive_history_insert(
     *,
     analysis_id: str,
@@ -1523,6 +1737,9 @@ _TOOL_HANDLERS = {
     "bio_tool_health":          _exec_bio_tool_health,
     "bio_run_spatial_eda": _exec_bio_run_spatial_eda,
     "bio_run_bulk_eda":    _exec_bio_run_bulk_eda,
+    "bio_run_deg":         _exec_bio_run_deg,
+    "bio_run_enrichment":  _exec_bio_run_enrichment,
+    "bio_run_heatmaps":    _exec_bio_run_heatmaps,
     "bio_run_mcseg_qc":    _exec_bio_run_mcseg_qc,
     "bio_register_sample": _exec_bio_register_sample,
     "bio_execute_code": _exec_bio_execute_code,

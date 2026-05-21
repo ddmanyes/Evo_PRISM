@@ -101,6 +101,9 @@ _RATE_LIMITED_TOOLS = frozenset(
         # 分析執行工具：寫 L1 cache（打 embedding server）+ 重量級運算
         "bio_run_spatial_eda",
         "bio_run_bulk_eda",
+        "bio_run_deg",
+        "bio_run_enrichment",
+        "bio_run_heatmaps",
         # 沙盒執行：CPU/I/O 重量級
         "bio_execute_code",
     }
@@ -601,6 +604,73 @@ def _build_all_tools() -> list[types.Tool]:
                     },
                 },
                 "required": ["sample_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_deg",
+            description=(
+                "Bulk RNA-seq DEG（DESeq2 via omicverse.pyDEG）+ 火山圖。對多組對照逐一跑，"
+                "每組產出 DEG CSV + Volcano PNG，彙整報告寫 analysis_history(bulk_deg)。"
+                "對齊 ddmanyes/bulk-rnaseq-pipeline。rate-limited。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id":      {"type": "string"},
+                    "counts_path":    {"type": "string"},
+                    "coldata_path":   {"type": "string"},
+                    "comparisons": {
+                        "type": "array",
+                        "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
+                        "minItems": 1,
+                    },
+                    "method":         {"type": "string", "default": "DEseq2"},
+                    "fc_threshold":   {"type": "number", "default": 1.0},
+                    "pval_threshold": {"type": "number", "default": 0.05},
+                    "requested_by":   {"type": "string", "default": "mcp_client"},
+                },
+                "required": ["sample_id", "counts_path", "coldata_path", "comparisons"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_enrichment",
+            description=(
+                "對 DEG 表跑 ORA（gseapy.enrichr 線上）。up/down × N library(GO/KEGG/Reactome)，"
+                "輸出 CSV + dot plot，寫 analysis_history(bulk_enrichment)。需網路。rate-limited。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id":      {"type": "string"},
+                    "deg_table_path": {"type": "string"},
+                    "libraries":      {"type": "array", "items": {"type": "string"}},
+                    "organism":       {"type": "string", "default": "human"},
+                    "fc_threshold":   {"type": "number", "default": 1.0},
+                    "pval_threshold": {"type": "number", "default": 0.05},
+                    "top_term":       {"type": "integer", "default": 10},
+                    "requested_by":   {"type": "string", "default": "mcp_client"},
+                },
+                "required": ["sample_id", "deg_table_path"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_heatmaps",
+            description=(
+                "Bulk RNA 兩張熱圖：union DEG 顯著基因 + top N 變異基因，皆 z-score + sns.clustermap。"
+                "寫 analysis_history(bulk_heatmap)。rate-limited。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id":      {"type": "string"},
+                    "counts_path":    {"type": "string"},
+                    "deg_tables":     {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "top_n":          {"type": "integer", "default": 50},
+                    "fc_threshold":   {"type": "number", "default": 1.0},
+                    "pval_threshold": {"type": "number", "default": 0.05},
+                    "requested_by":   {"type": "string", "default": "mcp_client"},
+                },
+                "required": ["sample_id", "counts_path", "deg_tables"],
             },
         ),
         types.Tool(
@@ -1159,6 +1229,21 @@ async def _handle_bio_run_bulk_eda(args: dict) -> str:
     return await asyncio.to_thread(_exec_bio_run_bulk_eda, args)
 
 
+async def _handle_bio_run_deg(args: dict) -> str:
+    from server.agent import _exec_bio_run_deg
+    return await asyncio.to_thread(_exec_bio_run_deg, args)
+
+
+async def _handle_bio_run_enrichment(args: dict) -> str:
+    from server.agent import _exec_bio_run_enrichment
+    return await asyncio.to_thread(_exec_bio_run_enrichment, args)
+
+
+async def _handle_bio_run_heatmaps(args: dict) -> str:
+    from server.agent import _exec_bio_run_heatmaps
+    return await asyncio.to_thread(_exec_bio_run_heatmaps, args)
+
+
 async def _handle_bio_execute_code(args: dict) -> str:
     from server.agent import _exec_bio_execute_code
     # timeout clamp（防 MCP 客戶端傳大數）
@@ -1265,6 +1350,9 @@ _HANDLERS = {
     "bio_check_l2_sufficiency": _handle_bio_check_l2_sufficiency,
     "bio_run_spatial_eda": _handle_bio_run_spatial_eda,
     "bio_run_bulk_eda": _handle_bio_run_bulk_eda,
+    "bio_run_deg":         _handle_bio_run_deg,
+    "bio_run_enrichment":  _handle_bio_run_enrichment,
+    "bio_run_heatmaps":    _handle_bio_run_heatmaps,
     "bio_execute_code": _handle_bio_execute_code,
     "bio_find_tool": _handle_bio_find_tool,
     "bio_tool_health": _handle_bio_tool_health,
