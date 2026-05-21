@@ -7,10 +7,41 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ 控制面板 Phase 2（手動操作端點）+ 控制面板 Phase 3（動態程式碼畢業助手）+ 專案工具箱建置與 Playbook 架構審查 + Fast-Path 路由與大模型跳過機制 + Bulk RNA-seq DEG/Volcano/Heatmap/ORA 原生 MCP tools（對齊 ddmanyes/bulk-rnaseq-pipeline） + GitNexus 借鏡評估 + bio_impact 影響分析（blast-radius + confidence tier） + **tool_id 回填集中化（HELIX §7.3 覆蓋 100%）**
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ 控制面板 Phase 2（手動操作端點）+ 控制面板 Phase 3（動態程式碼畢業助手）+ 專案工具箱建置與 Playbook 架喚審查 + Fast-Path 路由與大模型跳過機制 + Bulk RNA-seq DEG/Volcano/Heatmap/ORA 原生 MCP tools（對齊 ddmanyes/bulk-rnaseq-pipeline） + GitNexus 借鏡評估 + bio_impact 影響分析（blast-radius + confidence tier） + tool_id 回填集中化（HELIX §7.3 覆蓋 100%） + **mcp_tool_metrics 實體表與 MCP Server 插樁監控（P1-D，覆蓋率 100%）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-21
-**commit**：9bb01bc（feat(dashboard)：Phase 3 — 動態程式碼畢業助手 候選門檻 + 骨架生成）
+**commit**：91b756e（feat(metrics)：P1-D MCP metrics fact table + server instrumentation & v_tool_perf_30d view）
+
+---
+
+## ✅ 2026-05-21 Session F：MCP Metrics 表升級與插樁監控 — P1-D 落地（commit `91b756e`）
+
+**動機**：高頻指標寫入 `mcp_tool_metrics` 需要完整儲存執行時長、呼叫者、狀態與 Error Class，以支援效能分析唯讀視圖 `v_tool_perf_30d` 的聚合計算。此功能維持 L1 cache 的高吞吐直接寫入策略（不走 CHECKPOINT）。
+
+### 資料庫遷移 (Migration v21)
+
+- 建立遷移腳本 `scripts/22_migrate_schema_v21_mcp_metrics.py`：
+  - 若舊表存在，採 `DROP TABLE CASCADE` 重建，並重建複合索引 `idx_mcp_metrics_tool_time(tool_name, recorded_at)`。
+  - 建立效能分析唯讀視圖 `v_tool_perf_30d`，聚合 30 天內 tools 執行的平均耗時、P95 耗時、錯誤率、Rate limit 統計。
+  - 註冊 schema migration version 為 21。
+
+### Server 基礎結構與插樁修改
+
+- 升級 `server/bio_memory_server.py`：
+  - 更新 `_ensure_metrics_table()` 與 `_record_metric()`，新增欄位 `tool_id`, `error_class`, `requested_by`。
+  - 呼叫 `_record_metric` 時，藉由 `get_active_tool_id(con, tool_name)` 自動在寫入時填充 tools 表軟外鍵對應之 `tool_id`。
+  - 在 `call_tool()` 的四類回傳路徑（`ok` / `user_error` / `system_error` / `rate_limited`）加裝指標監控，正確自 `arguments` 提取 `requested_by` 並捕獲 exact `error_class` 名稱。
+
+### 測試與驗證
+
+- 擴充 `tests/test_phase10.py` 的 `TestMetricsRecording`：
+  - 新增對正常寫入時 `requested_by` 的斷言。
+  - 新增對錯誤路徑時 `error_class` (如 `ValueError`/`KeyError`/`TypeError` 等異常字串) 寫入之斷言。
+- 擴充 `tests/test_star_schema.py` 新增 `TestToolPerfView`：
+  - 驗證 `v_tool_perf_30d` 的 DDL 與資料聚合、30天內時間過濾。
+- 修正本機 `mmproj` 視覺模型檔路徑：
+  - 專案檔案中（包含 `CLAUDE.md`, `docs/launchd_multimodal_server.plist.example`, `README.md`, `SETUP.md`, `start_bioagent.sh`）的 `mmproj-BF16.gguf` 統一替換為實體路徑 `/Users/zhanqiru/mmproj-F16.gguf`。
+- **測試結果**：在虛擬環境下跑 pytest，**562 個測試（559 passed, 3 skipped）全數通過**，零 regression。
 
 ---
 

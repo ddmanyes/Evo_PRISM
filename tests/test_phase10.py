@@ -517,3 +517,51 @@ class TestMetricsRecording:
                 ["no_such_tool"],
             ).fetchall()]
         assert "user_error" in statuses
+
+    def test_metric_records_requested_by_and_error_class(self, tmp_path, monkeypatch):
+        import duckdb
+        db = _setup_e2e_db(tmp_path)
+        _patch_db_path(monkeypatch, db)
+        import server.bio_memory_server as bms
+        bms._METRICS_SCHEMA_READY = False
+        from server.bio_memory_server import call_tool
+        
+        # 1. 正常呼叫，傳入 requested_by
+        _run_async(call_tool("bio_history_check", {
+            "sample_id": "e2e_sample",
+            "analysis_type": "spatial_eda",
+            "requested_by": "custom_agent"
+        }))
+        
+        # 2. 參數錯誤，觸發 ValueError/KeyError/TypeError，傳入 requested_by
+        _run_async(call_tool("bio_history_check", {
+            "requested_by": "error_agent"
+        }))
+
+        with duckdb.connect(str(db), read_only=True) as con:
+            # 驗證 custom_agent 寫入
+            row_ok = con.execute(
+                "SELECT tool_name, status, requested_by, error_class FROM mcp_tool_metrics "
+                "WHERE requested_by = 'custom_agent' "
+                "ORDER BY recorded_at DESC LIMIT 1"
+            ).fetchone()
+            
+            # 驗證 error_agent 寫入
+            row_err = con.execute(
+                "SELECT tool_name, status, requested_by, error_class FROM mcp_tool_metrics "
+                "WHERE requested_by = 'error_agent' "
+                "ORDER BY recorded_at DESC LIMIT 1"
+            ).fetchone()
+
+        assert row_ok is not None
+        assert row_ok[0] == "bio_history_check"
+        assert row_ok[1] == "ok"
+        assert row_ok[2] == "custom_agent"
+        assert row_ok[3] is None
+
+        assert row_err is not None
+        assert row_err[0] == "bio_history_check"
+        assert row_err[1] == "user_error"
+        assert row_err[2] == "error_agent"
+        assert row_err[3] in ("KeyError", "ValueError", "TypeError")
+

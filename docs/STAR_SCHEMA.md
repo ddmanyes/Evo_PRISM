@@ -1,8 +1,8 @@
 # Star Schema Views (P1-C)
 
-**Migration**: v19 ([scripts/20_migrate_schema_v19.py](../scripts/20_migrate_schema_v19.py))
-**Tests**: [tests/test_star_schema.py](../tests/test_star_schema.py) — 10 passed
-**Status**: 2 views shipped; `v_tool_perf_30d` deferred to P1-D
+**Migration**: v19 ([scripts/20_migrate_schema_v19.py](../scripts/20_migrate_schema_v19.py)) & v21 ([scripts/22_migrate_schema_v21_mcp_metrics.py](../scripts/22_migrate_schema_v21_mcp_metrics.py))
+**Tests**: [tests/test_star_schema.py](../tests/test_star_schema.py) — 13 passed
+**Status**: 3 views shipped; fully implemented (P1-D completed)
 
 ---
 
@@ -132,21 +132,44 @@ GROUP  BY signal;
 
 ---
 
-## Deferred: `v_tool_perf_30d`
+## View 3 — `v_tool_perf_30d`
 
-Original DB114 review proposed this third view (call count / p95 latency / error rate per tool per 30-day window). It requires an `mcp_tool_metrics` fact table that is **not yet in the schema**.
+**Source**: `mcp_tool_metrics` (Fact)
+**Grain**: one row per `tool_name`
+**Use cases**:
 
-Why we did not work around it:
+- "Which MCP tools are slowest on average or have the highest P95 latency?"
+- "What is the error rate for each tool over the last 30 days?"
+- "How many rate limit rejections happened on a specific tool?"
 
-- `analysis_history` records only full analysis runs, not query-class MCP calls (`bio_artifact_search`, `bio_history_lookup`, `bio_tool_health`…). About 80% of MCP traffic would be invisible.
-- `analysis_history.status='stale'` is not the same as a real failure, so error-rate would be biased.
+### Columns
 
-See **P1-D** in [PROGRESS.md](../PROGRESS.md):
+| Column | Type | Note |
+|---|---|---|
+| `tool_name` | VARCHAR | name of the MCP tool |
+| `n_calls` | BIGINT | total calls recorded for this tool |
+| `avg_duration_ms` | DOUBLE | average call duration |
+| `p95_duration_ms` | DOUBLE | P95 call duration (`quantile_cont(duration_ms, 0.95)`) |
+| `error_rate` | DOUBLE | percentage of calls with status != 'ok' |
+| `n_rate_limited` | BIGINT | total calls rejected due to rate limits |
 
-1. Migration v20 — `mcp_tool_metrics(metric_id, tool_name, tool_id, called_at, duration_ms, status, error_class, requested_by)`
-2. `server/bio_memory_server.py::call_tool()` instrumentation wrapper
-3. Accumulate ≥ 1 week of real calls
-4. Then build `v_tool_perf_30d` as a follow-up migration
+**Filter**: `WHERE recorded_at >= now() - INTERVAL 30 DAY`
+
+### Example queries
+
+```sql
+-- Top 5 slowest tools by P95 latency in the last 30 days
+SELECT tool_name, n_calls, avg_duration_ms, p95_duration_ms
+FROM   v_tool_perf_30d
+ORDER  BY p95_duration_ms DESC
+LIMIT  5;
+
+-- Tools with error rate exceeding 10%
+SELECT tool_name, n_calls, error_rate
+FROM   v_tool_perf_30d
+WHERE  error_rate > 10.0
+ORDER  BY error_rate DESC;
+```
 
 ---
 
@@ -161,16 +184,17 @@ The view is for **ad-hoc SQL / future dashboards**, not a drop-in replacement. B
 ## Migration & verification
 
 ```bash
-# Apply
+# Apply v19 and v21
 PYTHONPATH=. .venv/bin/python scripts/20_migrate_schema_v19.py
+PYTHONPATH=. .venv/bin/python scripts/22_migrate_schema_v21_mcp_metrics.py
 
 # Verify
 PYTHONPATH=. .venv/bin/python -c "
 import duckdb
 con = duckdb.connect('bio_memory.duckdb', read_only=True)
-con.execute('LOAD vss')
-print(con.execute('SELECT COUNT(*) FROM v_analysis_throughput_by_sample_type').fetchone())
-print(con.execute('SELECT COUNT(*) FROM v_tool_stability_signal').fetchone())
+print('throughput views:', con.execute('SELECT COUNT(*) FROM v_analysis_throughput_by_sample_type').fetchone())
+print('stability signal views:', con.execute('SELECT COUNT(*) FROM v_tool_stability_signal').fetchone())
+print('tool perf views:', con.execute('SELECT COUNT(*) FROM v_tool_perf_30d').fetchone())
 "
 
 # Test

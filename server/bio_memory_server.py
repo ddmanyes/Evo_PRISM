@@ -141,8 +141,11 @@ def _ensure_metrics_table() -> None:
             CREATE TABLE IF NOT EXISTS mcp_tool_metrics (
                 metric_id    UUID    PRIMARY KEY DEFAULT uuid(),
                 tool_name    VARCHAR NOT NULL,
+                tool_id      UUID,
                 duration_ms  INTEGER NOT NULL,
                 status       VARCHAR NOT NULL,  -- ok | user_error | system_error | rate_limited
+                error_class  VARCHAR,
+                requested_by VARCHAR NOT NULL DEFAULT 'mcp_client',
                 recorded_at  TIMESTAMP NOT NULL DEFAULT now()
             )
             """
@@ -154,17 +157,36 @@ def _ensure_metrics_table() -> None:
     _METRICS_SCHEMA_READY = True
 
 
-def _record_metric(tool_name: str, duration_ms: int, status: str) -> None:
+def _record_metric(
+    tool_name: str,
+    duration_ms: int,
+    status: str,
+    error_class: str | None = None,
+    requested_by: str | None = None,
+) -> None:
     """Best-effort metric write; never raise to caller."""
     try:
         _ensure_metrics_table()
         import duckdb
         from config.settings import DUCKDB_PATH
+        from analysis.tool_registry import get_active_tool_id
+
+        final_req_by = requested_by or "mcp_client"
 
         with duckdb.connect(str(DUCKDB_PATH)) as con:
+            tool_id = None
+            try:
+                tool_id = get_active_tool_id(con, tool_name)
+            except Exception:
+                pass
+
             con.execute(
-                "INSERT INTO mcp_tool_metrics (tool_name, duration_ms, status) VALUES (?, ?, ?)",
-                [tool_name, int(duration_ms), status],
+                """
+                INSERT INTO mcp_tool_metrics (
+                    tool_name, tool_id, duration_ms, status, error_class, requested_by
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [tool_name, tool_id, int(duration_ms), status, error_class, final_req_by],
             )
     except Exception as exc:  # pragma: no cover
         logger.debug("metric write failed (%s): %s", tool_name, exc)
@@ -1389,14 +1411,20 @@ _HANDLERS = {
 async def call_tool(
     name: str, arguments: dict
 ) -> list[types.TextContent | types.ImageContent]:
+    requested_by = None
+    if isinstance(arguments, dict):
+        requested_by = arguments.get("requested_by")
+    if not requested_by:
+        requested_by = "mcp_client"
+
     handler = _HANDLERS.get(name)
     if handler is None:
-        _record_metric(name, 0, "user_error")
+        _record_metric(name, 0, "user_error", requested_by=requested_by)
         return [types.TextContent(type="text", text=f"[ERROR] 未知工具：{name!r}")]
 
     # Dangerous tool gate：即使 handler 存在，未開 env flag 也拒絕（defense in depth）
     if name in _DANGEROUS_TOOLS and not _dangerous_tools_enabled():
-        _record_metric(name, 0, "user_error")
+        _record_metric(name, 0, "user_error", requested_by=requested_by)
         logger.warning("Dangerous tool %r called but MCP_ENABLE_DANGEROUS_TOOLS not set", name)
         return [types.TextContent(
             type="text",
@@ -1409,7 +1437,7 @@ async def call_tool(
     # Rate limit gate（僅針對打 embedding server 的工具）
     if name in _RATE_LIMITED_TOOLS and not _rate_limit_check(f"tool:{name}"):
         logger.warning("Rate limit exceeded for tool %r", name)
-        _record_metric(name, 0, "rate_limited")
+        _record_metric(name, 0, "rate_limited", error_class="RateLimitExceeded", requested_by=requested_by)
         return [
             types.TextContent(
                 type="text",
@@ -1425,18 +1453,18 @@ async def call_tool(
     try:
         result = await handler(arguments)
     except RateLimitExceeded as exc:
-        _record_metric(name, int((time.monotonic() - t0) * 1000), "rate_limited")
+        _record_metric(name, int((time.monotonic() - t0) * 1000), "rate_limited", error_class="RateLimitExceeded", requested_by=requested_by)
         logger.warning("Tool %r rate limited: %s", name, exc)
         return [types.TextContent(type="text", text=f"[ERROR] {name}: {exc}")]
     except (ValueError, KeyError, TypeError) as exc:
-        _record_metric(name, int((time.monotonic() - t0) * 1000), "user_error")
+        _record_metric(name, int((time.monotonic() - t0) * 1000), "user_error", error_class=exc.__class__.__name__, requested_by=requested_by)
         # 使用者錯誤：參數驗證失敗、缺欄位、型別錯
         logger.info("Tool %r user error: %s", name, exc)
         return [
             types.TextContent(type="text", text=f"[ERROR] {name} 參數錯誤：{exc}")
         ]
     except Exception as exc:
-        _record_metric(name, int((time.monotonic() - t0) * 1000), "system_error")
+        _record_metric(name, int((time.monotonic() - t0) * 1000), "system_error", error_class=exc.__class__.__name__, requested_by=requested_by)
         corr_id = uuid.uuid4().hex[:8]
         logger.exception("Tool %r system error [corr=%s]: %s", name, corr_id, exc)
         return [
@@ -1448,7 +1476,7 @@ async def call_tool(
                 ),
             )
         ]
-    _record_metric(name, int((time.monotonic() - t0) * 1000), "ok")
+    _record_metric(name, int((time.monotonic() - t0) * 1000), "ok", requested_by=requested_by)
     # 圖片類工具回傳 content block list（如 bio_get_figure 的 ImageContent）→ 直接送出
     if isinstance(result, list):
         return list(result)  # type: ignore[return-value]
