@@ -35,7 +35,7 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.db_utils import safe_write
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH
+from config.settings import DUCKDB_PATH
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 
