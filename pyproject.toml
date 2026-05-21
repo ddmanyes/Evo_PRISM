@@ -34,6 +34,9 @@ dependencies = [
     "uvicorn>=0.47.0",
     "mistune>=3.2.1",
     "radon>=6.0.1",
+    "omicverse",
+    "gseapy",
+    "adjusttext",
 ]
 
 [project.optional-dependencies]
