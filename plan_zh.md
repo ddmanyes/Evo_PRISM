@@ -149,6 +149,66 @@ L2 -->|"回傳"| A
 L3 -->|"回傳"| A
 ```
 
+### HELIX 工具自主演進結構（HELIX Autonomic Evolution Structure）
+
+為保障 L2 銀層中分析工具的長期健康度與版本演化可追溯性，系統首創之 **HELIX（Health-Evolving Loop with Iterative eXpiration）** 模組採用以下自適應閉環架構，實施「監測 ➔ 評估 ➔ 診斷穩定化 ➔ 雙軌記憶忘卻」之生命週期治理：
+
+```mermaid
+graph TD
+subgraph G1["1. 監測與追蹤層"]
+code["分析工具源碼 py"]
+tracker["tool_change_log 版本變更"]
+metrics["mcp_tool_metrics 調用指標"]
+v_perf["v_tool_perf_30d 效能視圖"]
+hotspot["熱區偵測 Hotspot"]
+
+code -->|"SHA256 Content-Hash"| tracker
+metrics -->|"30天效能指標"| v_perf
+tracker -->|"修訂次數 >= 3"| hotspot
+end
+
+subgraph G2["2. 多維度健康評估"]
+CC["Radon 循環複雜度 before"]
+Churn["相對代碼變動率 Churn"]
+Xray["行級變動分析 X-Ray"]
+
+hotspot --> CC
+hotspot --> Churn
+hotspot --> Xray
+end
+
+subgraph G3["3. 穩定化迭代閉環"]
+diag["診斷記錄 Diagnostic Log"]
+plan["行動計畫 Action Plan"]
+opt["優化實體工具 after"]
+
+CC -->|"觸發穩定化"| diag
+Churn -->|"觸發穩定化"| diag
+Xray -->|"觸發穩定化"| diag
+diag --> plan
+plan -->|"Agent 優化改寫"| opt
+end
+
+subgraph G4["4. 雙軌記憶與忘卻機制"]
+png["VLM 視覺快照 640x640 PNG"]
+forget["時間閘門"]
+p320["漸進式降採樣 320x320 PNG"]
+p160["極簡降採樣 160x160 PNG"]
+db_table["bio_memory.duckdb 穩定化日誌"]
+
+opt -->|"迭代存檔"| png
+png -->|"艾賓浩斯遺忘曲線"| forget
+forget -->|"穩定 > 180 天"| p320
+forget -->|"穩定 > 365 天"| p160
+opt -->|"寫入交易"| db_table
+end
+
+png -->|"後續迭代 VLM 讀回"| diag
+p320 -->|"後續迭代 VLM 讀回"| diag
+p160 -->|"後續迭代 VLM 讀回"| diag
+db_table -->|"Provenance 溯源鏈"| engram["ENGRAM 產出標記"]
+```
+
 ### 寫入路徑（Ingestion & Execution Paths）
 
 資料進入系統遵循兩條涇渭分明的寫入軌跡，各自對應不同的工程時機：
