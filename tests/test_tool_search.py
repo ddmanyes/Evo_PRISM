@@ -3,6 +3,7 @@
 不依賴 port 8081：用「關鍵字 one-hot」假 embedder 取代 embed_text，
 讓餘弦相似度反映關鍵字重疊——如此可透過**真實 DuckDB HNSW** 驗證排序與門檻邏輯。
 """
+
 from __future__ import annotations
 
 import duckdb
@@ -44,6 +45,7 @@ def catalog(tmp_path, patched_embed):
 
 # ── schema / 索引 ─────────────────────────────────────────────────────────────
 
+
 def test_ensure_schema_idempotent(tmp_path):
     db = tmp_path / "c.duckdb"
     with duckdb.connect(str(db)) as con:
@@ -71,6 +73,7 @@ def test_index_modules_idempotent_skips_unchanged(tmp_path, patched_embed):
 
 
 # ── 搜尋排序 / 門檻 ───────────────────────────────────────────────────────────
+
 
 def test_search_ranks_pathway_first(catalog):
     db, _ = catalog
@@ -113,6 +116,7 @@ def test_search_empty_catalog_returns_empty(tmp_path, patched_embed):
 
 
 # ── register_tool 掛勾（畢業自動進 catalog）───────────────────────────────────
+
 
 def test_index_registered_tool_is_searchable(tmp_path, patched_embed):
     db = tmp_path / "c.duckdb"

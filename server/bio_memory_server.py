@@ -124,6 +124,7 @@ def _dangerous_tools_enabled() -> bool:
     """
     return os.environ.get("MCP_ENABLE_DANGEROUS_TOOLS", "").lower() in ("1", "true", "yes")
 
+
 _METRICS_SCHEMA_READY = False
 
 
@@ -204,6 +205,7 @@ async def list_tools() -> list[types.Tool]:
 
 
 # ── MCP Resources：分析後數據檔交付（artifact:// URI）────────────────────────────
+
 
 @server.list_resources()
 async def list_resources() -> list[types.Resource]:
@@ -288,8 +290,7 @@ def _build_all_tools() -> list[types.Tool]:
         types.Tool(
             name="bio_history_timeline",
             description=(
-                "回傳最近 N 天的分析時間軸（0 token，純 SQL）。"
-                "顯示誰在何時對哪個樣本做了什麼分析。"
+                "回傳最近 N 天的分析時間軸（0 token，純 SQL）。顯示誰在何時對哪個樣本做了什麼分析。"
             ),
             inputSchema={
                 "type": "object",
@@ -638,18 +639,23 @@ def _build_all_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "sample_id":      {"type": "string"},
-                    "counts_path":    {"type": "string"},
-                    "coldata_path":   {"type": "string"},
+                    "sample_id": {"type": "string"},
+                    "counts_path": {"type": "string"},
+                    "coldata_path": {"type": "string"},
                     "comparisons": {
                         "type": "array",
-                        "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
                         "minItems": 1,
                     },
-                    "method":         {"type": "string", "default": "DEseq2"},
-                    "fc_threshold":   {"type": "number", "default": 1.0},
+                    "method": {"type": "string", "default": "DEseq2"},
+                    "fc_threshold": {"type": "number", "default": 1.0},
                     "pval_threshold": {"type": "number", "default": 0.05},
-                    "requested_by":   {"type": "string", "default": "mcp_client"},
+                    "requested_by": {"type": "string", "default": "mcp_client"},
                 },
                 "required": ["sample_id", "counts_path", "coldata_path", "comparisons"],
             },
@@ -663,14 +669,14 @@ def _build_all_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "sample_id":      {"type": "string"},
+                    "sample_id": {"type": "string"},
                     "deg_table_path": {"type": "string"},
-                    "libraries":      {"type": "array", "items": {"type": "string"}},
-                    "organism":       {"type": "string", "default": "human"},
-                    "fc_threshold":   {"type": "number", "default": 1.0},
+                    "libraries": {"type": "array", "items": {"type": "string"}},
+                    "organism": {"type": "string", "default": "human"},
+                    "fc_threshold": {"type": "number", "default": 1.0},
                     "pval_threshold": {"type": "number", "default": 0.05},
-                    "top_term":       {"type": "integer", "default": 10},
-                    "requested_by":   {"type": "string", "default": "mcp_client"},
+                    "top_term": {"type": "integer", "default": 10},
+                    "requested_by": {"type": "string", "default": "mcp_client"},
                 },
                 "required": ["sample_id", "deg_table_path"],
             },
@@ -684,13 +690,13 @@ def _build_all_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "sample_id":      {"type": "string"},
-                    "counts_path":    {"type": "string"},
-                    "deg_tables":     {"type": "array", "items": {"type": "string"}, "minItems": 1},
-                    "top_n":          {"type": "integer", "default": 50},
-                    "fc_threshold":   {"type": "number", "default": 1.0},
+                    "sample_id": {"type": "string"},
+                    "counts_path": {"type": "string"},
+                    "deg_tables": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "top_n": {"type": "integer", "default": 50},
+                    "fc_threshold": {"type": "number", "default": 1.0},
                     "pval_threshold": {"type": "number", "default": 0.05},
-                    "requested_by":   {"type": "string", "default": "mcp_client"},
+                    "requested_by": {"type": "string", "default": "mcp_client"},
                 },
                 "required": ["sample_id", "counts_path", "deg_tables"],
             },
@@ -705,9 +711,9 @@ def _build_all_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "tool_name":   {"type": "string"},
+                    "tool_name": {"type": "string"},
                     "artifact_id": {"type": "string"},
-                    "sample_id":   {"type": "string"},
+                    "sample_id": {"type": "string"},
                 },
                 "required": [],
             },
@@ -782,7 +788,14 @@ def _build_all_tools() -> list[types.Tool]:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["report", "diagnose", "stabilize", "close_stabilize", "trend", "prune"],
+                        "enum": [
+                            "report",
+                            "diagnose",
+                            "stabilize",
+                            "close_stabilize",
+                            "trend",
+                            "prune",
+                        ],
                         "description": "操作類型。",
                     },
                     "tool_name": {
@@ -920,26 +933,30 @@ async def _handle_bio_history_lookup(args: dict) -> str:
     # rows is a pandas DataFrame
     if rows.empty:
         if fmt == "json":
-            return _json_dump({"count": 0, "records": [], "sample_id": sample_id, "analysis_type": analysis_type})
+            return _json_dump(
+                {"count": 0, "records": [], "sample_id": sample_id, "analysis_type": analysis_type}
+            )
         return f"無分析記錄（sample_id={sample_id!r}, analysis_type={analysis_type!r}）"
 
     records = rows.to_dict("records")
     if fmt == "json":
-        return _json_dump({
-            "count": len(records),
-            "records": [
-                {
-                    "analysis_id": str(r.get("analysis_id", "")),
-                    "sample_id": r.get("sample_id", ""),
-                    "analysis_type": r.get("analysis_type", ""),
-                    "status": r.get("status", ""),
-                    "completed_at": str(r.get("completed_at", "")),
-                    "summary": str(r.get("summary", "") or ""),
-                    "result_path": str(r.get("result_path", "") or ""),
-                }
-                for r in records
-            ],
-        })
+        return _json_dump(
+            {
+                "count": len(records),
+                "records": [
+                    {
+                        "analysis_id": str(r.get("analysis_id", "")),
+                        "sample_id": r.get("sample_id", ""),
+                        "analysis_type": r.get("analysis_type", ""),
+                        "status": r.get("status", ""),
+                        "completed_at": str(r.get("completed_at", "")),
+                        "summary": str(r.get("summary", "") or ""),
+                        "result_path": str(r.get("result_path", "") or ""),
+                    }
+                    for r in records
+                ],
+            }
+        )
 
     table_rows = [
         {
@@ -988,21 +1005,23 @@ async def _handle_bio_history_timeline(args: dict) -> str:
         return f"最近 {n_days} 天無分析記錄。"
 
     if fmt == "json":
-        return _json_dump({
-            "count": len(result_rows),
-            "n_days": n_days,
-            "records": [
-                {
-                    "sample_id": r["sample_id"],
-                    "analysis_type": r["analysis_type"],
-                    "status": r["status"],
-                    "requested_by": r["requested_by"] or "",
-                    "completed_at": r["completed_at"] or "",
-                    "summary": r["summary"] or "",
-                }
-                for r in result_rows
-            ],
-        })
+        return _json_dump(
+            {
+                "count": len(result_rows),
+                "n_days": n_days,
+                "records": [
+                    {
+                        "sample_id": r["sample_id"],
+                        "analysis_type": r["analysis_type"],
+                        "status": r["status"],
+                        "requested_by": r["requested_by"] or "",
+                        "completed_at": r["completed_at"] or "",
+                        "summary": r["summary"] or "",
+                    }
+                    for r in result_rows
+                ],
+            }
+        )
 
     table_rows = [
         {
@@ -1040,15 +1059,17 @@ async def _handle_bio_history_check(args: dict) -> str:
     if row:
         analysis_id, completed_at, result_path, summary = row
         if fmt == "json":
-            return _json_dump({
-                "exists": True,
-                "sample_id": sample_id,
-                "analysis_type": analysis_type,
-                "analysis_id": str(analysis_id),
-                "completed_at": str(completed_at),
-                "result_path": result_path or "",
-                "summary": summary or "",
-            })
+            return _json_dump(
+                {
+                    "exists": True,
+                    "sample_id": sample_id,
+                    "analysis_type": analysis_type,
+                    "analysis_id": str(analysis_id),
+                    "completed_at": str(completed_at),
+                    "result_path": result_path or "",
+                    "summary": summary or "",
+                }
+            )
         return (
             f"exists: true\n"
             f"analysis_id: {analysis_id}\n"
@@ -1057,11 +1078,13 @@ async def _handle_bio_history_check(args: dict) -> str:
             f"summary: {(summary or '')[:80]}"
         )
     if fmt == "json":
-        return _json_dump({
-            "exists": False,
-            "sample_id": sample_id,
-            "analysis_type": analysis_type,
-        })
+        return _json_dump(
+            {
+                "exists": False,
+                "sample_id": sample_id,
+                "analysis_type": analysis_type,
+            }
+        )
     return f"exists: false\nsample_id={sample_id!r}, analysis_type={analysis_type!r} 尚無完成存檔。"
 
 
@@ -1137,8 +1160,9 @@ async def _handle_bio_register_sample(args: dict) -> str:
     from datetime import datetime, timezone
 
     import re
+
     sample_id = args["sample_id"]
-    if not re.match(r'^[a-z0-9_-]+$', sample_id):
+    if not re.match(r"^[a-z0-9_-]+$", sample_id):
         return f"樣本 ID {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號。"
 
     with duckdb.connect(str(DUCKDB_PATH)) as con:
@@ -1225,9 +1249,10 @@ async def _handle_bio_artifact_summary(args: dict) -> str:
     if summary["total_runs"] == 0:
         return f"樣本 {sample_id!r} 尚無已完成分析或 artifact 記錄。"
 
-    by_subtype_lines = "\n".join(
-        f"  - {st}: {ct}" for st, ct in sorted(summary["by_subtype"].items())
-    ) or "  （無 subtype 記錄）"
+    by_subtype_lines = (
+        "\n".join(f"  - {st}: {ct}" for st, ct in sorted(summary["by_subtype"].items()))
+        or "  （無 subtype 記錄）"
+    )
     latest = summary["latest_run"] or {}
     return (
         f"sample_id: {summary['sample_id']}\n"
@@ -1255,41 +1280,49 @@ async def _handle_bio_artifact_summary(args: dict) -> str:
 
 async def _handle_bio_check_l2_sufficiency(args: dict) -> str:
     from server.agent import _exec_bio_check_l2_sufficiency
+
     return await asyncio.to_thread(_exec_bio_check_l2_sufficiency, args)
 
 
 async def _handle_bio_run_spatial_eda(args: dict) -> str:
     from server.agent import _exec_bio_run_spatial_eda
+
     return await asyncio.to_thread(_exec_bio_run_spatial_eda, args)
 
 
 async def _handle_bio_run_bulk_eda(args: dict) -> str:
     from server.agent import _exec_bio_run_bulk_eda
+
     return await asyncio.to_thread(_exec_bio_run_bulk_eda, args)
 
 
 async def _handle_bio_run_deg(args: dict) -> str:
     from server.agent import _exec_bio_run_deg
+
     return await asyncio.to_thread(_exec_bio_run_deg, args)
 
 
 async def _handle_bio_run_enrichment(args: dict) -> str:
     from server.agent import _exec_bio_run_enrichment
+
     return await asyncio.to_thread(_exec_bio_run_enrichment, args)
 
 
 async def _handle_bio_run_heatmaps(args: dict) -> str:
     from server.agent import _exec_bio_run_heatmaps
+
     return await asyncio.to_thread(_exec_bio_run_heatmaps, args)
 
 
 async def _handle_bio_impact(args: dict) -> str:
     from server.agent import _exec_bio_impact
+
     return await asyncio.to_thread(_exec_bio_impact, args)
 
 
 async def _handle_bio_execute_code(args: dict) -> str:
     from server.agent import _exec_bio_execute_code
+
     # timeout clamp（防 MCP 客戶端傳大數）
     t = args.get("timeout", 60)
     try:
@@ -1302,11 +1335,13 @@ async def _handle_bio_execute_code(args: dict) -> str:
 
 async def _handle_bio_tool_health(args: dict) -> str:
     from server.agent import _exec_bio_tool_health
+
     return await asyncio.to_thread(_exec_bio_tool_health, args)
 
 
 async def _handle_bio_find_tool(args: dict) -> str:
     from server.agent import _exec_bio_find_tool
+
     return await asyncio.to_thread(_exec_bio_find_tool, args)
 
 
@@ -1394,10 +1429,10 @@ _HANDLERS = {
     "bio_check_l2_sufficiency": _handle_bio_check_l2_sufficiency,
     "bio_run_spatial_eda": _handle_bio_run_spatial_eda,
     "bio_run_bulk_eda": _handle_bio_run_bulk_eda,
-    "bio_run_deg":         _handle_bio_run_deg,
-    "bio_run_enrichment":  _handle_bio_run_enrichment,
-    "bio_run_heatmaps":    _handle_bio_run_heatmaps,
-    "bio_impact":          _handle_bio_impact,
+    "bio_run_deg": _handle_bio_run_deg,
+    "bio_run_enrichment": _handle_bio_run_enrichment,
+    "bio_run_heatmaps": _handle_bio_run_heatmaps,
+    "bio_impact": _handle_bio_impact,
     "bio_execute_code": _handle_bio_execute_code,
     "bio_find_tool": _handle_bio_find_tool,
     "bio_tool_health": _handle_bio_tool_health,
@@ -1408,9 +1443,7 @@ _HANDLERS = {
 
 
 @server.call_tool()
-async def call_tool(
-    name: str, arguments: dict
-) -> list[types.TextContent | types.ImageContent]:
+async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent]:
     requested_by = None
     if isinstance(arguments, dict):
         requested_by = arguments.get("requested_by")
@@ -1426,18 +1459,22 @@ async def call_tool(
     if name in _DANGEROUS_TOOLS and not _dangerous_tools_enabled():
         _record_metric(name, 0, "user_error", requested_by=requested_by)
         logger.warning("Dangerous tool %r called but MCP_ENABLE_DANGEROUS_TOOLS not set", name)
-        return [types.TextContent(
-            type="text",
-            text=(
-                f"[ERROR] {name} 為高權限工具，目前未啟用。"
-                "設定 env MCP_ENABLE_DANGEROUS_TOOLS=true 並重啟 server 才可呼叫。"
-            ),
-        )]
+        return [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"[ERROR] {name} 為高權限工具，目前未啟用。"
+                    "設定 env MCP_ENABLE_DANGEROUS_TOOLS=true 並重啟 server 才可呼叫。"
+                ),
+            )
+        ]
 
     # Rate limit gate（僅針對打 embedding server 的工具）
     if name in _RATE_LIMITED_TOOLS and not _rate_limit_check(f"tool:{name}"):
         logger.warning("Rate limit exceeded for tool %r", name)
-        _record_metric(name, 0, "rate_limited", error_class="RateLimitExceeded", requested_by=requested_by)
+        _record_metric(
+            name, 0, "rate_limited", error_class="RateLimitExceeded", requested_by=requested_by
+        )
         return [
             types.TextContent(
                 type="text",
@@ -1453,18 +1490,34 @@ async def call_tool(
     try:
         result = await handler(arguments)
     except RateLimitExceeded as exc:
-        _record_metric(name, int((time.monotonic() - t0) * 1000), "rate_limited", error_class="RateLimitExceeded", requested_by=requested_by)
+        _record_metric(
+            name,
+            int((time.monotonic() - t0) * 1000),
+            "rate_limited",
+            error_class="RateLimitExceeded",
+            requested_by=requested_by,
+        )
         logger.warning("Tool %r rate limited: %s", name, exc)
         return [types.TextContent(type="text", text=f"[ERROR] {name}: {exc}")]
     except (ValueError, KeyError, TypeError) as exc:
-        _record_metric(name, int((time.monotonic() - t0) * 1000), "user_error", error_class=exc.__class__.__name__, requested_by=requested_by)
+        _record_metric(
+            name,
+            int((time.monotonic() - t0) * 1000),
+            "user_error",
+            error_class=exc.__class__.__name__,
+            requested_by=requested_by,
+        )
         # 使用者錯誤：參數驗證失敗、缺欄位、型別錯
         logger.info("Tool %r user error: %s", name, exc)
-        return [
-            types.TextContent(type="text", text=f"[ERROR] {name} 參數錯誤：{exc}")
-        ]
+        return [types.TextContent(type="text", text=f"[ERROR] {name} 參數錯誤：{exc}")]
     except Exception as exc:
-        _record_metric(name, int((time.monotonic() - t0) * 1000), "system_error", error_class=exc.__class__.__name__, requested_by=requested_by)
+        _record_metric(
+            name,
+            int((time.monotonic() - t0) * 1000),
+            "system_error",
+            error_class=exc.__class__.__name__,
+            requested_by=requested_by,
+        )
         corr_id = uuid.uuid4().hex[:8]
         logger.exception("Tool %r system error [corr=%s]: %s", name, corr_id, exc)
         return [
@@ -1564,14 +1617,10 @@ def create_http_app():
             if auth_token is not None:
                 presented = _extract_bearer_token(scope)
                 if not presented:
-                    await _send_auth_error(
-                        send, 401, "Unauthorized: missing Bearer token"
-                    )
+                    await _send_auth_error(send, 401, "Unauthorized: missing Bearer token")
                     return
                 if presented != auth_token:
-                    await _send_auth_error(
-                        send, 401, "Unauthorized: invalid token"
-                    )
+                    await _send_auth_error(send, 401, "Unauthorized: invalid token")
                     return
             await session_manager.handle_request(scope, receive, send)
 

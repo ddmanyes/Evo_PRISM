@@ -65,9 +65,7 @@ class TestArtifactUniqueConstraint:
                 "VALUES (?, 'figure', 'gene_spatial_map', 'PTPRC', '/p/ptprc.png')",
                 [analysis_id],
             )
-            row = con.execute(
-                "SELECT COUNT(*) FROM analysis_artifacts"
-            ).fetchone()
+            row = con.execute("SELECT COUNT(*) FROM analysis_artifacts").fetchone()
         assert row[0] == 1
 
     def test_duplicate_triple_rejected(self, tmp_path):
@@ -81,8 +79,9 @@ class TestArtifactUniqueConstraint:
             )
             # 同 (analysis_id, subtype, label) 第二次必須被 UNIQUE 擋
             # DuckDB 錯誤訊息不含 index 名，比對 violation 關鍵字 + 三欄位即可
-            with pytest.raises(duckdb.ConstraintException,
-                               match="Duplicate key.*gene_spatial_map.*PTPRC"):
+            with pytest.raises(
+                duckdb.ConstraintException, match="Duplicate key.*gene_spatial_map.*PTPRC"
+            ):
                 con.execute(
                     "INSERT INTO analysis_artifacts "
                     "(analysis_id, artifact_type, artifact_subtype, label, file_path) "

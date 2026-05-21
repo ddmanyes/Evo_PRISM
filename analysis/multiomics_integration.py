@@ -12,6 +12,7 @@ RNA-Protein 多組學時序整合。
     欄位：0_1, 0_2, ..., 96_4（時間點_rep），Protein name，T: Gene name，...
     值：Perseus log2 intensity（已標準化）
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,9 +32,7 @@ from analysis.pathway_scoring import score_pathways
 
 logger = logging.getLogger(__name__)
 
-PROTEOME_DEFAULT = (
-    BIO_DB_ROOT / "proteome_data" / "sHG_timeseries" / "sHG_log2intensity_0804.csv"
-)
+PROTEOME_DEFAULT = BIO_DB_ROOT / "proteome_data" / "sHG_timeseries" / "sHG_log2intensity_0804.csv"
 RESULTS_DIR = BIO_DB_ROOT / "results" / "multiomics"
 
 _PROT_COL_RE = re.compile(r"^(?P<tp>\d+)_(?P<rep>\d+)$")
@@ -66,9 +65,7 @@ def load_proteome(
 
     df = pd.read_csv(path, index_col=0)
     if gene_col not in df.columns:
-        raise ValueError(
-            f"找不到基因名稱欄位 {gene_col!r}，現有欄位：{list(df.columns)[:10]}"
-        )
+        raise ValueError(f"找不到基因名稱欄位 {gene_col!r}，現有欄位：{list(df.columns)[:10]}")
 
     value_cols = [c for c in df.columns if _PROT_COL_RE.match(str(c))]
     gene_names = df[gene_col].astype(str).str.strip()
@@ -80,7 +77,9 @@ def load_proteome(
 
     logger.info(
         "載入蛋白質矩陣：%d 蛋白 × %d 樣本（來源：%s）",
-        result.shape[0], result.shape[1], path.name,
+        result.shape[0],
+        result.shape[1],
+        path.name,
     )
     return result
 
@@ -130,7 +129,9 @@ def align_rna_protein(
     overlap_genes = sorted(set(rna_mean.index) & set(prot_mean.index))
     logger.info(
         "交集基因：%d（RNA %d，Protein %d）",
-        len(overlap_genes), len(rna_mean), len(prot_mean),
+        len(overlap_genes),
+        len(rna_mean),
+        len(prot_mean),
     )
 
     if overlap_timepoints is None:
@@ -167,15 +168,20 @@ def rna_protein_correlation(
         mask = ~(np.isnan(rna_vals) | np.isnan(prot_vals))
         n = int(mask.sum())
         if n < 3:
-            records.append({"gene": gene, "spearman_r": np.nan, "p_value": np.nan, "n_timepoints": n})
+            records.append(
+                {"gene": gene, "spearman_r": np.nan, "p_value": np.nan, "n_timepoints": n}
+            )
             continue
         r, p = spearmanr(rna_vals[mask], prot_vals[mask])
-        records.append({"gene": gene, "spearman_r": float(r), "p_value": float(p), "n_timepoints": n})
+        records.append(
+            {"gene": gene, "spearman_r": float(r), "p_value": float(p), "n_timepoints": n}
+        )
 
     result = pd.DataFrame(records).set_index("gene")
     logger.info(
         "Spearman 相關完成：%d 基因，中位數 r=%.3f",
-        len(result), result["spearman_r"].median(),
+        len(result),
+        result["spearman_r"].median(),
     )
     return result
 
@@ -200,12 +206,14 @@ def lag_analysis(
             continue
         rna_peak = tp_vals[int(np.nanargmax(rna_vals))]
         prot_peak = tp_vals[int(np.nanargmax(prot_vals))]
-        records.append({
-            "gene": gene,
-            "rna_peak_h": rna_peak,
-            "prot_peak_h": prot_peak,
-            "lag_h": prot_peak - rna_peak,
-        })
+        records.append(
+            {
+                "gene": gene,
+                "rna_peak_h": rna_peak,
+                "prot_peak_h": prot_peak,
+                "lag_h": prot_peak - rna_peak,
+            }
+        )
 
     result = pd.DataFrame(records).set_index("gene")
     if len(result):
@@ -240,12 +248,18 @@ def run_integration(
     lag = lag_analysis(rna_mean, prot_mean, timepoints)
 
     pw_rna = score_pathways(
-        rna_mean, gene_sets_path, method="zscore",
-        output_dir=out_dir, label=f"rna_{rna_tissue}",
+        rna_mean,
+        gene_sets_path,
+        method="zscore",
+        output_dir=out_dir,
+        label=f"rna_{rna_tissue}",
     )
     pw_prot = score_pathways(
-        prot_mean, gene_sets_path, method="zscore",
-        output_dir=out_dir, label=f"prot_{rna_tissue}",
+        prot_mean,
+        gene_sets_path,
+        method="zscore",
+        output_dir=out_dir,
+        label=f"prot_{rna_tissue}",
     )
 
     rna_mean.to_csv(out_dir / f"rna_mean_{rna_tissue}.tsv", sep="\t")

@@ -203,8 +203,7 @@ def populate_registry(con: duckdb.DuckDBPyConnection):
                  species, tissue, l3_path, added_by, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'init_script', ?)
             """,
-            [sample_id, project, data_type, platform,
-             species, tissue, l3_path, notes],
+            [sample_id, project, data_type, platform, species, tissue, l3_path, notes],
         )
         inserted += 1
 

@@ -5,6 +5,7 @@
 亦可手動執行：
     ~/.venvs/bioagent/bin/python scheduler/scan_new_samples.py
 """
+
 from __future__ import annotations
 
 import logging

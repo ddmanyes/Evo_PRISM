@@ -31,9 +31,19 @@ from typing import Optional
 
 # 中文數字 → int（只覆蓋常見小數字，N 通常 ≤ 30）
 _CN_DIGITS: dict[str, int] = {
-    "一": 1, "兩": 2, "二": 2, "三": 3, "四": 4, "五": 5,
-    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-    "廿": 20, "卅": 30,
+    "一": 1,
+    "兩": 2,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+    "廿": 20,
+    "卅": 30,
 }
 
 
@@ -63,9 +73,7 @@ _NUM = r"([0-9]+|[一二兩三四五六七八九十廿卅]{1,3})"
 
 # 1) timeline：強信號為「時間軸」或「最近 N 天/週/this week」
 #    必須出現「天/日/週/week」這類時間單位，避免吞掉「最近 5 筆」
-_RE_TIMELINE_CN = re.compile(
-    rf"(?:時間軸|時間線)|(?:最近|近|過去|這)\s*{_NUM}?\s*(?:天|日|週|周)"
-)
+_RE_TIMELINE_CN = re.compile(rf"(?:時間軸|時間線)|(?:最近|近|過去|這)\s*{_NUM}?\s*(?:天|日|週|周)")
 _RE_TIMELINE_EN_NUM = re.compile(
     rf"\b(?:last|past|recent)\s*{_NUM}?\s*(?:day|days|week|weeks)\b",
     re.IGNORECASE,
@@ -98,6 +106,7 @@ _RE_RECENT_EN = re.compile(
 
 # ── 對外型別 ─────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class FastPathHit:
     """Fast-path 命中結果。
@@ -107,12 +116,14 @@ class FastPathHit:
         tool_name: 將被呼叫的既有工具名稱（與 BIO_TOOLS 對齊）
         args:      傳給工具的參數
     """
+
     intent: str
     tool_name: str
     args: dict
 
 
 # ── 主入口 ───────────────────────────────────────────────────────────────────
+
 
 def try_fast_path(user_msg: str) -> Optional[FastPathHit]:
     """嘗試將 user_msg 匹配到 fast-path 意圖；沒命中回 None。

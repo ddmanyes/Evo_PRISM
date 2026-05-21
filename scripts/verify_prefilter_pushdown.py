@@ -18,6 +18,7 @@ Usage
 
 Read-only against bio_memory.duckdb. Safe to run anytime.
 """
+
 from __future__ import annotations
 
 import time
@@ -122,9 +123,7 @@ def main() -> None:
             ORDER  BY aa.created_at DESC
             LIMIT  10
         """
-        runs.append(
-            _run_explain(con, "L1 exact subtype + sample_id", sql_l1, [subtype, sample_id])
-        )
+        runs.append(_run_explain(con, "L1 exact subtype + sample_id", sql_l1, [subtype, sample_id]))
 
     if emb_256 is not None and sample_id:
         sql_l2_coarse = """
@@ -202,7 +201,9 @@ def main() -> None:
     for r in runs:
         cls = _classify_plan(r["plan"])
         verdict = "✅ pre-filter" if cls["has_filter_node"] else "⚠️ check manually"
-        idx_status = "✅ HNSW used" if cls["uses_hnsw_index"] else "⚠️ no HNSW marker (may be too few rows)"
+        idx_status = (
+            "✅ HNSW used" if cls["uses_hnsw_index"] else "⚠️ no HNSW marker (may be too few rows)"
+        )
         summary_rows.append((r["label"], f"{r['wall_ms']:.2f}", verdict, idx_status))
 
     lines.append("## Summary")

@@ -91,8 +91,7 @@ def prune_old_backups() -> None:
     if not BACKUP_ROOT.exists():
         return
     dirs = sorted(
-        d for d in BACKUP_ROOT.iterdir()
-        if d.is_dir() and re.match(r"^\d{8}_\d{4}$", d.name)
+        d for d in BACKUP_ROOT.iterdir() if d.is_dir() and re.match(r"^\d{8}_\d{4}$", d.name)
     )
     to_delete = dirs[:-KEEP_DAYS] if len(dirs) > KEEP_DAYS else []
     for old in to_delete:
@@ -132,8 +131,7 @@ def restore(backup_dir: Path) -> None:
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--restore":
         dirs = sorted(
-            d for d in BACKUP_ROOT.iterdir()
-            if d.is_dir() and re.match(r"^\d{8}_\d{4}$", d.name)
+            d for d in BACKUP_ROOT.iterdir() if d.is_dir() and re.match(r"^\d{8}_\d{4}$", d.name)
         )
         if not dirs:
             logger.error("No backups found.")

@@ -38,32 +38,44 @@ def _ensure_vss(con: duckdb.DuckDBPyConnection) -> None:
     except Exception:
         pass
 
+
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
 
 INLINE_SIZE_LIMIT_KB = 500
 
-KNOWN_SUBTYPES = frozenset({
-    "volcano", "pca", "heatmap", "qc_figure", "scatter",
-    "deg_list", "pathway_scores", "timeseries",
-    "eda_report", "summary_report",
-    "qc_csv", "counts_csv",
-    "run_log",
-})
+KNOWN_SUBTYPES = frozenset(
+    {
+        "volcano",
+        "pca",
+        "heatmap",
+        "qc_figure",
+        "scatter",
+        "deg_list",
+        "pathway_scores",
+        "timeseries",
+        "eda_report",
+        "summary_report",
+        "qc_csv",
+        "counts_csv",
+        "run_log",
+    }
+)
 
 _MIME = {
-    ".png":  "image/png",
-    ".jpg":  "image/jpeg",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
-    ".svg":  "image/svg+xml",
-    ".csv":  "text/csv",
-    ".tsv":  "text/tab-separated-values",
-    ".md":   "text/markdown",
-    ".txt":  "text/plain",
+    ".svg": "image/svg+xml",
+    ".csv": "text/csv",
+    ".tsv": "text/tab-separated-values",
+    ".md": "text/markdown",
+    ".txt": "text/plain",
     ".json": "application/json",
-    ".log":  "text/plain",
+    ".log": "text/plain",
 }
 
 # RRF smoothing constant (Cormack et al. SIGIR 2009)
@@ -97,6 +109,7 @@ def _fts_artifacts_available(con: duckdb.DuckDBPyConnection) -> bool:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _mime_for(path: Path) -> str:
     return _MIME.get(path.suffix.lower(), "application/octet-stream")
@@ -173,6 +186,7 @@ def _make_embed_text(
 def _get_embedding(text: str) -> Optional[list[float]]:
     try:
         from analysis.embed import embed_text
+
         return embed_text(text)
     except Exception as exc:
         logger.warning("artifact_registry: embedding skipped: %s", exc)
@@ -200,6 +214,7 @@ def _rows_to_dicts(rows: list, cols: list[str]) -> list[dict]:
 # Provenance hash helpers (9B-1)
 # ---------------------------------------------------------------------------
 
+
 def _hash_input_data(paths: list[Path]) -> str:
     """SHA256[:16] of sorted (path, mtime) pairs — changes when input data changes."""
     h = hashlib.sha256()
@@ -216,6 +231,7 @@ def _hash_function_source(fn) -> str:
     """SHA256[:16] of a callable's source code (ignores whitespace-only changes)."""
     import ast
     import inspect
+
     try:
         src = inspect.getsource(fn)
         tree = ast.parse(src)
@@ -228,6 +244,7 @@ def _hash_function_source(fn) -> str:
 def _hash_env() -> str:
     """SHA256[:16] of Python version + key package versions + critical env vars."""
     import sys
+
     parts = [f"python={sys.version}"]
     for pkg in ("duckdb", "numpy", "pandas", "scanpy", "anndata"):
         try:
@@ -315,6 +332,7 @@ def _record_search_metric(
 # Core API
 # ---------------------------------------------------------------------------
 
+
 def register_artifact(
     con: duckdb.DuckDBPyConnection,
     analysis_id: str,
@@ -365,13 +383,12 @@ def register_artifact(
         logger.warning(
             "register_artifact: %s is outside BIO_DB_ROOT %s — "
             "stored as absolute path, portability will break on server deployment",
-            path, BIO_DB_ROOT,
+            path,
+            BIO_DB_ROOT,
         )
 
     analysis_type, parameters = _get_analysis_context(con, analysis_id)
-    embed_text_str = _make_embed_text(
-        label, artifact_subtype, analysis_type, parameters, path
-    )
+    embed_text_str = _make_embed_text(label, artifact_subtype, analysis_type, parameters, path)
     embedding = _get_embedding(embed_text_str)
 
     # Provenance hashes (migration v16 — silently skipped on older schema)
@@ -407,10 +424,20 @@ def register_artifact(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                artifact_id, analysis_id, artifact_type, artifact_subtype,
-                label, rel_path, size_kb, mime_type,
-                embedding, embedding_256,
-                input_data_hash, code_hash, env_hash, now,
+                artifact_id,
+                analysis_id,
+                artifact_type,
+                artifact_subtype,
+                label,
+                rel_path,
+                size_kb,
+                mime_type,
+                embedding,
+                embedding_256,
+                input_data_hash,
+                code_hash,
+                env_hash,
+                now,
             ],
         )
     elif use_provenance:
@@ -423,9 +450,19 @@ def register_artifact(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                artifact_id, analysis_id, artifact_type, artifact_subtype,
-                label, rel_path, size_kb, mime_type,
-                embedding, input_data_hash, code_hash, env_hash, now,
+                artifact_id,
+                analysis_id,
+                artifact_type,
+                artifact_subtype,
+                label,
+                rel_path,
+                size_kb,
+                mime_type,
+                embedding,
+                input_data_hash,
+                code_hash,
+                env_hash,
+                now,
             ],
         )
     elif use_matryoshka:
@@ -438,9 +475,17 @@ def register_artifact(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                artifact_id, analysis_id, artifact_type, artifact_subtype,
-                label, rel_path, size_kb, mime_type,
-                embedding, embedding_256, now,
+                artifact_id,
+                analysis_id,
+                artifact_type,
+                artifact_subtype,
+                label,
+                rel_path,
+                size_kb,
+                mime_type,
+                embedding,
+                embedding_256,
+                now,
             ],
         )
     else:
@@ -453,9 +498,16 @@ def register_artifact(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                artifact_id, analysis_id, artifact_type, artifact_subtype,
-                label, rel_path, size_kb, mime_type,
-                embedding, now,
+                artifact_id,
+                analysis_id,
+                artifact_type,
+                artifact_subtype,
+                label,
+                rel_path,
+                size_kb,
+                mime_type,
+                embedding,
+                now,
             ],
         )
 
@@ -483,8 +535,11 @@ def register_artifact(
 
     logger.info(
         "register_artifact: %s  type=%s/%s  size=%s KB  blob=%s",
-        path.name, artifact_type, artifact_subtype or "-",
-        size_kb, inline_data is not None,
+        path.name,
+        artifact_type,
+        artifact_subtype or "-",
+        size_kb,
+        inline_data is not None,
     )
     return artifact_id
 
@@ -517,7 +572,8 @@ def get_artifacts(
     inline_col = "b.inline_data" if use_blob_table else "NULL AS inline_data"
     blob_join = (
         "LEFT JOIN analysis_artifact_blobs b ON aa.artifact_id = b.artifact_id"
-        if use_blob_table else ""
+        if use_blob_table
+        else ""
     )
 
     rows = con.execute(
@@ -534,8 +590,16 @@ def get_artifacts(
     ).fetchall()
 
     cols = [
-        "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
-        "label", "file_path", "inline_data", "file_size_kb", "mime_type", "created_at",
+        "artifact_id",
+        "analysis_id",
+        "artifact_type",
+        "artifact_subtype",
+        "label",
+        "file_path",
+        "inline_data",
+        "file_size_kb",
+        "mime_type",
+        "created_at",
     ]
     return _rows_to_dicts(rows, cols)
 
@@ -555,7 +619,8 @@ def compare_analyses(
     inline_col = "b.inline_data" if use_blob_table else "NULL AS inline_data"
     blob_join = (
         "LEFT JOIN analysis_artifact_blobs b ON aa.artifact_id = b.artifact_id"
-        if use_blob_table else ""
+        if use_blob_table
+        else ""
     )
 
     placeholders = ", ".join("?" * len(analysis_ids))
@@ -587,23 +652,25 @@ def compare_analyses(
     result: dict[str, list[dict]] = {aid: [] for aid in analysis_ids}
     for r in rows:
         aid = str(r[1])
-        result[aid].append({
-            "artifact_id":      str(r[0]),
-            "analysis_id":      aid,
-            "artifact_type":    r[2],
-            "artifact_subtype": r[3],
-            "label":            r[4],
-            "file_path":        r[5],
-            "inline_data":      r[6],
-            "file_size_kb":     r[7],
-            "mime_type":        r[8],
-            "created_at":       str(r[9]),
-            "analysis_type":    r[10],
-            "parameters":       r[11],
-            "completed_at":     str(r[12]) if r[12] else None,
-            "tool_version":     r[13],
-            "tool_status":      r[14],
-        })
+        result[aid].append(
+            {
+                "artifact_id": str(r[0]),
+                "analysis_id": aid,
+                "artifact_type": r[2],
+                "artifact_subtype": r[3],
+                "label": r[4],
+                "file_path": r[5],
+                "inline_data": r[6],
+                "file_size_kb": r[7],
+                "mime_type": r[8],
+                "created_at": str(r[9]),
+                "analysis_type": r[10],
+                "parameters": r[11],
+                "completed_at": str(r[12]) if r[12] else None,
+                "tool_version": r[13],
+                "tool_status": r[14],
+            }
+        )
     return result
 
 
@@ -632,11 +699,11 @@ def artifact_summary(
 
     if not rows:
         return {
-            "sample_id":       sample_id,
-            "total_runs":      0,
+            "sample_id": sample_id,
+            "total_runs": 0,
             "total_artifacts": 0,
-            "by_subtype":      {},
-            "latest_run":      None,
+            "by_subtype": {},
+            "latest_run": None,
         }
 
     subtype_counts: dict[str, int] = {}
@@ -651,14 +718,14 @@ def artifact_summary(
 
     latest = rows[0]
     return {
-        "sample_id":       sample_id,
-        "total_runs":      len(rows),
+        "sample_id": sample_id,
+        "total_runs": len(rows),
         "total_artifacts": total_artifacts,
-        "by_subtype":      subtype_counts,
+        "by_subtype": subtype_counts,
         "latest_run": {
-            "analysis_id":    str(latest[0]),
-            "analysis_type":  latest[1],
-            "completed_at":   str(latest[2]) if latest[2] else None,
+            "analysis_id": str(latest[0]),
+            "analysis_type": latest[1],
+            "completed_at": str(latest[2]) if latest[2] else None,
             "artifact_count": latest[3],
         },
     }
@@ -701,8 +768,15 @@ def search_artifacts(
     t_start = time.monotonic()
 
     cols = [
-        "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
-        "label", "file_path", "file_size_kb", "mime_type", "created_at",
+        "artifact_id",
+        "analysis_id",
+        "artifact_type",
+        "artifact_subtype",
+        "label",
+        "file_path",
+        "file_size_kb",
+        "mime_type",
+        "created_at",
     ]
 
     sample_join = ""
@@ -749,10 +823,9 @@ def search_artifacts(
             pass
 
         from config.settings import MATRYOSHKA_ENABLED
+
         use_matryoshka_search = (
-            MATRYOSHKA_ENABLED
-            and _matryoshka_col_exists(con)
-            and len(embedding) >= 256
+            MATRYOSHKA_ENABLED and _matryoshka_col_exists(con) and len(embedding) >= 256
         )
 
         try:
@@ -843,7 +916,7 @@ def search_artifacts(
             for rank, row in enumerate(fts_rows, start=1):
                 aid = str(row[0])
                 fts_ranked[aid] = rank
-                fts_rows_map[aid] = dict(zip(cols, row[:len(cols)]))
+                fts_rows_map[aid] = dict(zip(cols, row[: len(cols)]))
         except Exception as exc:
             logger.warning("search_artifacts: FTS layer failed: %s", exc)
 
@@ -857,11 +930,13 @@ def search_artifacts(
     scored: list[tuple[float, str]] = []
     for aid in all_ids:
         r_exact = exact_ranked.get(aid, None)
-        r_hnsw  = hnsw_ranked.get(aid, None)
-        r_fts   = fts_ranked.get(aid, None)
-        rrf = (1 / (_RRF_K + r_exact) if r_exact else 0.0) + \
-              (1 / (_RRF_K + r_hnsw)  if r_hnsw  else 0.0) + \
-              (1 / (_RRF_K + r_fts)   if r_fts   else 0.0)
+        r_hnsw = hnsw_ranked.get(aid, None)
+        r_fts = fts_ranked.get(aid, None)
+        rrf = (
+            (1 / (_RRF_K + r_exact) if r_exact else 0.0)
+            + (1 / (_RRF_K + r_hnsw) if r_hnsw else 0.0)
+            + (1 / (_RRF_K + r_fts) if r_fts else 0.0)
+        )
         scored.append((rrf, aid))
 
     scored.sort(reverse=True)
@@ -884,26 +959,18 @@ def search_artifacts(
 
     results = []
     for rrf_score, aid in top:
-        row_dict = (
-            exact_rows_map.get(aid)
-            or hnsw_rows_map.get(aid)
-            or fts_rows_map.get(aid, {})
-        )
+        row_dict = exact_rows_map.get(aid) or hnsw_rows_map.get(aid) or fts_rows_map.get(aid, {})
         row_dict["score"] = round(rrf_score, 6)
         # Per-item layer attribution
         in_e = aid in exact_ranked
         in_h = aid in hnsw_ranked
         in_f = aid in fts_ranked
-        per_item = [
-            tag for tag, flag in (("exact", in_e), ("hnsw", in_h), ("fts", in_f)) if flag
-        ]
+        per_item = [tag for tag, flag in (("exact", in_e), ("hnsw", in_h), ("fts", in_f)) if flag]
         row_dict["search_layer"] = "rrf" if len(per_item) > 1 else per_item[0]
         results.append(row_dict)
 
     latency_ms = int((time.monotonic() - t_start) * 1000)
-    _record_search_metric(
-        con, query, len(results), latency_ms, batch_layer, threshold, sample_id
-    )
+    _record_search_metric(con, query, len(results), latency_ms, batch_layer, threshold, sample_id)
     return results
 
 
@@ -911,11 +978,13 @@ def search_artifacts(
 # Provenance & Lineage API (9B-2 / 9B-3)
 # ---------------------------------------------------------------------------
 
-VALID_RELATION_TYPES = frozenset({
-    "derived_from",
-    "used_by",
-    "compared_with",
-})
+VALID_RELATION_TYPES = frozenset(
+    {
+        "derived_from",
+        "used_by",
+        "compared_with",
+    }
+)
 
 
 def link_artifacts(
@@ -995,8 +1064,8 @@ def get_lineage(
     has_provenance = _provenance_col_exists(con)
     provenance_cols = (
         "aa.input_data_hash, aa.code_hash, aa.env_hash,"
-        if has_provenance else
-        "NULL AS input_data_hash, NULL AS code_hash, NULL AS env_hash,"
+        if has_provenance
+        else "NULL AS input_data_hash, NULL AS code_hash, NULL AS env_hash,"
     )
 
     rows = con.execute(
@@ -1020,22 +1089,24 @@ def get_lineage(
 
     result = []
     for row in rows:
-        result.append({
-            "relation_id":      str(row[0]),
-            "relation_type":    row[1],
-            "artifact_id":      str(row[2]),
-            "label":            row[3],
-            "artifact_subtype": row[4],
-            "artifact_type":    row[5],
-            "file_path":        row[6],
-            "created_at":       str(row[7]),
-            "analysis_id":      str(row[8]),
-            "analysis_type":    row[9],
-            "sample_id":        row[10],
-            "input_data_hash":  row[11],
-            "code_hash":        row[12],
-            "env_hash":         row[13],
-            "tool_name":        row[14],
-            "tool_version":     row[15],
-        })
+        result.append(
+            {
+                "relation_id": str(row[0]),
+                "relation_type": row[1],
+                "artifact_id": str(row[2]),
+                "label": row[3],
+                "artifact_subtype": row[4],
+                "artifact_type": row[5],
+                "file_path": row[6],
+                "created_at": str(row[7]),
+                "analysis_id": str(row[8]),
+                "analysis_type": row[9],
+                "sample_id": row[10],
+                "input_data_hash": row[11],
+                "code_hash": row[12],
+                "env_hash": row[13],
+                "tool_name": row[14],
+                "tool_version": row[15],
+            }
+        )
     return result

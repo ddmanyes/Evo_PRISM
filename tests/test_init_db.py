@@ -1,6 +1,7 @@
 """
 Tests for scripts/00_init_db.py — verifies schema creation.
 """
+
 import importlib.util
 from pathlib import Path
 
@@ -49,8 +50,7 @@ def test_analysis_index_view_exists(tmp_db):
     init_db(tmp_db)
 
     views = tmp_db.execute(
-        "SELECT table_name FROM information_schema.tables "
-        "WHERE table_type = 'VIEW'"
+        "SELECT table_name FROM information_schema.tables WHERE table_type = 'VIEW'"
     ).fetchall()
     view_names = {r[0] for r in views}
     assert "analysis_index" in view_names

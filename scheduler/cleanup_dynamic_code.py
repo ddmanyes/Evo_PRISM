@@ -60,9 +60,7 @@ def cleanup_old_archives(
         if not dry_run:
             shutil.rmtree(entry)
             removed += 1
-            logger.info(
-                "已刪除過期歸檔：%s (created_at=%s)", entry.name, created_at.isoformat()
-            )
+            logger.info("已刪除過期歸檔：%s (created_at=%s)", entry.name, created_at.isoformat())
 
     return removed, candidates
 

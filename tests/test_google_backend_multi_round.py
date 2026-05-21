@@ -21,6 +21,7 @@
   3. tool_calls 累計 1 筆
   4. 最終 AgentResponse.text 為 Call 2 的純文字
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -35,6 +36,7 @@ pytest.importorskip("google.genai")
 def _make_fn_call_response(name: str, args: dict):
     """Construct a fake Gemini response with a FunctionCall part."""
     from google.genai import types as gt
+
     fc = gt.FunctionCall(name=name, args=args)
     part = gt.Part(function_call=fc)
     content = gt.Content(role="model", parts=[part])
@@ -51,6 +53,7 @@ def _make_fn_call_response(name: str, args: dict):
 
 def _make_text_response(text: str):
     from google.genai import types as gt
+
     part = gt.Part(text=text)
     content = gt.Content(role="model", parts=[part])
     candidate = SimpleNamespace(
@@ -75,34 +78,46 @@ class TestGoogleMultiRoundToolHistory:
         captured_calls = []
 
         fake_client = MagicMock()
+
         def _generate_content_side_effect(*, model, contents, config):
-            captured_calls.append({
-                "model": model,
-                "contents": contents,
-                "config": config,
-            })
+            captured_calls.append(
+                {
+                    "model": model,
+                    "contents": contents,
+                    "config": config,
+                }
+            )
             # Call 0：pre-build；Call 1：loop round 0（回 FunctionCall）；Call 2：loop round 1（終止）
             if len(captured_calls) == 1:
                 # pre-build：回傳什麼都不影響（response 被丟棄）
                 return _make_text_response("(pre-build, discarded)")
             if len(captured_calls) == 2:
-                return _make_fn_call_response("bio_history_check", {
-                    "sample_id": "crc_official_v4",
-                    "analysis_type": "spatial_eda",
-                })
+                return _make_fn_call_response(
+                    "bio_history_check",
+                    {
+                        "sample_id": "crc_official_v4",
+                        "analysis_type": "spatial_eda",
+                    },
+                )
             return _make_text_response("已確認樣本尚無 spatial_eda 完成存檔。")
 
         fake_client.models.generate_content.side_effect = _generate_content_side_effect
 
-        with patch.object(agent, "_get_google_client", return_value=fake_client), \
-             patch.object(agent, "execute_tool", return_value="exists: false\nsample_id='crc_official_v4'…"):
+        with (
+            patch.object(agent, "_get_google_client", return_value=fake_client),
+            patch.object(
+                agent, "execute_tool", return_value="exists: false\nsample_id='crc_official_v4'…"
+            ),
+        ):
             resp = agent.handle_message(
                 "請確認 crc_official_v4 的 spatial_eda 是否已完成",
                 history=[],
                 backend="google",
             )
 
-        assert len(captured_calls) == 3, f"預期 3 次呼叫（pre-build + 2 rounds），實際 {len(captured_calls)}"
+        assert len(captured_calls) == 3, (
+            f"預期 3 次呼叫（pre-build + 2 rounds），實際 {len(captured_calls)}"
+        )
 
         # 最後一次呼叫（Call 2 = round 1）的 contents 必須含完整工具歷史
         round1_contents = captured_calls[2]["contents"]
@@ -115,8 +130,7 @@ class TestGoogleMultiRoundToolHistory:
             for c in round1_contents
         )
         assert has_model_fn_call, (
-            "Round 1 contents 缺少 model FunctionCall part；"
-            "tool history 被覆寫了（NH4 regression）"
+            "Round 1 contents 缺少 model FunctionCall part；tool history 被覆寫了（NH4 regression）"
         )
 
         # 2. user FunctionResponse part 必須存在於 Round 1 contents
@@ -146,9 +160,11 @@ class TestGoogleMultiRoundToolHistory:
 
         captured_calls = []
         fake_client = MagicMock()
+
         def _side_effect(*, model, contents, config):
             captured_calls.append({"contents": contents})
             return _make_text_response("OK")
+
         fake_client.models.generate_content.side_effect = _side_effect
 
         prior_history = [

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """合併所有樣本的 Kallisto abundance.tsv → gene_counts.tsv + gene_tpm.tsv（以基因符號為主鍵）。"""
+
 from __future__ import annotations
 
 import csv
@@ -14,14 +15,14 @@ from config.settings import BIO_DB_ROOT
 logger = logging.getLogger(__name__)
 
 RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
-OUT_COUNTS  = RESULTS_DIR / "gene_counts.tsv"
-OUT_TPM     = RESULTS_DIR / "gene_tpm.tsv"
+OUT_COUNTS = RESULTS_DIR / "gene_counts.tsv"
+OUT_TPM = RESULTS_DIR / "gene_tpm.tsv"
 
 
 def parse_abundance(path: Path) -> tuple[dict[str, float], dict[str, float]]:
     """從單一 abundance.tsv 解析 gene→counts 與 gene→tpm。"""
     gene_counts: dict[str, float] = defaultdict(float)
-    gene_tpm:    dict[str, float] = defaultdict(float)
+    gene_tpm: dict[str, float] = defaultdict(float)
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
@@ -64,7 +65,7 @@ def main() -> None:
     samples: list[str] = []
     gene_set: set[str] = set()
     per_sample_counts: dict[str, dict[str, float]] = {}
-    per_sample_tpm:    dict[str, dict[str, float]] = {}
+    per_sample_tpm: dict[str, dict[str, float]] = {}
 
     for path in files:
         sample = path.parent.name

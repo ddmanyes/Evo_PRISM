@@ -1,6 +1,7 @@
 """
 Pytest fixtures shared across all tests.
 """
+
 import pytest
 import duckdb
 from pathlib import Path

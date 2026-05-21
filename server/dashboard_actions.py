@@ -19,6 +19,7 @@
     - dispatch() 統一捕捉例外：參數錯誤 → ok=False + 友善訊息；其餘 → ok=False +
       系統錯誤（server-side log 留完整 stack）。
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── HELIX 連線小工具 ─────────────────────────────────────────────────────────
+
 
 def _helix_con():
     """開一條對主 DuckDB 的 write 連線（HELIX 操作用）。"""
@@ -47,6 +49,7 @@ def _require(args: dict, key: str) -> str:
 
 
 # ── scheduler 類操作 ─────────────────────────────────────────────────────────
+
 
 def _action_backup(_args: dict) -> dict:
     from scheduler.backup_db import backup
@@ -100,6 +103,7 @@ def _action_rebuild_hnsw(_args: dict) -> dict:
 
 # ── HELIX 類操作 ─────────────────────────────────────────────────────────────
 
+
 def _action_mark_stable(args: dict) -> dict:
     from analysis.tool_registry import mark_stable
 
@@ -146,14 +150,22 @@ def _action_prune_deprecated(args: dict) -> dict:
 
 # action 名稱 → (handler, 是否為高破壞性操作[前端需強確認], 一句話說明)
 ACTIONS: dict[str, tuple[Callable[[dict], dict], bool, str]] = {
-    "backup":           (_action_backup,          False, "立即 EXPORT DATABASE 備份主 DuckDB"),
-    "cleanup_l1":       (_action_cleanup_l1,       False, "刪除 L1 語意快取中已過期（TTL）的記錄"),
-    "cleanup_figure":   (_action_cleanup_figure,   False, "刪除 figure cache 中過期的圖檔"),
-    "cleanup_dynamic":  (_action_cleanup_dynamic,  False, "刪除 dynamic_code archive 中超過保留期的目錄"),
-    "rebuild_hnsw":     (_action_rebuild_hnsw,     False, "重建 L1 HNSW 索引與 artifact FTS 索引"),
-    "mark_stable":      (_action_mark_stable,      False, "把高 revision 工具標記為刻意穩定（抑制熱區噪音）"),
-    "close_stabilize":  (_action_close_stabilize,  False, "關閉一個進行中的 HELIX 穩定化迭代"),
-    "prune_deprecated": (_action_prune_deprecated, True,  "刪除某工具無歷史引用的舊 deprecated 版本（不可逆）"),
+    "backup": (_action_backup, False, "立即 EXPORT DATABASE 備份主 DuckDB"),
+    "cleanup_l1": (_action_cleanup_l1, False, "刪除 L1 語意快取中已過期（TTL）的記錄"),
+    "cleanup_figure": (_action_cleanup_figure, False, "刪除 figure cache 中過期的圖檔"),
+    "cleanup_dynamic": (
+        _action_cleanup_dynamic,
+        False,
+        "刪除 dynamic_code archive 中超過保留期的目錄",
+    ),
+    "rebuild_hnsw": (_action_rebuild_hnsw, False, "重建 L1 HNSW 索引與 artifact FTS 索引"),
+    "mark_stable": (_action_mark_stable, False, "把高 revision 工具標記為刻意穩定（抑制熱區噪音）"),
+    "close_stabilize": (_action_close_stabilize, False, "關閉一個進行中的 HELIX 穩定化迭代"),
+    "prune_deprecated": (
+        _action_prune_deprecated,
+        True,
+        "刪除某工具無歷史引用的舊 deprecated 版本（不可逆）",
+    ),
 }
 
 

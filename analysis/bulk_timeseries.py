@@ -8,6 +8,7 @@ Bulk RNA-seq 時間序列分析。
     tpm_to_log2()            — log2(TPM + 1) 正規化
     timeseries_summary()     — 整合摘要：均值矩陣 + FC 矩陣
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 # 欄名格式：{condition}_{replicate}_{tissue}
 # 例如 ctrl_1_Hair_germ → 0h；pw6hr_2_lower_bulge → 6h
-_TIMEPOINT_RE = re.compile(
-    r"^(?:ctrl|pw(?P<hrs>\d+)hr)_\d+_(?P<tissue>.+)$"
-)
+_TIMEPOINT_RE = re.compile(r"^(?:ctrl|pw(?P<hrs>\d+)hr)_\d+_(?P<tissue>.+)$")
 _CTRL_ALIAS = "0h"
 
 
@@ -116,14 +115,15 @@ def log2fc(
         False 表示 expr 為原始值（先做 log2(x+1) 再差值）。
     """
     if baseline not in expr.columns:
-        raise ValueError(
-            f"baseline 時間點 {baseline!r} 不在欄位中：{list(expr.columns)}"
-        )
+        raise ValueError(f"baseline 時間點 {baseline!r} 不在欄位中：{list(expr.columns)}")
     mat = expr if log_transformed else np.log2(expr + 1)
     fc = mat.subtract(mat[baseline], axis=0)
     logger.info(
         "log2FC：%d 基因 × %d 時間點，範圍 %.2f ~ %.2f",
-        fc.shape[0], fc.shape[1], fc.values.min(), fc.values.max(),
+        fc.shape[0],
+        fc.shape[1],
+        fc.values.min(),
+        fc.values.max(),
     )
     return fc
 
@@ -158,7 +158,9 @@ def timeseries_summary(
 
     logger.info(
         "時序摘要：tissue=%s  %d 時間點  %d 基因",
-        tissue or "all", len(tp_map), counts.shape[0],
+        tissue or "all",
+        len(tp_map),
+        counts.shape[0],
     )
 
     if output_dir is not None:

@@ -16,6 +16,7 @@ analysis_history 追蹤欄位（parameters JSON）：
 tools/registry.json 欄位：
     name, module, function, description, version, status, parameters
 """
+
 from __future__ import annotations
 
 import json
@@ -28,14 +29,15 @@ from typing import Optional
 import duckdb
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BIO_DB_ROOT, DUCKDB_PATH
 
 logger = logging.getLogger(__name__)
 
 CANDIDATES_DIR = BIO_DB_ROOT / "analysis" / "candidates"
-REGISTRY_PATH  = BIO_DB_ROOT / "tools" / "registry.json"
-ANALYSIS_DIR   = BIO_DB_ROOT / "analysis"
+REGISTRY_PATH = BIO_DB_ROOT / "tools" / "registry.json"
+ANALYSIS_DIR = BIO_DB_ROOT / "analysis"
 
 
 # ── 掃描候選 ──────────────────────────────────────────────────────────────────
@@ -59,12 +61,10 @@ def scan_candidates(min_reuse: int = 3) -> list[dict]:
             ).fetchall()
         except duckdb.CatalogException:
             raise RuntimeError(
-                "promotion_candidates VIEW 不存在，"
-                "請確認 scripts/00_init_db.py 已執行最新版本。"
+                "promotion_candidates VIEW 不存在，請確認 scripts/00_init_db.py 已執行最新版本。"
             )
     candidates = [
-        {"origin_id": r[0], "analysis_type": r[1],
-         "reuse_count": r[2], "last_used": str(r[3])}
+        {"origin_id": r[0], "analysis_type": r[1], "reuse_count": r[2], "last_used": str(r[3])}
         for r in rows
     ]
     logger.info("升格候選：%d 筆（reuse >= %d）", len(candidates), min_reuse)
@@ -115,6 +115,7 @@ def review_candidate(origin_id: str, reuse_count: int) -> dict:
     {"promote": bool, "reason": str, "suggested_name": str}
     """
     from config.settings import ANTHROPIC_API_KEY as api_key
+
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY 未設定，無法執行 Claude 審查。")
 
@@ -131,22 +132,29 @@ def review_candidate(origin_id: str, reuse_count: int) -> dict:
     msg = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=512,
-        messages=[{
-            "role": "user",
-            "content": PROMOTION_PROMPT.format(reuse_count=reuse_count, code=code),
-        }],
+        messages=[
+            {
+                "role": "user",
+                "content": PROMOTION_PROMPT.format(reuse_count=reuse_count, code=code),
+            }
+        ],
     )
     raw = msg.content[0].text.strip()
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
         import re
+
         m = re.search(r'\{[^{}]*"promote"[^{}]*\}', raw, re.DOTALL)
-        result = json.loads(m.group()) if m else {"promote": False, "reason": raw, "suggested_name": ""}
+        result = (
+            json.loads(m.group()) if m else {"promote": False, "reason": raw, "suggested_name": ""}
+        )
 
     logger.info(
         "Claude 審查結果 origin_id=%s：promote=%s, name=%s",
-        origin_id, result.get("promote"), result.get("suggested_name"),
+        origin_id,
+        result.get("promote"),
+        result.get("suggested_name"),
     )
     return result
 
@@ -201,7 +209,7 @@ def approve_candidate(suggested_name: str, description: str, version: str = "1.0
     -------
     確認訊息字串。
     """
-    draft_path  = CANDIDATES_DIR / f"{suggested_name}.py"
+    draft_path = CANDIDATES_DIR / f"{suggested_name}.py"
     target_path = ANALYSIS_DIR / f"{suggested_name}.py"
 
     if not draft_path.exists():
@@ -213,19 +221,23 @@ def approve_candidate(suggested_name: str, description: str, version: str = "1.0
     logger.info("搬移 %s → %s", draft_path.name, target_path)
 
     REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8")) if REGISTRY_PATH.exists() else []
+    registry = (
+        json.loads(REGISTRY_PATH.read_text(encoding="utf-8")) if REGISTRY_PATH.exists() else []
+    )
     if any(r["name"] == suggested_name for r in registry):
         logger.warning("registry.json 已有 %s，跳過新增", suggested_name)
     else:
-        registry.append({
-            "name": suggested_name,
-            "module": f"analysis.{suggested_name}",
-            "function": suggested_name,
-            "description": description,
-            "version": version,
-            "status": "active",
-            "parameters": {},
-        })
+        registry.append(
+            {
+                "name": suggested_name,
+                "module": f"analysis.{suggested_name}",
+                "function": suggested_name,
+                "description": description,
+                "version": version,
+                "status": "active",
+                "parameters": {},
+            }
+        )
         REGISTRY_PATH.write_text(
             json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8"
         )

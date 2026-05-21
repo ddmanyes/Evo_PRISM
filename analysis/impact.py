@@ -20,6 +20,7 @@ bio_DB 的影響圖（沿既有 schema，無需 migration）：
 
 詳見 docs/GITNEXUS_BORROW_ASSESSMENT.md。
 """
+
 from __future__ import annotations
 
 import logging
@@ -60,6 +61,7 @@ CONF_TYPE_HEURISTIC = 0.6
 @dataclass(frozen=True)
 class AffectedAnalysis:
     """一筆受影響的分析。"""
+
     analysis_id: str
     analysis_type: str
     sample_id: Optional[str]
@@ -71,12 +73,13 @@ class AffectedAnalysis:
 @dataclass
 class ImpactReport:
     """blast-radius 結果。"""
-    target_kind: str            # 'tool' | 'artifact' | 'sample'
+
+    target_kind: str  # 'tool' | 'artifact' | 'sample'
     target: str
     affected_analyses: list[AffectedAnalysis] = field(default_factory=list)
     affected_artifact_ids: list[str] = field(default_factory=list)
     affected_samples: list[str] = field(default_factory=list)
-    untracked_note: str = ""    # tool_id 覆蓋缺口提示
+    untracked_note: str = ""  # tool_id 覆蓋缺口提示
 
     @property
     def n_analyses(self) -> int:
@@ -93,9 +96,7 @@ class ImpactReport:
 
 def _resolve_tool_ids(con: duckdb.DuckDBPyConnection, tool_name: str) -> list[str]:
     """取某 tool_name 的所有版本 tool_id（含 deprecated）。"""
-    rows = con.execute(
-        "SELECT tool_id FROM tools WHERE tool_name = ?", [tool_name]
-    ).fetchall()
+    rows = con.execute("SELECT tool_id FROM tools WHERE tool_name = ?", [tool_name]).fetchall()
     return [str(r[0]) for r in rows]
 
 
@@ -127,10 +128,16 @@ def tool_impact(con: duckdb.DuckDBPyConnection, tool_name: str) -> ImpactReport:
             tool_ids,
         ).fetchall()
         for aid, atype, sid, status in rows:
-            report.affected_analyses.append(AffectedAnalysis(
-                analysis_id=str(aid), analysis_type=atype, sample_id=sid,
-                status=status, confidence=CONF_TOOL_ID_EXACT, reason="tool_id-exact",
-            ))
+            report.affected_analyses.append(
+                AffectedAnalysis(
+                    analysis_id=str(aid),
+                    analysis_type=atype,
+                    sample_id=sid,
+                    status=status,
+                    confidence=CONF_TOOL_ID_EXACT,
+                    reason="tool_id-exact",
+                )
+            )
             seen.add(str(aid))
 
     # 邊 2：analysis_type 啟發式（補 tool_id 稀疏）
@@ -150,11 +157,16 @@ def tool_impact(con: duckdb.DuckDBPyConnection, tool_name: str) -> ImpactReport:
         for aid, atype, sid, status in rows:
             if str(aid) in seen:
                 continue
-            report.affected_analyses.append(AffectedAnalysis(
-                analysis_id=str(aid), analysis_type=atype, sample_id=sid,
-                status=status, confidence=CONF_TYPE_HEURISTIC,
-                reason="analysis_type-heuristic",
-            ))
+            report.affected_analyses.append(
+                AffectedAnalysis(
+                    analysis_id=str(aid),
+                    analysis_type=atype,
+                    sample_id=sid,
+                    status=status,
+                    confidence=CONF_TYPE_HEURISTIC,
+                    reason="analysis_type-heuristic",
+                )
+            )
             seen.add(str(aid))
             n_heuristic += 1
 
@@ -218,10 +230,16 @@ def artifact_impact(con: duckdb.DuckDBPyConnection, artifact_id: str) -> ImpactR
         [parent_analysis],
     ).fetchone()
     if arow:
-        report.affected_analyses.append(AffectedAnalysis(
-            analysis_id=parent_analysis, analysis_type=arow[0], sample_id=arow[1],
-            status=arow[2], confidence=CONF_SAME_ANALYSIS, reason="same-analysis",
-        ))
+        report.affected_analyses.append(
+            AffectedAnalysis(
+                analysis_id=parent_analysis,
+                analysis_type=arow[0],
+                sample_id=arow[1],
+                status=arow[2],
+                confidence=CONF_SAME_ANALYSIS,
+                reason="same-analysis",
+            )
+        )
         if arow[1]:
             report.affected_samples = [arow[1]]
     return report
@@ -246,10 +264,16 @@ def sample_impact(con: duckdb.DuckDBPyConnection, sample_id: str) -> ImpactRepor
         [sample_id],
     ).fetchall()
     for aid, atype, sid, status in rows:
-        report.affected_analyses.append(AffectedAnalysis(
-            analysis_id=str(aid), analysis_type=atype, sample_id=sid,
-            status=status, confidence=CONF_TOOL_ID_EXACT, reason="sample-direct",
-        ))
+        report.affected_analyses.append(
+            AffectedAnalysis(
+                analysis_id=str(aid),
+                analysis_type=atype,
+                sample_id=sid,
+                status=status,
+                confidence=CONF_TOOL_ID_EXACT,
+                reason="sample-direct",
+            )
+        )
         seen.add(str(aid))
 
     _expand_artifacts_and_samples(con, report, seen, collect_samples=False)
@@ -284,6 +308,7 @@ def _expand_artifacts_and_samples(
 
 # ── Markdown 渲染（給 MCP tool 回傳）───────────────────────────────────────
 
+
 def render_impact_md(report: ImpactReport) -> str:
     """把 ImpactReport 渲染成簡明 Markdown。"""
     lines = [
@@ -292,8 +317,11 @@ def render_impact_md(report: ImpactReport) -> str:
         f"- 受影響分析：**{report.n_analyses}** 筆",
         f"- 受影響產物：**{report.n_artifacts}** 個",
         f"- 涉及樣本：**{len(report.affected_samples)}** 個"
-        + (f"（{', '.join(report.affected_samples[:8])}{'…' if len(report.affected_samples) > 8 else ''}）"
-           if report.affected_samples else ""),
+        + (
+            f"（{', '.join(report.affected_samples[:8])}{'…' if len(report.affected_samples) > 8 else ''}）"
+            if report.affected_samples
+            else ""
+        ),
     ]
     if report.affected_analyses:
         lines.append(f"- 最高信心：{report.max_confidence:.1f}")
@@ -301,9 +329,13 @@ def render_impact_md(report: ImpactReport) -> str:
         lines += ["", f"> ⚠️ {report.untracked_note}"]
 
     if report.affected_analyses:
-        lines += ["", "## 受影響分析（依信心排序）", "",
-                  "| analysis_id | type | sample | status | confidence | reason |",
-                  "|---|---|---|---|---|---|"]
+        lines += [
+            "",
+            "## 受影響分析（依信心排序）",
+            "",
+            "| analysis_id | type | sample | status | confidence | reason |",
+            "|---|---|---|---|---|---|",
+        ]
         for a in sorted(report.affected_analyses, key=lambda x: -x.confidence):
             lines.append(
                 f"| {a.analysis_id[:8]} | {a.analysis_type} | {a.sample_id or '—'} "

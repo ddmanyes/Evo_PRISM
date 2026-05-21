@@ -33,8 +33,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from config.settings import BIO_DB_ROOT
@@ -50,6 +52,7 @@ _mcp_handler = None
 _mcp_lifespan_cm = None
 try:
     from server.bio_memory_server import create_http_app as _create_mcp_app
+
     _mcp_handler, _mcp_lifespan_cm = _create_mcp_app()
 except Exception as _e:
     logger.warning("MCP HTTP create_http_app failed (non-fatal): %s", _e)
@@ -61,13 +64,15 @@ async def _lifespan(_app: FastAPI):
     # 避免後續 write 連線觸發 DuckDB C++ FatalException（無法 Python catch）
     try:
         from config.db_utils import wal_preflight_check
+
         _pf = wal_preflight_check()
         if _pf["ok"]:
             logger.info("WAL preflight ok (wal_existed=%s)", _pf["wal_existed"])
         else:
             logger.warning(
                 "WAL preflight FAIL: %s | renamed_to=%s",
-                _pf["error"], _pf["renamed_to"],
+                _pf["error"],
+                _pf["renamed_to"],
             )
     except Exception as _e:
         logger.exception("WAL preflight raised (non-fatal): %s", _e)
@@ -84,6 +89,7 @@ async def _lifespan(_app: FastAPI):
     # 此處只 warn 不 raise，允許本機 local-only 部署
     try:
         from config.settings import validate_inference_backend, INFERENCE_BACKEND
+
         validate_inference_backend()
         logger.info("inference backend ok: %s", INFERENCE_BACKEND)
     except RuntimeError as _e:
@@ -96,6 +102,7 @@ async def _lifespan(_app: FastAPI):
     def _do_deferred_cleanup() -> None:
         import duckdb as _duckdb
         from config.settings import DUCKDB_PATH as _DB
+
         try:
             with _duckdb.connect(str(_DB), read_only=True) as _ro:
                 n = _ro.execute(
@@ -106,9 +113,7 @@ async def _lifespan(_app: FastAPI):
                 return
             _con = _duckdb.connect(str(_DB))
             try:
-                _con.execute(
-                    "UPDATE analysis_history SET status='stale' WHERE status='running'"
-                )
+                _con.execute("UPDATE analysis_history SET status='stale' WHERE status='running'")
                 _con.execute("CHECKPOINT")
             finally:
                 _con.close()
@@ -129,7 +134,7 @@ async def _lifespan(_app: FastAPI):
     session_task = asyncio.create_task(_cleanup_loop())
 
     # 驅動 MCP session_manager.run() — 否則 /mcp 任何請求會 500
-    async with (_mcp_lifespan_cm() if _mcp_lifespan_cm else contextlib.nullcontext()):
+    async with _mcp_lifespan_cm() if _mcp_lifespan_cm else contextlib.nullcontext():
         yield
 
     cleanup_task.cancel()
@@ -142,7 +147,9 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="BioAgent", version="1.0.0", lifespan=_lifespan)
 
-_cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()] or ["*"]
+_cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()] or [
+    "*"
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -175,6 +182,7 @@ async def _warmup_embedding() -> None:
     """
     try:
         from analysis.embed import embed_text
+
         await asyncio.to_thread(embed_text, "warmup")
         logger.info("embedding warmup ok")
     except Exception as exc:
@@ -203,6 +211,7 @@ def _verify_static_files() -> None:
     else:
         logger.info("Static files OK (%s)", STATIC_DIR)
 
+
 RESULTS_DIR = BIO_DB_ROOT / "results"
 
 # ── Session 管理 ──────────────────────────────────────────────────────────────
@@ -210,7 +219,7 @@ RESULTS_DIR = BIO_DB_ROOT / "results"
 _MAX_HISTORY = 24  # 12 輪 = 24 messages
 _MAX_SESSIONS = 200  # 防止記憶體耗盡
 _SESSION_TTL_HOURS = 24
-_SESSION_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]{1,64}$')
+_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,64}$")
 _sessions: dict[str, collections.deque] = {}
 _session_locks: dict[str, threading.Lock] = {}
 _sessions_meta: dict[str, datetime] = {}
@@ -236,7 +245,8 @@ def _cleanup_old_sessions_unsafe() -> None:
     """Remove expired sessions. Caller must hold _sessions_dict_lock."""
     now = datetime.now(timezone.utc)
     expired = [
-        sid for sid, last in _sessions_meta.items()
+        sid
+        for sid, last in _sessions_meta.items()
         if (now - last).total_seconds() > _SESSION_TTL_HOURS * 3600
     ]
     for sid in expired:
@@ -254,6 +264,7 @@ def _cleanup_old_sessions() -> None:
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
+
 
 class ChatRequest(BaseModel):
     session_id: str
@@ -308,7 +319,7 @@ def _synthesize_dynamic_code_view(archive_dir: Path) -> str:
     badge_html = (
         f'<span style="display:inline-block;padding:3px 10px;border-radius:10px;'
         f'background:{badge_bg};color:{badge_color};font-size:12px;font-weight:600;">'
-        f'{_html.escape(badge_label)}</span>'
+        f"{_html.escape(badge_label)}</span>"
     )
 
     stats_bits: list[str] = []
@@ -319,17 +330,21 @@ def _synthesize_dynamic_code_view(archive_dir: Path) -> str:
     if fig_count:
         stats_bits.append(f"{fig_count} 張圖")
     stats_html = (
-        '<span style="color:#6c757d;font-size:13px;">'
-        + " · ".join(_html.escape(s) for s in stats_bits)
-        + "</span>"
-    ) if stats_bits else ""
+        (
+            '<span style="color:#6c757d;font-size:13px;">'
+            + " · ".join(_html.escape(s) for s in stats_bits)
+            + "</span>"
+        )
+        if stats_bits
+        else ""
+    )
 
     # 頁面標頭（description 當 H1 + badge + stats + archive id）
     header_html = (
         f'<h1 style="margin-bottom:6px;">{_html.escape(description)}</h1>'
         f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
         f'margin-bottom:18px;">'
-        f'{badge_html}{stats_html}'
+        f"{badge_html}{stats_html}"
         f'<code style="font-size:12px;color:#6c757d;background:#f1f3f5;'
         f'padding:2px 6px;border-radius:4px;">{_html.escape(archive_dir.name)}</code>'
         f"</div>"
@@ -347,14 +362,16 @@ def _synthesize_dynamic_code_view(archive_dir: Path) -> str:
             '<div style="font-weight:700;color:#991b1b;margin-bottom:6px;">× 執行失敗</div>'
             + (
                 f'<div style="color:#7f1d1d;font-size:14px;margin-bottom:8px;">'
-                f'{_html.escape(error_summary)}</div>'
-                if error_summary else ""
+                f"{_html.escape(error_summary)}</div>"
+                if error_summary
+                else ""
             )
             + (
                 f'<pre style="background:rgba(0,0,0,0.04);padding:10px;border-radius:4px;'
                 f'font-size:12px;overflow-x:auto;margin:0;color:#3f0a0a;">'
-                f'{_html.escape(tb_text)}</pre>'
-                if tb_text.strip() else ""
+                f"{_html.escape(tb_text)}</pre>"
+                if tb_text.strip()
+                else ""
             )
             + "</div>"
         )
@@ -363,8 +380,8 @@ def _synthesize_dynamic_code_view(archive_dir: Path) -> str:
     if meta_raw:
         pretty = _json.dumps(meta, ensure_ascii=False, indent=2) if meta else meta_raw
         parts.append(
-            "<details style=\"margin-bottom:18px;\">"
-            "<summary style=\"cursor:pointer;color:#6c757d;font-size:13px;\">"
+            '<details style="margin-bottom:18px;">'
+            '<summary style="cursor:pointer;color:#6c757d;font-size:13px;">'
             "顯示 meta.json（原始）</summary>\n\n"
             "```json\n" + pretty + "\n```\n"
             "</details>"
@@ -436,9 +453,11 @@ def _synthesize_directory_browser_view(directory: Path) -> str:
             for f in group[:3]:
                 schema_md = _parquet_schema_markdown(f)
                 if schema_md:
-                    parts.append(f"<details><summary style=\"cursor:pointer;color:#6c757d;font-size:13px;\">"
-                                 f"<code>{_html.escape(f.name)}</code> schema</summary>\n\n"
-                                 f"{schema_md}\n</details>\n")
+                    parts.append(
+                        f'<details><summary style="cursor:pointer;color:#6c757d;font-size:13px;">'
+                        f"<code>{_html.escape(f.name)}</code> schema</summary>\n\n"
+                        f"{schema_md}\n</details>\n"
+                    )
 
     if subdirs:
         parts.append("## 子資料夾\n")
@@ -456,9 +475,8 @@ def _parquet_schema_markdown(path: Path) -> str:
     """讀 parquet footer 取欄位 + 型別（不掃資料列）。失敗回空字串。"""
     try:
         import duckdb
-        rows = duckdb.execute(
-            "SELECT name, type FROM parquet_schema(?)", [str(path)]
-        ).fetchall()
+
+        rows = duckdb.execute("SELECT name, type FROM parquet_schema(?)", [str(path)]).fetchall()
     except Exception:
         return ""
     if not rows:
@@ -549,6 +567,7 @@ def _render_report_html(analysis_id: str, md_text: str, sample_id: str, timestam
 
 
 # ── 路由：頁面 ────────────────────────────────────────────────────────────────
+
 
 def _static_missing_response(filename: str) -> HTMLResponse:
     body = (
@@ -664,6 +683,7 @@ async def api_dashboard_action(request: Request):
 
 # ── 動態程式碼畢業（Phase 3，唯讀）─────────────────────────────────────────────
 
+
 @app.get("/api/dashboard/graduation")
 async def api_graduation_candidates():
     """畢業候選清單（同 description 多次 completed + 非 1 行噪音）。唯讀，無需 guard。"""
@@ -742,10 +762,12 @@ async def report_page(analysis_id: str):
 
 # ── 路由：API ─────────────────────────────────────────────────────────────────
 
+
 def _check_llama_server(port: int, timeout: float = 1.5) -> bool:
     """探活 llama-server，回 True 表示 /health 200。"""
     try:
         import httpx
+
         r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=timeout)
         return r.status_code == 200
     except Exception:
@@ -759,6 +781,7 @@ def _read_backup_status() -> dict:
         return {}
     try:
         import json as _json
+
         data = _json.loads(p.read_text())
         if data.get("last_success_at"):
             try:
@@ -775,6 +798,7 @@ def _read_backup_status() -> dict:
 def _disk_free_gb(path: Path) -> float | None:
     try:
         import shutil as _sh
+
         return round(_sh.disk_usage(path).free / 1024**3, 2)
     except Exception:
         return None
@@ -800,6 +824,7 @@ async def health():
     wal_status: dict = {}
     try:
         import json as _json
+
         _wp = Path(__file__).parent.parent / "logs" / "wal_preflight_status.json"
         if _wp.exists():
             wal_status = _json.loads(_wp.read_text())
@@ -833,9 +858,11 @@ async def health():
 async def get_backend():
     from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL, GOOGLE_MODEL
     import os
+
     local_ok = False
     try:
         import httpx
+
         r = httpx.get("http://localhost:8080/health", timeout=2.0)
         local_ok = r.json().get("status") == "ok"
     except Exception:
@@ -903,7 +930,7 @@ async def download_csv(analysis_id: str):
         raise HTTPException(status_code=404, detail="分析記錄不存在")
 
     sample_id = row[0]
-    if not re.match(r'^[a-z0-9_-]+$', sample_id):
+    if not re.match(r"^[a-z0-9_-]+$", sample_id):
         raise HTTPException(status_code=422, detail="資料庫中 sample_id 格式不合法")
     expr_dir = (L2_ROOT / sample_id / "expression").resolve()
     if not expr_dir.is_relative_to(L2_ROOT.resolve()):
@@ -959,9 +986,9 @@ async def result_images(analysis_id: str):
         return []
     images: list[dict] = []
     seen: set[str] = set()
-    for i, m in enumerate(re.finditer(
-        r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)', md_text
-    )):
+    for i, m in enumerate(
+        re.finditer(r"!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)", md_text)
+    ):
         alt, img_type, b64_raw = m.group(1), m.group(3), m.group(4)
         b64_hash = b64_raw[:32]
         if b64_hash in seen:
@@ -992,7 +1019,8 @@ async def chat(req: ChatRequest):
         future = loop.run_in_executor(
             None,
             lambda: handle_message(
-                req.message, history_snapshot,
+                req.message,
+                history_snapshot,
                 backend=req.backend,
                 image_base64=req.image_base64,
             ),
@@ -1008,22 +1036,32 @@ async def chat(req: ChatRequest):
             result = await future
 
             if result.tool_calls:
-                yield _sse("tool_calls", {"calls": [
-                    {"name": c["name"], "result_preview": str(c["result"])[:120]}
-                    for c in result.tool_calls
-                ]})
+                yield _sse(
+                    "tool_calls",
+                    {
+                        "calls": [
+                            {"name": c["name"], "result_preview": str(c["result"])[:120]}
+                            for c in result.tool_calls
+                        ]
+                    },
+                )
 
-            yield _sse("tokens", {
-                "input": result.input_tokens,
-                "output": result.output_tokens,
-                "tools": len(result.tool_calls),
-            })
+            yield _sse(
+                "tokens",
+                {
+                    "input": result.input_tokens,
+                    "output": result.output_tokens,
+                    "tools": len(result.tool_calls),
+                },
+            )
 
             report_link = _extract_report_link(result.tool_calls)
             images = await loop.run_in_executor(
                 None, _extract_images_from_tool_calls, result.tool_calls
             )
-            yield _sse("message", {"text": result.text, "report_link": report_link, "images": images})
+            yield _sse(
+                "message", {"text": result.text, "report_link": report_link, "images": images}
+            )
 
             with lock:
                 history_deque.append({"role": "user", "content": req.message})
@@ -1053,11 +1091,10 @@ def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
     回傳 [{"filename": "fig_00.png", "data_uri": "data:image/png;base64,..."}, ...]
     """
     import re
+
     images: list[dict] = []
     seen: set[str] = set()
-    IMG_RE = re.compile(
-        r'!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)'
-    )
+    IMG_RE = re.compile(r"!\[([^\]]*)\]\((data:image/([^;]+);base64,([A-Za-z0-9+/=\r\n]+))\)")
 
     def _extract_from_text(text: str, label_prefix: str) -> None:
         for i, m in enumerate(IMG_RE.finditer(text)):
@@ -1068,7 +1105,9 @@ def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
                 continue
             seen.add(b64_hash)
             filename = (alt.strip().replace(" ", "_") or f"{label_prefix}_{i}") + "." + img_type
-            images.append({"filename": filename, "data_uri": f"data:image/{img_type};base64,{b64_clean}"})
+            images.append(
+                {"filename": filename, "data_uri": f"data:image/{img_type};base64,{b64_clean}"}
+            )
 
     for call_idx, call in enumerate(tool_calls):
         result = call.get("result", "")
@@ -1079,13 +1118,18 @@ def _extract_images_from_tool_calls(tool_calls: list) -> list[dict]:
         _extract_from_text(result, f"fig_{call_idx:02d}")
 
         # 來源 2：result_path 指向的 .md 報告檔案
-        match = re.search(r'(?:result_path|report_path):\s*(.+?)(?:\n|$)', result)
+        match = re.search(r"(?:result_path|report_path):\s*(.+?)(?:\n|$)", result)
         if match:
             md_path = Path(match.group(1).strip()).resolve()
-            if (md_path.is_relative_to(BIO_DB_ROOT.resolve())
-                    and md_path.exists() and md_path.suffix == ".md"):
+            if (
+                md_path.is_relative_to(BIO_DB_ROOT.resolve())
+                and md_path.exists()
+                and md_path.suffix == ".md"
+            ):
                 try:
-                    _extract_from_text(md_path.read_text(encoding="utf-8"), f"report_{call_idx:02d}")
+                    _extract_from_text(
+                        md_path.read_text(encoding="utf-8"), f"report_{call_idx:02d}"
+                    )
                 except Exception:
                     pass
 
@@ -1109,10 +1153,8 @@ def _extract_report_link(tool_calls: list) -> Optional[str]:
 
 # ── ENGRAM 路由 ───────────────────────────────────────────────────────────────
 
-_SAMPLE_ID_RE   = re.compile(r"^[a-zA-Z0-9_\-]+$")
-_ANALYSIS_ID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+_SAMPLE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
+_ANALYSIS_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 def _require_sample_id(sample_id: str) -> None:
@@ -1155,10 +1197,10 @@ async def engram_samples():
         ).fetchall()
     return [
         {
-            "sample_id":      r[0],
-            "run_count":      r[1],
+            "sample_id": r[0],
+            "run_count": r[1],
             "artifact_count": r[2],
-            "last_run_at":    r[3].isoformat() if r[3] else None,
+            "last_run_at": r[3].isoformat() if r[3] else None,
         }
         for r in rows
     ]
@@ -1200,11 +1242,11 @@ async def engram_analyses(sample_id: str):
         ).fetchall()
     return [
         {
-            "analysis_id":    r[0],
-            "analysis_type":  r[1],
-            "status":         r[2],
-            "completed_at":   r[3].isoformat() if r[3] else None,
-            "summary":        r[4],
+            "analysis_id": r[0],
+            "analysis_type": r[1],
+            "status": r[2],
+            "completed_at": r[3].isoformat() if r[3] else None,
+            "summary": r[4],
             "artifact_count": r[5],
         }
         for r in rows
@@ -1226,7 +1268,8 @@ async def engram_artifacts(
 
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         return get_artifacts(
-            con, analysis_id,
+            con,
+            analysis_id,
             artifact_type=artifact_type,
             artifact_subtype=artifact_subtype,
             include_inline=include_inline,
@@ -1250,8 +1293,8 @@ async def engram_artifact_inline(artifact_id: str):
         raise HTTPException(status_code=404, detail="Artifact 不存在")
     return {
         "artifact_id": row[0],
-        "label":       row[1],
-        "mime_type":   row[2],
+        "label": row[1],
+        "mime_type": row[2],
         "inline_data": row[3],
     }
 
@@ -1272,9 +1315,9 @@ async def engram_compare(
     for aid in analysis_ids:
         _require_analysis_id(aid)
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
-        return compare_analyses(con, analysis_ids,
-                                artifact_subtype=artifact_subtype,
-                                include_inline=False)
+        return compare_analyses(
+            con, analysis_ids, artifact_subtype=artifact_subtype, include_inline=False
+        )
 
 
 @app.get("/api/engram/search")
@@ -1291,7 +1334,8 @@ async def engram_search(
 
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         return search_artifacts(
-            con, q,
+            con,
+            q,
             n=n,
             artifact_subtype=artifact_subtype,
             sample_id=sample_id,
@@ -1302,4 +1346,5 @@ async def engram_search(
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("server.web_app:app", host="0.0.0.0", port=8000, reload=False, log_level="info")

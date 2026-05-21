@@ -179,7 +179,11 @@ BIO_TOOLS = [
             "properties": {
                 "sample_id": {"type": "string", "description": "樣本 ID（可選，省略則查全部）"},
                 "analysis_type": {"type": "string", "description": "分析類型篩選（可選）"},
-                "limit": {"type": "integer", "description": "最多回傳筆數（預設 20）", "default": 20},
+                "limit": {
+                    "type": "integer",
+                    "description": "最多回傳筆數（預設 20）",
+                    "default": 20,
+                },
             },
             "required": [],
         },
@@ -206,7 +210,11 @@ BIO_TOOLS = [
             "properties": {
                 "query": {"type": "string", "description": "自然語言查詢"},
                 "n": {"type": "integer", "description": "回傳筆數上限（預設 5）", "default": 5},
-                "threshold": {"type": "number", "description": "相似度門檻（預設 0.88）", "default": 0.88},
+                "threshold": {
+                    "type": "number",
+                    "description": "相似度門檻（預設 0.88）",
+                    "default": 0.88,
+                },
                 "sample_id": {"type": "string", "description": "限定樣本 ID（可選）"},
                 "analysis_type": {
                     "type": "string",
@@ -243,7 +251,11 @@ BIO_TOOLS = [
             "type": "object",
             "properties": {
                 "sample_id": {"type": "string", "description": "樣本 ID，例如 crc_official_v4"},
-                "requested_by": {"type": "string", "description": "請求者（預設 agent）", "default": "agent"},
+                "requested_by": {
+                    "type": "string",
+                    "description": "請求者（預設 agent）",
+                    "default": "agent",
+                },
             },
             "required": ["sample_id"],
         },
@@ -254,18 +266,31 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sample_id":  {"type": "string", "description": "唯一樣本 ID（全小寫底線）"},
-                "data_type":  {"type": "string", "description": "資料類型：visium_hd | visium | scrna | bulk_rnaseq | ..."},
-                "l3_path":    {"type": "string", "description": "L3 原始數據絕對路徑（唯讀）"},
-                "project":    {"type": "string", "description": "專案代號（可選）"},
-                "platform":   {"type": "string", "description": "平台（可選）"},
-                "species":    {"type": "string", "description": "物種（預設 human）", "default": "human"},
-                "tissue":     {"type": "string", "description": "組織類型（可選）"},
-                "notes":      {"type": "string", "description": "備註（可選）"},
-                "condition":  {"type": "string", "description": "實驗條件（可選）：control/tumor/treated/..."},
+                "sample_id": {"type": "string", "description": "唯一樣本 ID（全小寫底線）"},
+                "data_type": {
+                    "type": "string",
+                    "description": "資料類型：visium_hd | visium | scrna | bulk_rnaseq | ...",
+                },
+                "l3_path": {"type": "string", "description": "L3 原始數據絕對路徑（唯讀）"},
+                "project": {"type": "string", "description": "專案代號（可選）"},
+                "platform": {"type": "string", "description": "平台（可選）"},
+                "species": {
+                    "type": "string",
+                    "description": "物種（預設 human）",
+                    "default": "human",
+                },
+                "tissue": {"type": "string", "description": "組織類型（可選）"},
+                "notes": {"type": "string", "description": "備註（可選）"},
+                "condition": {
+                    "type": "string",
+                    "description": "實驗條件（可選）：control/tumor/treated/...",
+                },
                 "time_point": {"type": "string", "description": "時間點（可選）：0h/24h/day3/..."},
-                "batch":      {"type": "string", "description": "測序批次（可選）：batch_1/batch_2/..."},
-                "donor_id":   {"type": "string", "description": "供體 ID（可選），連結同一個體的多個樣本"},
+                "batch": {"type": "string", "description": "測序批次（可選）：batch_1/batch_2/..."},
+                "donor_id": {
+                    "type": "string",
+                    "description": "供體 ID（可選），連結同一個體的多個樣本",
+                },
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -286,7 +311,11 @@ BIO_TOOLS = [
             "type": "object",
             "properties": {
                 "sample_id": {"type": "string", "description": "樣本集 ID,例如 Kallisto_v1"},
-                "requested_by": {"type": "string", "description": "請求者(預設 agent)", "default": "agent"},
+                "requested_by": {
+                    "type": "string",
+                    "description": "請求者(預設 agent)",
+                    "default": "agent",
+                },
             },
             "required": ["sample_id"],
         },
@@ -303,19 +332,42 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sample_id":      {"type": "string", "description": "已登記的樣本 ID"},
-                "counts_path":    {"type": "string", "description": "gene × sample counts CSV(如 bulk_rna_data/.../deseq2_counts.csv)"},
-                "coldata_path":   {"type": "string", "description": "sample × group 設計表(TSV/CSV,需 'group' 欄)"},
-                "comparisons":    {
+                "sample_id": {"type": "string", "description": "已登記的樣本 ID"},
+                "counts_path": {
+                    "type": "string",
+                    "description": "gene × sample counts CSV(如 bulk_rna_data/.../deseq2_counts.csv)",
+                },
+                "coldata_path": {
+                    "type": "string",
+                    "description": "sample × group 設計表(TSV/CSV,需 'group' 欄)",
+                },
+                "comparisons": {
                     "type": "array",
                     "description": "對照組清單,每筆 [treat, ctrl] 兩個 group 名,如 [['pw24hr','ctrl'],['pw48hr','ctrl']]",
-                    "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                    },
                     "minItems": 1,
                 },
-                "method":         {"type": "string", "description": "DEseq2 / ttest / wilcox", "default": "DEseq2"},
-                "fc_threshold":   {"type": "number", "description": "|log2FC| 顯著閾值", "default": 1.0},
-                "pval_threshold": {"type": "number", "description": "qvalue 顯著閾值", "default": 0.05},
-                "requested_by":   {"type": "string", "default": "agent"},
+                "method": {
+                    "type": "string",
+                    "description": "DEseq2 / ttest / wilcox",
+                    "default": "DEseq2",
+                },
+                "fc_threshold": {
+                    "type": "number",
+                    "description": "|log2FC| 顯著閾值",
+                    "default": 1.0,
+                },
+                "pval_threshold": {
+                    "type": "number",
+                    "description": "qvalue 顯著閾值",
+                    "default": 0.05,
+                },
+                "requested_by": {"type": "string", "default": "agent"},
             },
             "required": ["sample_id", "counts_path", "coldata_path", "comparisons"],
         },
@@ -331,18 +383,25 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sample_id":      {"type": "string"},
-                "deg_table_path": {"type": "string", "description": "bio_run_deg 產出的 DEG_<a>_vs_<b>.csv 絕對或相對路徑"},
-                "libraries":      {
+                "sample_id": {"type": "string"},
+                "deg_table_path": {
+                    "type": "string",
+                    "description": "bio_run_deg 產出的 DEG_<a>_vs_<b>.csv 絕對或相對路徑",
+                },
+                "libraries": {
                     "type": "array",
                     "description": "Enrichr gene set library 名稱清單;省略則用預設 GO/KEGG/Reactome",
                     "items": {"type": "string"},
                 },
-                "organism":       {"type": "string", "default": "human"},
-                "fc_threshold":   {"type": "number", "default": 1.0},
+                "organism": {"type": "string", "default": "human"},
+                "fc_threshold": {"type": "number", "default": 1.0},
                 "pval_threshold": {"type": "number", "default": 0.05},
-                "top_term":       {"type": "integer", "description": "dot plot 顯示前 N 條 term", "default": 10},
-                "requested_by":   {"type": "string", "default": "agent"},
+                "top_term": {
+                    "type": "integer",
+                    "description": "dot plot 顯示前 N 條 term",
+                    "default": 10,
+                },
+                "requested_by": {"type": "string", "default": "agent"},
             },
             "required": ["sample_id", "deg_table_path"],
         },
@@ -358,18 +417,18 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sample_id":      {"type": "string"},
-                "counts_path":    {"type": "string", "description": "gene × sample counts CSV"},
-                "deg_tables":     {
+                "sample_id": {"type": "string"},
+                "counts_path": {"type": "string", "description": "gene × sample counts CSV"},
+                "deg_tables": {
                     "type": "array",
                     "description": "一張或多張 DEG CSV 路徑;會 union 後抽顯著基因",
                     "items": {"type": "string"},
                     "minItems": 1,
                 },
-                "top_n":          {"type": "integer", "default": 50},
-                "fc_threshold":   {"type": "number", "default": 1.0},
+                "top_n": {"type": "integer", "default": 50},
+                "fc_threshold": {"type": "number", "default": 1.0},
                 "pval_threshold": {"type": "number", "default": 0.05},
-                "requested_by":   {"type": "string", "default": "agent"},
+                "requested_by": {"type": "string", "default": "agent"},
             },
             "required": ["sample_id", "counts_path", "deg_tables"],
         },
@@ -385,9 +444,15 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "tool_name":   {"type": "string", "description": "工具名(如 bio_run_bulk_eda)→ 該工具改版會影響哪些分析"},
-                "artifact_id": {"type": "string", "description": "產物 ID → 下游受影響的 artifacts"},
-                "sample_id":   {"type": "string", "description": "樣本 ID → 該樣本所有分析與產物"},
+                "tool_name": {
+                    "type": "string",
+                    "description": "工具名(如 bio_run_bulk_eda)→ 該工具改版會影響哪些分析",
+                },
+                "artifact_id": {
+                    "type": "string",
+                    "description": "產物 ID → 下游受影響的 artifacts",
+                },
+                "sample_id": {"type": "string", "description": "樣本 ID → 該樣本所有分析與產物"},
             },
             "required": [],
         },
@@ -403,7 +468,10 @@ BIO_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "要做的分析意圖（自然語言，如『時間序列 log2 fold change』）"},
+                "query": {
+                    "type": "string",
+                    "description": "要做的分析意圖（自然語言，如『時間序列 log2 fold change』）",
+                },
                 "n": {"type": "integer", "description": "回傳候選數上限（預設 5）", "default": 5},
             },
             "required": ["query"],
@@ -463,7 +531,11 @@ BIO_TOOLS = [
             "properties": {
                 "code": {"type": "string", "description": "要執行的 Python 程式碼"},
                 "description": {"type": "string", "description": "此程式碼的分析目的（用於記錄）"},
-                "timeout": {"type": "integer", "description": "執行超時秒數（預設 60）", "default": 60},
+                "timeout": {
+                    "type": "integer",
+                    "description": "執行超時秒數（預設 60）",
+                    "default": 60,
+                },
             },
             "required": ["code", "description"],
         },
@@ -482,8 +554,15 @@ BIO_TOOLS = [
                     "description": "資料類型篩選（可選，如 visium_hd / bulk_rnaseq）",
                 },
                 "tissue": {"type": "string", "description": "組織類型篩選（可選，模糊比對）"},
-                "condition": {"type": "string", "description": "樣本條件篩選（可選，對應 notes 欄位模糊比對）"},
-                "limit": {"type": "integer", "description": "最多回傳筆數（預設 50）", "default": 50},
+                "condition": {
+                    "type": "string",
+                    "description": "樣本條件篩選（可選，對應 notes 欄位模糊比對）",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "最多回傳筆數（預設 50）",
+                    "default": 50,
+                },
             },
             "required": [],
         },
@@ -569,7 +648,14 @@ BIO_TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["report", "diagnose", "stabilize", "close_stabilize", "trend", "prune"],
+                    "enum": [
+                        "report",
+                        "diagnose",
+                        "stabilize",
+                        "close_stabilize",
+                        "trend",
+                        "prune",
+                    ],
                     "description": "操作類型",
                 },
                 "tool_name": {
@@ -610,6 +696,7 @@ BIO_TOOLS = [
 def _exec_bio_history_check(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
+
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
@@ -637,6 +724,7 @@ def _exec_bio_history_check(args: dict) -> str:
 
 def _exec_bio_history_lookup(args: dict) -> str:
     from analysis.history_query import recent_analyses, find_by_type
+
     sample_id = args.get("sample_id")
     analysis_type = args.get("analysis_type")
     limit = int(args.get("limit", 20))
@@ -646,7 +734,9 @@ def _exec_bio_history_lookup(args: dict) -> str:
         df = recent_analyses(n=limit, sample_id=sample_id)
     if df.empty:
         return f"無分析記錄（sample_id={sample_id!r}）"
-    rows = df[["sample_id", "analysis_type", "status", "completed_at", "summary"]].to_dict("records")
+    rows = df[["sample_id", "analysis_type", "status", "completed_at", "summary"]].to_dict(
+        "records"
+    )
     lines = [f"分析歷史（共 {len(rows)} 筆）"]
     for r in rows:
         lines.append(
@@ -659,6 +749,7 @@ def _exec_bio_history_lookup(args: dict) -> str:
 def _exec_bio_history_timeline(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
+
     n_days = int(args.get("n_days", 7))
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         rows = con.execute(
@@ -683,6 +774,7 @@ def _exec_bio_history_search(args: dict) -> str:
     import duckdb
     from analysis.l1_cache import semantic_search
     from config.settings import DUCKDB_PATH
+
     results = semantic_search(
         args["query"],
         n=int(args.get("n", 5)),
@@ -725,6 +817,7 @@ def _exec_bio_history_search(args: dict) -> str:
 def _exec_bio_memory_query(args: dict) -> str:
     from analysis.l1_cache import semantic_search
     from config.settings import L1_COSINE_THRESHOLD
+
     results = semantic_search(
         args["query"],
         n=1,
@@ -737,7 +830,10 @@ def _exec_bio_memory_query(args: dict) -> str:
     report = r["report_text"]
     total_chars = len(report)
     if total_chars > 2000:
-        report = report[:2000] + f"\n…（完整報告共 {total_chars} 字，截斷於 2000 字，完整內容見 result_path）"
+        report = (
+            report[:2000]
+            + f"\n…（完整報告共 {total_chars} 字，截斷於 2000 字，完整內容見 result_path）"
+        )
     return (
         f"L1 cache hit（score={r['score']:.4f}）\n"
         f"summary: {r['summary']}\ncreated_at: {str(r['created_at'])[:16]}\n\n"
@@ -902,13 +998,15 @@ def _resolve_tool_fn(tool_name: str):
             if module_path not in _ALLOWED_MODULES:
                 logger.warning(
                     "_resolve_tool_fn: blocked disallowed module %r for tool %r",
-                    module_path, tool_name,
+                    module_path,
+                    tool_name,
                 )
                 return None
             if not function_name.isidentifier():
                 logger.warning(
                     "_resolve_tool_fn: invalid function_name %r for tool %r",
-                    function_name, tool_name,
+                    function_name,
+                    tool_name,
                 )
                 return None
             mod = importlib.import_module(module_path)
@@ -922,8 +1020,12 @@ def _exec_bio_tool_health(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
     from analysis.tool_registry import (
-        tool_health_report, set_stability_note, prune_deprecated,
-        open_stabilization, close_stabilization, get_complexity_trend,
+        tool_health_report,
+        set_stability_note,
+        prune_deprecated,
+        open_stabilization,
+        close_stabilization,
+        get_complexity_trend,
     )
 
     action = args.get("action", "report")
@@ -939,9 +1041,7 @@ def _exec_bio_tool_health(args: dict) -> str:
                     [s["log_id"]],
                 ).fetchone()
                 if row and row[0]:
-                    snapshot_imgs.append(
-                        f"\n![{s['tool_name']} 穩定化快照]({row[0]})\n"
-                    )
+                    snapshot_imgs.append(f"\n![{s['tool_name']} 穩定化快照]({row[0]})\n")
 
         lines = [
             "工具庫健康報告",
@@ -962,7 +1062,9 @@ def _exec_bio_tool_health(args: dict) -> str:
             for t in report["hot_zones"]:
                 tag = " ✓迭代中" if t["tool_name"] in open_names else " ⚠️ 尚無迭代"
                 note = t["stability_note"] or "（尚無診斷）"
-                lines.append(f"  {t['tool_name']}  revision={t['revision_count']}{tag}  診斷：{note}")
+                lines.append(
+                    f"  {t['tool_name']}  revision={t['revision_count']}{tag}  診斷：{note}"
+                )
                 for entry in t["change_log"][:3]:
                     reason = entry["reason"] or "—"
                     lines.append(
@@ -1027,15 +1129,24 @@ def _exec_bio_tool_health(args: dict) -> str:
                         [tool_name],
                     ).fetchall()
                     rev_history = [
-                        {"revision": r[0], "old_hash": r[1], "new_hash": r[2],
-                         "reason": r[3], "changed_at": str(r[4])}
+                        {
+                            "revision": r[0],
+                            "old_hash": r[1],
+                            "new_hash": r[2],
+                            "reason": r[3],
+                            "changed_at": str(r[4]),
+                        }
                         for r in rows
                     ]
                 except Exception:
                     pass
             log_id = open_stabilization(
-                con, tool_name, diagnosis, action_taken,
-                fn=fn, revision_history=rev_history,
+                con,
+                tool_name,
+                diagnosis,
+                action_taken,
+                fn=fn,
+                revision_history=rev_history,
             )
             con.execute("CHECKPOINT")
         snapshot_note = "（已渲染視覺快照 ✓）" if fn else "（無法取得 callable，快照略過）"
@@ -1061,13 +1172,17 @@ def _exec_bio_tool_health(args: dict) -> str:
                 ).fetchone()
                 fn = _resolve_tool_fn(row[0]) if row else None
                 close_stabilization(
-                    con, log_id, outcome,
-                    action_taken=args.get("action_taken"), fn=fn,
+                    con,
+                    log_id,
+                    outcome,
+                    action_taken=args.get("action_taken"),
+                    fn=fn,
                 )
                 # Fetch complexity delta for summary
                 result_row = con.execute(
                     "SELECT complexity_before, complexity_after FROM tool_stabilization_log "
-                    "WHERE log_id = ?", [log_id],
+                    "WHERE log_id = ?",
+                    [log_id],
                 ).fetchone()
                 con.execute("CHECKPOINT")
             except ValueError as e:
@@ -1082,8 +1197,7 @@ def _exec_bio_tool_health(args: dict) -> str:
             delta = result_row[0] - result_row[1]
             sign = "↓" if delta > 0 else "→" if delta == 0 else "↑"
             complexity_note = (
-                f"\n  Cyclomatic Complexity: {result_row[0]} → {result_row[1]} "
-                f"({sign}{abs(delta)})"
+                f"\n  Cyclomatic Complexity: {result_row[0]} → {result_row[1]} ({sign}{abs(delta)})"
             )
         return f"迭代 {log_id[:8]}… 已關閉。結果：{outcome_zh}{complexity_note}"
 
@@ -1106,8 +1220,7 @@ def _exec_bio_tool_health(args: dict) -> str:
         total_delta = sum(r["delta"] for r in rows)
         improved = sum(1 for r in rows if r["delta"] > 0)
         lines.append(
-            f"\n合計 {len(rows)} 次迭代，{improved} 次降低複雜度，"
-            f"累積 CC 改善 {total_delta}。"
+            f"\n合計 {len(rows)} 次迭代，{improved} 次降低複雜度，累積 CC 改善 {total_delta}。"
         )
         return "\n".join(lines)
 
@@ -1128,6 +1241,7 @@ def _exec_bio_tool_health(args: dict) -> str:
 def _exec_bio_check_l2_sufficiency(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
+
     sample_id = args["sample_id"]
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         row = con.execute(
@@ -1155,6 +1269,7 @@ def _exec_bio_run_spatial_eda(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
     from analysis.report_generator import run_full_eda_report
+
     sample_id = args["sample_id"]
     requested_by = args.get("requested_by", "agent")
 
@@ -1173,17 +1288,18 @@ def _exec_bio_run_spatial_eda(args: dict) -> str:
     # run_full_eda_report 內部已實作完整兩階段寫入（INSERT running → UPDATE completed/failed）
     try:
         result = run_full_eda_report(sample_id, requested_by=requested_by)
-        summary = result.get('summary', '')
-        report_path = result.get('report_path', '(無)')
+        summary = result.get("summary", "")
+        report_path = result.get("report_path", "(無)")
         # 讀取完整報告（含 inline base64 圖片），讓 web_app 解析並顯示
         report_text = ""
-        if report_path and report_path != '(無)':
+        if report_path and report_path != "(無)":
             try:
                 from pathlib import Path as _Path
+
                 report_text = _Path(report_path).read_text(encoding="utf-8")
             except Exception:
                 pass
-        analysis_id = result.get('analysis_id', '')
+        analysis_id = result.get("analysis_id", "")
         # tool_id 已由分析函數內部回填（analysis.report_generator）；此處不再重複。
 
         header = (
@@ -1204,8 +1320,9 @@ def _exec_bio_register_sample(args: dict) -> str:
     from config.db_utils import safe_write
     from config.settings import DUCKDB_PATH
     from datetime import datetime, timezone
+
     sample_id = args["sample_id"]
-    if not re.match(r'^[a-z0-9_-]+$', sample_id):
+    if not re.match(r"^[a-z0-9_-]+$", sample_id):
         return f"樣本 ID {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號。"
     with duckdb.connect(str(DUCKDB_PATH)) as con:
         if con.execute("SELECT 1 FROM sample_registry WHERE sample_id=?", [sample_id]).fetchone():
@@ -1217,10 +1334,16 @@ def _exec_bio_register_sample(args: dict) -> str:
                     l3_path, l2_ready, analysis_done, added_by, notes, last_updated)
                VALUES (?, ?, ?, ?, ?, ?, ?, false, false, ?, ?, ?)""",
             [
-                sample_id, args.get("project", ""), args["data_type"],
-                args.get("platform", ""), args.get("species", "human"),
-                args.get("tissue", ""), args["l3_path"],
-                "agent", args.get("notes", ""), datetime.now(timezone.utc),
+                sample_id,
+                args.get("project", ""),
+                args["data_type"],
+                args.get("platform", ""),
+                args.get("species", "human"),
+                args.get("tissue", ""),
+                args["l3_path"],
+                "agent",
+                args.get("notes", ""),
+                datetime.now(timezone.utc),
             ],
         )
     return f"樣本 {sample_id!r} 已登記。data_type={args['data_type']!r}"
@@ -1228,7 +1351,8 @@ def _exec_bio_register_sample(args: dict) -> str:
 
 def _exec_bio_run_bulk_eda(args: dict) -> str:
     from analysis.bulk_eda import generate_bulk_report
-    sample_id    = args["sample_id"]
+
+    sample_id = args["sample_id"]
     requested_by = args.get("requested_by", "agent")
     try:
         analysis_id, report_path = generate_bulk_report(sample_id, requested_by=requested_by)
@@ -1237,16 +1361,13 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
         if report_path:
             try:
                 from pathlib import Path as _Path
+
                 report_text = _Path(report_path).read_text(encoding="utf-8")
             except Exception:
                 pass
         # tool_id 已由分析函數內部回填（analysis.bulk_eda）；此處不再重複。
 
-        header = (
-            f"Bulk EDA 完成。\n"
-            f"analysis_id: {analysis_id}\n"
-            f"report_path: {report_path}\n\n"
-        )
+        header = f"Bulk EDA 完成。\nanalysis_id: {analysis_id}\nreport_path: {report_path}\n\n"
         return header + report_text
     except Exception as e:
         return f"Bulk EDA 執行失敗：{e}"
@@ -1254,26 +1375,25 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
 
 def _exec_bio_run_mcseg_qc(args: dict) -> str:
     from analysis.mcseg_quality import generate_mcseg_qc_report
-    sample_id    = args["sample_id"]
-    qc_dir       = args.get("qc_dir")
+
+    sample_id = args["sample_id"]
+    qc_dir = args.get("qc_dir")
     requested_by = args.get("requested_by", "agent")
     try:
         analysis_id, report_path = generate_mcseg_qc_report(
-            sample_id, qc_dir=qc_dir, requested_by=requested_by)
+            sample_id, qc_dir=qc_dir, requested_by=requested_by
+        )
         report_text = ""
         if report_path:
             try:
                 from pathlib import Path as _Path
+
                 report_text = _Path(report_path).read_text(encoding="utf-8")
             except Exception:
                 pass
         # tool_id 已由分析函數內部回填（analysis.mcseg_quality）；此處不再重複。
 
-        header = (
-            f"MCseg QC 完成。\n"
-            f"analysis_id: {analysis_id}\n"
-            f"report_path: {report_path}\n\n"
-        )
+        header = f"MCseg QC 完成。\nanalysis_id: {analysis_id}\nreport_path: {report_path}\n\n"
         return header + report_text
     except FileNotFoundError as e:
         return (
@@ -1289,6 +1409,7 @@ def _exec_bio_run_deg(args: dict) -> str:
     """DEG 多組對照（DESeq2 via omicverse.pyDEG）+ 火山圖。"""
     from pathlib import Path as _Path
     from analysis.bulk_deg import run_deg_analysis
+
     sample_id = args["sample_id"]
     counts_path = _Path(args["counts_path"])
     coldata_path = _Path(args["coldata_path"])
@@ -1332,6 +1453,7 @@ def _exec_bio_run_enrichment(args: dict) -> str:
     """ORA 富集分析（gseapy.enrichr）對 DEG 表 up/down × N library。"""
     from pathlib import Path as _Path
     from analysis.enrichment import run_ora, DEFAULT_LIBRARIES
+
     sample_id = args["sample_id"]
     deg_path = _Path(args["deg_table_path"])
     libraries = tuple(args.get("libraries") or DEFAULT_LIBRARIES)
@@ -1366,12 +1488,15 @@ def _exec_bio_run_enrichment(args: dict) -> str:
 def _exec_bio_impact(args: dict) -> str:
     """影響分析 / 爆炸範圍（read-only，0 token）。"""
     from analysis.impact import compute_impact, render_impact_md
+
     tool_name = args.get("tool_name") or None
     artifact_id = args.get("artifact_id") or None
     sample_id = args.get("sample_id") or None
     try:
         report = compute_impact(
-            tool_name=tool_name, artifact_id=artifact_id, sample_id=sample_id,
+            tool_name=tool_name,
+            artifact_id=artifact_id,
+            sample_id=sample_id,
         )
     except ValueError as e:
         return f"影響分析參數錯誤：{e}"
@@ -1384,6 +1509,7 @@ def _exec_bio_run_heatmaps(args: dict) -> str:
     """產出顯著基因熱圖 + top variable heatmap。"""
     from pathlib import Path as _Path
     from analysis.bulk_heatmap import run_bulk_heatmaps
+
     sample_id = args["sample_id"]
     counts_path = _Path(args["counts_path"])
     deg_tables = [_Path(p) for p in args["deg_tables"]]
@@ -1420,10 +1546,10 @@ def _archive_history_insert(
     code_lines: int,
     fig_count: int,
     error_summary: Optional[str],
-    status: str,           # "completed" | "failed"
+    status: str,  # "completed" | "failed"
     rel_path: str,
-    started_at,            # datetime aware UTC
-    completed_at,          # datetime aware UTC
+    started_at,  # datetime aware UTC
+    completed_at,  # datetime aware UTC
 ) -> None:
     """寫一筆 dynamic_code 歸檔記錄到 analysis_history；失敗只 log 不 raise。"""
     import duckdb
@@ -1452,8 +1578,14 @@ def _archive_history_insert(
                         result_path, requested_by, started_at, completed_at, summary)
                    VALUES (?, ?, 'dynamic_code', ?, ?, ?, 'agent', ?, ?, ?)""",
                 [
-                    analysis_id, sample_id, _json.dumps(params_json),
-                    status, rel_path, started_at, completed_at, summary_text,
+                    analysis_id,
+                    sample_id,
+                    _json.dumps(params_json),
+                    status,
+                    rel_path,
+                    started_at,
+                    completed_at,
+                    summary_text,
                 ],
             )
     except Exception:
@@ -1504,9 +1636,7 @@ _plt_orig.show = _hermes_show
         completed_at = datetime.now(timezone.utc)
         duration_sec = (completed_at - started_at).total_seconds()
         err_msg = str(e)
-        (archive_dir / "traceback.txt").write_text(
-            f"SecurityError: {err_msg}\n", encoding="utf-8"
-        )
+        (archive_dir / "traceback.txt").write_text(f"SecurityError: {err_msg}\n", encoding="utf-8")
         sec_meta = {
             "analysis_id": analysis_id,
             "description": description,
@@ -1607,16 +1737,13 @@ _plt_orig.show = _hermes_show
         )
 
     out = output_text[:2000] if len(output_text) > 2000 else output_text
-    return (
-        f"執行成功（{result.duration_sec}s）\n"
-        f"歸檔：{rel_archive}/\n"
-        f"{out}{fig_md}"
-    )
+    return f"執行成功（{result.duration_sec}s）\n歸檔：{rel_archive}/\n{out}{fig_md}"
 
 
 def _exec_bio_read_report(args: dict) -> str:
     """讀取報告原文（沙盒路徑檢查）。委派至 analysis.report_reader。"""
     from analysis.report_reader import read_report, ReportReadError
+
     try:
         r = read_report(
             args["result_path"],
@@ -1626,9 +1753,7 @@ def _exec_bio_read_report(args: dict) -> str:
     except ReportReadError as exc:
         return f"[ERROR] bio_read_report 失敗：{exc}"
     meta = (
-        f"path: {r.path}\n"
-        f"total_chars: {r.total_chars} | truncated: {r.truncated}\n"
-        f"note: {r.note}\n"
+        f"path: {r.path}\ntotal_chars: {r.total_chars} | truncated: {r.truncated}\nnote: {r.note}\n"
     )
     if r.tail:
         return f"{meta}--- HEAD ---\n{r.head}\n--- TAIL ---\n{r.tail}"
@@ -1706,14 +1831,14 @@ _TOOL_HANDLERS = {
     "bio_sample_list": _exec_bio_sample_list,
     "bio_sample_compare": _exec_bio_sample_compare,
     "bio_check_l2_sufficiency": _exec_bio_check_l2_sufficiency,
-    "bio_tool_health":          _exec_bio_tool_health,
+    "bio_tool_health": _exec_bio_tool_health,
     "bio_run_spatial_eda": _exec_bio_run_spatial_eda,
-    "bio_run_bulk_eda":    _exec_bio_run_bulk_eda,
-    "bio_run_deg":         _exec_bio_run_deg,
-    "bio_run_enrichment":  _exec_bio_run_enrichment,
-    "bio_run_heatmaps":    _exec_bio_run_heatmaps,
-    "bio_impact":          _exec_bio_impact,
-    "bio_run_mcseg_qc":    _exec_bio_run_mcseg_qc,
+    "bio_run_bulk_eda": _exec_bio_run_bulk_eda,
+    "bio_run_deg": _exec_bio_run_deg,
+    "bio_run_enrichment": _exec_bio_run_enrichment,
+    "bio_run_heatmaps": _exec_bio_run_heatmaps,
+    "bio_impact": _exec_bio_impact,
+    "bio_run_mcseg_qc": _exec_bio_run_mcseg_qc,
     "bio_register_sample": _exec_bio_register_sample,
     "bio_execute_code": _exec_bio_execute_code,
     "bio_read_report": _exec_bio_read_report,
@@ -1750,6 +1875,7 @@ class AgentResponse:
 
 # ── BIO_TOOLS → OpenAI function calling 格式 ─────────────────────────────────
 
+
 def _to_openai_tools(tools: list[dict]) -> list[dict]:
     """將 Anthropic tool schema 轉為 OpenAI function calling 格式。"""
     return [
@@ -1771,26 +1897,31 @@ _OPENAI_TOOLS = _to_openai_tools(BIO_TOOLS)
 # ── 推理後端 ─────────────────────────────────────────────────────────────────
 
 LLAMA_BASE_URL = "http://localhost:8080/v1"
-LLAMA_MODEL    = "gemma-4"
+LLAMA_MODEL = "gemma-4"
 
 _local_client = None
 _claude_client = None
+
 
 def _get_local_client():
     global _local_client
     if _local_client is None:
         from openai import OpenAI as _OpenAI
+
         _local_client = _OpenAI(base_url=LLAMA_BASE_URL, api_key="not-needed")
     return _local_client
+
 
 def _get_claude_client():
     global _claude_client
     if _claude_client is None:
         import anthropic
         from config.settings import ANTHROPIC_API_KEY, validate_inference_backend
+
         validate_inference_backend("claude")  # 缺 key 立即 raise，不讓 SDK 收到空 key
         _claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     return _claude_client
+
 
 _HISTORY_ROLES = {"user", "assistant", "tool", "system"}
 
@@ -1810,9 +1941,16 @@ def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list,
                 if url.startswith("data:"):
                     media, b64 = url.split(",", 1)
                     media_type = media.split(";")[0].replace("data:", "")
-                    out.append({"type": "image", "source": {
-                        "type": "base64", "media_type": media_type, "data": b64,
-                    }})
+                    out.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": b64,
+                            },
+                        }
+                    )
                 else:
                     out.append({"type": "image", "source": {"type": "url", "url": url}})
             else:
@@ -1834,8 +1972,8 @@ def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list,
         model=CLAUDE_MODEL,
         max_tokens=max_tokens,
         system=cached_system,  # type: ignore[arg-type]
-        tools=cached_tools,    # type: ignore[arg-type]
-        messages=converted,    # type: ignore[arg-type]
+        tools=cached_tools,  # type: ignore[arg-type]
+        messages=converted,  # type: ignore[arg-type]
         betas=["prompt-caching-2024-07-31"],
     )
     return resp.stop_reason, resp.content, resp.usage.input_tokens, resp.usage.output_tokens  # type: ignore[union-attr]
@@ -1860,6 +1998,7 @@ def _get_google_client():
     if _google_client is None:
         from google import genai
         from config.settings import GOOGLE_API_KEY, validate_inference_backend
+
         validate_inference_backend("google")  # 缺 key 立即 raise，不讓 SDK 收到空 key
         _google_client = genai.Client(api_key=GOOGLE_API_KEY)
     return _google_client
@@ -1887,18 +2026,21 @@ def _make_google_call(
                     否則從 OpenAI-format messages 重建。
     """
     from google.genai import types
+
     client = _get_google_client()
 
     # BIO_TOOLS（Anthropic schema）→ Gemini FunctionDeclaration
     gemini_tools = [
-        types.Tool(function_declarations=[
-            types.FunctionDeclaration(
-                name=t["name"],
-                description=t["description"],
-                parameters=types.Schema(**_strip_schema_defaults(dict(t["input_schema"]))),  # type: ignore[arg-type]
-            )
-            for t in BIO_TOOLS
-        ])
+        types.Tool(
+            function_declarations=[
+                types.FunctionDeclaration(
+                    name=t["name"],
+                    description=t["description"],
+                    parameters=types.Schema(**_strip_schema_defaults(dict(t["input_schema"]))),  # type: ignore[arg-type]
+                )
+                for t in BIO_TOOLS
+            ]
+        )
     ]
 
     system_instruction = next(
@@ -1915,9 +2057,7 @@ def _make_google_call(
             role = "model" if m["role"] == "assistant" else "user"
             content = m["content"]
             if isinstance(content, str):
-                history_contents.append(
-                    types.Content(role=role, parts=[types.Part(text=content)])
-                )
+                history_contents.append(types.Content(role=role, parts=[types.Part(text=content)]))
             elif isinstance(content, list):
                 parts = []
                 for b in content:
@@ -1929,9 +2069,9 @@ def _make_google_call(
                         if url.startswith("data:"):
                             header, data = url.split(",", 1)
                             mime = header.split(";")[0].replace("data:", "")
-                            parts.append(types.Part(
-                                inline_data=types.Blob(mime_type=mime, data=data)
-                            ))
+                            parts.append(
+                                types.Part(inline_data=types.Blob(mime_type=mime, data=data))
+                            )
                 if parts:
                     history_contents.append(types.Content(role=role, parts=parts))
 
@@ -1944,9 +2084,9 @@ def _make_google_call(
             max_output_tokens=max_tokens,
         ),
     )
-    in_tok  = getattr(resp.usage_metadata, "prompt_token_count", 0) or 0
+    in_tok = getattr(resp.usage_metadata, "prompt_token_count", 0) or 0
     out_tok = getattr(resp.usage_metadata, "candidates_token_count", 0) or 0
-    finish  = resp.candidates[0].finish_reason.name if resp.candidates else "STOP"
+    finish = resp.candidates[0].finish_reason.name if resp.candidates else "STOP"
     return finish, resp, in_tok, out_tok, history_contents
 
 
@@ -1978,6 +2118,7 @@ def handle_message(
         AgentResponse(text, tool_calls, input_tokens, output_tokens, messages)
     """
     from config.settings import INFERENCE_BACKEND, CLAUDE_MODEL, GOOGLE_MODEL
+
     resolved_backend = backend or INFERENCE_BACKEND
     if model:
         resolved_model = model
@@ -1990,7 +2131,7 @@ def handle_message(
 
     # 組裝 messages：system + history（完整結構，含 tool 輪次）+ 新訊息
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for m in (history or []):
+    for m in history or []:
         if m.get("role") in _HISTORY_ROLES and m.get("role") != "system":
             messages.append(m)
 
@@ -1999,27 +2140,35 @@ def handle_message(
     # 多模態訊息（image_base64）一律不走 fast-path，留給 VLM。
     if not image_base64:
         from server.fast_path import try_fast_path, render_header
+
         hit = try_fast_path(user_msg)
         if hit is not None:
             try:
                 tool_result = execute_tool(hit.tool_name, hit.args)
             except Exception as exc:  # noqa: BLE001 — 任何錯誤都 fallback 給 LLM
-                logger.warning("fast_path intent=%s tool=%s failed, fallback to LLM: %s",
-                               hit.intent, hit.tool_name, exc)
+                logger.warning(
+                    "fast_path intent=%s tool=%s failed, fallback to LLM: %s",
+                    hit.intent,
+                    hit.tool_name,
+                    exc,
+                )
             else:
                 text = render_header(hit) + tool_result
                 messages.append({"role": "user", "content": user_msg})
                 messages.append({"role": "assistant", "content": text})
-                logger.info("fast_path hit intent=%s tool=%s (bypassed LLM)",
-                            hit.intent, hit.tool_name)
+                logger.info(
+                    "fast_path hit intent=%s tool=%s (bypassed LLM)", hit.intent, hit.tool_name
+                )
                 return AgentResponse(
                     text=text,
-                    tool_calls=[{
-                        "name": hit.tool_name,
-                        "input": hit.args,
-                        "result": tool_result,
-                        "fast_path": True,
-                    }],
+                    tool_calls=[
+                        {
+                            "name": hit.tool_name,
+                            "input": hit.args,
+                            "result": tool_result,
+                            "fast_path": True,
+                        }
+                    ],
                     input_tokens=0,
                     output_tokens=0,
                     messages=messages,
@@ -2053,15 +2202,21 @@ def handle_message(
     for _round in range(max_tool_rounds):
         if resolved_backend == "claude":
             stop_reason, content_blocks, in_tok, out_tok = _make_claude_call(messages, max_tokens)
-            total_input  += in_tok
+            total_input += in_tok
             total_output += out_tok
 
             if stop_reason != "tool_use":
-                text = next((b.text for b in content_blocks if hasattr(b, "text")), "（無文字回覆）")
+                text = next(
+                    (b.text for b in content_blocks if hasattr(b, "text")), "（無文字回覆）"
+                )
                 messages.append({"role": "assistant", "content": text})
-                return AgentResponse(text=text, tool_calls=all_tool_calls,
-                                     input_tokens=total_input, output_tokens=total_output,
-                                     messages=messages)
+                return AgentResponse(
+                    text=text,
+                    tool_calls=all_tool_calls,
+                    input_tokens=total_input,
+                    output_tokens=total_output,
+                    messages=messages,
+                )
 
             tool_results = []
             for block in content_blocks:
@@ -2069,12 +2224,19 @@ def handle_message(
                     continue
                 tool_result = execute_tool(block.name, block.input)
                 logger.info("Tool %r called: %s…", block.name, str(tool_result)[:60])
-                all_tool_calls.append({"name": block.name, "input": block.input, "result": tool_result})
-                truncated = tool_result if len(tool_result) <= 800 else tool_result[:800] + "\n…（已截斷，完整內容見 result_path）"
-                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": truncated})
+                all_tool_calls.append(
+                    {"name": block.name, "input": block.input, "result": tool_result}
+                )
+                truncated = (
+                    tool_result
+                    if len(tool_result) <= 800
+                    else tool_result[:800] + "\n…（已截斷，完整內容見 result_path）"
+                )
+                tool_results.append(
+                    {"type": "tool_result", "tool_use_id": block.id, "content": truncated}
+                )
             serializable_blocks = [
-                b.model_dump() if hasattr(b, "model_dump") else b
-                for b in content_blocks
+                b.model_dump() if hasattr(b, "model_dump") else b for b in content_blocks
             ]
             messages.append({"role": "assistant", "content": serializable_blocks})
             messages.append({"role": "user", "content": tool_results})
@@ -2086,34 +2248,41 @@ def handle_message(
 
             # Always pass accumulated native history (pre-built before loop).
             finish, resp, in_tok, out_tok, _google_native = _make_google_call(
-                messages, resolved_model, max_tokens,
+                messages,
+                resolved_model,
+                max_tokens,
                 native_history=_google_native,
             )
-            total_input  += in_tok
+            total_input += in_tok
             total_output += out_tok
 
             candidate = resp.candidates[0] if resp.candidates else None
             candidate_parts = candidate.content.parts if (candidate and candidate.content) else []
-            fn_calls = [p.function_call for p in candidate_parts
-                        if hasattr(p, "function_call") and p.function_call]
+            fn_calls = [
+                p.function_call
+                for p in candidate_parts
+                if hasattr(p, "function_call") and p.function_call
+            ]
 
             if fn_calls:
                 # Preserve the model turn with its FunctionCall parts in native history
-                _google_native.append(
-                    _gtypes.Content(role="model", parts=candidate_parts)
-                )
+                _google_native.append(_gtypes.Content(role="model", parts=candidate_parts))
                 # Batch all tool results into a single user turn (Gemini requires alternating roles)
                 response_parts = []
                 for fc in fn_calls:
                     fn_args = dict(fc.args) if fc.args else {}
                     tool_result = execute_tool(fc.name, fn_args)
                     logger.info("Tool %r called: %s…", fc.name, str(tool_result)[:60])
-                    all_tool_calls.append({"name": fc.name, "input": fn_args, "result": tool_result})
+                    all_tool_calls.append(
+                        {"name": fc.name, "input": fn_args, "result": tool_result}
+                    )
                     response_parts.append(
-                        _gtypes.Part(function_response=_gtypes.FunctionResponse(
-                            name=fc.name,
-                            response={"result": tool_result[:800]},
-                        ))
+                        _gtypes.Part(
+                            function_response=_gtypes.FunctionResponse(
+                                name=fc.name,
+                                response={"result": tool_result[:800]},
+                            )
+                        )
                     )
                 _google_native.append(_gtypes.Content(role="user", parts=response_parts))
                 continue
@@ -2127,15 +2296,19 @@ def handle_message(
                 text = (resp.text or "").strip() or "（無文字回覆）"
 
             messages.append({"role": "assistant", "content": text})
-            return AgentResponse(text=text, tool_calls=all_tool_calls,
-                                 input_tokens=total_input, output_tokens=total_output,
-                                 messages=messages)
+            return AgentResponse(
+                text=text,
+                tool_calls=all_tool_calls,
+                input_tokens=total_input,
+                output_tokens=total_output,
+                messages=messages,
+            )
 
         # ── local backend (llama.cpp OpenAI-compatible) ───────────────────────
         response = _make_local_call(messages, resolved_model, max_tokens)
         usage = response.usage
         if usage:
-            total_input  += usage.prompt_tokens or 0
+            total_input += usage.prompt_tokens or 0
             total_output += usage.completion_tokens or 0
 
         choice = response.choices[0]
@@ -2162,7 +2335,11 @@ def handle_message(
                 logger.info("Tool %r called: %s…", fn_name, str(tool_result)[:60])
                 all_tool_calls.append({"name": fn_name, "input": fn_args, "result": tool_result})
                 # 截斷過長的工具結果，避免撐爆 8192 context window
-                tool_msg = tool_result if len(tool_result) <= 800 else tool_result[:800] + "\n…（已截斷，完整內容見 result_path）"
+                tool_msg = (
+                    tool_result
+                    if len(tool_result) <= 800
+                    else tool_result[:800] + "\n…（已截斷，完整內容見 result_path）"
+                )
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_msg})
 
             continue
@@ -2214,6 +2391,7 @@ def _startup_cleanup() -> None:
     """
     try:
         from config.db_utils import cleanup_stale_runs, open_db
+
         with open_db() as con:
             cleaned = cleanup_stale_runs(con, hours=0)
             if cleaned:
@@ -2243,7 +2421,9 @@ def run_cli() -> None:
 
         result = handle_message(user_msg, history)
         print(f"\nBioAgent：{result.text}")
-        print(f"  [tokens: in={result.input_tokens} out={result.output_tokens} | tools={len(result.tool_calls)}]")
+        print(
+            f"  [tokens: in={result.input_tokens} out={result.output_tokens} | tools={len(result.tool_calls)}]"
+        )
 
         # 使用 handle_message 回傳的完整 messages（含 tool 輪次），確保 API 合規
         if result.text:

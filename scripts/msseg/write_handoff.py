@@ -3,6 +3,7 @@
 讀取 qc_metrics.csv，計算摘要統計，依規則推薦分析參數，
 寫入 results/handoff_report.json。
 """
+
 from __future__ import annotations
 
 import json
@@ -23,11 +24,11 @@ def _quality_label(ned_delta: float) -> str:
 
 
 def write_handoff(
-    metrics_csv:    Path | str | None = None,
-    masks_dir:      str | None = None,
-    binned_dir:     str | None = None,
+    metrics_csv: Path | str | None = None,
+    masks_dir: str | None = None,
+    binned_dir: str | None = None,
     tissue_profile: str | None = None,
-    out_path:       Path | str | None = None,
+    out_path: Path | str | None = None,
 ) -> dict:
     if metrics_csv is None:
         metrics_csv = ROOT / "results" / "qc_metrics.csv"
@@ -44,12 +45,12 @@ def write_handoff(
 
     df = pd.read_csv(metrics_csv)
     mcseg = df[df["method"] == "mcseg"]
-    nuc   = df[df["method"] == "nuc"]
+    nuc = df[df["method"] == "nuc"]
 
-    ned_mcseg  = float(mcseg["ned"].mean())
-    ned_nuc    = float(nuc["ned"].mean()) if len(nuc) > 0 else 0.0
-    ned_delta  = ned_mcseg - ned_nuc
-    ftc_mean   = float(mcseg["ftc"].mean())
+    ned_mcseg = float(mcseg["ned"].mean())
+    ned_nuc = float(nuc["ned"].mean()) if len(nuc) > 0 else 0.0
+    ned_delta = ned_mcseg - ned_nuc
+    ftc_mean = float(mcseg["ftc"].mean())
     coexp_mean = float(mcseg["coexp_rate"].mean())
 
     warnings = []
@@ -63,31 +64,27 @@ def write_handoff(
     # 建議 QC 閾值（保守估計，分析階段可再調整）
     n_cells_mean = float(mcseg["n_cells"].mean()) if len(mcseg) > 0 else 0
     recommended = {
-        "min_genes":    150,
-        "max_pct_mt":   12.0,
-        "min_counts":   80,
-        "leiden_resolution": (
-            0.8 if n_cells_mean < 5000 else
-            0.5 if n_cells_mean < 50000 else
-            0.3
-        ),
+        "min_genes": 150,
+        "max_pct_mt": 12.0,
+        "min_counts": 80,
+        "leiden_resolution": (0.8 if n_cells_mean < 5000 else 0.5 if n_cells_mean < 50000 else 0.3),
     }
 
     report = {
         "segmentation_complete": True,
-        "n_rois_evaluated":      int(len(mcseg)),
+        "n_rois_evaluated": int(len(mcseg)),
         "roi_qc": {
-            "ned_mcseg":  round(ned_mcseg, 4),
-            "ned_nuc":    round(ned_nuc, 4),
-            "ned_delta":  round(ned_delta, 4),
-            "quality":    _quality_label(ned_delta),
-            "ftc_mean":   round(ftc_mean, 4),
+            "ned_mcseg": round(ned_mcseg, 4),
+            "ned_nuc": round(ned_nuc, 4),
+            "ned_delta": round(ned_delta, 4),
+            "quality": _quality_label(ned_delta),
+            "ftc_mean": round(ftc_mean, 4),
             "coexp_mean": round(coexp_mean, 4),
         },
-        "warnings":                  warnings,
+        "warnings": warnings,
         "recommended_analysis_params": recommended,
-        "masks_dir":      str(masks_dir),
-        "binned_dir":     str(binned_dir),
+        "masks_dir": str(masks_dir),
+        "binned_dir": str(binned_dir),
         "tissue_profile": tissue_profile,
     }
 

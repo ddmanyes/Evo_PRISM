@@ -2,6 +2,7 @@
 組織感知 ROI 隨機抽樣器
 讀取 tissue_positions.parquet，隨機抽取 3–5 個有效 ROI，寫入 results/qc_rois.json。
 """
+
 from __future__ import annotations
 
 import json
@@ -13,18 +14,18 @@ import pandas as pd
 import yaml
 
 ROOT = Path(__file__).parent.parent
-PX_SIZE           = 0.2737
-ROI_UM            = 274
-ROI_PX            = int(ROI_UM / PX_SIZE)
-N_TARGET          = 4
-COVERAGE_THRESH   = 0.60
+PX_SIZE = 0.2737
+ROI_UM = 274
+ROI_PX = int(ROI_UM / PX_SIZE)
+N_TARGET = 4
+COVERAGE_THRESH = 0.60
 COVERAGE_FALLBACK = 0.40
-MAX_TRIES         = 50
+MAX_TRIES = 50
 
 
 def _build_tissue_index(pos: pd.DataFrame, stride: int) -> set[tuple[int, int]]:
-    rows = (pos["pxl_row_in_fullres"].values.astype(int) // stride)
-    cols = (pos["pxl_col_in_fullres"].values.astype(int) // stride)
+    rows = pos["pxl_row_in_fullres"].values.astype(int) // stride
+    cols = pos["pxl_col_in_fullres"].values.astype(int) // stride
     return set(zip(rows.tolist(), cols.tolist()))
 
 
@@ -59,20 +60,20 @@ def sample_rois(
     out_path = Path(out_path)
 
     pos_path = binned_dir / "tissue_positions.parquet"
-    pos      = pd.read_parquet(pos_path)
-    tissue   = pos[pos["in_tissue"] == 1].copy()
+    pos = pd.read_parquet(pos_path)
+    tissue = pos[pos["in_tissue"] == 1].copy()
 
     x_min = int(tissue["pxl_col_in_fullres"].min())
     x_max = int(tissue["pxl_col_in_fullres"].max())
     y_min = int(tissue["pxl_row_in_fullres"].min())
     y_max = int(tissue["pxl_row_in_fullres"].max())
 
-    stride     = max(8, ROI_PX // 64)
+    stride = max(8, ROI_PX // 64)
     tissue_set = _build_tissue_index(tissue, stride)
 
     np.random.seed(seed)
     rois: list[dict] = []
-    tries     = 0
+    tries = 0
     threshold = coverage_thresh
 
     while len(rois) < n_target and tries < max_tries:
@@ -80,24 +81,26 @@ def sample_rois(
         y0 = int(np.random.randint(y_min, max(y_min + 1, y_max - ROI_PX)))
         cov = _coverage(x0, y0, tissue_set, stride)
         if cov >= threshold:
-            rois.append({
-                "name":          f"qc_roi_{len(rois) + 1}",
-                "x":             x0,
-                "y":             y0,
-                "width_px":      ROI_PX,
-                "height_px":     ROI_PX,
-                "pixel_size_um": PX_SIZE,
-                "coverage":      round(float(cov), 3),
-            })
+            rois.append(
+                {
+                    "name": f"qc_roi_{len(rois) + 1}",
+                    "x": x0,
+                    "y": y0,
+                    "width_px": ROI_PX,
+                    "height_px": ROI_PX,
+                    "pixel_size_um": PX_SIZE,
+                    "coverage": round(float(cov), 3),
+                }
+            )
         tries += 1
         if tries == 40 and len(rois) < 2:
             print(f"⚠️  覆蓋率閾值降至 {coverage_fallback}")
             threshold = coverage_fallback
 
     result = {
-        "timestamp":      datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat(),
         "threshold_used": threshold,
-        "rois":           rois,
+        "rois": rois,
     }
 
     out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -65,9 +65,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                   AND  artifact_id NOT IN (SELECT artifact_id FROM analysis_artifact_blobs)
                 """
             )
-            migrated = con.execute(
-                "SELECT COUNT(*) FROM analysis_artifact_blobs"
-            ).fetchone()[0]
+            migrated = con.execute("SELECT COUNT(*) FROM analysis_artifact_blobs").fetchone()[0]
             print(f"Migrated inline_data rows to blob table: {migrated}")
 
             # Step 3: recreate analysis_artifacts without inline_data column.
@@ -93,9 +91,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
             con.execute("DROP TABLE IF EXISTS analysis_artifact_blobs")
             print("Temporarily dropped analysis_artifact_blobs for table rebuild")
 
-            con.execute(
-                "ALTER TABLE analysis_artifacts RENAME TO analysis_artifacts_old"
-            )
+            con.execute("ALTER TABLE analysis_artifacts RENAME TO analysis_artifacts_old")
             con.execute(
                 """
                 CREATE TABLE analysis_artifacts (
@@ -123,9 +119,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 FROM   analysis_artifacts_old
                 """
             )
-            copied = con.execute(
-                "SELECT COUNT(*) FROM analysis_artifacts"
-            ).fetchone()[0]
+            copied = con.execute("SELECT COUNT(*) FROM analysis_artifacts").fetchone()[0]
             print(f"Rebuilt analysis_artifacts (no inline_data): {copied} rows")
             con.execute("DROP TABLE analysis_artifacts_old")
             print("Dropped analysis_artifacts_old")
@@ -149,20 +143,24 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 WHERE  b.artifact_id IN (SELECT artifact_id FROM analysis_artifacts)
                 """
             )
-            restored = con.execute(
-                "SELECT COUNT(*) FROM analysis_artifact_blobs"
-            ).fetchone()[0]
+            restored = con.execute("SELECT COUNT(*) FROM analysis_artifact_blobs").fetchone()[0]
             con.execute("DROP TABLE _blob_backup")
             print(f"Recreated analysis_artifact_blobs with FK — restored {restored} blob rows")
 
             # Rebuild indexes
             for name, ddl in [
-                ("idx_artifacts_analysis_id",
-                 "CREATE INDEX IF NOT EXISTS idx_artifacts_analysis_id ON analysis_artifacts (analysis_id)"),
-                ("idx_artifacts_subtype",
-                 "CREATE INDEX IF NOT EXISTS idx_artifacts_subtype ON analysis_artifacts (artifact_subtype)"),
-                ("uq_artifacts_run_subtype_label",
-                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_artifacts_run_subtype_label ON analysis_artifacts (analysis_id, artifact_subtype, label)"),
+                (
+                    "idx_artifacts_analysis_id",
+                    "CREATE INDEX IF NOT EXISTS idx_artifacts_analysis_id ON analysis_artifacts (analysis_id)",
+                ),
+                (
+                    "idx_artifacts_subtype",
+                    "CREATE INDEX IF NOT EXISTS idx_artifacts_subtype ON analysis_artifacts (artifact_subtype)",
+                ),
+                (
+                    "uq_artifacts_run_subtype_label",
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_artifacts_run_subtype_label ON analysis_artifacts (analysis_id, artifact_subtype, label)",
+                ),
             ]:
                 con.execute(ddl)
                 print(f"Rebuilt index: {name}")
@@ -183,9 +181,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         # Step 4: (artifact_id is PK on blob table — no separate index needed)
 
         # Step 5: record migration
-        existing = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 14"
-        ).fetchone()
+        existing = con.execute("SELECT 1 FROM schema_migrations WHERE version = 14").fetchone()
         if not existing:
             con.execute(
                 """
@@ -201,11 +197,10 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         print("CHECKPOINT OK")
 
         # Verify
-        blob_count = con.execute(
-            "SELECT COUNT(*) FROM analysis_artifact_blobs"
-        ).fetchone()[0]
+        blob_count = con.execute("SELECT COUNT(*) FROM analysis_artifact_blobs").fetchone()[0]
         art_cols = [
-            r[0] for r in con.execute(
+            r[0]
+            for r in con.execute(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_name = 'analysis_artifacts' AND table_schema = 'main'"
             ).fetchall()

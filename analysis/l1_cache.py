@@ -210,8 +210,16 @@ def semantic_search(
         """
         rows = con.execute(sql, params).fetchall()
 
-    result_cols = ["id", "sample_id", "query_text", "summary", "report_text",
-                   "created_at", "expires_at", "score"]
+    result_cols = [
+        "id",
+        "sample_id",
+        "query_text",
+        "summary",
+        "report_text",
+        "created_at",
+        "expires_at",
+        "score",
+    ]
     results = [dict(zip(result_cols, row)) for row in rows if row[-1] >= threshold]
     return results
 
@@ -246,6 +254,7 @@ def invalidate_tool_cache(
 def cache_stats(cache_path: Optional[Path] = None) -> dict:
     """回傳 L1 快取統計（不需要 embedding server）。"""
     from scheduler.cleanup_l1_cache import stats
+
     return stats(cache_path=cache_path or L1_CACHE_PATH)
 
 
@@ -255,7 +264,9 @@ if __name__ == "__main__":
     h = server_health()
     if not h["ok"]:
         print(f"[l1_cache] Server not available: {h['error']}")
-        print("  Start: ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/models/bge-m3-Q8_0.gguf --embedding --port 8081")
+        print(
+            "  Start: ~/llama.cpp/build/bin/llama-server -m ~/llama.cpp/models/bge-m3-Q8_0.gguf --embedding --port 8081"
+        )
         raise SystemExit(1)
 
     print("[l1_cache] Writing test record...")

@@ -14,6 +14,7 @@
     gseapy.enrichr 需網路（Enrichr API）；無網或被防火牆擋時直接 raise，由 agent
     fallback 提示用戶。GSEA prerank 走 offline GMT，較重，本檔暫只實作 ORA。
 """
+
 from __future__ import annotations
 
 import json
@@ -64,6 +65,7 @@ def _validate_library(name: str) -> None:
 
 # ── 從 DEG 表抽 up/down gene list ────────────────────────────────────────────
 
+
 def split_deg_genes(
     deg: pd.DataFrame,
     *,
@@ -87,6 +89,7 @@ def split_deg_genes(
 
 # ── ORA via gseapy.enrichr ───────────────────────────────────────────────────
 
+
 def run_enrichr_single(
     gene_list: Sequence[str],
     library: str,
@@ -104,6 +107,7 @@ def run_enrichr_single(
         return pd.DataFrame()
 
     import gseapy as gp
+
     try:
         enr = gp.enrichr(
             gene_list=list(gene_list),
@@ -208,14 +212,16 @@ def run_ora(
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
-        "deg_table_path": str(deg_table_path),
-        "libraries": list(libraries),
-        "organism": organism,
-        "fc_threshold": fc_threshold,
-        "pval_threshold": pval_threshold,
-        "top_term": top_term,
-    })
+    params_json = json.dumps(
+        {
+            "deg_table_path": str(deg_table_path),
+            "libraries": list(libraries),
+            "organism": organism,
+            "fc_threshold": fc_threshold,
+            "pval_threshold": pval_threshold,
+            "top_term": top_term,
+        }
+    )
 
     _own_con = con is None
     if con is None:
@@ -233,7 +239,9 @@ def run_ora(
 
         deg = pd.read_csv(deg_table_path, index_col=0)
         directions = split_deg_genes(
-            deg, fc_threshold=fc_threshold, pval_threshold=pval_threshold,
+            deg,
+            fc_threshold=fc_threshold,
+            pval_threshold=pval_threshold,
         )
 
         out_dir = results_dir(sample_id, "bulk_enrichment")
@@ -248,31 +256,44 @@ def run_ora(
             for lib in libraries:
                 tag = f"{prefix}__{direction}__{lib}"
                 res = run_enrichr_single(
-                    gene_list, lib, organism=organism, cutoff=pval_threshold,
+                    gene_list,
+                    lib,
+                    organism=organism,
+                    cutoff=pval_threshold,
                 )
                 csv_path = out_dir / f"{tag}_{ts}.csv"
                 if res is not None and not res.empty:
                     res.to_csv(csv_path, index=False)
-                    artifact_files.append((csv_path, "csv",
-                                           f"ORA {direction} / {lib}",
-                                           "enrichment_table"))
+                    artifact_files.append(
+                        (csv_path, "csv", f"ORA {direction} / {lib}", "enrichment_table")
+                    )
                     png_path = out_dir / f"{tag}_{ts}.png"
-                    if dotplot_from_enrichr(res, output_path=png_path,
-                                            top_term=top_term, title=tag):
+                    if dotplot_from_enrichr(
+                        res, output_path=png_path, top_term=top_term, title=tag
+                    ):
                         figs_md_parts.append(_file_to_b64_md(png_path, tag))
-                        artifact_files.append((png_path, "figure",
-                                               f"ORA dot plot {direction} / {lib}",
-                                               "enrichment_dotplot"))
-                    n_sig = int((res.get("Adjusted P-value",
-                                          pd.Series(dtype=float)) < pval_threshold).sum())
+                        artifact_files.append(
+                            (
+                                png_path,
+                                "figure",
+                                f"ORA dot plot {direction} / {lib}",
+                                "enrichment_dotplot",
+                            )
+                        )
+                    n_sig = int(
+                        (res.get("Adjusted P-value", pd.Series(dtype=float)) < pval_threshold).sum()
+                    )
                 else:
                     n_sig = 0
 
-                summary_rows.append({
-                    "direction": direction, "library": lib,
-                    "n_genes_input": len(gene_list),
-                    "n_terms_sig": n_sig,
-                })
+                summary_rows.append(
+                    {
+                        "direction": direction,
+                        "library": lib,
+                        "n_genes_input": len(gene_list),
+                        "n_terms_sig": n_sig,
+                    }
+                )
 
         summary_df = pd.DataFrame(summary_rows)
         report_path = out_dir / f"bulk_enrichment_{sample_id}_{ts}.md"
@@ -289,13 +310,11 @@ def run_ora(
             ),
             encoding="utf-8",
         )
-        artifact_files.append((report_path, "report",
-                               "Bulk 富集分析報告", "enrichment_report"))
+        artifact_files.append((report_path, "report", "Bulk 富集分析報告", "enrichment_report"))
 
         total_sig = int(summary_df["n_terms_sig"].sum())
         summary = (
-            f"Bulk ORA {sample_id}：{len(libraries)} library × up/down，"
-            f"共 {total_sig} 顯著通路。"
+            f"Bulk ORA {sample_id}：{len(libraries)} library × up/down，共 {total_sig} 顯著通路。"
         )[:80]
 
         completed_at = datetime.now(timezone.utc)
@@ -309,16 +328,19 @@ def run_ora(
         # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
         try:
             from analysis.tool_registry import backfill_tool_id
+
             backfill_tool_id(con, "bio_run_enrichment", analysis_id)
         except Exception as _exc:
             logger.warning("ora: backfill_tool_id 失敗（非致命）: %s", _exc)
 
         try:
             from analysis.artifact_registry import register_artifact
+
             for path, atype, label, subtype in artifact_files:
                 if path.exists():
-                    register_artifact(con, analysis_id, path, atype, label,
-                                      artifact_subtype=subtype)
+                    register_artifact(
+                        con, analysis_id, path, atype, label, artifact_subtype=subtype
+                    )
         except Exception as _exc:
             logger.warning("ora: register_artifact 失敗（非致命）: %s", _exc)
 

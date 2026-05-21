@@ -7,6 +7,7 @@
     富含高表現基因的路徑分數 > 富含低表現基因的路徑。
   - score_pathways：方法分派、未知方法報錯、TSV 存檔 round-trip。
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -18,6 +19,7 @@ from analysis import pathway_scoring as ps
 
 # ── load_gene_sets ────────────────────────────────────────────────────────────
 
+
 def _write_yaml(path, text: str):
     path.write_text(text, encoding="utf-8")
     return path
@@ -26,9 +28,7 @@ def _write_yaml(path, text: str):
 def test_load_gene_sets_dict_format(tmp_path):
     y = _write_yaml(
         tmp_path / "gs.yaml",
-        "OxPhos:\n"
-        "  description: oxidative phosphorylation\n"
-        "  genes: [Ndufa1, Sdha, Cox5a]\n",
+        "OxPhos:\n  description: oxidative phosphorylation\n  genes: [Ndufa1, Sdha, Cox5a]\n",
     )
     gs = ps.load_gene_sets(y)
     assert gs == {"OxPhos": ["Ndufa1", "Sdha", "Cox5a"]}
@@ -45,9 +45,7 @@ def test_load_gene_sets_filters_non_str_and_bad_body(tmp_path):
     """非字串基因被濾掉；無法解析的 body（純量）整條跳過。"""
     y = _write_yaml(
         tmp_path / "gs.yaml",
-        "P1:\n"
-        "  genes: [GeneA, 123, GeneB, null]\n"
-        "P2: 42\n",  # 純量 → 跳過
+        "P1:\n  genes: [GeneA, 123, GeneB, null]\nP2: 42\n",  # 純量 → 跳過
     )
     gs = ps.load_gene_sets(y)
     assert gs == {"P1": ["GeneA", "GeneB"]}
@@ -68,6 +66,7 @@ def test_load_gene_sets_default_path_loads():
 
 
 # ── zscore_aggregate ──────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def expr3():
@@ -105,9 +104,9 @@ def test_zscore_zero_variance_gene_is_nan():
 
 # ── ssgsea_score ──────────────────────────────────────────────────────────────
 
+
 def test_ssgsea_shape_and_no_hit_nan():
-    expr = pd.DataFrame({"s1": [6, 5, 4, 3, 2, 1]},
-                        index=[f"G{i}" for i in range(1, 7)])
+    expr = pd.DataFrame({"s1": [6, 5, 4, 3, 2, 1]}, index=[f"G{i}" for i in range(1, 7)])
     out = ps.ssgsea_score(expr, {"hit": ["G1", "G2"], "miss": ["ZZZ"]})
     assert out.shape == (2, 1)
     assert not np.isnan(out.loc["hit", "s1"])
@@ -116,13 +115,13 @@ def test_ssgsea_shape_and_no_hit_nan():
 
 def test_ssgsea_top_genes_outscore_bottom():
     """實作無關性質：富含高表現基因的路徑 ES > 富含低表現基因的路徑。"""
-    expr = pd.DataFrame({"s1": [6, 5, 4, 3, 2, 1]},
-                        index=[f"G{i}" for i in range(1, 7)])
+    expr = pd.DataFrame({"s1": [6, 5, 4, 3, 2, 1]}, index=[f"G{i}" for i in range(1, 7)])
     out = ps.ssgsea_score(expr, {"TOP": ["G1", "G2"], "BOTTOM": ["G5", "G6"]})
     assert out.loc["TOP", "s1"] > out.loc["BOTTOM", "s1"]
 
 
 # ── score_pathways（整合入口）─────────────────────────────────────────────────
+
 
 @pytest.fixture
 def gs_yaml(tmp_path):
@@ -149,8 +148,11 @@ def test_score_pathways_unknown_method_raises(expr3, gs_yaml):
 def test_score_pathways_writes_tsv(expr3, gs_yaml, tmp_path):
     out_dir = tmp_path / "out"
     scores = ps.score_pathways(
-        expr3, gene_sets_path=gs_yaml, method="zscore",
-        output_dir=out_dir, label="demo",
+        expr3,
+        gene_sets_path=gs_yaml,
+        method="zscore",
+        output_dir=out_dir,
+        label="demo",
     )
     tsv = out_dir / "pathway_scores_zscore_demo.tsv"
     assert tsv.exists()

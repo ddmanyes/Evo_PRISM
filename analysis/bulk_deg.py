@@ -14,6 +14,7 @@
     omicverse / adjustText 都是重套件，採延遲匯入；測試以 monkeypatch 取代真實 DESeq2 呼叫
     （DESeq2 對 84 樣本實跑數分鐘，不適合放 CI）。
 """
+
 from __future__ import annotations
 
 import json
@@ -57,6 +58,7 @@ def _validate_group(name: str) -> None:
 
 # ── 資料載入 ─────────────────────────────────────────────────────────────────
 
+
 def load_deg_inputs(
     counts_path: Path,
     coldata_path: Path,
@@ -81,6 +83,7 @@ def load_deg_inputs(
 
 
 # ── DEG（pyDEG/DESeq2 wrapper）──────────────────────────────────────────────
+
 
 def deg_single_comparison(
     counts: pd.DataFrame,
@@ -122,6 +125,7 @@ def deg_single_comparison(
 
 # ── 火山圖（手繪 matplotlib + adjustText）─────────────────────────────────────
 
+
 def volcano_plot(
     deg: pd.DataFrame,
     *,
@@ -161,12 +165,10 @@ def volcano_plot(
     # Top-N labels via adjustText（缺套件時降級為前 N 直接 annotate）
     sig = df[up | dn].nlargest(top_n_labels, "-log10p")
     if not sig.empty:
-        texts = [
-            ax.text(r[fc_col], r["-log10p"], str(g), fontsize=8)
-            for g, r in sig.iterrows()
-        ]
+        texts = [ax.text(r[fc_col], r["-log10p"], str(g), fontsize=8) for g, r in sig.iterrows()]
         try:
             from adjustText import adjust_text
+
             adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="-", color="grey", lw=0.4))
         except ImportError:
             logger.debug("adjustText 未安裝；跳過標籤避撞")
@@ -237,14 +239,16 @@ def run_deg_analysis(
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
-        "counts_path": str(counts_path),
-        "coldata_path": str(coldata_path),
-        "comparisons": [list(c) for c in comparisons],
-        "method": method,
-        "fc_threshold": fc_threshold,
-        "pval_threshold": pval_threshold,
-    })
+    params_json = json.dumps(
+        {
+            "counts_path": str(counts_path),
+            "coldata_path": str(coldata_path),
+            "comparisons": [list(c) for c in comparisons],
+            "method": method,
+            "fc_threshold": fc_threshold,
+            "pval_threshold": pval_threshold,
+        }
+    )
 
     _own_con = con is None
     if con is None:
@@ -272,18 +276,25 @@ def run_deg_analysis(
         for a, b in comparisons:
             try:
                 deg = deg_single_comparison(
-                    counts, coldata, a, b,
+                    counts,
+                    coldata,
+                    a,
+                    b,
                     method=method,
                     fc_threshold=fc_threshold,
                     pval_threshold=pval_threshold,
                 )
             except Exception as exc:
                 logger.warning("DEG %s_vs_%s 失敗：%s", a, b, exc, exc_info=True)
-                summary_rows.append({
-                    "comparison": f"{a}_vs_{b}",
-                    "n_sig_up": 0, "n_sig_down": 0, "n_total": 0,
-                    "status": f"failed: {type(exc).__name__}",
-                })
+                summary_rows.append(
+                    {
+                        "comparison": f"{a}_vs_{b}",
+                        "n_sig_up": 0,
+                        "n_sig_down": 0,
+                        "n_total": 0,
+                        "status": f"failed: {type(exc).__name__}",
+                    }
+                )
                 continue
 
             deg_csv = out_dir / f"DEG_{a}_vs_{b}_{ts}.csv"
@@ -293,26 +304,35 @@ def run_deg_analysis(
             volcano_png = out_dir / f"Volcano_{a}_vs_{b}_{ts}.png"
             try:
                 volcano_plot(
-                    deg, output_path=volcano_png,
+                    deg,
+                    output_path=volcano_png,
                     title=f"{a} vs {b}",
-                    fc_threshold=fc_threshold, pval_threshold=pval_threshold,
+                    fc_threshold=fc_threshold,
+                    pval_threshold=pval_threshold,
                 )
                 volcano_md_parts.append(_file_to_b64_md(volcano_png, f"Volcano {a} vs {b}"))
-                artifact_files.append((volcano_png, "figure",
-                                       f"火山圖 {a} vs {b}", "volcano"))
+                artifact_files.append((volcano_png, "figure", f"火山圖 {a} vs {b}", "volcano"))
             except Exception:
                 logger.warning("火山圖 %s_vs_%s 失敗，跳過", a, b, exc_info=True)
                 volcano_md_parts.append(f"\n（{a} vs {b} 火山圖生成失敗）\n")
 
-            up = ((deg.get("log2FC", pd.Series(dtype=float)) > fc_threshold)
-                  & (deg.get("qvalue", pd.Series(dtype=float)) < pval_threshold)).sum()
-            dn = ((deg.get("log2FC", pd.Series(dtype=float)) < -fc_threshold)
-                  & (deg.get("qvalue", pd.Series(dtype=float)) < pval_threshold)).sum()
-            summary_rows.append({
-                "comparison": f"{a}_vs_{b}",
-                "n_sig_up": int(up), "n_sig_down": int(dn),
-                "n_total": int(len(deg)), "status": "ok",
-            })
+            up = (
+                (deg.get("log2FC", pd.Series(dtype=float)) > fc_threshold)
+                & (deg.get("qvalue", pd.Series(dtype=float)) < pval_threshold)
+            ).sum()
+            dn = (
+                (deg.get("log2FC", pd.Series(dtype=float)) < -fc_threshold)
+                & (deg.get("qvalue", pd.Series(dtype=float)) < pval_threshold)
+            ).sum()
+            summary_rows.append(
+                {
+                    "comparison": f"{a}_vs_{b}",
+                    "n_sig_up": int(up),
+                    "n_sig_down": int(dn),
+                    "n_total": int(len(deg)),
+                    "status": "ok",
+                }
+            )
 
         summary_df = pd.DataFrame(summary_rows)
         report_path = out_dir / f"bulk_deg_{sample_id}_{ts}.md"
@@ -329,14 +349,10 @@ def run_deg_analysis(
             ),
             encoding="utf-8",
         )
-        artifact_files.append((report_path, "report",
-                               "Bulk DEG 分析報告", "deg_report"))
+        artifact_files.append((report_path, "report", "Bulk DEG 分析報告", "deg_report"))
 
         total_sig = int(summary_df[["n_sig_up", "n_sig_down"]].to_numpy().sum())
-        summary = (
-            f"Bulk DEG {sample_id}：{len(comparisons)} 對照，"
-            f"共 {total_sig} 顯著基因。"
-        )[:80]
+        summary = (f"Bulk DEG {sample_id}：{len(comparisons)} 對照，共 {total_sig} 顯著基因。")[:80]
 
         completed_at = datetime.now(timezone.utc)
         safe_write(
@@ -349,16 +365,19 @@ def run_deg_analysis(
         # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
         try:
             from analysis.tool_registry import backfill_tool_id
+
             backfill_tool_id(con, "bio_run_deg", analysis_id)
         except Exception as _exc:
             logger.warning("bulk_deg: backfill_tool_id 失敗（非致命）: %s", _exc)
 
         try:
             from analysis.artifact_registry import register_artifact
+
             for path, atype, label, subtype in artifact_files:
                 if path.exists():
-                    register_artifact(con, analysis_id, path, atype, label,
-                                      artifact_subtype=subtype)
+                    register_artifact(
+                        con, analysis_id, path, atype, label, artifact_subtype=subtype
+                    )
         except Exception as _exc:
             logger.warning("bulk_deg: register_artifact 失敗（非致命）: %s", _exc)
 

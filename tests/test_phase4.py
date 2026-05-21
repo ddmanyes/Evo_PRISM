@@ -66,13 +66,16 @@ def _make_main_db(tmp_path: Path) -> Path:
                 true, false, 'pytest', now())
     """)
     now = datetime.now(timezone.utc)
-    con.execute("""
+    con.execute(
+        """
         INSERT INTO analysis_history
             (analysis_id, sample_id, analysis_type, status,
              result_path, requested_by, completed_at, summary)
         VALUES (gen_random_uuid(), 'test_s1', 'spatial_eda', 'completed',
                 '/results/s1/eda', 'pytest', ?, '測試摘要')
-    """, [now])
+    """,
+        [now],
+    )
     con.close()
     return db_path
 
@@ -100,18 +103,21 @@ def _make_l1_db(tmp_path: Path) -> Path:
     except Exception:
         pass
     con.execute("SET hnsw_enable_experimental_persistence = true")
-    con.execute("""
+    con.execute(
+        """
         INSERT INTO memory_recent
             (id, sample_id, query_text, report_text, summary,
              embedding, analysis_id, created_at, expires_at)
         VALUES (?, 'test_s1', 'PTPRC spatial map',
                 '# Test Report\n\nPTPRC 高表達', '測試 L1 摘要',
                 ?, gen_random_uuid(), now(), ?)
-    """, [
-        str(uuid.uuid4()),
-        [0.1] * EMBEDDING_DIM,
-        datetime.now(timezone.utc) + timedelta(days=7),
-    ])
+    """,
+        [
+            str(uuid.uuid4()),
+            [0.1] * EMBEDDING_DIM,
+            datetime.now(timezone.utc) + timedelta(days=7),
+        ],
+    )
     con.execute("CHECKPOINT")
     con.close()
     return db_path
@@ -130,6 +136,7 @@ class TestListTools:
         """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（21 個）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from server.bio_memory_server import list_tools
+
         tools = run(list_tools())
         assert len(tools) == 21
         names = {t.name for t in tools}
@@ -139,6 +146,7 @@ class TestListTools:
         """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 22 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         from server.bio_memory_server import list_tools
+
         tools = run(list_tools())
         assert len(tools) == 22
         names = {t.name for t in tools}
@@ -147,24 +155,38 @@ class TestListTools:
     def test_tool_names(self, monkeypatch):
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         from server.bio_memory_server import list_tools
+
         tools = run(list_tools())
         names = {t.name for t in tools}
         expected = {
-            "bio_history_lookup", "bio_history_timeline", "bio_history_check",
-            "bio_history_search", "bio_memory_query", "bio_memory_write",
+            "bio_history_lookup",
+            "bio_history_timeline",
+            "bio_history_check",
+            "bio_history_search",
+            "bio_memory_query",
+            "bio_memory_write",
             "bio_register_sample",
-            "bio_artifact_search", "bio_artifact_summary",
+            "bio_artifact_search",
+            "bio_artifact_summary",
             "bio_check_l2_sufficiency",
-            "bio_run_spatial_eda", "bio_run_bulk_eda",
-            "bio_run_deg", "bio_run_enrichment", "bio_run_heatmaps",
+            "bio_run_spatial_eda",
+            "bio_run_bulk_eda",
+            "bio_run_deg",
+            "bio_run_enrichment",
+            "bio_run_heatmaps",
             "bio_impact",
-            "bio_find_tool", "bio_execute_code", "bio_tool_health",
-            "bio_read_report", "bio_get_figure", "bio_get_artifact",
+            "bio_find_tool",
+            "bio_execute_code",
+            "bio_tool_health",
+            "bio_read_report",
+            "bio_get_figure",
+            "bio_get_artifact",
         }
         assert names == expected
 
     def test_all_tools_have_schema(self):
         from server.bio_memory_server import list_tools
+
         tools = run(list_tools())
         for t in tools:
             assert t.inputSchema is not None
@@ -178,22 +200,32 @@ class TestBioHistoryCheck:
     def test_exists(self, tmp_path):
         db = _make_main_db(tmp_path)
         from server.bio_memory_server import _handle_bio_history_check
+
         with patch("config.settings.DUCKDB_PATH", db):
-            result = run(_handle_bio_history_check({
-                "sample_id": "test_s1",
-                "analysis_type": "spatial_eda",
-            }))
+            result = run(
+                _handle_bio_history_check(
+                    {
+                        "sample_id": "test_s1",
+                        "analysis_type": "spatial_eda",
+                    }
+                )
+            )
         assert "exists: true" in result
         assert "result_path" in result
 
     def test_not_exists(self, tmp_path):
         db = _make_main_db(tmp_path)
         from server.bio_memory_server import _handle_bio_history_check
+
         with patch("config.settings.DUCKDB_PATH", db):
-            result = run(_handle_bio_history_check({
-                "sample_id": "test_s1",
-                "analysis_type": "bulk_eda",
-            }))
+            result = run(
+                _handle_bio_history_check(
+                    {
+                        "sample_id": "test_s1",
+                        "analysis_type": "bulk_eda",
+                    }
+                )
+            )
         assert "exists: false" in result
 
 
@@ -206,6 +238,7 @@ class TestBioHistoryLookup:
         monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
         monkeypatch.setattr("analysis.history_query.DUCKDB_PATH", db)
         from server.bio_memory_server import _handle_bio_history_lookup
+
         result = run(_handle_bio_history_lookup({"sample_id": "test_s1"}))
         assert "test_s1" in result
         assert "spatial_eda" in result
@@ -215,6 +248,7 @@ class TestBioHistoryLookup:
         monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
         monkeypatch.setattr("analysis.history_query.DUCKDB_PATH", db)
         from server.bio_memory_server import _handle_bio_history_lookup
+
         result = run(_handle_bio_history_lookup({}))
         assert "test_s1" in result
 
@@ -223,6 +257,7 @@ class TestBioHistoryLookup:
         monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
         monkeypatch.setattr("analysis.history_query.DUCKDB_PATH", db)
         from server.bio_memory_server import _handle_bio_history_lookup
+
         result = run(_handle_bio_history_lookup({"sample_id": "no_such_sample"}))
         assert "無分析記錄" in result or "（無記錄）" in result
 
@@ -235,6 +270,7 @@ class TestBioHistoryTimeline:
         db = _make_main_db(tmp_path)
         with patch("config.settings.DUCKDB_PATH", db):
             from server.bio_memory_server import _handle_bio_history_timeline
+
             result = run(_handle_bio_history_timeline({}))
         assert "test_s1" in result or "無分析記錄" in result
 
@@ -242,6 +278,7 @@ class TestBioHistoryTimeline:
         db = _make_main_db(tmp_path)
         with patch("config.settings.DUCKDB_PATH", db):
             from server.bio_memory_server import _handle_bio_history_timeline
+
             result = run(_handle_bio_history_timeline({"n_days": 0}))
         assert "無分析記錄" in result or "0 天" in result
 
@@ -254,14 +291,20 @@ class TestFormatJson:
 
     def test_history_check_json_exists(self, tmp_path):
         import json
+
         db = _make_main_db(tmp_path)
         from server.bio_memory_server import _handle_bio_history_check
+
         with patch("config.settings.DUCKDB_PATH", db):
-            result = run(_handle_bio_history_check({
-                "sample_id": "test_s1",
-                "analysis_type": "spatial_eda",
-                "format": "json",
-            }))
+            result = run(
+                _handle_bio_history_check(
+                    {
+                        "sample_id": "test_s1",
+                        "analysis_type": "spatial_eda",
+                        "format": "json",
+                    }
+                )
+            )
         payload = json.loads(result)
         assert payload["exists"] is True
         assert payload["sample_id"] == "test_s1"
@@ -271,24 +314,32 @@ class TestFormatJson:
 
     def test_history_check_json_not_exists(self, tmp_path):
         import json
+
         db = _make_main_db(tmp_path)
         from server.bio_memory_server import _handle_bio_history_check
+
         with patch("config.settings.DUCKDB_PATH", db):
-            result = run(_handle_bio_history_check({
-                "sample_id": "test_s1",
-                "analysis_type": "bulk_eda",
-                "format": "json",
-            }))
+            result = run(
+                _handle_bio_history_check(
+                    {
+                        "sample_id": "test_s1",
+                        "analysis_type": "bulk_eda",
+                        "format": "json",
+                    }
+                )
+            )
         payload = json.loads(result)
         assert payload["exists"] is False
         assert payload["sample_id"] == "test_s1"
 
     def test_history_lookup_json(self, tmp_path, monkeypatch):
         import json
+
         db = _make_main_db(tmp_path)
         monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
         monkeypatch.setattr("analysis.history_query.DUCKDB_PATH", db)
         from server.bio_memory_server import _handle_bio_history_lookup
+
         result = run(_handle_bio_history_lookup({"sample_id": "test_s1", "format": "json"}))
         payload = json.loads(result)
         assert payload["count"] >= 1
@@ -296,16 +347,23 @@ class TestFormatJson:
         # 結構化欄位皆完整（不被 _fmt_table 的 80 字截斷影響）
         rec = payload["records"][0]
         assert set(rec.keys()) == {
-            "analysis_id", "sample_id", "analysis_type", "status",
-            "completed_at", "summary", "result_path",
+            "analysis_id",
+            "sample_id",
+            "analysis_type",
+            "status",
+            "completed_at",
+            "summary",
+            "result_path",
         }
 
     def test_history_lookup_json_empty(self, tmp_path, monkeypatch):
         import json
+
         db = _make_main_db(tmp_path)
         monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
         monkeypatch.setattr("analysis.history_query.DUCKDB_PATH", db)
         from server.bio_memory_server import _handle_bio_history_lookup
+
         result = run(_handle_bio_history_lookup({"sample_id": "no_such", "format": "json"}))
         payload = json.loads(result)
         assert payload["count"] == 0
@@ -313,8 +371,10 @@ class TestFormatJson:
 
     def test_history_timeline_json(self, tmp_path):
         import json
+
         db = _make_main_db(tmp_path)
         from server.bio_memory_server import _handle_bio_history_timeline
+
         with patch("config.settings.DUCKDB_PATH", db):
             result = run(_handle_bio_history_timeline({"n_days": 30, "format": "json"}))
         payload = json.loads(result)
@@ -327,15 +387,21 @@ class TestFormatJson:
         """非 'json' 值（含 'yaml'、空字串）回 text 預設行為，向後相容。"""
         db = _make_main_db(tmp_path)
         from server.bio_memory_server import _handle_bio_history_check
+
         with patch("config.settings.DUCKDB_PATH", db):
-            r1 = run(_handle_bio_history_check({
-                "sample_id": "test_s1",
-                "analysis_type": "spatial_eda",
-                "format": "yaml",  # 未支援，應 fallback text
-            }))
+            r1 = run(
+                _handle_bio_history_check(
+                    {
+                        "sample_id": "test_s1",
+                        "analysis_type": "spatial_eda",
+                        "format": "yaml",  # 未支援，應 fallback text
+                    }
+                )
+            )
         assert "exists: true" in r1
         # 不應為合法 JSON
         import json
+
         try:
             json.loads(r1)
             assert False, "yaml fallback 應回 text，但回傳了合法 JSON"
@@ -346,11 +412,16 @@ class TestFormatJson:
         """未傳 format 時行為與舊版完全相同（向後相容）。"""
         db = _make_main_db(tmp_path)
         from server.bio_memory_server import _handle_bio_history_check
+
         with patch("config.settings.DUCKDB_PATH", db):
-            r = run(_handle_bio_history_check({
-                "sample_id": "test_s1",
-                "analysis_type": "spatial_eda",
-            }))
+            r = run(
+                _handle_bio_history_check(
+                    {
+                        "sample_id": "test_s1",
+                        "analysis_type": "spatial_eda",
+                    }
+                )
+            )
         assert "exists: true" in r
         assert r.startswith("exists:")
 
@@ -364,54 +435,90 @@ class TestExecuteCodeTimeoutClamp:
 
     def _capture_timeout(self, args_passed: list):
         """Returns a fake _exec_bio_execute_code that records args and returns OK."""
+
         def _fake(args):
             args_passed.append(args)
             return "ok"
+
         return _fake
 
     def test_too_large_clamped_to_300(self):
         from server import bio_memory_server as srv
+
         captured = []
         with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
-            run(srv._handle_bio_execute_code({
-                "code": "print(1)", "description": "x", "timeout": 10000,
-            }))
+            run(
+                srv._handle_bio_execute_code(
+                    {
+                        "code": "print(1)",
+                        "description": "x",
+                        "timeout": 10000,
+                    }
+                )
+            )
         assert captured[0]["timeout"] == 300
 
     def test_too_small_clamped_to_1(self):
         from server import bio_memory_server as srv
+
         captured = []
         with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
-            run(srv._handle_bio_execute_code({
-                "code": "print(1)", "description": "x", "timeout": 0,
-            }))
+            run(
+                srv._handle_bio_execute_code(
+                    {
+                        "code": "print(1)",
+                        "description": "x",
+                        "timeout": 0,
+                    }
+                )
+            )
         assert captured[0]["timeout"] == 1
 
     def test_invalid_string_falls_back_to_60(self):
         from server import bio_memory_server as srv
+
         captured = []
         with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
-            run(srv._handle_bio_execute_code({
-                "code": "print(1)", "description": "x", "timeout": "abc",
-            }))
+            run(
+                srv._handle_bio_execute_code(
+                    {
+                        "code": "print(1)",
+                        "description": "x",
+                        "timeout": "abc",
+                    }
+                )
+            )
         assert captured[0]["timeout"] == 60
 
     def test_normal_value_passed_through(self):
         from server import bio_memory_server as srv
+
         captured = []
         with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
-            run(srv._handle_bio_execute_code({
-                "code": "print(1)", "description": "x", "timeout": 120,
-            }))
+            run(
+                srv._handle_bio_execute_code(
+                    {
+                        "code": "print(1)",
+                        "description": "x",
+                        "timeout": 120,
+                    }
+                )
+            )
         assert captured[0]["timeout"] == 120
 
     def test_omitted_defaults_to_60(self):
         from server import bio_memory_server as srv
+
         captured = []
         with patch("server.agent._exec_bio_execute_code", self._capture_timeout(captured)):
-            run(srv._handle_bio_execute_code({
-                "code": "print(1)", "description": "x",
-            }))
+            run(
+                srv._handle_bio_execute_code(
+                    {
+                        "code": "print(1)",
+                        "description": "x",
+                    }
+                )
+            )
         assert captured[0]["timeout"] == 60
 
 
@@ -423,6 +530,7 @@ class TestDangerousToolGate:
 
     def test_default_hidden_from_call_tool(self, monkeypatch):
         from server.bio_memory_server import call_tool
+
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         result = run(call_tool("bio_execute_code", {"code": "1", "description": "x"}))
         assert len(result) == 1
@@ -433,6 +541,7 @@ class TestDangerousToolGate:
     def test_enabled_passes_dangerous_gate(self, monkeypatch):
         """env 啟用後 dangerous gate 不再擋；驗證 handler 確實被呼叫且回值正確傳出。"""
         from server.bio_memory_server import call_tool
+
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         with patch("server.agent._exec_bio_execute_code", return_value="ok"):
             result = run(call_tool("bio_execute_code", {"code": "1", "description": "x"}))
@@ -442,6 +551,7 @@ class TestDangerousToolGate:
 
     def test_env_value_case_insensitive(self, monkeypatch):
         from server.bio_memory_server import _dangerous_tools_enabled
+
         # truthy：常見三件套 + 大小寫變體
         for val in ("true", "TRUE", "True", "1", "yes", "YES", "Yes"):
             monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", val)
@@ -460,13 +570,18 @@ class TestBioRegisterSample:
         db = _make_main_db(tmp_path)
         with patch("config.settings.DUCKDB_PATH", db):
             from server.bio_memory_server import _handle_bio_register_sample
-            result = run(_handle_bio_register_sample({
-                "sample_id": "new_sample_01",
-                "data_type": "bulk_rnaseq",
-                "l3_path": "/data/new_sample_01",
-                "project": "test_project",
-                "species": "mouse",
-            }))
+
+            result = run(
+                _handle_bio_register_sample(
+                    {
+                        "sample_id": "new_sample_01",
+                        "data_type": "bulk_rnaseq",
+                        "l3_path": "/data/new_sample_01",
+                        "project": "test_project",
+                        "species": "mouse",
+                    }
+                )
+            )
         assert "已登記" in result
 
         con = duckdb.connect(str(db), read_only=True)
@@ -482,11 +597,16 @@ class TestBioRegisterSample:
         db = _make_main_db(tmp_path)
         with patch("config.settings.DUCKDB_PATH", db):
             from server.bio_memory_server import _handle_bio_register_sample
-            result = run(_handle_bio_register_sample({
-                "sample_id": "test_s1",
-                "data_type": "visium_hd",
-                "l3_path": "/data/s1",
-            }))
+
+            result = run(
+                _handle_bio_register_sample(
+                    {
+                        "sample_id": "test_s1",
+                        "data_type": "visium_hd",
+                        "l3_path": "/data/s1",
+                    }
+                )
+            )
         assert "已存在" in result
 
 
@@ -496,47 +616,71 @@ class TestBioRegisterSample:
 class TestBioMemoryWriteQuery:
     def _fake_embed(self, text, **kwargs):
         from config.settings import EMBEDDING_DIM
+
         return [0.9] * EMBEDDING_DIM
 
     def test_write_to_l1(self, tmp_path):
         l1_db = _make_l1_db(tmp_path)
         # analysis.l1_cache 在 import 時 from config.settings import L1_CACHE_PATH，
         # 必須同時 patch 模組層綁定（patch config.settings 不會回流）。
-        with patch("config.settings.L1_CACHE_PATH", l1_db), \
-             patch("analysis.l1_cache.L1_CACHE_PATH", l1_db), \
-             patch("analysis.embed.embed_batch", return_value=[[0.9] * 1024]):
+        with (
+            patch("config.settings.L1_CACHE_PATH", l1_db),
+            patch("analysis.l1_cache.L1_CACHE_PATH", l1_db),
+            patch("analysis.embed.embed_batch", return_value=[[0.9] * 1024]),
+        ):
             from server.bio_memory_server import _handle_bio_memory_write
-            result = run(_handle_bio_memory_write({
-                "sample_id": "test_s1",
-                "query_text": "PTPRC expression map",
-                "report_text": "# Report\n\nPTPRC is high.",
-                "summary": "test_s1 EDA：PTPRC 高表達。",
-            }))
+
+            result = run(
+                _handle_bio_memory_write(
+                    {
+                        "sample_id": "test_s1",
+                        "query_text": "PTPRC expression map",
+                        "report_text": "# Report\n\nPTPRC is high.",
+                        "summary": "test_s1 EDA：PTPRC 高表達。",
+                    }
+                )
+            )
         assert "成功" in result
 
     def test_query_cache_hit(self, tmp_path):
         from config.settings import EMBEDDING_DIM
+
         l1_db = _make_l1_db(tmp_path)
-        with patch("config.settings.L1_CACHE_PATH", l1_db), \
-             patch("config.settings.L1_COSINE_THRESHOLD", 0.0), \
-             patch("analysis.embed.embed_batch", return_value=[[0.1] * EMBEDDING_DIM]):
+        with (
+            patch("config.settings.L1_CACHE_PATH", l1_db),
+            patch("config.settings.L1_COSINE_THRESHOLD", 0.0),
+            patch("analysis.embed.embed_batch", return_value=[[0.1] * EMBEDDING_DIM]),
+        ):
             from server.bio_memory_server import _handle_bio_memory_query
-            result = run(_handle_bio_memory_query({
-                "query": "PTPRC spatial",
-                "threshold": 0.0,
-            }))
+
+            result = run(
+                _handle_bio_memory_query(
+                    {
+                        "query": "PTPRC spatial",
+                        "threshold": 0.0,
+                    }
+                )
+            )
         assert "cache hit" in result or "cache miss" in result  # either is valid
 
     def test_query_cache_miss(self, tmp_path):
         from config.settings import EMBEDDING_DIM
+
         l1_db = _make_l1_db(tmp_path)
-        with patch("config.settings.L1_CACHE_PATH", l1_db), \
-             patch("analysis.embed.embed_batch", return_value=[[-1.0] * EMBEDDING_DIM]):
+        with (
+            patch("config.settings.L1_CACHE_PATH", l1_db),
+            patch("analysis.embed.embed_batch", return_value=[[-1.0] * EMBEDDING_DIM]),
+        ):
             from server.bio_memory_server import _handle_bio_memory_query
-            result = run(_handle_bio_memory_query({
-                "query": "completely unrelated query xyz",
-                "threshold": 0.99,
-            }))
+
+            result = run(
+                _handle_bio_memory_query(
+                    {
+                        "query": "completely unrelated query xyz",
+                        "threshold": 0.99,
+                    }
+                )
+            )
         assert "cache miss" in result
 
 
@@ -546,26 +690,42 @@ class TestBioMemoryWriteQuery:
 class TestBioHistorySearch:
     def test_search_cache_miss(self, tmp_path):
         from config.settings import EMBEDDING_DIM
+
         l1_db = _make_l1_db(tmp_path)
-        with patch("config.settings.L1_CACHE_PATH", l1_db), \
-             patch("analysis.embed.embed_batch", return_value=[[-1.0] * EMBEDDING_DIM]):
+        with (
+            patch("config.settings.L1_CACHE_PATH", l1_db),
+            patch("analysis.embed.embed_batch", return_value=[[-1.0] * EMBEDDING_DIM]),
+        ):
             from server.bio_memory_server import _handle_bio_history_search
-            result = run(_handle_bio_history_search({
-                "query": "unrelated xyz",
-                "threshold": 0.99,
-            }))
+
+            result = run(
+                _handle_bio_history_search(
+                    {
+                        "query": "unrelated xyz",
+                        "threshold": 0.99,
+                    }
+                )
+            )
         assert "cache miss" in result
 
     def test_search_cache_hit(self, tmp_path):
         from config.settings import EMBEDDING_DIM
+
         l1_db = _make_l1_db(tmp_path)
-        with patch("config.settings.L1_CACHE_PATH", l1_db), \
-             patch("analysis.embed.embed_batch", return_value=[[0.1] * EMBEDDING_DIM]):
+        with (
+            patch("config.settings.L1_CACHE_PATH", l1_db),
+            patch("analysis.embed.embed_batch", return_value=[[0.1] * EMBEDDING_DIM]),
+        ):
             from server.bio_memory_server import _handle_bio_history_search
-            result = run(_handle_bio_history_search({
-                "query": "PTPRC spatial",
-                "threshold": 0.0,
-            }))
+
+            result = run(
+                _handle_bio_history_search(
+                    {
+                        "query": "PTPRC spatial",
+                        "threshold": 0.0,
+                    }
+                )
+            )
         assert "命中" in result or "cache miss" in result
 
 
@@ -577,6 +737,7 @@ class TestCallToolDispatch:
         # 改為回傳 error TextContent，不 raise（避免 MCP transport 中斷）
         from server.bio_memory_server import call_tool
         from mcp import types
+
         result = run(call_tool("no_such_tool", {}))
         assert isinstance(result, list)
         assert isinstance(result[0], types.TextContent)
@@ -587,10 +748,16 @@ class TestCallToolDispatch:
         with patch("config.settings.DUCKDB_PATH", db):
             from server.bio_memory_server import call_tool
             from mcp import types
-            result = run(call_tool("bio_history_check", {
-                "sample_id": "test_s1",
-                "analysis_type": "spatial_eda",
-            }))
+
+            result = run(
+                call_tool(
+                    "bio_history_check",
+                    {
+                        "sample_id": "test_s1",
+                        "analysis_type": "spatial_eda",
+                    },
+                )
+            )
         assert isinstance(result, list)
         assert isinstance(result[0], types.TextContent)
         assert "exists:" in result[0].text

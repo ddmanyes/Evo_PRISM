@@ -6,6 +6,7 @@
   - get_playbook 三段解析（檔名 / name / data_type）+ miss 報錯附可用清單。
   - 用 tmp 目錄 monkeypatch PLAYBOOKS_DIR，測試壞檔不中斷列舉。
 """
+
 from __future__ import annotations
 
 import importlib
@@ -17,6 +18,7 @@ from analysis import playbook as pb
 
 
 # ── 真實 playbooks/ ───────────────────────────────────────────────────────────
+
 
 def test_list_playbooks_includes_builtin():
     names = {m["name"] for m in pb.list_playbooks()}
@@ -50,6 +52,7 @@ def test_get_playbook_miss_raises_with_available():
 
 # ── frontmatter 解析（合成檔）─────────────────────────────────────────────────
 
+
 def _write(tmp_path, name, text, monkeypatch):
     d = tmp_path / "playbooks"
     d.mkdir(exist_ok=True)
@@ -77,9 +80,12 @@ def test_missing_required_keys_raises(tmp_path, monkeypatch):
 
 
 def test_list_skips_broken_file(tmp_path, monkeypatch):
-    d = _write(tmp_path, "good.md",
-               "---\nname: good\nversion: 1.0.0\ndata_type: t\nwhen_to_use: u\n---\nbody\n",
-               monkeypatch)
+    d = _write(
+        tmp_path,
+        "good.md",
+        "---\nname: good\nversion: 1.0.0\ndata_type: t\nwhen_to_use: u\n---\nbody\n",
+        monkeypatch,
+    )
     (d / "broken.md").write_text("no frontmatter\n", encoding="utf-8")
     names = {m["name"] for m in pb.list_playbooks()}
     assert names == {"good"}  # broken.md 被跳過，不中斷

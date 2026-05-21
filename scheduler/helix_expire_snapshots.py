@@ -40,11 +40,14 @@ def expire_snapshots(db_path: Path = DUCKDB_PATH, dry_run: bool = False) -> dict
     from analysis.tool_visualizer import downsample_snapshot
 
     now = datetime.now(timezone.utc)
-    cutoff_half    = now - timedelta(days=HELIX_SNAPSHOT_DECAY_DAYS_1)
+    cutoff_half = now - timedelta(days=HELIX_SNAPSHOT_DECAY_DAYS_1)
     cutoff_quarter = now - timedelta(days=HELIX_SNAPSHOT_DECAY_DAYS_2)
 
     stats: dict[str, int] = {
-        "checked": 0, "downsampled_half": 0, "downsampled_quarter": 0, "skipped": 0,
+        "checked": 0,
+        "downsampled_half": 0,
+        "downsampled_quarter": 0,
+        "skipped": 0,
     }
 
     with duckdb.connect(str(db_path)) as con:
@@ -83,9 +86,8 @@ def expire_snapshots(db_path: Path = DUCKDB_PATH, dry_run: bool = False) -> dict
             # Skip already-small images to avoid double downsampling.
             # A 640×640 PNG base64 ≈ 133K chars; 320×320 ≈ 33K; 160×160 ≈ 8K.
             b64_len = len(diagnosis_img) - len("data:image/png;base64,")
-            already_small = (
-                (target_factor == 0.5  and b64_len < 40_000) or
-                (target_factor == 0.25 and b64_len < 12_000)
+            already_small = (target_factor == 0.5 and b64_len < 40_000) or (
+                target_factor == 0.25 and b64_len < 12_000
             )
             if already_small:
                 stats["skipped"] += 1
@@ -93,7 +95,9 @@ def expire_snapshots(db_path: Path = DUCKDB_PATH, dry_run: bool = False) -> dict
 
             logger.info(
                 "expire_snapshots: log_id=%s  age=%s  factor=%.2f",
-                log_id, str(closed_at)[:10], target_factor,
+                log_id,
+                str(closed_at)[:10],
+                target_factor,
             )
 
             if not dry_run:
@@ -105,9 +109,7 @@ def expire_snapshots(db_path: Path = DUCKDB_PATH, dry_run: bool = False) -> dict
                     )
                     stats[bucket] += 1
                 except Exception as exc:
-                    logger.warning(
-                        "expire_snapshots: failed for log_id=%s — %s", log_id, exc
-                    )
+                    logger.warning("expire_snapshots: failed for log_id=%s — %s", log_id, exc)
                     stats["skipped"] += 1
             else:
                 stats[bucket] += 1

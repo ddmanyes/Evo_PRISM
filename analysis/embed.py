@@ -168,7 +168,7 @@ if __name__ == "__main__":
         print(f"\n[embed] Embedding {len(texts)} texts...")
         vecs = embed_batch(texts)
         for t, v in zip(texts, vecs):
-            print(f"  {t[:40]!r:42s} → dim={len(v)}, norm≈{sum(x**2 for x in v)**0.5:.3f}")
+            print(f"  {t[:40]!r:42s} → dim={len(v)}, norm≈{sum(x**2 for x in v) ** 0.5:.3f}")
     else:
         print("\n[embed] Server not available. Start with:")
         print("  ~/llama.cpp/build/bin/llama-server \\")

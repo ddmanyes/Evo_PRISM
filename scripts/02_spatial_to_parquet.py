@@ -72,13 +72,15 @@ def convert(sample_id: str, l3_path: Path, out_dir: Path) -> dict:
         obs_df["spatial_y"] = adata.obsm["spatial"][:, 1]
     obs_path = out_dir / "obs_metadata.parquet"
     obs_df.to_parquet(obs_path, index=False, compression="zstd")
-    print(f"[{sample_id}] obs_metadata → {obs_path.stat().st_size/1024:.0f} KB")
+    print(f"[{sample_id}] obs_metadata → {obs_path.stat().st_size / 1024:.0f} KB")
 
     # ── 2. var metadata ─────────────────────────────────────────────────────
     var_df = adata.var.copy().reset_index(names="gene_name")
     var_path = out_dir / "var_metadata.parquet"
     var_df.to_parquet(var_path, index=False, compression="zstd")
-    print(f"[{sample_id}] var_metadata → {var_path.stat().st_size/1024:.0f} KB  ({n_var:,} genes)")
+    print(
+        f"[{sample_id}] var_metadata → {var_path.stat().st_size / 1024:.0f} KB  ({n_var:,} genes)"
+    )
 
     # ── 3. expression matrix (long format, nonzero only, chunked) ───────────
     barcodes = adata.obs_names.tolist()
@@ -97,9 +99,9 @@ def convert(sample_id: str, l3_path: Path, out_dir: Path) -> dict:
 
         df = pd.DataFrame(
             {
-                "barcode":   pd.array([barcodes[start + r] for r in rows], dtype="string"),
+                "barcode": pd.array([barcodes[start + r] for r in rows], dtype="string"),
                 "gene_name": pd.array([genes[c] for c in cols], dtype="string"),
-                "count":     chunk[rows, cols].astype(np.float32),
+                "count": chunk[rows, cols].astype(np.float32),
             }
         )
         part_path = expr_dir / f"part-{part:04d}.parquet"
@@ -109,13 +111,19 @@ def convert(sample_id: str, l3_path: Path, out_dir: Path) -> dict:
 
         pct = 100 * end // n_obs
         elapsed = time.time() - t0
-        print(f"\r  [{pct:3d}%] {end:,}/{n_obs:,} barcodes  {total_nonzero:,} nonzero  {elapsed:.0f}s", end="", flush=True)
+        print(
+            f"\r  [{pct:3d}%] {end:,}/{n_obs:,} barcodes  {total_nonzero:,} nonzero  {elapsed:.0f}s",
+            end="",
+            flush=True,
+        )
 
     print()  # newline after progress
     adata.file.close()
 
     total_size_mb = sum(f.stat().st_size for f in expr_dir.glob("*.parquet")) / 1024**2
-    print(f"[{sample_id}] expression → {part} parts, {total_nonzero:,} nonzero entries, {total_size_mb:.1f} MB")
+    print(
+        f"[{sample_id}] expression → {part} parts, {total_nonzero:,} nonzero entries, {total_size_mb:.1f} MB"
+    )
 
     return {
         "n_obs": n_obs,

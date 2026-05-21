@@ -24,6 +24,7 @@ exist in the schema. See P1-D in PROGRESS.md for its prerequisites.
 
 Idempotent: uses CREATE OR REPLACE VIEW. Safe to re-run.
 """
+
 from __future__ import annotations
 
 import sys
@@ -43,8 +44,7 @@ VIEW_NAMES = (
 
 def _view_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
     row = con.execute(
-        "SELECT 1 FROM information_schema.views "
-        "WHERE table_name = ? AND table_schema = 'main'",
+        "SELECT 1 FROM information_schema.views WHERE table_name = ? AND table_schema = 'main'",
         [name],
     ).fetchone()
     return row is not None
@@ -143,9 +143,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         else:
             raise RuntimeError("v_tool_stability_signal not created")
 
-        row = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 19"
-        ).fetchone()
+        row = con.execute("SELECT 1 FROM schema_migrations WHERE version = 19").fetchone()
         if not row:
             con.execute(
                 """

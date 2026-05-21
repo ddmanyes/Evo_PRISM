@@ -1,4 +1,5 @@
 """Tests for ENGRAM-Core (analysis/artifact_registry.py)."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def eng_con():
@@ -167,29 +169,31 @@ def _insert_analysis(con, sample_id="s1", analysis_type="bulk_eda", params=None)
 # register_artifact
 # ---------------------------------------------------------------------------
 
+
 class TestRegisterArtifact:
     def test_returns_uuid(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "pca.png"
         f.write_bytes(b"\x89PNG")
 
-        art_id = register_artifact(eng_con, aid, f, "figure", "PCA 圖",
-                                   artifact_subtype="pca")
+        art_id = register_artifact(eng_con, aid, f, "figure", "PCA 圖", artifact_subtype="pca")
         assert len(art_id) == 36
 
     def test_row_written(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "volcano.png"
         f.write_bytes(b"PNG")
 
-        register_artifact(eng_con, aid, f, "figure", "火山圖",
-                          artifact_subtype="volcano")
+        register_artifact(eng_con, aid, f, "figure", "火山圖", artifact_subtype="volcano")
 
         row = eng_con.execute(
             "SELECT artifact_type, artifact_subtype, label, file_path "
-            "FROM analysis_artifacts WHERE analysis_id = ?", [aid]
+            "FROM analysis_artifacts WHERE analysis_id = ?",
+            [aid],
         ).fetchone()
         assert row[0] == "figure"
         assert row[1] == "volcano"
@@ -198,6 +202,7 @@ class TestRegisterArtifact:
 
     def test_inline_data_stored_for_small_file(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "small.png"
         f.write_bytes(b"x" * 100)
@@ -213,6 +218,7 @@ class TestRegisterArtifact:
 
     def test_missing_file_does_not_raise(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         missing = tmp_path / "ghost.png"
 
@@ -221,6 +227,7 @@ class TestRegisterArtifact:
 
     def test_mime_type_inferred(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "data.csv"
         f.write_text("a,b\n1,2")
@@ -234,6 +241,7 @@ class TestRegisterArtifact:
 
     def test_file_size_kb_recorded(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "report.md"
         f.write_text("# Report\n" * 100)
@@ -250,9 +258,11 @@ class TestRegisterArtifact:
 # get_artifacts
 # ---------------------------------------------------------------------------
 
+
 class TestGetArtifacts:
     def test_returns_all_artifacts(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, get_artifacts
+
         aid = _insert_analysis(eng_con)
         for name, subtype in [("pca.png", "pca"), ("volcano.png", "volcano")]:
             f = tmp_path / name
@@ -264,6 +274,7 @@ class TestGetArtifacts:
 
     def test_filter_by_type(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, get_artifacts
+
         aid = _insert_analysis(eng_con)
         f_fig = tmp_path / "pca.png"
         f_fig.write_bytes(b"PNG")
@@ -278,6 +289,7 @@ class TestGetArtifacts:
 
     def test_filter_by_subtype(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, get_artifacts
+
         aid = _insert_analysis(eng_con)
         for name, subtype in [("pca.png", "pca"), ("volcano.png", "volcano")]:
             f = tmp_path / name
@@ -290,6 +302,7 @@ class TestGetArtifacts:
 
     def test_include_inline_false_omits_data(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, get_artifacts
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "fig.png"
         f.write_bytes(b"PNG data")
@@ -300,6 +313,7 @@ class TestGetArtifacts:
 
     def test_empty_when_no_artifacts(self, eng_con):
         from analysis.artifact_registry import get_artifacts
+
         aid = _insert_analysis(eng_con)
         assert get_artifacts(eng_con, aid) == []
 
@@ -308,16 +322,17 @@ class TestGetArtifacts:
 # compare_analyses
 # ---------------------------------------------------------------------------
 
+
 class TestCompareAnalyses:
     def test_groups_by_analysis_id(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, compare_analyses
+
         aid1 = _insert_analysis(eng_con)
         aid2 = _insert_analysis(eng_con)
         for aid in [aid1, aid2]:
             f = tmp_path / f"volcano_{aid[:8]}.png"
             f.write_bytes(b"PNG")
-            register_artifact(eng_con, aid, f, "figure", "火山圖",
-                               artifact_subtype="volcano")
+            register_artifact(eng_con, aid, f, "figure", "火山圖", artifact_subtype="volcano")
 
         result = compare_analyses(eng_con, [aid1, aid2])
         assert aid1 in result and aid2 in result
@@ -326,12 +341,12 @@ class TestCompareAnalyses:
 
     def test_filter_by_subtype(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, compare_analyses
+
         aid1 = _insert_analysis(eng_con)
         for subtype in ["pca", "volcano"]:
             f = tmp_path / f"{subtype}.png"
             f.write_bytes(b"PNG")
-            register_artifact(eng_con, aid1, f, "figure", subtype,
-                               artifact_subtype=subtype)
+            register_artifact(eng_con, aid1, f, "figure", subtype, artifact_subtype=subtype)
 
         result = compare_analyses(eng_con, [aid1], artifact_subtype="pca")
         assert len(result[aid1]) == 1
@@ -339,10 +354,12 @@ class TestCompareAnalyses:
 
     def test_empty_list_returns_empty(self, eng_con):
         from analysis.artifact_registry import compare_analyses
+
         assert compare_analyses(eng_con, []) == {}
 
     def test_includes_tool_version(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, compare_analyses
+
         tool_id = str(uuid.uuid4())
         eng_con.execute(
             "INSERT INTO tools (tool_id, tool_name, version) VALUES (?, 'test_tool', '1.0.0')",
@@ -367,9 +384,11 @@ class TestCompareAnalyses:
 # artifact_summary
 # ---------------------------------------------------------------------------
 
+
 class TestArtifactSummary:
     def test_empty_sample_returns_zeros(self, eng_con):
         from analysis.artifact_registry import artifact_summary
+
         result = artifact_summary(eng_con, "s1")
         assert result["total_runs"] == 0
         assert result["total_artifacts"] == 0
@@ -377,13 +396,13 @@ class TestArtifactSummary:
 
     def test_counts_runs_and_artifacts(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, artifact_summary
+
         for i in range(2):
             aid = _insert_analysis(eng_con)
             for j in range(3):
                 f = tmp_path / f"fig_{i}_{j}.png"
                 f.write_bytes(b"PNG")
-                register_artifact(eng_con, aid, f, "figure", f"圖{j}",
-                                   artifact_subtype="pca")
+                register_artifact(eng_con, aid, f, "figure", f"圖{j}", artifact_subtype="pca")
 
         result = artifact_summary(eng_con, "s1")
         assert result["total_runs"] == 2
@@ -391,12 +410,12 @@ class TestArtifactSummary:
 
     def test_by_subtype_counts(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, artifact_summary
+
         aid = _insert_analysis(eng_con)
         for subtype in ["pca", "pca", "volcano"]:
             f = tmp_path / f"{subtype}_{uuid.uuid4().hex[:4]}.png"
             f.write_bytes(b"PNG")
-            register_artifact(eng_con, aid, f, "figure", subtype,
-                               artifact_subtype=subtype)
+            register_artifact(eng_con, aid, f, "figure", subtype, artifact_subtype=subtype)
 
         result = artifact_summary(eng_con, "s1")
         assert result["by_subtype"]["pca"] == 2
@@ -404,6 +423,7 @@ class TestArtifactSummary:
 
     def test_latest_run_is_most_recent(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, artifact_summary
+
         last_aid = None
         for i in range(3):
             aid = _insert_analysis(eng_con)
@@ -420,16 +440,17 @@ class TestArtifactSummary:
 # search_artifacts (no embedding server — layer 1 only)
 # ---------------------------------------------------------------------------
 
+
 class TestSearchArtifacts:
     def test_exact_subtype_match_returns_results(self, eng_con, tmp_path, monkeypatch):
         from analysis.artifact_registry import register_artifact, search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         aid = _insert_analysis(eng_con)
         f = tmp_path / "volcano.png"
         f.write_bytes(b"PNG")
-        register_artifact(eng_con, aid, f, "figure", "火山圖",
-                           artifact_subtype="volcano")
+        register_artifact(eng_con, aid, f, "figure", "火山圖", artifact_subtype="volcano")
 
         results = search_artifacts(eng_con, "差異表現圖", artifact_subtype="volcano")
         assert len(results) == 1
@@ -440,6 +461,7 @@ class TestSearchArtifacts:
 
     def test_no_match_returns_empty(self, eng_con, monkeypatch):
         from analysis.artifact_registry import search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         results = search_artifacts(eng_con, "query", artifact_subtype="volcano")
@@ -447,6 +469,7 @@ class TestSearchArtifacts:
 
     def test_embedding_unavailable_returns_empty_for_hnsw(self, eng_con, monkeypatch):
         from analysis.artifact_registry import search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         results = search_artifacts(eng_con, "some query")
@@ -454,6 +477,7 @@ class TestSearchArtifacts:
 
     def test_sample_id_filter(self, eng_con, tmp_path, monkeypatch):
         from analysis.artifact_registry import register_artifact, search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         aid_s1 = _insert_analysis(eng_con, sample_id="s1")
@@ -461,11 +485,9 @@ class TestSearchArtifacts:
         for aid, name in [(aid_s1, "v1.png"), (aid_s2, "v2.png")]:
             f = tmp_path / name
             f.write_bytes(b"PNG")
-            register_artifact(eng_con, aid, f, "figure", "火山圖",
-                               artifact_subtype="volcano")
+            register_artifact(eng_con, aid, f, "figure", "火山圖", artifact_subtype="volcano")
 
-        results = search_artifacts(eng_con, "volcano",
-                                   artifact_subtype="volcano", sample_id="s1")
+        results = search_artifacts(eng_con, "volcano", artifact_subtype="volcano", sample_id="s1")
         assert len(results) == 1
         assert results[0]["analysis_id"] == aid_s1
 
@@ -474,9 +496,11 @@ class TestSearchArtifacts:
 # Provenance & Lineage (9B)
 # ---------------------------------------------------------------------------
 
+
 class TestProvenanceHashes:
     def test_env_hash_written_on_register(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "pca.png"
         f.write_bytes(b"PNG")
@@ -493,6 +517,7 @@ class TestProvenanceHashes:
 
     def test_input_data_hash_from_paths(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         inp = tmp_path / "counts.parquet"
         inp.write_bytes(b"fake parquet")
@@ -500,7 +525,11 @@ class TestProvenanceHashes:
         out.write_bytes(b"PNG")
 
         art_id = register_artifact(
-            eng_con, aid, out, "figure", "PCA",
+            eng_con,
+            aid,
+            out,
+            "figure",
+            "PCA",
             input_paths=[inp],
         )
 
@@ -513,6 +542,7 @@ class TestProvenanceHashes:
 
     def test_code_hash_from_function(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "out.csv"
         f.write_text("a,b\n1,2")
@@ -521,7 +551,11 @@ class TestProvenanceHashes:
             pass
 
         art_id = register_artifact(
-            eng_con, aid, f, "csv", "表",
+            eng_con,
+            aid,
+            f,
+            "csv",
+            "表",
             producing_fn=dummy_fn,
         )
 
@@ -534,6 +568,7 @@ class TestProvenanceHashes:
 
     def test_input_data_hash_none_when_not_provided(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "fig.png"
         f.write_bytes(b"PNG")
@@ -548,6 +583,7 @@ class TestProvenanceHashes:
 
     def test_same_input_same_hash(self, tmp_path):
         from analysis.artifact_registry import _hash_input_data
+
         inp = tmp_path / "data.parquet"
         inp.write_bytes(b"x" * 1000)
 
@@ -557,6 +593,7 @@ class TestProvenanceHashes:
 
     def test_different_input_different_hash(self, tmp_path):
         from analysis.artifact_registry import _hash_input_data
+
         inp1 = tmp_path / "a.parquet"
         inp1.write_bytes(b"aaa")
         inp2 = tmp_path / "b.parquet"
@@ -568,6 +605,7 @@ class TestProvenanceHashes:
 class TestLinkArtifacts:
     def test_link_creates_relation(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, link_artifacts
+
         aid = _insert_analysis(eng_con)
         f1 = tmp_path / "pca.png"
         f1.write_bytes(b"PNG")
@@ -588,6 +626,7 @@ class TestLinkArtifacts:
 
     def test_invalid_relation_type_raises(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, link_artifacts
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "fig.png"
         f.write_bytes(b"PNG")
@@ -598,6 +637,7 @@ class TestLinkArtifacts:
 
     def test_compared_with_relation(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, link_artifacts
+
         aid1 = _insert_analysis(eng_con, sample_id="s1")
         aid2 = _insert_analysis(eng_con, sample_id="s2")
         f1 = tmp_path / "fig1.png"
@@ -614,6 +654,7 @@ class TestLinkArtifacts:
 class TestGetLineage:
     def test_upstream_returns_source(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, link_artifacts, get_lineage
+
         aid = _insert_analysis(eng_con)
         f_src = tmp_path / "counts.png"
         f_src.write_bytes(b"PNG")
@@ -631,6 +672,7 @@ class TestGetLineage:
 
     def test_downstream_returns_consumer(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, link_artifacts, get_lineage
+
         aid = _insert_analysis(eng_con)
         f_src = tmp_path / "deg.csv"
         f_src.write_text("gene,lfc\nCD8A,2.1")
@@ -647,6 +689,7 @@ class TestGetLineage:
 
     def test_empty_when_no_relations(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, get_lineage
+
         aid = _insert_analysis(eng_con)
         f = tmp_path / "orphan.png"
         f.write_bytes(b"PNG")
@@ -656,6 +699,7 @@ class TestGetLineage:
 
     def test_lineage_includes_provenance_hashes(self, eng_con, tmp_path):
         from analysis.artifact_registry import register_artifact, link_artifacts, get_lineage
+
         aid = _insert_analysis(eng_con)
         inp = tmp_path / "data.parquet"
         inp.write_bytes(b"fake")
@@ -665,7 +709,11 @@ class TestGetLineage:
         f_dst.write_bytes(b"PNG")
 
         src_id = register_artifact(
-            eng_con, aid, f_src, "figure", "來源圖",
+            eng_con,
+            aid,
+            f_src,
+            "figure",
+            "來源圖",
             input_paths=[inp],
         )
         dst_id = register_artifact(eng_con, aid, f_dst, "figure", "下游圖")
@@ -681,9 +729,11 @@ class TestGetLineage:
 # Matryoshka dual-layer embedding (9D)
 # ---------------------------------------------------------------------------
 
+
 class TestMatryoshkaEmbedding:
     def test_embedding_256_written_when_embedding_available(self, eng_con, tmp_path, monkeypatch):
         from analysis.artifact_registry import register_artifact
+
         fake_emb = [0.1] * 1024
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: fake_emb)
 
@@ -706,6 +756,7 @@ class TestMatryoshkaEmbedding:
 
     def test_embedding_256_null_when_no_embedding(self, eng_con, tmp_path, monkeypatch):
         from analysis.artifact_registry import register_artifact
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         aid = _insert_analysis(eng_con)
@@ -723,6 +774,7 @@ class TestMatryoshkaEmbedding:
     def test_matryoshka_search_disabled_by_default(self, eng_con, tmp_path, monkeypatch):
         """With MATRYOSHKA_ENABLED=false (default), search uses standard 1024-dim path."""
         from analysis.artifact_registry import register_artifact, search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
         # Ensure env default is false
         monkeypatch.setattr("config.settings.MATRYOSHKA_ENABLED", False)
@@ -740,6 +792,7 @@ class TestMatryoshkaEmbedding:
 # ---------------------------------------------------------------------------
 # P0-B: FTS BM25 Layer 3 in search_artifacts()
 # ---------------------------------------------------------------------------
+
 
 class TestFtsLayer:
     """Layer 3 BM25 ranker — verifies 3-way RRF fusion (P0-B)."""
@@ -759,6 +812,7 @@ class TestFtsLayer:
     def test_fts_availability_detection(self, eng_con):
         """_fts_artifacts_available returns False before FTS index, True after."""
         from analysis.artifact_registry import _fts_artifacts_available
+
         assert _fts_artifacts_available(eng_con) is False
         self._create_fts_index(eng_con)
         assert _fts_artifacts_available(eng_con) is True
@@ -766,13 +820,15 @@ class TestFtsLayer:
     def test_fts_layer_returns_keyword_hit(self, eng_con, tmp_path, monkeypatch):
         """BM25 finds a label match even when embedding is unavailable."""
         from analysis.artifact_registry import register_artifact, search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         aid = _insert_analysis(eng_con)
         f = tmp_path / "pca.png"
         f.write_bytes(b"PNG")
-        register_artifact(eng_con, aid, f, "figure", "PCA principal component plot",
-                          artifact_subtype="pca")
+        register_artifact(
+            eng_con, aid, f, "figure", "PCA principal component plot", artifact_subtype="pca"
+        )
 
         # Build FTS index AFTER registering artifacts (snapshot semantics).
         self._create_fts_index(eng_con)
@@ -787,13 +843,15 @@ class TestFtsLayer:
     def test_rrf_combines_exact_and_fts(self, eng_con, tmp_path, monkeypatch):
         """Artifact hit by both exact-subtype and FTS keyword scores as 'rrf'."""
         from analysis.artifact_registry import register_artifact, search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         aid = _insert_analysis(eng_con)
         f = tmp_path / "volcano.png"
         f.write_bytes(b"PNG")
-        register_artifact(eng_con, aid, f, "figure", "volcano differential plot",
-                          artifact_subtype="volcano")
+        register_artifact(
+            eng_con, aid, f, "figure", "volcano differential plot", artifact_subtype="volcano"
+        )
         self._create_fts_index(eng_con)
 
         results = search_artifacts(
@@ -808,13 +866,13 @@ class TestFtsLayer:
     def test_fts_silently_skipped_when_index_absent(self, eng_con, tmp_path, monkeypatch):
         """Without migration v18, Layer 3 is silently skipped; 2-layer flow works."""
         from analysis.artifact_registry import register_artifact, search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         aid = _insert_analysis(eng_con)
         f = tmp_path / "v.png"
         f.write_bytes(b"PNG")
-        register_artifact(eng_con, aid, f, "figure", "火山圖",
-                          artifact_subtype="volcano")
+        register_artifact(eng_con, aid, f, "figure", "火山圖", artifact_subtype="volcano")
         # NOTE: no _create_fts_index() call.
 
         results = search_artifacts(eng_con, "火山圖", artifact_subtype="volcano")
@@ -824,6 +882,7 @@ class TestFtsLayer:
     def test_fts_layer_respects_sample_id_filter(self, eng_con, tmp_path, monkeypatch):
         """sample_id filter must apply to the FTS query path."""
         from analysis.artifact_registry import register_artifact, search_artifacts
+
         monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda t: None)
 
         aid_s1 = _insert_analysis(eng_con, sample_id="s1")
@@ -831,11 +890,11 @@ class TestFtsLayer:
         for aid, name in [(aid_s1, "p1.png"), (aid_s2, "p2.png")]:
             f = tmp_path / name
             f.write_bytes(b"PNG")
-            register_artifact(eng_con, aid, f, "figure", "principal component plot",
-                              artifact_subtype="pca")
+            register_artifact(
+                eng_con, aid, f, "figure", "principal component plot", artifact_subtype="pca"
+            )
         self._create_fts_index(eng_con)
 
-        results = search_artifacts(eng_con, "principal", n=10,
-                                   threshold=0.0, sample_id="s1")
+        results = search_artifacts(eng_con, "principal", n=10, threshold=0.0, sample_id="s1")
         assert len(results) == 1
         assert results[0]["analysis_id"] == aid_s1

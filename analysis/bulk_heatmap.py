@@ -8,6 +8,7 @@
     run_bulk_heatmaps(sample_id, counts_path, deg_tables, ...) → (analysis_id, report_path)
         產出兩張 PNG + Markdown 報告，登記到 analysis_history (analysis_type='bulk_heatmap')。
 """
+
 from __future__ import annotations
 
 import json
@@ -46,6 +47,7 @@ def _validate_sample_id(sample_id: str) -> None:
 
 # ── 純畫圖（無 DB I/O，供測試與獨立使用）──────────────────────────────────
 
+
 def deg_heatmap(
     counts: pd.DataFrame,
     sig_genes: Sequence[str],
@@ -77,8 +79,12 @@ def deg_heatmap(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     g = sns.clustermap(
-        sub, cmap=cmap, figsize=figsize, center=0,
-        xticklabels=True, yticklabels=(len(overlap) <= 60),
+        sub,
+        cmap=cmap,
+        figsize=figsize,
+        center=0,
+        xticklabels=True,
+        yticklabels=(len(overlap) <= 60),
         cbar_kws={"label": "z-score" if normalize else "value"},
     )
     g.figure.suptitle(f"{title}  (n={len(overlap)})", y=1.02)
@@ -111,8 +117,12 @@ def top_var_heatmap(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     g = sns.clustermap(
-        sub, cmap=cmap, figsize=figsize, center=0,
-        xticklabels=True, yticklabels=(top_n <= 60),
+        sub,
+        cmap=cmap,
+        figsize=figsize,
+        center=0,
+        xticklabels=True,
+        yticklabels=(top_n <= 60),
         cbar_kws={"label": "z-score" if normalize else "log1p"},
     )
     g.figure.suptitle(f"{title}  (top {top_n})", y=1.02)
@@ -122,6 +132,7 @@ def top_var_heatmap(
 
 
 # ── 主流程：讀 counts + 多張 DEG 表 → 兩張 heatmap ──────────────────────────
+
 
 def collect_sig_genes(
     deg_tables: Sequence[Path],
@@ -181,13 +192,15 @@ def run_bulk_heatmaps(
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
-        "counts_path": str(counts_path),
-        "deg_tables": [str(p) for p in deg_tables],
-        "top_n": top_n,
-        "fc_threshold": fc_threshold,
-        "pval_threshold": pval_threshold,
-    })
+    params_json = json.dumps(
+        {
+            "counts_path": str(counts_path),
+            "deg_tables": [str(p) for p in deg_tables],
+            "top_n": top_n,
+            "fc_threshold": fc_threshold,
+            "pval_threshold": pval_threshold,
+        }
+    )
 
     _own_con = con is None
     if con is None:
@@ -205,7 +218,9 @@ def run_bulk_heatmaps(
 
         counts = pd.read_csv(counts_path, index_col=0)
         sig_genes = collect_sig_genes(
-            deg_tables, fc_threshold=fc_threshold, pval_threshold=pval_threshold,
+            deg_tables,
+            fc_threshold=fc_threshold,
+            pval_threshold=pval_threshold,
         )
 
         out_dir = results_dir(sample_id, "bulk_heatmap")
@@ -213,14 +228,17 @@ def run_bulk_heatmaps(
         sig_png = out_dir / f"Heatmap_Significant_Genes_{ts}.png"
         var_png = out_dir / f"Heatmap_Top{top_n}_Variable_Genes_{ts}.png"
 
-        sig_file = (deg_heatmap(counts, sig_genes, output_path=sig_png)
-                    if sig_genes else None)
+        sig_file = deg_heatmap(counts, sig_genes, output_path=sig_png) if sig_genes else None
         var_file = top_var_heatmap(counts, output_path=var_png, top_n=top_n)
 
-        sig_fig_md = (_file_to_b64_md(sig_file, "顯著基因熱圖")
-                      if sig_file else "（無顯著基因 → 跳過）")
-        var_fig_md = (_file_to_b64_md(var_file, f"Top {top_n} 變異基因熱圖")
-                      if var_file else "（counts 為空 → 跳過）")
+        sig_fig_md = (
+            _file_to_b64_md(sig_file, "顯著基因熱圖") if sig_file else "（無顯著基因 → 跳過）"
+        )
+        var_fig_md = (
+            _file_to_b64_md(var_file, f"Top {top_n} 變異基因熱圖")
+            if var_file
+            else "（counts 為空 → 跳過）"
+        )
 
         report_path = out_dir / f"bulk_heatmap_{sample_id}_{ts}.md"
         report_path.write_text(
@@ -236,9 +254,9 @@ def run_bulk_heatmaps(
             encoding="utf-8",
         )
 
-        summary = (
-            f"Bulk Heatmap {sample_id}：{len(sig_genes)} 顯著基因 + top {top_n} 變異基因。"
-        )[:80]
+        summary = (f"Bulk Heatmap {sample_id}：{len(sig_genes)} 顯著基因 + top {top_n} 變異基因。")[
+            :80
+        ]
 
         completed_at = datetime.now(timezone.utc)
         safe_write(
@@ -251,25 +269,27 @@ def run_bulk_heatmaps(
         # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
         try:
             from analysis.tool_registry import backfill_tool_id
+
             backfill_tool_id(con, "bio_run_heatmaps", analysis_id)
         except Exception as _exc:
             logger.warning("bulk_heatmap: backfill_tool_id 失敗（非致命）: %s", _exc)
 
         try:
             from analysis.artifact_registry import register_artifact
+
             artifact_files: list[tuple[Path, str, str, str]] = []
             if sig_file:
-                artifact_files.append(
-                    (sig_file, "figure", "顯著基因熱圖", "heatmap_sig"))
+                artifact_files.append((sig_file, "figure", "顯著基因熱圖", "heatmap_sig"))
             if var_file:
                 artifact_files.append(
-                    (var_file, "figure", f"Top {top_n} 變異基因熱圖", "heatmap_var"))
-            artifact_files.append(
-                (report_path, "report", "Bulk Heatmap 報告", "heatmap_report"))
+                    (var_file, "figure", f"Top {top_n} 變異基因熱圖", "heatmap_var")
+                )
+            artifact_files.append((report_path, "report", "Bulk Heatmap 報告", "heatmap_report"))
             for path, atype, label, subtype in artifact_files:
                 if path.exists():
-                    register_artifact(con, analysis_id, path, atype, label,
-                                      artifact_subtype=subtype)
+                    register_artifact(
+                        con, analysis_id, path, atype, label, artifact_subtype=subtype
+                    )
         except Exception as _exc:
             logger.warning("bulk_heatmap: register_artifact 失敗（非致命）: %s", _exc)
 

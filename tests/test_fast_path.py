@@ -13,6 +13,7 @@ from server.fast_path import FastPathHit, render_header, try_fast_path
 
 # ── timeline ────────────────────────────────────────────────────────────────
 
+
 class TestTimelineIntent:
     @pytest.mark.parametrize(
         "msg, expected_days",
@@ -45,6 +46,7 @@ class TestTimelineIntent:
 
 # ── sample_list ─────────────────────────────────────────────────────────────
 
+
 class TestSampleListIntent:
     @pytest.mark.parametrize(
         "msg",
@@ -70,6 +72,7 @@ class TestSampleListIntent:
 
 
 # ── recent_lookup ───────────────────────────────────────────────────────────
+
 
 class TestRecentLookupIntent:
     @pytest.mark.parametrize(
@@ -101,6 +104,7 @@ class TestRecentLookupIntent:
 
 # ── non-hits（必須回 None，避免吞掉複雜查詢）───────────────────────────────
 
+
 class TestNonHits:
     @pytest.mark.parametrize(
         "msg",
@@ -126,6 +130,7 @@ class TestNonHits:
 
 # ── render_header ───────────────────────────────────────────────────────────
 
+
 class TestRenderHeader:
     def test_includes_intent_label(self) -> None:
         hit = FastPathHit(intent="timeline", tool_name="bio_history_timeline", args={})
@@ -140,6 +145,7 @@ class TestRenderHeader:
 
 
 # ── 優先序：timeline > sample_list > recent_lookup ─────────────────────────
+
 
 class TestPriority:
     def test_timeline_wins_over_recent(self) -> None:

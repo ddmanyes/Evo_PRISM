@@ -111,8 +111,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         tables = {
             r[0]
             for r in con.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'main'"
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
             ).fetchall()
         }
         assert "analysis_artifacts" in tables, "analysis_artifacts table missing"
@@ -125,9 +124,17 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
             ).fetchall()
         }
         required = {
-            "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
-            "label", "file_path", "inline_data", "file_size_kb",
-            "mime_type", "embedding", "created_at",
+            "artifact_id",
+            "analysis_id",
+            "artifact_type",
+            "artifact_subtype",
+            "label",
+            "file_path",
+            "inline_data",
+            "file_size_kb",
+            "mime_type",
+            "embedding",
+            "created_at",
         }
         missing = required - cols
         if missing:

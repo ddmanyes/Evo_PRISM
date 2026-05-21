@@ -29,21 +29,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DUCKDB_PATH
 
 _ENUM_DEFS = {
-    "analysis_status":    ("'running'", "'completed'", "'failed'", "'stale'"),
+    "analysis_status": ("'running'", "'completed'", "'failed'", "'stale'"),
     "artifact_type_enum": ("'figure'", "'csv'", "'report'", "'log'"),
-    "tool_status_enum":   ("'active'", "'deprecated'", "'candidate'"),
+    "tool_status_enum": ("'active'", "'deprecated'", "'candidate'"),
 }
 
 _COL_TO_ENUM = [
-    ("analysis_history",   "status",        "analysis_status"),
-    ("tools",              "status",        "tool_status_enum"),
+    ("analysis_history", "status", "analysis_status"),
+    ("tools", "status", "tool_status_enum"),
     ("analysis_artifacts", "artifact_type", "artifact_type_enum"),
 ]
 
 _NOT_NULL_COLS = [
     ("analysis_history", "sample_id"),
     ("analysis_history", "started_at"),
-    ("tools",            "created_at"),
+    ("tools", "created_at"),
 ]
 
 
@@ -103,9 +103,11 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
 
         # Drop all indexes on tables we need to ALTER
         _DROP_INDEXES = [
-            "idx_history_sample_type", "idx_history_status_time",
+            "idx_history_sample_type",
+            "idx_history_status_time",
             "idx_tools_name_status",
-            "idx_artifacts_analysis_id", "idx_artifacts_subtype",
+            "idx_artifacts_analysis_id",
+            "idx_artifacts_subtype",
             "uq_artifacts_run_subtype_label",
         ]
         for idx in _DROP_INDEXES:
@@ -114,13 +116,11 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
 
         # ── Step 3: null-clean before converting (NULL blocks ALTER TYPE) ──
         null_fixes = [
-            ("analysis_history",   "status", "'failed'"),
-            ("tools",              "status", "'active'"),
+            ("analysis_history", "status", "'failed'"),
+            ("tools", "status", "'active'"),
         ]
         for table, col, fallback in null_fixes:
-            con.execute(
-                f"UPDATE {table} SET {col} = {fallback} WHERE {col} IS NULL"
-            )
+            con.execute(f"UPDATE {table} SET {col} = {fallback} WHERE {col} IS NULL")
 
         # ── Step 4: CHECK constraints as value-domain enforcement ────────────
         # DuckDB 1.5 cannot ALTER TYPE on tables with FK dependencies.
@@ -144,7 +144,8 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
             ),
         ]
         existing_checks = {
-            r[0] for r in con.execute(
+            r[0]
+            for r in con.execute(
                 "SELECT constraint_name FROM duckdb_constraints() "
                 "WHERE constraint_type = 'CHECK' AND schema_name = 'main'"
             ).fetchall()
@@ -154,9 +155,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 print(f"CHECK {cname} — already exists, skipped")
                 continue
             try:
-                con.execute(
-                    f"ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({expr})"
-                )
+                con.execute(f"ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({expr})")
                 print(f"CHECK {cname} on {table} — OK")
             except Exception as e:
                 print(f"WARNING: CHECK {cname} failed: {e}")
@@ -202,18 +201,30 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
 
         # ── Step 7: rebuild indexes ───────────────────────────────────────
         _REBUILD_INDEXES = [
-            ("idx_history_sample_type",
-             "CREATE INDEX IF NOT EXISTS idx_history_sample_type ON analysis_history (sample_id, analysis_type)"),
-            ("idx_history_status_time",
-             "CREATE INDEX IF NOT EXISTS idx_history_status_time ON analysis_history (status, started_at)"),
-            ("idx_tools_name_status",
-             "CREATE INDEX IF NOT EXISTS idx_tools_name_status ON tools (tool_name, status)"),
-            ("idx_artifacts_analysis_id",
-             "CREATE INDEX IF NOT EXISTS idx_artifacts_analysis_id ON analysis_artifacts (analysis_id)"),
-            ("idx_artifacts_subtype",
-             "CREATE INDEX IF NOT EXISTS idx_artifacts_subtype ON analysis_artifacts (artifact_subtype)"),
-            ("uq_artifacts_run_subtype_label",
-             "CREATE UNIQUE INDEX IF NOT EXISTS uq_artifacts_run_subtype_label ON analysis_artifacts (analysis_id, artifact_subtype, label)"),
+            (
+                "idx_history_sample_type",
+                "CREATE INDEX IF NOT EXISTS idx_history_sample_type ON analysis_history (sample_id, analysis_type)",
+            ),
+            (
+                "idx_history_status_time",
+                "CREATE INDEX IF NOT EXISTS idx_history_status_time ON analysis_history (status, started_at)",
+            ),
+            (
+                "idx_tools_name_status",
+                "CREATE INDEX IF NOT EXISTS idx_tools_name_status ON tools (tool_name, status)",
+            ),
+            (
+                "idx_artifacts_analysis_id",
+                "CREATE INDEX IF NOT EXISTS idx_artifacts_analysis_id ON analysis_artifacts (analysis_id)",
+            ),
+            (
+                "idx_artifacts_subtype",
+                "CREATE INDEX IF NOT EXISTS idx_artifacts_subtype ON analysis_artifacts (artifact_subtype)",
+            ),
+            (
+                "uq_artifacts_run_subtype_label",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_artifacts_run_subtype_label ON analysis_artifacts (analysis_id, artifact_subtype, label)",
+            ),
         ]
         for name, ddl in _REBUILD_INDEXES:
             try:
@@ -223,9 +234,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 print(f"WARNING: rebuild {name} failed: {e}")
 
         # ── Step 5: record migration ───────────────────────────────────────
-        existing = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 11"
-        ).fetchone()
+        existing = con.execute("SELECT 1 FROM schema_migrations WHERE version = 11").fetchone()
         if not existing:
             con.execute(
                 """

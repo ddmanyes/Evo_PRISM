@@ -9,6 +9,7 @@ Bulk RNA-seq 基礎探索分析（EDA）。
     pca_plot()             — PCA 降維圖（matplotlib）
     generate_bulk_report() — 彙整報告 + 摘要，寫入 analysis_history
 """
+
 from __future__ import annotations
 
 import json
@@ -28,6 +29,7 @@ import matplotlib.pyplot as plt
 matplotlib.use("Agg")
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BIO_DB_ROOT, DUCKDB_PATH
 from config.db_utils import safe_write
@@ -37,7 +39,7 @@ from analysis.path_utils import results_dir
 logger = logging.getLogger(__name__)
 
 BULK_RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
-REPORTS_DIR      = BIO_DB_ROOT / "results" / "bulk_eda"
+REPORTS_DIR = BIO_DB_ROOT / "results" / "bulk_eda"
 
 _SAMPLE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
@@ -79,11 +81,13 @@ def qc_stats(
     run_info_dir: Optional[Path] = None,
 ) -> pd.DataFrame:
     """每樣本 QC 統計：total_counts、n_genes（>0）、mapping_rate（若 run_info 存在）。"""
-    stats = pd.DataFrame({
-        "total_counts":          counts.sum(axis=0),
-        "n_genes":               (counts > 0).sum(axis=0),
-        "median_counts_per_gene": counts.replace(0, np.nan).median(axis=0),
-    })
+    stats = pd.DataFrame(
+        {
+            "total_counts": counts.sum(axis=0),
+            "n_genes": (counts > 0).sum(axis=0),
+            "median_counts_per_gene": counts.replace(0, np.nan).median(axis=0),
+        }
+    )
 
     info_dir = run_info_dir or BULK_RESULTS_DIR
     mapping_rates: dict[str, float] = {}
@@ -123,18 +127,18 @@ def pca_plot(
     from sklearn.decomposition import PCA
     from sklearn.preprocessing import StandardScaler
 
-    var     = counts.var(axis=1).sort_values(ascending=False)
+    var = counts.var(axis=1).sort_values(ascending=False)
     top_idx = var.head(n_top_genes).index
-    mat     = np.log1p(counts.loc[top_idx].T.values)
-    mat     = StandardScaler().fit_transform(mat)
+    mat = np.log1p(counts.loc[top_idx].T.values)
+    mat = StandardScaler().fit_transform(mat)
 
-    pca     = PCA(n_components=min(2, mat.shape[1]))
-    coords  = pca.fit_transform(mat)
+    pca = PCA(n_components=min(2, mat.shape[1]))
+    coords = pca.fit_transform(mat)
     explained = pca.explained_variance_ratio_ * 100
 
     fig, ax = plt.subplots(figsize=(8, 6))
     samples = counts.columns.tolist()
-    groups  = [s.split("_")[0] for s in samples]
+    groups = [s.split("_")[0] for s in samples]
     palette = {g: plt.cm.tab10(i) for i, g in enumerate(sorted(set(groups)))}
 
     for sample, group, (x, y) in zip(samples, groups, coords):
@@ -142,6 +146,7 @@ def pca_plot(
         ax.annotate(sample, (x, y), fontsize=6, ha="left", va="bottom")
 
     from matplotlib.patches import Patch
+
     handles = [Patch(color=c, label=g) for g, c in sorted(palette.items())]
     ax.legend(handles=handles, fontsize=8, title="condition")
     ax.set_xlabel(f"PC1 ({explained[0]:.1f}%)", fontsize=11)
@@ -265,7 +270,7 @@ def generate_bulk_report(
     _validate_sample_id(sample_id)
 
     analysis_id = str(uuid.uuid4())
-    started_at  = datetime.now(timezone.utc)
+    started_at = datetime.now(timezone.utc)
     params_json = json.dumps({"counts_path": str(counts_path or "auto")})
 
     with duckdb.connect(str(DUCKDB_PATH)) as con:
@@ -280,17 +285,17 @@ def generate_bulk_report(
 
     try:
         counts = load_counts(counts_path)
-        qc     = qc_stats(counts)
-        top    = top_genes(counts, n=20)
-        corr   = sample_correlation(counts)
+        qc = qc_stats(counts)
+        top = top_genes(counts, n=20)
+        corr = sample_correlation(counts)
 
         out_dir = results_dir(sample_id, "bulk_eda")
-        ts      = started_at.strftime("%Y%m%d_%H%M%S")
+        ts = started_at.strftime("%Y%m%d_%H%M%S")
 
         # 系列圖：QC barplot、相關矩陣 heatmap、PCA。任一失敗不致命，記警告續行。
-        qc_out   = out_dir / f"qc_{sample_id}_{ts}.png"
+        qc_out = out_dir / f"qc_{sample_id}_{ts}.png"
         corr_out = out_dir / f"corr_{sample_id}_{ts}.png"
-        pca_out  = out_dir / f"pca_{sample_id}_{ts}.png"
+        pca_out = out_dir / f"pca_{sample_id}_{ts}.png"
 
         def _safe_fig(plot_fn, out_path: Path, alt: str) -> tuple[Optional[Path], str]:
             try:
@@ -300,12 +305,13 @@ def generate_bulk_report(
                 logger.warning("%s 生成失敗，跳過", alt, exc_info=True)
                 return None, f"\n（{alt} 生成失敗）\n"
 
-        qc_file,   qc_fig   = _safe_fig(lambda p: qc_barplot(qc, output_path=p),
-                                        qc_out, "QC barplot")
-        corr_file, corr_fig = _safe_fig(lambda p: correlation_heatmap(corr, output_path=p),
-                                        corr_out, "Sample correlation heatmap")
-        pca_file,  pca_fig  = _safe_fig(lambda p: pca_plot(counts, output_path=p),
-                                        pca_out, "PCA")
+        qc_file, qc_fig = _safe_fig(lambda p: qc_barplot(qc, output_path=p), qc_out, "QC barplot")
+        corr_file, corr_fig = _safe_fig(
+            lambda p: correlation_heatmap(corr, output_path=p),
+            corr_out,
+            "Sample correlation heatmap",
+        )
+        pca_file, pca_fig = _safe_fig(lambda p: pca_plot(counts, output_path=p), pca_out, "PCA")
 
         report_text = _REPORT_TEMPLATE.format(
             timestamp=started_at.isoformat(),
@@ -328,7 +334,7 @@ def generate_bulk_report(
         avg_total = qc["total_counts"].mean()
         avg_genes = int(qc["n_genes"].mean())
         n_samples = counts.shape[1]
-        summary   = (
+        summary = (
             f"Bulk RNA {sample_id}：{n_samples} 樣本，"
             f"均 {avg_genes:,} 基因，均 total counts {avg_total:,.0f}。"
         )[:50]
@@ -345,26 +351,48 @@ def generate_bulk_report(
             # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
             try:
                 from analysis.tool_registry import backfill_tool_id
+
                 backfill_tool_id(con, "bio_run_bulk_eda", analysis_id)
             except Exception as _exc:
                 logger.warning("bulk_eda: backfill_tool_id 失敗（非致命）: %s", _exc)
             try:
                 from analysis.artifact_registry import register_artifact
+
                 if qc_file and qc_file.exists():
-                    register_artifact(con, analysis_id, qc_file,
-                                      "figure", "QC barplot（library size + 偵測基因數）",
-                                      artifact_subtype="qc")
+                    register_artifact(
+                        con,
+                        analysis_id,
+                        qc_file,
+                        "figure",
+                        "QC barplot（library size + 偵測基因數）",
+                        artifact_subtype="qc",
+                    )
                 if corr_file and corr_file.exists():
-                    register_artifact(con, analysis_id, corr_file,
-                                      "figure", "樣本相關矩陣 heatmap",
-                                      artifact_subtype="correlation")
+                    register_artifact(
+                        con,
+                        analysis_id,
+                        corr_file,
+                        "figure",
+                        "樣本相關矩陣 heatmap",
+                        artifact_subtype="correlation",
+                    )
                 if pca_file and pca_file.exists():
-                    register_artifact(con, analysis_id, pca_file,
-                                      "figure", "PCA 主成分分析圖",
-                                      artifact_subtype="pca")
-                register_artifact(con, analysis_id, report_path,
-                                  "report", "Bulk EDA 分析報告",
-                                  artifact_subtype="eda_report")
+                    register_artifact(
+                        con,
+                        analysis_id,
+                        pca_file,
+                        "figure",
+                        "PCA 主成分分析圖",
+                        artifact_subtype="pca",
+                    )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    report_path,
+                    "report",
+                    "Bulk EDA 分析報告",
+                    artifact_subtype="eda_report",
+                )
             except Exception as _exc:
                 logger.warning("bulk_eda: register_artifact 失敗（非致命）: %s", _exc)
 

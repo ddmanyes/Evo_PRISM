@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 
 # ── 內部工具 ──────────────────────────────────────────────────────────────────
 
-_SAMPLE_ID_RE = re.compile(r'^[a-z0-9_-]+$')
-_GENE_NAME_RE = re.compile(r'^[A-Za-z0-9_.+-]+$')
+_SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")
+_GENE_NAME_RE = re.compile(r"^[A-Za-z0-9_.+-]+$")
 
 
 def _validate_sample_id(sample_id: str) -> None:
