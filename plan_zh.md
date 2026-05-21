@@ -27,7 +27,7 @@
 
 以 **AI Agent** 為協同控制中樞，透過「三層防禦閘道」與「三軌記憶/觀測核心」協同運作：
 
-- **智能人機介面（Intelligent Interface）**：支援 Web UI 與 Telegram 自然語言交互，融合多模態視覺模型（VLM）以直觀解析生資圖表，並搭載 **Fast-Path 協議**，大幅降低提問至取回結果的延遲。
+- **智能人機介面與 MCP 網關（Intelligent Interface & MCP Gateway）**：以 **Model Context Protocol (MCP)** 協議為核心分析中樞，將去重閘道與記憶核心封裝為標準 MCP 工具集，主要透過 MCP 與主流 LLM 交互；同時向下支援 Web UI 與 Telegram 自然語言交互，融合多模態視覺模型（VLM）以直觀解析生資圖表，並搭載 **Fast-Path 協議**，大幅降低提問至取回結果的延遲。
 - **三道防禦去重閘道（Three-Tier De-duplication Gateway）**：
   - **L1 語意與精確攔截**：提問進來後先由 Fast-Path 進行 `analysis_history` SQL 精確比對（0 token 延遲），若未命中則走 HNSW 向量語意相似度檢索（極低 token），攔截「曾問過的問題」。
   - **L2 程式碼重用**：若問題意圖不同，則進入程式碼特徵比對與 AST 分析，攔截「曾生成並驗證過的分析邏輯」，實現 3B 程式碼模版級別的重用。
