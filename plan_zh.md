@@ -70,95 +70,97 @@
   - **Embedding**：選用 `bge-m3` 開源模型（基於 llama.cpp 實作本機推理），利用其優異之中英混雜語意召回率，在零 API 費用且數據絕對不外流之安全前提下，實現精確之語意檢索。
   - **LLM 雙後端**：推理後端採本機與雲端雙軌制：日常處理及多模態圖像分析由本機部署之 Gemma 4 Vision 26B 離線擔當，而涉及複雜科學邏輯之深度推導，則動態切換至雲端之 Claude Sonnet，並搭載 Prompt Cache 技術以壓低重複上下文之支出。
 
-## 三、三層架構
+## 三、三層架構與數據路徑
 
 ```
-L3 銅層（Bronze）── 不可變原始數據
+L3 銅層（Bronze）── 不可變原始數據層
     FASTQ、BAM、SpaceRanger outs/、Perseus CSV
-    規則：絕對唯讀，任何腳本嚴禁修改
+    存取規則：絕對唯讀，物理權限隔離，防範執行期腳本污染
          │
-         │  scripts/ 一次性轉換
+         │  scripts/ 一次性結構化轉換
          ▼
-L2 銀層（Silver）── 結構化特徵儲存 + 雙軌記憶系統
-    ── 中間數據 ──
-    silver/*.parquet         ← 從 L3 提取的結構化中間數據（計數矩陣，尚未分析）
-    ── 分析產出 ──
-    results/                 ← 實體產出檔案（圖 .png、CSV .csv、報告 .md）
-    ── 記憶資料庫 ──
-    bio_memory.duckdb        ← 知識索引與記憶核心
-      ├─ sample_registry + analysis_history + Views
+L2 銀層（Silver）── 結構化特徵儲存與雙軌記憶系統
+    ── 中間特徵數據 ──
+    silver/*.parquet         ← 從 L3 提取之標準化計數矩陣（尚未二次加工）
+    ── 分析實體產出 ──
+    results/                 ← 火山圖、計數矩陣及分析報告實體產物（.png / .csv / .md）
+    ── 知識庫與索引 ──
+    bio_memory.duckdb        ← 智慧記憶大腦與檢索核心
+      ├─ sample_registry + analysis_history + 歷史軌跡 Views
       ├─ [HELIX] tools + tool_change_log + tool_stabilization_log
-      └─ [ENGRAM] analysis_artifacts（索引 results/ 產出 + blob + HNSW）
-    規則：只有 scripts/ 可寫入矩陣；HELIX 由 tool_registry.py 寫入；
-          ENGRAM 由 artifact_registry.py 寫入；分析函數唯讀
+      └─ [ENGRAM] analysis_artifacts（索引 results/ 產出 + HNSW 向量索引）
+    存取規則：僅 scripts/ 具寫入銀層矩陣權限；分析工具唯讀
+              HELIX 由 tool_registry 註冊，ENGRAM 由 artifact_registry 註冊
          │
-         │  分析完成後自動寫入
+         │  分析執行成功後自動回寫
          ▼
-L1 金層（Gold）── 語意快取（近期記憶）
-    gold/hermes_cache.duckdb  ← memory_recent + HNSW 索引（TTL 7 天）
-    規則：analysis/ 函數寫入；TTL 到期自動清除；可重建
+L1 金層（Gold）── 語意與高頻快取層（近期記憶）
+    gold/hermes_cache.duckdb  ← memory_recent 近期熱點與 HNSW 索引（TTL 7 天）
+    存取規則：由分析調用端自動寫入；TTL 到期自主演進清除；可隨時無損重建
 ```
 
-| 層級                          | 觸發時機        | 回應時間 | Token 消耗         | 資料生命週期                                    |
-| ----------------------------- | --------------- | -------- | ------------------ | ----------------------------------------------- |
-| L1 快取命中（cosine ≥ 0.88） | L1 語意搜尋命中 | < 1 秒   | 0（直接回傳）      | TTL 7 天；工具改版立即清除；可重建              |
-| L2 SQL / Parquet 查詢         | L1 未命中       | ~30 秒   | 極少（SQL 壓縮後） | 永久保存；HELIX 快照 180d/365d 依遺忘曲線降採樣 |
-| L3 Pipeline                   | L2 無 Parquet   | ~4 小時  | 正常               | 唯讀，不衰減                                    |
+| 層級 | 觸發時機 | 回應時間 | Token 消耗 | 資料生命週期 |
+| :--- | :--- | :--- | :--- | :--- |
+| **L1 金層快取命中** | L1 語意搜尋匹配（cosine ≥ 0.88） | < 1 秒 | 0（亞秒級秒傳既有成果） | TTL 7 天；工具更動立即清除；可隨時無損重建 |
+| **L2 銀層記憶查詢** | L1 未命中，回退 L2 銀層知識庫 | ~30 秒 | 極少（SQL 高效聚合與 RRF 混合搜尋） | 永久保存；HELIX 診斷快照依遺忘曲線漸進降採樣 |
+| **L3 銅層 Pipeline** | L2 無 Parquet 中間矩陣 | ~4 小時 | 正常 | 絕對唯讀；不隨時間衰減 |
 
 ```mermaid
 graph TD
-    subgraph L3["L3 銅層 — 不可變原始數據（唯讀）"]
-        raw["FASTQ / BAM / SpaceRanger outs / Perseus CSV"]
-    end
+subgraph L3["L3 銅層 — 不可變原始數據（唯讀）"]
+raw["FASTQ / BAM / SpaceRanger outs / Perseus CSV"]
+end
 
-    subgraph L2["L2 銀層 — 結構化特徵儲存 + 雙軌記憶系統"]
-        parquet["silver/*.parquet — 中間數據（計數矩陣）"]
-        results["results/ — 分析產出（.png / .csv / .md）"]
-        subgraph db["bio_memory.duckdb — 記憶核心"]
-            core["sample_registry + analysis_history"]
-            helix["HELIX — tools / tool_change_log / tool_stabilization_log"]
-            engram["ENGRAM — analysis_artifacts（blob + HNSW）"]
-        end
-    end
+subgraph L2["L2 銀層 — 結構化特徵儲存 + 雙軌記憶系統"]
+parquet["silver/*.parquet — 中間數據（計數矩陣）"]
+results["results/ — 分析產出（.png / .csv / .md）"]
+subgraph db["bio_memory.duckdb — 記憶核心"]
+core["sample_registry + analysis_history"]
+helix["HELIX — tools / tool_change_log / tool_stabilization_log"]
+engram["ENGRAM — analysis_artifacts（blob + HNSW）"]
+end
+end
 
-    subgraph L1["L1 金層 — 語意快取（近期記憶，TTL 7 天）"]
-        cache["hermes_cache.duckdb\nmemory_recent + HNSW 索引"]
-    end
+subgraph L1["L1 金層 — 語意快取（近期記憶，TTL 7 天）"]
+cache["hermes_cache.duckdb
+memory_recent + HNSW 索引"]
+end
 
-    raw -->|"scripts/ 一次性轉換"| parquet
-    parquet -->|"分析執行"| results
-    results -->|"register_artifact()"| engram
-    parquet -->|"register_tool()"| helix
-    results -->|"analysis_history 寫入"| core
-    core -->|"分析完成後寫入"| cache
+raw -->|"scripts/ 一次性轉換"| parquet
+parquet -->|"分析執行"| results
+results -->|"register_artifact()"| engram
+parquet -->|"register_tool()"| helix
+results -->|"analysis_history 寫入"| core
+core -->|"分析完成後寫入"| cache
 ```
 
 ```mermaid
 graph LR
-    Q(["使用者查詢"])
+Q(["使用者查詢"]) -->|"1. cosine >= 0.88"| L1["L1 語意快取"]
+Q -->|"2. L1 未命中"| L2["L2 SQL / ENGRAM"]
+Q -->|"3. L2 無結果"| L3["L3 Pipeline"]
 
-    Q -->|"1. cosine ≥ 0.88"| L1["L1 語意快取"]
-    Q -->|"2. L1 未命中"| L2["L2 SQL / ENGRAM"]
-    Q -->|"3. L2 無結果"| L3["L3 Pipeline"]
-
-    L3 -->|"回寫 L2"| L2
-    L2 -->|"回寫 L1"| L1
-    L1 -->|"回傳"| A(["結果"])
-    L2 -->|"回傳"| A
-    L3 -->|"回傳"| A
+L3 -->|"回寫 L2"| L2
+L2 -->|"回寫 L1"| L1
+L1 -->|"回傳"| A(["結果"])
+L2 -->|"回傳"| A
+L3 -->|"回傳"| A
 ```
 
-### 寫入路徑
+### 寫入路徑（Ingestion & Execution Paths）
 
-資料進入系統有兩條路徑，各自對應不同的觸發時機。**原始數據轉換路徑**由 `scripts/` 下的一次性工具觸發：SpaceRanger 輸出、FASTQ、Perseus CSV 等 L3 原始數據經過結構化轉換後，以 Parquet 格式寫入 L2 `silver/`，同時將樣本元資料登記至 `sample_registry`。此路徑每個樣本只執行一次，L3 在整個過程中保持唯讀。
+資料進入系統遵循兩條涇渭分明的寫入軌跡，各自對應不同的工程時機：
 
-**分析寫入路徑**由每次分析完成後自動觸發。分析開始時以 `status='running'` 寫入 `analysis_history`；完成後更新為 `status='completed'`，結果路徑存入 `result_path`；同步呼叫 `register_artifact()` 將所有產出（圖、CSV、報告）寫入 ENGRAM 的 `analysis_artifacts`，並生成語意 embedding；若分析涉及工具修改，則呼叫 `register_tool()` 更新 HELIX 的 `tools` 表與 `tool_change_log`。最後，查詢文字與報告摘要寫入 L1 `memory_recent`，供下次語意命中使用。所有寫入在完成後立即執行 `CHECKPOINT`，確保 ExFAT 環境下資料不因斷電而遺失。
+1. **原始數據轉換路徑（L3 ➔ L2 Ingestion）**：由 `scripts/` 下的一次性數據轉換管道手動或自動觸發。L3 原始唯讀數據（如 FASTQ、SpaceRanger 產出及 Perseus CSV）經提取與結構化標準化後，轉為 Parquet 欄位式格式，寫入 L2 `silver/` 目錄並依樣本 ID 物理分區，同時於 `sample_registry` 登記樣本元數據。此路徑對每個樣本僅執行一次，基座 L3 保持物理唯讀。
+2. **分析產出寫入路徑（Execution ➔ L2/L1 Registry）**：於分析任務完成後由平台自動觸發。分析啟動時預先將軌跡登記為 `status='running'` 入歷史軌跡；成功完成後更新為 `status='completed'` 並寫入實體產物路徑；隨即呼叫 `register_artifact()` 將火山圖、特徵矩陣與報告註冊至 ENGRAM 永久記憶，就地生成 1024 維語意 Embedding；若涉及工具代碼變更，則呼叫 `register_tool()` 更新 HELIX 帳本。最後將報告摘要與高頻查詢寫入 L1 快取，並即時觸發強 `CHECKPOINT` 強制刷盤，防範無日誌外接硬碟環境中途斷電之一致性風險。
 
-### 查詢路徑
+### 查詢路徑（Retrieval & Routing Paths）
 
-收到查詢後，系統依成本由低到高逐層往下嘗試。首先在 L1 `memory_recent` 以 HNSW cosine 搜尋（閾值 ≥ 0.88），命中則直接回傳既有報告，token 消耗為零、回應時間不到 1 秒。L1 未命中時，退回 L2：結構化問題以 SQL 查詢 `analysis_history` 或 Parquet 矩陣，回應時間約 30 秒、token 消耗極少；若需要跨產出的語意搜尋，則呼叫 ENGRAM 的 RRF 混合搜尋。兩層均無法回答時，才觸發 L3 Pipeline 重新執行完整分析，耗時約 4 小時。查詢完成後，結果自動回寫 L1，下次相同語意的問題可直接命中。
+收到用戶之自然語言或 API 查詢時，系統依據「計算與時間成本」由低至高進行三級自適應路由：
 
----
+1. **L1 快取秒級攔截**：優先於 L1 快取以 HNSW cosine 搜尋（閾值 ≥0.88）匹配相似問題。若命中，則亞秒級取回並重現報告，Token 消耗為零，響應時間不到 1 秒，徹底消除冗餘運算。
+2. **L2 結構化與語意檢索**：若 L1 未命中，則降級至 L2 記憶庫。常規結構化問題由 DuckDB SQL 直接對矩陣或 `analysis_history` 進行高速向量化列式查詢（響應約 30 秒，Token 開銷極低）；複雜之跨樣本關聯查詢，則呼叫 ENGRAM 進行倒排倒數融合（RRF）混合語意檢索，取得精確的產出脈絡。
+3. **L3 實體算力計算**：僅在 L1 與 L2 均無法響應時，方啟動 L3 Pipeline 沙盒，執行耗時約 4 小時的實體重計算，完成後自動回寫 L2 與 L1，使後續相同查詢達到零冗餘回傳。
 
 ## 四、資料庫 Schema 總覽
 
@@ -1543,54 +1545,58 @@ WHERE  aa.analysis_id IN (...)
 
 ```mermaid
 graph TD
-%% 樣式自定義
-classDef db fill:#e8f4fd,stroke:#1a73e8,stroke-width:2px;
-classDef monitor fill:#eefbee,stroke:#1e8e3e,stroke-width:1px;
-classDef logic fill:#fce8e6,stroke:#d93025,stroke-width:1px;
-classDef memory fill:#fef7e0,stroke:#f9ab00,stroke-width:1px;
+subgraph G1["1. 監測與追蹤層"]
+code["分析工具源碼 py"]
+tracker["tool_change_log 版本變更"]
+metrics["mcp_tool_metrics 調用指標"]
+v_perf["v_tool_perf_30d 效能視圖"]
+hotspot["熱區偵測 Hotspot"]
 
-%% 1. 監測與追蹤
-subgraph Monitoring["1. 監測與追蹤層 - Observation & Tracking"]
-code["分析工具源碼 py"] -->|"SHA256 Content-Hash"| tracker["tool_change_log - 版本變更"]
-metrics["mcp_tool_metrics - 調用指標"] -->|"30天效能診斷視圖"| v_perf["v_tool_perf_30d"]
-tracker -->|"修訂次數 revision_count 大於等於 3"| hotspot["熱區偵測 - Hotspot"]
+code -->|"SHA256 Content-Hash"| tracker
+metrics -->|"30天效能指標"| v_perf
+tracker -->|"修訂次數 >= 3"| hotspot
 end
 
-%% 2. 多維度健康度評估
-subgraph Evaluation["2. 多維度健康評估 - Multi-Dimensional Metrics"]
-hotspot --> CC["Radon 循環複雜度 complexity_before"]
-hotspot --> Churn["相對代碼變動率 Relative Churn"]
-hotspot --> Xray["行級變動分析 Tornhill X-Ray"]
+subgraph G2["2. 多維度健康評估"]
+CC["Radon 循環複雜度 before"]
+Churn["相對代碼變動率 Churn"]
+Xray["行級變動分析 X-Ray"]
+
+hotspot --> CC
+hotspot --> Churn
+hotspot --> Xray
 end
 
-%% 3. VLM 診斷與穩定化閉環
-subgraph Loop["3. 穩定化迭代閉環 - Stabilization Loop"]
-CC -->|"觸發穩定化迭代"| diag["診斷記錄 Diagnostic Log"]
-Churn -->|"觸發穩定化迭代"| diag
-Xray -->|"觸發穩定化迭代"| diag
-diag --> plan["行動計畫 Action Plan"]
-plan -->|"Agent 優化改寫"| opt["優化實體工具 complexity_after"]
+subgraph G3["3. 穩定化迭代閉環"]
+diag["診斷記錄 Diagnostic Log"]
+plan["行動計畫 Action Plan"]
+opt["優化實體工具 after"]
+
+CC -->|"觸發穩定化"| diag
+Churn -->|"觸發穩定化"| diag
+Xray -->|"觸發穩定化"| diag
+diag --> plan
+plan -->|"Agent 優化改寫"| opt
 end
 
-%% 4. 雙軌記憶與忘卻機制
-subgraph Memory["4. 雙軌記憶與忘卻機制 - Evolutionary Memory"]
-opt -->|"迭代存檔"| png["VLM 視覺快照 640x640 PNG"]
-png -->|"艾賓浩斯遺忘曲線"| forget["時間閘門"]
-forget -->|"穩定大於 180 天"| p320["漸進式降採樣 320x320 PNG"]
-forget -->|"穩定大於 365 天"| p160["極簡降採樣 160x160 PNG"]
-opt -->|"寫入交易"| db_table["bio_memory.duckdb - tool_stabilization_log"]
+subgraph G4["4. 雙軌記憶與忘卻機制"]
+png["VLM 視覺快照 640x640 PNG"]
+forget["時間閘門"]
+p320["漸進式降採樣 320x320 PNG"]
+p160["極簡降採樣 160x160 PNG"]
+db_table["bio_memory.duckdb 穩定化日誌"]
+
+opt -->|"迭代存檔"| png
+png -->|"艾賓浩斯遺忘曲線"| forget
+forget -->|"穩定 > 180 天"| p320
+forget -->|"穩定 > 365 天"| p160
+opt -->|"寫入交易"| db_table
 end
 
-%% 閉環回讀與協同
-png -->|"後續迭代由 VLM 視覺讀回"| diag
-p320 -->|"後續迭代由 VLM 視覺讀回"| diag
-p160 -->|"後續迭代由 VLM 視覺讀回"| diag
-db_table -.->|"Provenance 溯源鏈"| engram["ENGRAM 產出標記"]
-
-class db_table db;
-class diag,plan,opt logic;
-class png,p320,p160 memory;
-class tracker,metrics,v_perf monitor;
+png -->|"後續迭代 VLM 讀回"| diag
+p320 -->|"後續迭代 VLM 讀回"| diag
+p160 -->|"後續迭代 VLM 讀回"| diag
+db_table -->|"Provenance 溯源鏈"| engram["ENGRAM 產出標記"]
 ```
 
 #### 問題的本質：工具庫為何會臃腫
