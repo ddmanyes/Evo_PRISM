@@ -43,39 +43,31 @@
 
 ## 二、系統設計與技術選型
 
-本章說明系統各層次的設計決策、兩個原創模組的貢獻，以及底層技術元件的選型依據。文獻依據詳見**附錄 A**。
+本章說明系統各層次的設計決策、原創模組的技術貢獻，以及底層技術元件的選型依據。文獻依據詳見**附錄 A**。
 
 ### 2.1 架構設計決策
 
-**三層資料架構**採用 Medallion Architecture（Hai et al., 2023）的 Bronze / Silver / Gold 分層原則，針對實驗室工作流程的特殊約束加以調整。L3 Bronze 層存放不可修改的原始數據（SpaceRanger 輸出、FASTQ、Perseus CSV），任何腳本錯誤皆無法污染此層；L2 Silver 層存放結構化 Parquet 矩陣與分析歷史，作為可重複查詢的知識庫；L1 Gold 層存放語意快取與 HNSW 索引，作為高頻查詢的快速回應層。這種不可變性設計直接回應了第一章所指出的「數據孤島」與「無分析記憶」問題——原始數據保持唯讀，而分析結果一旦計算完成即永久存入 L2，後續相同查詢無需重新執行管道。
-
-**Agent-First 查詢策略**參考 Trummer（2025）與 MemGPT 分層記憶模型（Packer et al., 2023），明確劃分 LLM 與 Python 的工作邊界。「某樣本做過哪些分析」、「這週完成幾個 QC」等結構化問題由 DuckDB SQL 直接回答，token 消耗為零；只有需要語言推理的問題（如「解讀這份報告」）才送往 LLM。這一分工使 LLM 的角色從萬能助手收窄為推理專家，在實驗室長期高頻使用下可顯著壓低 API 費用。系統採用自製輕量 Agent，工具數量控制在 10 個以內，不引入 LangChain 等重型框架；雙後端（本機 Gemma 4 Vision / 雲端 Claude Sonnet）可於 Web UI 即時切換，工具呼叫格式在 `agent.py` 自動轉換（Anthropic `input_schema` ↔ OpenAI function calling）。
-
-**去重閘道**的設計目標是以最低計算成本攔截重複請求。傳入的問題依序通過兩個維度的檢查：在問題維度，首先以 SQL 精確比對 `analysis_history`（零 token 消耗），其次以 HNSW 語意搜尋攔截「問法不同但語意相同」的查詢（Malkov & Yashunin, 2018），cosine 相似度 ≥ 0.88 即直接回傳既有結果；在程式碼維度，Code Promotion 框架追蹤歷史生成的分析邏輯，相同邏輯不重新生成（詳見 2.2 節）。兩個維度均未命中，系統才真正執行新分析。
-
-**兩階段寫入**借鑑 WAL 與 Saga pattern（Garcia-Molina & Salem, 1987），以應對 ExFAT 無日誌環境下 ~4 小時分析任務中途崩潰的風險。分析開始時即以 `status='running'` 寫入 `analysis_history`，完成後才更新為 `status='completed'`；每次寫入後立即執行 `CHECKPOINT`，將 WAL 刷入主檔，縮小斷電損壞視窗。即便任務中途失敗，資料庫中仍保有可追溯的執行記錄。
-
-**動態程式碼的沙盒執行**依部署階段遞進隔離：macOS 測試階段以 `subprocess.run` 搭配 ALLOWED\_IMPORTS 白名單與 timeout=60s 限制；Linux 部署階段改為 Docker container（`python:3.11-slim` + bind-mount `silver/`），確保動態生成的程式碼不得存取 L3 原始數據以外的系統資源。
+- **三層不可變數據分層設計（Medallion Architecture）**：借鑑 Medallion Architecture 精神，並因應生資工作流之嚴苛約束加以特化。**L3 銅層（Bronze）**存放絕對唯讀之原始數據（如 FASTQ、SpaceRanger 產出及 Perseus CSV），於物理與權限層面實施隔離，確保執行期腳本異常絕無污染基座數據之可能；**L2 銀層（Silver）**存放結構化之 Parquet 計數矩陣與分析軌跡，建構為可重複查詢之實驗室知識庫；**L1 金層（Gold）**則封裝高頻語意與精確快取。此等不可變性（Immutability）設計，能從架構層面根治「數據孤島」與「重複運算」之宿疾。
+- **Agent-First 與 MCP 控制中樞（Agent-First Architecture & MCP Orchestration）**：確立 LLM 作為高階邏輯推理核心，而 Python 負責底層實體計算與數據加工之清晰邊界。引入 **Model Context Protocol (MCP)** 作為通用互操作網關，將系統功能與資料庫存取解耦並封裝為標準工具集。複雜之分析任務由 Agent 進行動態工具編排與程式碼生成，而常規之結構化查詢（如 QC 狀態、歷史報告檢索）則由 DuckDB SQL 直接響應，使高頻使用下之 API 消耗與 Token 開銷降至最低。
+- **三層防禦去重閘道（Three-Tier Deduplication Gateway）**：為極小化運算開銷並避免資源冗餘，於實體計算前置「三道防禦攔截」：首先，**L1 精確與語意攔截**在歷史記憶庫中比對相似問題，若 cosine 相似度達臨界值（≥0.88）則秒級回傳既有成果；若未命中，則觸發 **L2 分析邏輯重用**，檢索並推動歷史已驗證代碼片段，免除重複代碼生成與編譯之開銷；僅在兩層防禦皆未命中時，方進入 **L3 安全實體計算** 執行全新分析，確保每一分 Token 與算力皆精準投放。
+- **高可靠性兩階段寫入（Two-Phase Write with Crash Resilience）**：針對外接儲存媒介（如 ExFAT 等無日誌系統）在長達數小時之分析任務中易受中斷之風險，實施防崩潰特化。借鑑預寫日誌（WAL）與 Saga 模式，採用兩階段狀態寫入流程：分析啟動時預先寫入 `status='running'`，成功落盤後才更新為 `status='completed'`；每次寫入交易隨即觸發強 `CHECKPOINT` 實體刷盤，最大限度縮小斷電或崩潰時之損壞視窗，保障資料庫之 ACID 一致性。
+- **動態程式碼安全沙盒（Graduated Code Sandbox Execution）**：針對 LLM 動態生成程式碼之潛在安全威脅，設計漸進式沙盒隔離機制。於 macOS 開發測試階段，採用 `subprocess.run` 搭配嚴格之 `ALLOWED_IMPORTS` 白名單與超時阻斷（60秒）；於 Linux 生產部署階段，則全面切換至獨立之 Docker 容器沙盒（`python:3.11-slim` 搭配唯讀掛載），徹底隔離宿主機資源，保障系統底座之絕對安全。
 
 ### 2.2 原創模組
 
-**Code Promotion 框架**解決動態生成程式碼的生命週期管理問題。LLM 在 Code Generation Loop 中即時生成分析腳本，這些腳本起初存放於臨時記錄中；當同一邏輯的 `reuse_count` 累積至三次時，`promotion_candidates` VIEW 自動偵測並觸發升格評估，將程式碼提升為 `analysis/` 下的永久工具，無需人工追蹤。升格後的工具進入 HELIX 版本管理閉環（詳見下段）。這一機制使程式碼重用率成為工具價值的客觀信號，從使用行為中自然篩選出值得長期維護的分析方法。詳見**附錄 A5**。
-
-**HELIX（Health-Evolving Loop with Iterative eXpiration）** 是本系統提出的工具版本健康管理模組，解決工具庫隨時間臃腫、熱區工具設計不穩定的問題。工具源碼每次修改以 SHA256[:16] content-hash 版本化，`revision_count` 成為設計不穩定性的直接量化信號。當 `revision_count ≥ 3` 時，系統將該工具標記為熱區並自動觸發穩定化迭代：記錄診斷、行動計畫，並以 radon CC（循環複雜度）量化改善幅度（complexity\_before / complexity\_after）。迭代記憶以 640×640 PNG 快照儲存（約 100 VLM tokens），讓 Agent 在後續迭代中以視覺方式讀回上次診斷，而非重新解析源碼。舊快照依 Ebbinghaus 遺忘曲線（Ebbinghaus, 1885）逐步降解析度——迭代關閉後 180 天縮至 320×320，365 天縮至 160×160——在長期記憶與儲存成本之間取得平衡。行級熱區偵測（difflib + Nagappan churn，Tornhill X-Ray）進一步識別反覆被修改的程式碼片段，作為診斷的輔助依據。詳見**附錄 A7**。
-
-**ENGRAM（Evidence & iNdexed Graph of Research Artifacts & Memory）** 是本系統提出的分析產出永久記憶模組，與 HELIX 共同構成雙軌記憶架構。每次分析完成，所有產出（圖、CSV、報告）透過 `register_artifact()` 寫入 `analysis_artifacts`，並自動生成 1024 維語意 embedding。搜尋採用 Reciprocal Rank Fusion（RRF，Cormack et al., 2009）混合兩層結果：第一層以 `analysis_subtype` 精確過濾，第二層以 HNSW cosine 搜尋語意相近產出，兩層排名以 RRF（k=60）融合，無需校準量綱。ENGRAM Web UI 提供縮圖格狀瀏覽、Lightbox 放大、subtype 篩選、多選並排比較與語意搜尋，使分析產出可被查詢、比較與推導。每份產出記錄 provenance hash（輸入數據版本、程式碼 content-hash、執行環境），使結果完全可溯源。詳見**附錄 A8**。
-
-**HELIX 與 ENGRAM 的協同**使搜尋結果不只語意相近，還帶有版本可信度資訊。ENGRAM 的 provenance hash 記錄每份產出由哪個 content-hash 版本的工具生成；當 HELIX 偵測到某工具進入熱區、設計尚不穩定時，可反查 ENGRAM 中所有由該版本產生的產出並加以標記，讓使用者在比較分析結果時同時知道差異來自參數變化還是工具本身的修改——比較從「看起來不同」升級為「知道為什麼不同」。
+- **Code Promotion 動態升格框架**：旨在根治動態生成代碼生命週期無序膨脹與難以維護之宿疾。系統實時監測臨時分析腳本之重用頻次，一旦特定邏輯之 `reuse_count` 累積達三次時，即由資料庫視圖自動捕捉並觸發「升格評估」。經審核通過後，該代碼段將被提升為 `analysis/` 目錄下之永久註冊工具，實現由實際科研使用行為驅動之代碼庫自適應演化。
+- **HELIX（Health-Evolving Loop with Iterative eXpiration）**：為本系統首創之工具健康度自主演進模組。HELIX 採用 SHA256 content-hash 對分析工具進行嚴格之版本追蹤，並結合循環複雜度（Radon CC）與代碼變動率（Code Churn）量化評估工具設計之不穩定性。針對反覆修改之「熱區代碼」，HELIX 將自動開啟診斷流程並留存歷史快照（使 VLM 能在後續迭代中直觀讀取上次診斷），並導入基於 Ebbinghaus 遺忘曲線之漸進式降採樣策略（180天/365天），在長期演化記憶與儲存成本之間取得精妙平衡。
+- **ENGRAM（Evidence & iNdexed Graph of Research Artifacts & Memory）**：為本系統首創之分析產出永久記憶與跨樣本比對模組。每次分析任務完成，ENGRAM 自動將圖表、矩陣與報告註冊至資料庫並生成高維語意向量。檢索端採用倒排倒數融合（RRF，Reciprocal Rank Fusion）演算法，無縫融合第一層之 `analysis_subtype` 精確過濾與第二層之 HNSW 語意搜尋。配合 ENGRAM 交互式 UI 的多圖 Lightbox 與並排比對功能，以及涵蓋「輸入數據、程式碼 content-hash、軟硬體環境」之嚴格實驗溯源鏈（Provenance），確保所有分析成果 100% 可溯源、可重現與跨樣本對照。
+- **METRICS 可觀測性監控**：於底層插樁實時收集工具之調用時延、執行狀態與錯誤分類（Error Class），藉由 30 天效能診斷視圖（`v_tool_perf_30d`），為 Agent 工具選擇與自適應路由提供最優化之量化數據依據。
+- **雙軌記憶協同**：ENGRAM 記錄之溯源鏈能精確鎖定產出所對應之工具 content-hash；當 HELIX 辨識出某工具因修改頻繁而設計不穩（進入熱區）時，能瞬間反查並標記該版本產出之所有歷史成果，使用戶在進行跨樣本比對時，得以清晰判別差異究竟源於生物學參數之擾動，抑或是工具代碼本身之版本漂移。
 
 ### 2.3 技術元件選型
 
-**分析資料庫**選用 DuckDB（Raasveldt & Mühleisen, 2019）。相較於 PostgreSQL 或 SQLite，DuckDB 的列式向量化執行引擎針對 OLAP 查詢最佳化，可跳過基因計數矩陣中數億個零值；嵌入式設計（`import duckdb` 即用）消除了獨立 DB Server 的維護負擔，且 macOS 與 Linux 部署行為完全一致。原生讀取 Parquet 的能力（`FROM 'silver/*.parquet'`）使 L2 的 416 MB 數據無需載入記憶體即可執行 SQL 聚合；內建 VSS 擴充提供 HNSW 向量搜尋（Müller et al., 2024），免去部署 Pinecone 或 Weaviate 的額外基礎設施。實測於 Visium HD 8µm 聚合後約 500 萬列，SQL 聚合至 20 行結果再傳給 LLM，節省 99%+ token 消耗。
-
-**L2 儲存格式**選用 Apache Parquet。CRC Visium HD 原始約 30 億數字，以 Parquet RLE + Dictionary encoding 壓縮後降至 416 MB（壓縮率 ~95%）。欄位型別嚴格固定（`float32` / `int32`），DuckDB 無需型別推斷；依樣本分區（`silver/spatial_counts_{sample_id}_8um/`）確保查詢時只讀相關分區。Parquet 的跨語言支援（Python pandas / R arrow / DuckDB 原生）使分析結果可直接以 R 讀取，便於與濕實驗室人員共用中間數據。
-
-**Embedding 模型**選用 bge-m3 Q8（BAAI，llama.cpp 本機推理，port 8081）。bge-m3 以 1024 維輸出、中英混雜查詢表現佳著稱，本機推理零費用，敏感實驗數據不上傳外部服務。**LLM 後端**採用雙軌設計：本機使用 Gemma 4 Vision 26B（llama.cpp），支援多模態輸入、離線運行；雲端切換至 Claude Sonnet（Anthropic），在需要更強推理能力時使用，並以 Prompt Cache 壓低重複 context 的費用。
-
----
+- **分析資料庫：DuckDB**：作為嵌入式分析型資料庫之首選。DuckDB 的向量化列式執行引擎極度契合高維稀疏之基因計數矩陣，能高效跳過數億個零值運算；其無伺服器架構（In-Process）消除了繁雜之資料庫運維成本，確保 macOS 開發與 Linux 部署之環境一致性；原生直讀 Parquet 能力（`FROM 'silver/*.parquet'`）免除記憶體載入開銷，配合內建之 `duckdb_vss` 擴充套件，就地實現 HNSW 語意向量檢索，省去建置外部專用向量資料庫之架構複雜度。
+- **L2 儲存格式：Apache Parquet**：採用 Parquet 作為銀層數據之標準儲存載體。Parquet 的欄位式儲存架構與極佳之壓縮演算法（字典編碼與游程編碼 RLE），能將體積龐大之 Visium HD 空間轉錄組矩陣高倍壓縮，大幅節省儲存空間；藉由以樣本 ID 為基準之物理分區儲存，實現按需加載與 I/O 剪裁；此外，Parquet 具備絕佳之跨語言（Python/R/Rust）互操作性，利於生資團隊與濕實驗團隊間無縫共享中間分析數據。
+- **Embedding 與推理模型雙軌配置**：
+  - **Embedding**：選用 `bge-m3` 開源模型（基於 llama.cpp 實作本機推理），利用其優異之中英混雜語意召回率，在零 API 費用且數據絕對不外流之安全前提下，實現精確之語意檢索。
+  - **LLM 雙後端**：推理後端採本機與雲端雙軌制：日常處理及多模態圖像分析由本機部署之 Gemma 4 Vision 26B 離線擔當，而涉及複雜科學邏輯之深度推導，則動態切換至雲端之 Claude Sonnet，並搭載 Prompt Cache 技術以壓低重複上下文之支出。
 
 ## 三、三層架構
 
