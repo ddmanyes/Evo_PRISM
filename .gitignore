@@ -70,3 +70,7 @@ file_info_input.md
 
 # MCP 設定（含本機絕對路徑，不跨機器）
 .mcp.json
+
+# IDE
+.vscode/
+.idea/
