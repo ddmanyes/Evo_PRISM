@@ -1539,6 +1539,57 @@ WHERE  aa.analysis_id IN (...)
 
 ### A7. HELIX — Health-Evolving Loop with Iterative eXpiration
 
+#### 系統結構與自適應演化閉環
+
+```mermaid
+graph TD
+    %% 樣式自定義
+    classDef db fill:#e8f4fd,stroke:#1a73e8,stroke-width:2px;
+    classDef monitor fill:#eefbee,stroke:#1e8e3e,stroke-width:1px;
+    classDef logic fill:#fce8e6,stroke:#d93025,stroke-width:1px;
+    classDef memory fill:#fef7e0,stroke:#f9ab00,stroke-width:1px;
+
+    %% 1. 監測與追蹤
+    subgraph Monitoring["1. 監測與追蹤層 (Observation & Tracking)"]
+        code["分析工具源碼 (.py)"] -->|"SHA256 Content-Hash"| tracker["tool_change_log (版本變更)"]
+        metrics["mcp_tool_metrics (調用指標)"] -->|"30天效能診斷視圖"| v_perf["v_tool_perf_30d"]
+        tracker -->|"修訂次數 revision_count ≥ 3"| hotspot{"熱區偵測 (Hotspot)"}
+    end
+
+    %% 2. 多維度健康度評估
+    subgraph Evaluation["2. 多維度健康評估 (Multi-Dimensional Metrics)"]
+        hotspot --> CC["Radon 循環複雜度 (complexity_before)"]
+        hotspot --> Churn["相對代碼變動率 (Relative Churn)"]
+        hotspot --> Xray["行級變動分析 (Tornhill X-Ray)"]
+    end
+
+    %% 3. VLM 診斷與穩定化閉環
+    subgraph Loop["3. 穩定化迭代閉環 (Stabilization Loop)"]
+        CC & Churn & Xray -->|"觸發穩定化迭代"| diag["診斷記錄 (Diagnostic Log)"]
+        diag --> plan["行動計畫 (Action Plan)"]
+        plan -->|"Agent 優化改寫"| opt["優化實體工具 (complexity_after)"]
+    end
+
+    %% 4. 雙軌記憶與忘卻機制
+    subgraph Memory["4. 雙軌記憶與忘卻機制 (Evolutionary Memory & Expiration)"]
+        opt -->|"迭代存檔"| png["VLM 視覺快照 (640x640 PNG, ~100 tokens)"]
+        png -->|"艾賓浩斯遺忘曲線"| forget{"時間閘門"}
+        forget -->|"穩定 > 180 天"| p320["漸進式降採樣 (320x320 PNG)"]
+        forget -->|"穩定 > 365 天"| p160["極簡降採樣 (160x160 PNG)"]
+        
+        opt -->|"寫入交易"| db_table[("bio_memory.duckdb\ntool_stabilization_log")]
+    end
+
+    %% 閉環回讀與協同
+    p320 & p160 & png -->|"後續迭代由 VLM 視覺讀回"| diag
+    db_table -.->|"Provenance 溯源鏈"| engram["ENGRAM 產出標記"]
+
+    class db_table db;
+    class diag,plan,opt logic;
+    class png,p320,p160 memory;
+    class tracker,metrics,v_perf monitor;
+```
+
 #### 問題的本質：工具庫為何會臃腫
 
 工具庫的臃腫不是突然發生的，它是一個緩慢累積的過程。每次需求改變，工具就多一次修改；每次修改，舊版本因為可能被歷史分析記錄引用而不敢刪除；修改愈多，理解工具「為何長成這樣」就愈困難，後續修改也愈保守，傾向再加一個分支而非重構。這是一個自我強化的惡性循環：**臃腫製造理解成本，理解成本製造更多臃腫**。
