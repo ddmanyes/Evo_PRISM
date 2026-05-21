@@ -13,6 +13,7 @@
 
 手動操作（觸發排程、HELIX 操作、畢業）見 server/dashboard_actions.py（Phase 2）。
 """
+
 from __future__ import annotations
 
 import json
@@ -23,10 +24,12 @@ from config.settings import BIO_DB_ROOT
 
 # ── 小工具 ──────────────────────────────────────────────────────────────────
 
+
 def _check_port(port: int, timeout: float = 1.0) -> bool:
     """探活本機 llama-server /health。"""
     try:
         import httpx
+
         return httpx.get(f"http://127.0.0.1:{port}/health", timeout=timeout).status_code == 200
     except Exception:
         return False
@@ -38,6 +41,7 @@ def _rows_to_dicts(cur) -> list[dict]:
 
 
 # ── Panel：總覽 ─────────────────────────────────────────────────────────────
+
 
 def overview(con) -> dict:
     """頂層計數總覽（輕量，供儀表板首屏）。"""
@@ -89,6 +93,7 @@ def overview(con) -> dict:
 
 # ── Panel：HELIX ────────────────────────────────────────────────────────────
 
+
 def helix_panel(con) -> dict:
     """HELIX 工具健康全貌（直接複用 tool_registry.tool_health_report）。"""
     from analysis.tool_registry import tool_health_report
@@ -111,6 +116,7 @@ def helix_panel(con) -> dict:
 
 
 # ── Panel：動態程式碼 ───────────────────────────────────────────────────────
+
 
 def dynamic_code_panel(con, limit: int = 30) -> dict:
     """動態程式碼執行紀錄 + 畢業候選（高頻者最該沉澱進 HELIX）。"""
@@ -155,6 +161,7 @@ def dynamic_code_panel(con, limit: int = 30) -> dict:
 
 
 # ── Panel：快取 + artifact ──────────────────────────────────────────────────
+
 
 def cache_panel(con) -> dict:
     """figure_cache / L1 cache / artifact 大小狀態 + 分析產出的圖檔總數。"""
@@ -206,6 +213,7 @@ def cache_panel(con) -> dict:
 
 # ── Panel：系統健康 ─────────────────────────────────────────────────────────
 
+
 def _read_json(rel: str) -> dict:
     p = BIO_DB_ROOT / rel
     if not p.exists():
@@ -231,6 +239,7 @@ def system_panel(con) -> dict:
     disk_free = None
     try:
         import shutil
+
         disk_free = round(shutil.disk_usage(BIO_DB_ROOT).free / 1024**3, 2)
     except Exception:
         pass
@@ -251,6 +260,7 @@ def system_panel(con) -> dict:
 
 
 # ── 一次抓全部（供首屏單次請求）──────────────────────────────────────────────
+
 
 def full_snapshot(con, dynamic_limit: int = 30) -> dict[str, Any]:
     """聚合所有 panel，供 /api/dashboard 一次回傳。"""

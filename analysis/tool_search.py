@@ -15,6 +15,7 @@
 token 經濟學：搜尋引擎本身不耗 LLM token（embedding 在本地 server、HNSW 在 DuckDB）；
 比「把整份工具目錄塞 system prompt」更省——後者每則訊息都付全目錄，這裡只在需要時付 top-K。
 """
+
 from __future__ import annotations
 
 import importlib
@@ -48,6 +49,7 @@ DEFAULT_SOURCE_MODULES = (
 
 
 # ── 連線 / schema ─────────────────────────────────────────────────────────────
+
 
 def _setup_vss(con: duckdb.DuckDBPyConnection, *, read_only: bool = False) -> None:
     try:
@@ -87,6 +89,7 @@ def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
 
 # ── 內省工具 ──────────────────────────────────────────────────────────────────
 
+
 def _signature_text(fn) -> str:
     try:
         return f"{fn.__name__}{inspect.signature(fn)}"
@@ -106,6 +109,7 @@ def _source_hash(fn) -> str:
     """以函數原始碼算 hash（沿用 HELIX 的 compute_tool_hash，索引冪等與 HELIX 對齊）。"""
     try:
         from analysis.tool_registry import compute_tool_hash
+
         return compute_tool_hash(fn)
     except Exception:
         return "unavailable"
@@ -129,6 +133,7 @@ def _embed_text_for(signature: str, summary: str, module_path: str) -> str:
 
 # ── 索引（寫入）───────────────────────────────────────────────────────────────
 
+
 def _upsert(
     con: duckdb.DuckDBPyConnection,
     *,
@@ -143,15 +148,13 @@ def _upsert(
     embedding_provider: Optional[str],
 ) -> str:
     """寫入單筆；source_hash 未變則跳過（不重算 embedding）。回傳 'indexed'|'skipped'。"""
-    existing = con.execute(
-        "SELECT source_hash FROM tool_catalog WHERE name = ?", [name]
-    ).fetchone()
+    existing = con.execute("SELECT source_hash FROM tool_catalog WHERE name = ?", [name]).fetchone()
     if existing and existing[0] == source_hash and source_hash != "unavailable":
         return "skipped"
 
     from analysis.embed import embed_text
-    vec = embed_text(_embed_text_for(signature, summary, module_path),
-                     provider=embedding_provider)
+
+    vec = embed_text(_embed_text_for(signature, summary, module_path), provider=embedding_provider)
 
     con.execute("DELETE FROM tool_catalog WHERE name = ?", [name])
     con.execute(
@@ -161,8 +164,18 @@ def _upsert(
              import_hint, source_hash, embedding, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        [name, kind, signature, summary, module_path, function_name,
-         import_hint, source_hash, vec, datetime.now(timezone.utc)],
+        [
+            name,
+            kind,
+            signature,
+            summary,
+            module_path,
+            function_name,
+            import_hint,
+            source_hash,
+            vec,
+            datetime.now(timezone.utc),
+        ],
     )
     return "indexed"
 
@@ -208,8 +221,7 @@ def index_modules(
                 errors.append(f"{module_path}: {e}")
         con.execute("CHECKPOINT")
 
-    logger.info("index_modules: indexed=%d skipped=%d errors=%d",
-                indexed, skipped, len(errors))
+    logger.info("index_modules: indexed=%d skipped=%d errors=%d", indexed, skipped, len(errors))
     return {"indexed": indexed, "skipped": skipped, "errors": errors}
 
 
@@ -263,6 +275,7 @@ def index_registered_tool(
 
 # ── 搜尋（讀取）───────────────────────────────────────────────────────────────
 
+
 def search_tools(
     query: str,
     *,
@@ -282,6 +295,7 @@ def search_tools(
         return []
 
     from analysis.embed import embed_text
+
     qvec = embed_text(query, provider=embedding_provider)
 
     with duckdb.connect(str(path)) as con:
@@ -301,8 +315,16 @@ def search_tools(
             [qvec, int(n)],
         ).fetchall()
 
-    cols = ["name", "kind", "signature", "summary", "import_hint",
-            "module_path", "function_name", "score"]
+    cols = [
+        "name",
+        "kind",
+        "signature",
+        "summary",
+        "import_hint",
+        "module_path",
+        "function_name",
+        "score",
+    ]
     return [dict(zip(cols, r)) for r in rows if r[-1] >= threshold]
 
 
@@ -310,6 +332,7 @@ if __name__ == "__main__":
     import sys
 
     from analysis.embed import server_health
+
     if not server_health()["ok"]:
         print("[tool_search] embedding server 離線，先啟動 port 8081")
         raise SystemExit(1)

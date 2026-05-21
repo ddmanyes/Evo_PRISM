@@ -3,6 +3,7 @@
 
 較新版請用 merge_kallisto_to_gene_matrix.py（不需 reference FASTA）。
 """
+
 from __future__ import annotations
 
 import gzip
@@ -18,8 +19,8 @@ from config.settings import BIO_DB_ROOT
 logger = logging.getLogger(__name__)
 
 KALLISTO_RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
-REF_FASTA            = BIO_DB_ROOT / "references" / "genome" / "transcripts.fasta.gz"
-OUTPUT_MATRIX        = KALLISTO_RESULTS_DIR / "kallisto_gene_counts.csv"
+REF_FASTA = BIO_DB_ROOT / "references" / "genome" / "transcripts.fasta.gz"
+OUTPUT_MATRIX = KALLISTO_RESULTS_DIR / "kallisto_gene_counts.csv"
 
 
 def load_transcript_to_gene_map(fasta_path: Path) -> dict[str, str] | None:

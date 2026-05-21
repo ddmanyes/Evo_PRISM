@@ -7,6 +7,7 @@
   - volcano_plot 對 fake DEG 直接畫圖驗證檔案產生。
   - run_deg_analysis 用 monkeypatch 隔離 DUCKDB_PATH 至 tmp,測試完整流程。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,6 +29,7 @@ from analysis.bulk_deg import (
 
 # ── 共用 fixtures ────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def synthetic_counts() -> pd.DataFrame:
     rng = np.random.default_rng(42)
@@ -48,23 +50,32 @@ def fake_deg_df() -> pd.DataFrame:
     """模擬 omicverse pyDEG.deg_analysis 的輸出。"""
     genes = [f"GENE_{i:04d}" for i in range(200)]
     rng = np.random.default_rng(0)
-    return pd.DataFrame({
-        "log2FC": rng.normal(0, 1.5, size=200),
-        "qvalue": rng.uniform(0, 1, size=200),
-        "BaseMean": rng.uniform(10, 1000, size=200),
-    }, index=genes)
+    return pd.DataFrame(
+        {
+            "log2FC": rng.normal(0, 1.5, size=200),
+            "qvalue": rng.uniform(0, 1, size=200),
+            "BaseMean": rng.uniform(10, 1000, size=200),
+        },
+        index=genes,
+    )
 
 
 @pytest.fixture
 def fake_pydeg(fake_deg_df):
     """Monkeypatch omicverse.bulk.pyDEG to return fake_deg_df without running DESeq2."""
+
     class _FakePyDEG:
         def __init__(self, counts):
             self.raw_data = counts
-        def drop_duplicates_index(self): pass
+
+        def drop_duplicates_index(self):
+            pass
+
         def deg_analysis(self, a, b, method="DEseq2", alpha=0.05):
             return fake_deg_df.copy()
-        def foldchange_set(self, **k): pass
+
+        def foldchange_set(self, **k):
+            pass
 
     fake_ov = SimpleNamespace(bulk=SimpleNamespace(pyDEG=_FakePyDEG))
     with patch.dict("sys.modules", {"omicverse": fake_ov, "omicverse.bulk": fake_ov.bulk}):
@@ -104,6 +115,7 @@ def isolated_db(tmp_path, monkeypatch):
 
 # ── load_deg_inputs ─────────────────────────────────────────────────────────
 
+
 class TestLoadDegInputs:
     def test_loads_aligned(self, tmp_path, synthetic_counts, synthetic_coldata):
         cp = tmp_path / "counts.csv"
@@ -133,6 +145,7 @@ class TestLoadDegInputs:
 
 # ── deg_single_comparison ───────────────────────────────────────────────────
 
+
 class TestDegSingleComparison:
     def test_calls_pydeg(self, synthetic_counts, synthetic_coldata, fake_pydeg, fake_deg_df):
         res = deg_single_comparison(synthetic_counts, synthetic_coldata, "treat", "ctrl")
@@ -150,6 +163,7 @@ class TestDegSingleComparison:
 
 # ── volcano_plot ─────────────────────────────────────────────────────────────
 
+
 class TestVolcanoPlot:
     def test_produces_png(self, tmp_path, fake_deg_df):
         out = tmp_path / "volcano.png"
@@ -164,6 +178,7 @@ class TestVolcanoPlot:
 
 # ── run_deg_analysis ────────────────────────────────────────────────────────
 
+
 class TestRunDegAnalysis:
     def test_full_flow(
         self, tmp_path, synthetic_counts, synthetic_coldata, fake_pydeg, isolated_db
@@ -175,10 +190,12 @@ class TestRunDegAnalysis:
 
         # results_dir 會寫到 BIO_DB_ROOT/results/... — patch 至 tmp_path
         import analysis.path_utils as pu
+
         with patch.object(pu, "BIO_DB_ROOT", tmp_path):
             aid, rpath = run_deg_analysis(
                 "test_sid",
-                counts_path=cp, coldata_path=dp,
+                counts_path=cp,
+                coldata_path=dp,
                 comparisons=[("treat", "ctrl")],
             )
 
@@ -204,6 +221,7 @@ class TestRunDegAnalysis:
         with pytest.raises(ValueError, match="無效"):
             run_deg_analysis(
                 "bad sample!",
-                counts_path=Path("x.csv"), coldata_path=Path("x.tsv"),
+                counts_path=Path("x.csv"),
+                coldata_path=Path("x.tsv"),
                 comparisons=[("a", "b")],
             )

@@ -97,7 +97,7 @@ _REPORT_TEMPLATE = """\
 
 # ── 內部工具 ──────────────────────────────────────────────────────────────────
 
-_SAMPLE_ID_RE = re.compile(r'^[a-z0-9_-]+$')
+_SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")
 
 
 def _validate_sample_id(sample_id: str) -> None:
@@ -107,11 +107,13 @@ def _validate_sample_id(sample_id: str) -> None:
 
 def _l2_expr_glob(sample_id: str) -> str:
     from config.settings import L2_ROOT
+
     return str(L2_ROOT / sample_id / "expression" / "*.parquet")
 
 
 def _l2_obs_path(sample_id: str) -> str:
     from config.settings import L2_ROOT
+
     return str(L2_ROOT / sample_id / "obs_metadata.parquet")
 
 
@@ -122,17 +124,13 @@ def _collect_stats(sample_id: str, db_path: Path) -> dict:
     obs_path = _l2_obs_path(sample_id)
 
     with duckdb.connect(str(db_path), read_only=True) as con:
-        n_bins = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{obs_path}')"
-        ).fetchone()[0]
+        n_bins = con.execute(f"SELECT COUNT(*) FROM read_parquet('{obs_path}')").fetchone()[0]
 
         n_genes = con.execute(
             f"SELECT COUNT(DISTINCT gene_name) FROM read_parquet('{expr_glob}')"
         ).fetchone()[0]
 
-        n_nonzero = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')"
-        ).fetchone()[0]
+        n_nonzero = con.execute(f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')").fetchone()[0]
 
         top_df = con.execute(
             f"""
@@ -231,7 +229,9 @@ def generate_eda_report(
     tg = stats["top_genes"]
     top_genes_table = "| gene_name | total_umi | n_bins |\n|-----------|-----------|--------|\n"
     for _, row in tg.iterrows():
-        top_genes_table += f"| {row['gene_name']} | {int(row['total_umi']):,} | {int(row['n_bins']):,} |\n"
+        top_genes_table += (
+            f"| {row['gene_name']} | {int(row['total_umi']):,} | {int(row['n_bins']):,} |\n"
+        )
 
     summary = generate_summary(stats, sample_id)
     qc_figure = _generate_qc_figure_b64(stats)
@@ -266,8 +266,10 @@ def _generate_qc_figure_b64(stats: dict) -> str:
     """產生 QC 分布圖，回傳 Markdown 內嵌 base64 字串。失敗時回傳空字串。"""
     import base64
     import io
+
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -276,12 +278,14 @@ def _generate_qc_figure_b64(stats: dict) -> str:
             return ""
 
         fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-        axes[0].hist(obs["n_genes"].dropna(), bins=60, color="#2563eb", edgecolor="none", alpha=.8)
+        axes[0].hist(obs["n_genes"].dropna(), bins=60, color="#2563eb", edgecolor="none", alpha=0.8)
         axes[0].set_title("Genes per bin", fontsize=12)
         axes[0].set_xlabel("# genes")
         axes[0].set_ylabel("# bins")
 
-        axes[1].hist(obs["total_counts"].dropna(), bins=60, color="#16a34a", edgecolor="none", alpha=.8)
+        axes[1].hist(
+            obs["total_counts"].dropna(), bins=60, color="#16a34a", edgecolor="none", alpha=0.8
+        )
         axes[1].set_title("UMI per bin", fontsize=12)
         axes[1].set_xlabel("total UMI")
         axes[1].set_ylabel("# bins")
@@ -336,8 +340,16 @@ def write_report_to_history(
                        (analysis_id, sample_id, analysis_type, parameters, status,
                         result_path, requested_by, started_at, completed_at, summary)
                    VALUES (?, ?, 'eda_report', ?, 'completed', ?, ?, ?, ?, ?)""",
-                [analysis_id, sample_id, json.dumps({"format": "markdown"}),
-                 result_path, requested_by, now, now, summary],
+                [
+                    analysis_id,
+                    sample_id,
+                    json.dumps({"format": "markdown"}),
+                    result_path,
+                    requested_by,
+                    now,
+                    now,
+                    summary,
+                ],
             )
     else:
         completed_at = datetime.now(timezone.utc)
@@ -352,6 +364,7 @@ def write_report_to_history(
             # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
             try:
                 from analysis.tool_registry import backfill_tool_id
+
                 backfill_tool_id(con, "bio_run_spatial_eda", analysis_id)
             except Exception as _exc:
                 logger.warning("report_generator: backfill_tool_id 失敗（非致命）: %s", _exc)
@@ -380,7 +393,7 @@ def run_full_eda_report(
     db_path = db_path or DUCKDB_PATH
 
     analysis_id = str(uuid.uuid4())
-    started_at  = datetime.now(timezone.utc)
+    started_at = datetime.now(timezone.utc)
     with duckdb.connect(str(db_path)) as con:
         safe_write(
             con,
@@ -388,8 +401,7 @@ def run_full_eda_report(
                    (analysis_id, sample_id, analysis_type, parameters, status,
                     requested_by, started_at)
                VALUES (?, ?, 'eda_report', ?, 'running', ?, ?)""",
-            [analysis_id, sample_id, json.dumps({"format": "markdown"}),
-             requested_by, started_at],
+            [analysis_id, sample_id, json.dumps({"format": "markdown"}), requested_by, started_at],
         )
 
     try:
@@ -398,8 +410,12 @@ def run_full_eda_report(
         logger.info("Summary (%d chars): %s", len(summary), summary)
 
         analysis_id, report_path = write_report_to_history(
-            sample_id, report, summary,
-            analysis_id=analysis_id, db_path=db_path, save_file=save_file,
+            sample_id,
+            report,
+            summary,
+            analysis_id=analysis_id,
+            db_path=db_path,
+            save_file=save_file,
             requested_by=requested_by,
         )
     except Exception:
@@ -414,6 +430,7 @@ def run_full_eda_report(
 
     try:
         from analysis.l1_cache import write_to_l1_cache
+
         write_to_l1_cache(
             sample_id=sample_id,
             query_text=f"{sample_id} 空間轉錄體 EDA 分析",

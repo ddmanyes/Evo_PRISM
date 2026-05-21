@@ -8,6 +8,7 @@ MSseg 環境自動設定腳本
   5. 偵測 GPU（CUDA / MPS / CPU）並輸出建議
   6. 驗證核心套件（cellpose, scanpy, torch）
 """
+
 from __future__ import annotations
 
 import os
@@ -23,6 +24,7 @@ def _print(msg: str) -> None:
 
 # ── 1. 基礎環境資訊 ──────────────────────────────────────────────────────────
 
+
 def check_platform() -> str:
     plat = sys.platform
     py_ver = platform.python_version()
@@ -31,6 +33,7 @@ def check_platform() -> str:
 
 
 # ── 2. Windows .venv XSym 修復 ───────────────────────────────────────────────
+
 
 def fix_venv_symlink(project_root: Path) -> None:
     """macOS 建立的 .venv XSym 在 Windows 上是普通檔案，非目錄，導致 uv run 失敗。"""
@@ -67,6 +70,7 @@ def fix_venv_symlink(project_root: Path) -> None:
 
 # ── 3. VIRTUAL_ENV 衝突偵測 ──────────────────────────────────────────────────
 
+
 def check_virtual_env_conflict() -> None:
     venv = os.environ.get("VIRTUAL_ENV", "")
     if not venv:
@@ -77,13 +81,14 @@ def check_virtual_env_conflict() -> None:
 
     if venv_path.resolve() != project_venv.resolve():
         _print(f"[WARN] VIRTUAL_ENV={venv} conflicts with project .venv")
-        _print("  Fix: prefix commands with  VIRTUAL_ENV=\"\"  uv run python ...")
+        _print('  Fix: prefix commands with  VIRTUAL_ENV=""  uv run python ...')
         _print("  Or add to your shell profile:  unset VIRTUAL_ENV")
     else:
         _print("[OK] VIRTUAL_ENV points to project .venv.")
 
 
 # ── 4. PYTHONIOENCODING ──────────────────────────────────────────────────────
+
 
 def ensure_utf8_encoding() -> None:
     enc = os.environ.get("PYTHONIOENCODING", "")
@@ -99,6 +104,7 @@ def ensure_utf8_encoding() -> None:
 
 
 # ── 5. GPU 偵測 ──────────────────────────────────────────────────────────────
+
 
 def check_gpu() -> str:
     """Returns: 'cuda' | 'mps' | 'cpu'"""
@@ -132,17 +138,17 @@ def check_gpu() -> str:
 # ── 6. 核心套件驗證 ──────────────────────────────────────────────────────────
 
 _REQUIRED_PACKAGES = [
-    ("cellpose",    "cellpose"),
-    ("scanpy",      "scanpy"),
-    ("anndata",     "anndata"),
-    ("skimage",     "scikit-image"),
-    ("zarr",        "zarr"),
-    ("tifffile",    "tifffile"),
-    ("pandas",      "pandas"),
-    ("numpy",       "numpy"),
-    ("scipy",       "scipy"),
-    ("pyarrow",     "pyarrow"),
-    ("yaml",        "pyyaml"),
+    ("cellpose", "cellpose"),
+    ("scanpy", "scanpy"),
+    ("anndata", "anndata"),
+    ("skimage", "scikit-image"),
+    ("zarr", "zarr"),
+    ("tifffile", "tifffile"),
+    ("pandas", "pandas"),
+    ("numpy", "numpy"),
+    ("scipy", "scipy"),
+    ("pyarrow", "pyarrow"),
+    ("yaml", "pyyaml"),
 ]
 
 
@@ -165,6 +171,7 @@ def check_packages() -> list[str]:
 
 # ── 主程式 ───────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     _print("=" * 56)
     _print("  MSseg Environment Setup Check")
@@ -173,8 +180,15 @@ def main() -> None:
     # 找到包含 pyproject.toml 的根目錄（相容 scripts/ 和 skills/scripts/ 兩種位置）
     script_path = Path(__file__).resolve()
     project_root = next(
-        (p for p in [script_path.parent, script_path.parent.parent, script_path.parent.parent.parent]
-         if (p / "pyproject.toml").exists()),
+        (
+            p
+            for p in [
+                script_path.parent,
+                script_path.parent.parent,
+                script_path.parent.parent.parent,
+            ]
+            if (p / "pyproject.toml").exists()
+        ),
         script_path.parent,
     )
     _print(f"[INFO] Project root : {project_root}")

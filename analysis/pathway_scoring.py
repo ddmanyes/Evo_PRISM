@@ -12,6 +12,7 @@ YAML 格式（見 gene_sets/hair_follicle.yaml）：
       description: 路徑說明
       genes: [Gene1, Gene2, ...]
 """
+
 from __future__ import annotations
 
 import logging
@@ -84,9 +85,7 @@ def zscore_aggregate(
     -------
     Pathway × Sample 評分 DataFrame。
     """
-    z = expr.subtract(expr.mean(axis=1), axis=0).divide(
-        expr.std(axis=1).replace(0, np.nan), axis=0
-    )
+    z = expr.subtract(expr.mean(axis=1), axis=0).divide(expr.std(axis=1).replace(0, np.nan), axis=0)
 
     scores: dict[str, pd.Series] = {}
     for pathway, genes in gene_sets.items():
@@ -145,9 +144,7 @@ def ssgsea_score(
             hit_weights = np.array(
                 [rank_arr[i] ** alpha if i in hit_set else 0.0 for i in range(n_genes)]
             )
-            miss_weights = np.array(
-                [0.0 if i in hit_set else 1.0 for i in range(n_genes)]
-            )
+            miss_weights = np.array([0.0 if i in hit_set else 1.0 for i in range(n_genes)])
 
             hit_norm = hit_weights.sum() or 1.0
             miss_norm = n_miss or 1.0

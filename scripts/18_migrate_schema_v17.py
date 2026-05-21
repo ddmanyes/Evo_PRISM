@@ -42,8 +42,7 @@ def _col_exists(con: duckdb.DuckDBPyConnection, table: str, col: str) -> bool:
 
 def _table_exists(con: duckdb.DuckDBPyConnection, table: str) -> bool:
     row = con.execute(
-        "SELECT 1 FROM information_schema.tables "
-        "WHERE table_name = ? AND table_schema = 'main'",
+        "SELECT 1 FROM information_schema.tables WHERE table_name = ? AND table_schema = 'main'",
         [table],
     ).fetchone()
     return row is not None
@@ -89,19 +88,16 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
             rel_backup = _table_exists(con, "artifact_relations")
             if rel_backup:
                 con.execute("DROP TABLE IF EXISTS _rel_backup_v17_v17")
-                con.execute(
-                    "CREATE TABLE _rel_backup_v17_v17 AS SELECT * FROM artifact_relations"
-                )
+                con.execute("CREATE TABLE _rel_backup_v17_v17 AS SELECT * FROM artifact_relations")
 
             con.execute("DROP TABLE IF EXISTS artifact_relations")
             con.execute("DROP TABLE IF EXISTS analysis_artifact_blobs")
-            con.execute(
-                "ALTER TABLE analysis_artifacts RENAME TO analysis_artifacts_old"
-            )
+            con.execute("ALTER TABLE analysis_artifacts RENAME TO analysis_artifacts_old")
 
             # Detect which optional columns exist (provenance from v16)
             old_cols = {
-                r[0] for r in con.execute(
+                r[0]
+                for r in con.execute(
                     "SELECT column_name FROM information_schema.columns "
                     "WHERE table_name = 'analysis_artifacts_old' AND table_schema = 'main'"
                 ).fetchall()
@@ -112,12 +108,10 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 "input_data_hash  VARCHAR,\n"
                 "                    code_hash        VARCHAR,\n"
                 "                    env_hash         VARCHAR,"
-                if has_provenance else ""
+                if has_provenance
+                else ""
             )
-            provenance_cols = (
-                "input_data_hash, code_hash, env_hash,"
-                if has_provenance else ""
-            )
+            provenance_cols = "input_data_hash, code_hash, env_hash," if has_provenance else ""
 
             con.execute(
                 f"""
@@ -181,9 +175,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 WHERE  b.artifact_id IN (SELECT artifact_id FROM analysis_artifacts)
                 """
             )
-            restored = con.execute(
-                "SELECT COUNT(*) FROM analysis_artifact_blobs"
-            ).fetchone()[0]
+            restored = con.execute("SELECT COUNT(*) FROM analysis_artifact_blobs").fetchone()[0]
             con.execute("DROP TABLE _blob_backup_v17")
             print(f"  Restored {restored} blob rows")
 
@@ -297,9 +289,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         # ------------------------------------------------------------------
         # Step 4: record migration
         # ------------------------------------------------------------------
-        existing = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 17"
-        ).fetchone()
+        existing = con.execute("SELECT 1 FROM schema_migrations WHERE version = 17").fetchone()
         if not existing:
             con.execute(
                 """
@@ -316,7 +306,8 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         print("CHECKPOINT OK")
 
         art_cols = [
-            r[0] for r in con.execute(
+            r[0]
+            for r in con.execute(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_name = 'analysis_artifacts' AND table_schema = 'main' "
                 "ORDER BY ordinal_position"

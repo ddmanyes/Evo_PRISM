@@ -16,24 +16,24 @@ from pathlib import Path
 import duckdb
 
 BASE_DIR = Path(__file__).parent.parent
-MAIN_DB  = BASE_DIR / "bio_memory.duckdb"
-L1_DB    = BASE_DIR / "gold" / "hermes_cache.duckdb"
+MAIN_DB = BASE_DIR / "bio_memory.duckdb"
+L1_DB = BASE_DIR / "gold" / "hermes_cache.duckdb"
 
 
 # ── 各表要新增的欄位 (column_name, duckdb_type) ─────────────────────────────
 
 SAMPLE_REGISTRY_COLS: list[tuple[str, str]] = [
-    ("condition",  "VARCHAR"),    # 實驗條件：control/tumor/treated/...
-    ("time_point", "VARCHAR"),    # 時間點：0h/24h/day3/...
-    ("batch",      "VARCHAR"),    # 測序批次：batch_1/batch_2/...
-    ("donor_id",   "VARCHAR"),    # 供體 ID（連結同一個體多個樣本）
-    ("tags",       "VARCHAR[]"),  # 標籤陣列：paper_figure/key_result/qc_only/...
+    ("condition", "VARCHAR"),  # 實驗條件：control/tumor/treated/...
+    ("time_point", "VARCHAR"),  # 時間點：0h/24h/day3/...
+    ("batch", "VARCHAR"),  # 測序批次：batch_1/batch_2/...
+    ("donor_id", "VARCHAR"),  # 供體 ID（連結同一個體多個樣本）
+    ("tags", "VARCHAR[]"),  # 標籤陣列：paper_figure/key_result/qc_only/...
 ]
 
 ANALYSIS_HISTORY_COLS: list[tuple[str, str]] = [
-    ("analysis_version", "VARCHAR"),    # 分析函數版本：1.0/1.1/...
-    ("tool_version",     "VARCHAR"),    # 工具版本：scanpy 1.9/...
-    ("tags",             "VARCHAR[]"),  # 標籤：paper_figure/baseline/...
+    ("analysis_version", "VARCHAR"),  # 分析函數版本：1.0/1.1/...
+    ("tool_version", "VARCHAR"),  # 工具版本：scanpy 1.9/...
+    ("tags", "VARCHAR[]"),  # 標籤：paper_figure/baseline/...
 ]
 
 MEMORY_RECENT_COLS: list[tuple[str, str]] = [
@@ -150,9 +150,9 @@ def main() -> None:
         sys.exit(1)
 
     print("\n=== Verification ===")
-    verify_schema(MAIN_DB, "sample_registry",  [c for c, _ in SAMPLE_REGISTRY_COLS])
+    verify_schema(MAIN_DB, "sample_registry", [c for c, _ in SAMPLE_REGISTRY_COLS])
     verify_schema(MAIN_DB, "analysis_history", [c for c, _ in ANALYSIS_HISTORY_COLS])
-    verify_schema(L1_DB,   "memory_recent",    [c for c, _ in MEMORY_RECENT_COLS])
+    verify_schema(L1_DB, "memory_recent", [c for c, _ in MEMORY_RECENT_COLS])
 
     print("\nMigration v2 complete.")
 

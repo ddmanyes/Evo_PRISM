@@ -3,6 +3,7 @@
 用 in-memory DuckDB 建小型圖（tools / analysis_history / analysis_artifacts），
 驗證三種 impact 入口的邊推導與 confidence 分級。
 """
+
 from __future__ import annotations
 
 import duckdb
@@ -71,6 +72,7 @@ def graph_con():
 
 # ── tool_impact ─────────────────────────────────────────────────────────────
 
+
 class TestToolImpact:
     def test_exact_and_heuristic_edges(self, graph_con):
         rep = tool_impact(graph_con, "bio_run_bulk_eda")
@@ -110,6 +112,7 @@ class TestToolImpact:
 
 # ── sample_impact ───────────────────────────────────────────────────────────
 
+
 class TestSampleImpact:
     def test_lists_sample_analyses(self, graph_con):
         rep = sample_impact(graph_con, "S1")
@@ -124,6 +127,7 @@ class TestSampleImpact:
 
 
 # ── artifact_impact ─────────────────────────────────────────────────────────
+
 
 class TestArtifactImpact:
     def test_same_analysis_siblings(self, graph_con):
@@ -143,6 +147,7 @@ class TestArtifactImpact:
 
 
 # ── compute_impact dispatch + render ────────────────────────────────────────
+
 
 class TestComputeImpactDispatch:
     def test_requires_exactly_one_target(self, graph_con):

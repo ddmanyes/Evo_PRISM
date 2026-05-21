@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Schema fixture
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def helix_con(tmp_path, monkeypatch):
     """Fresh DuckDB with full HELIX schema — never touches real bio_memory.duckdb.
@@ -154,42 +155,114 @@ def helix_con(tmp_path, monkeypatch):
 # Each pair (v1/v2) has distinct source so their hashes differ.
 # ---------------------------------------------------------------------------
 
-def _reg_v1(): return 1          # noqa: E704
-def _reg_v2(): return 2          # noqa: E704
 
-def _drift_v1(): return 10       # noqa: E704
-def _drift_v2(): return 20       # noqa: E704
+def _reg_v1():
+    return 1  # noqa: E704
 
-def _hot_v1(): return 100        # noqa: E704
-def _hot_v2(): return 200        # noqa: E704
-def _hot_v3(): return 300        # noqa: E704
 
-def _prune_v1(): return 1000     # noqa: E704
-def _prune_v2(): return 2000     # noqa: E704
-def _prune_v3(): return 3000     # noqa: E704
-def _prune_v4(): return 4000     # noqa: E704
-def _prune_v5(): return 5000     # noqa: E704
+def _reg_v2():
+    return 2  # noqa: E704
 
-def _prov_v1(): return 9001      # noqa: E704
-def _prov_v2(): return 9002      # noqa: E704
 
-def _stab_v1(): return 111       # noqa: E704
-def _stab_v2(): return 222       # noqa: E704
-def _stab_v3(): return 333       # noqa: E704
+def _drift_v1():
+    return 10  # noqa: E704
 
-def _other_v1(): return 11       # noqa: E704
-def _other_v2(): return 22       # noqa: E704
-def _other_v3(): return 33       # noqa: E704
 
-def _ms_v1(): return 55          # noqa: E704
+def _drift_v2():
+    return 20  # noqa: E704
 
-def _ar_new_v1(): return 61      # noqa: E704
-def _ar_new_v2(): return 62      # noqa: E704
-def _ar_new_v3(): return 63      # noqa: E704
 
-def _ar_old_v1(): return 71      # noqa: E704
-def _ar_old_v2(): return 72      # noqa: E704
-def _ar_old_v3(): return 73      # noqa: E704
+def _hot_v1():
+    return 100  # noqa: E704
+
+
+def _hot_v2():
+    return 200  # noqa: E704
+
+
+def _hot_v3():
+    return 300  # noqa: E704
+
+
+def _prune_v1():
+    return 1000  # noqa: E704
+
+
+def _prune_v2():
+    return 2000  # noqa: E704
+
+
+def _prune_v3():
+    return 3000  # noqa: E704
+
+
+def _prune_v4():
+    return 4000  # noqa: E704
+
+
+def _prune_v5():
+    return 5000  # noqa: E704
+
+
+def _prov_v1():
+    return 9001  # noqa: E704
+
+
+def _prov_v2():
+    return 9002  # noqa: E704
+
+
+def _stab_v1():
+    return 111  # noqa: E704
+
+
+def _stab_v2():
+    return 222  # noqa: E704
+
+
+def _stab_v3():
+    return 333  # noqa: E704
+
+
+def _other_v1():
+    return 11  # noqa: E704
+
+
+def _other_v2():
+    return 22  # noqa: E704
+
+
+def _other_v3():
+    return 33  # noqa: E704
+
+
+def _ms_v1():
+    return 55  # noqa: E704
+
+
+def _ar_new_v1():
+    return 61  # noqa: E704
+
+
+def _ar_new_v2():
+    return 62  # noqa: E704
+
+
+def _ar_new_v3():
+    return 63  # noqa: E704
+
+
+def _ar_old_v1():
+    return 71  # noqa: E704
+
+
+def _ar_old_v2():
+    return 72  # noqa: E704
+
+
+def _ar_old_v3():
+    return 73  # noqa: E704
+
 
 # stubs for churn / hot-lines tests — multi-line so difflib has something to diff
 def _churn_v1():
@@ -197,17 +270,19 @@ def _churn_v1():
     y = 2
     return x + y
 
+
 def _churn_v2():
     x = 1
     y = 2
-    z = 3          # added line → churn
+    z = 3  # added line → churn
     return x + y + z
+
 
 def _churn_v3():
     x = 1
     y = 2
     z = 3
-    w = 4          # another added line → same zone keeps accumulating
+    w = 4  # another added line → same zone keeps accumulating
     return x + y + z + w
 
 
@@ -215,35 +290,39 @@ def _churn_v3():
 # register_tool
 # ---------------------------------------------------------------------------
 
+
 class TestRegisterTool:
     def test_first_registration_returns_uuid(self, helix_con):
         from analysis.tool_registry import register_tool
+
         tid = register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         assert len(tid) == 36
 
     def test_idempotent_same_hash(self, helix_con):
         from analysis.tool_registry import register_tool
+
         tid1 = register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         tid2 = register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         assert tid1 == tid2
 
     def test_new_hash_new_version(self, helix_con):
         from analysis.tool_registry import register_tool
+
         tid1 = register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         tid2 = register_tool(helix_con, "t", _reg_v2, "1.1.0", "d")
         assert tid1 != tid2
 
     def test_old_version_deprecated(self, helix_con):
         from analysis.tool_registry import register_tool
+
         tid1 = register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _reg_v2, "1.1.0", "d")
-        row = helix_con.execute(
-            "SELECT status FROM tools WHERE tool_id = ?", [tid1]
-        ).fetchone()
+        row = helix_con.execute("SELECT status FROM tools WHERE tool_id = ?", [tid1]).fetchone()
         assert row[0] == "deprecated"
 
     def test_revision_count_increments(self, helix_con):
         from analysis.tool_registry import register_tool
+
         register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _reg_v2, "1.1.0", "d")
         row = helix_con.execute(
@@ -253,6 +332,7 @@ class TestRegisterTool:
 
     def test_change_log_row_per_registration(self, helix_con):
         from analysis.tool_registry import register_tool
+
         register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _reg_v2, "1.1.0", "d")
         n = helix_con.execute(
@@ -265,14 +345,17 @@ class TestRegisterTool:
 # get_active_tool_id
 # ---------------------------------------------------------------------------
 
+
 class TestGetActiveToolId:
     def test_returns_id(self, helix_con):
         from analysis.tool_registry import register_tool, get_active_tool_id
+
         tid = register_tool(helix_con, "t", _reg_v1, "1.0.0", "d")
         assert get_active_tool_id(helix_con, "t") == tid
 
     def test_none_when_absent(self, helix_con):
         from analysis.tool_registry import get_active_tool_id
+
         assert get_active_tool_id(helix_con, "ghost") is None
 
 
@@ -280,19 +363,23 @@ class TestGetActiveToolId:
 # check_tool_drift
 # ---------------------------------------------------------------------------
 
+
 class TestCheckToolDrift:
     def test_no_drift(self, helix_con):
         from analysis.tool_registry import register_tool, check_tool_drift
+
         register_tool(helix_con, "t", _drift_v1, "1.0.0", "d")
         assert check_tool_drift(helix_con, "t", _drift_v1)["drifted"] is False
 
     def test_drift_detected(self, helix_con):
         from analysis.tool_registry import register_tool, check_tool_drift
+
         register_tool(helix_con, "t", _drift_v1, "1.0.0", "d")
         assert check_tool_drift(helix_con, "t", _drift_v2)["drifted"] is True
 
     def test_unregistered_no_stored_hash(self, helix_con):
         from analysis.tool_registry import check_tool_drift
+
         result = check_tool_drift(helix_con, "ghost", _drift_v1)
         assert result["stored_hash"] is None
 
@@ -301,14 +388,17 @@ class TestCheckToolDrift:
 # get_hot_tools
 # ---------------------------------------------------------------------------
 
+
 class TestGetHotTools:
     def test_below_threshold_excluded(self, helix_con):
         from analysis.tool_registry import register_tool, get_hot_tools
+
         register_tool(helix_con, "cold", _reg_v1, "1.0.0", "d")
         assert all(t["tool_name"] != "cold" for t in get_hot_tools(helix_con, min_revisions=3))
 
     def test_at_threshold_included(self, helix_con):
         from analysis.tool_registry import register_tool, get_hot_tools
+
         register_tool(helix_con, "hot3", _hot_v1, "1.0.0", "d")
         register_tool(helix_con, "hot3", _hot_v2, "1.1.0", "d")
         register_tool(helix_con, "hot3", _hot_v3, "1.2.0", "d")
@@ -320,17 +410,25 @@ class TestGetHotTools:
 # prune_deprecated
 # ---------------------------------------------------------------------------
 
+
 class TestPruneDeprecated:
     def test_stable_keeps_2(self, helix_con):
         from analysis.tool_registry import register_tool, prune_deprecated
-        for fn, ver in [(_prune_v1,"1.0"),(_prune_v2,"1.1"),(_prune_v3,"1.2"),
-                        (_prune_v4,"1.3"),(_prune_v5,"1.4")]:
+
+        for fn, ver in [
+            (_prune_v1, "1.0"),
+            (_prune_v2, "1.1"),
+            (_prune_v3, "1.2"),
+            (_prune_v4, "1.3"),
+            (_prune_v5, "1.4"),
+        ]:
             register_tool(helix_con, "pt", fn, ver, "d")
         deleted = prune_deprecated(helix_con, "pt", keep_stable=2, hot_threshold=10)
         assert deleted == 2  # 4 deprecated - keep 2 = delete 2
 
     def test_provenance_guard(self, helix_con):
         from analysis.tool_registry import register_tool, prune_deprecated
+
         tid1 = register_tool(helix_con, "prt", _prov_v1, "1.0.0", "d")
         register_tool(helix_con, "prt", _prov_v2, "2.0.0", "d")
         helix_con.execute(
@@ -339,7 +437,8 @@ class TestPruneDeprecated:
         )
         helix_con.execute(
             "INSERT INTO analysis_history(sample_id,analysis_type,status,tool_id) "
-            "VALUES ('s1','eda','completed',?)", [tid1]
+            "VALUES ('s1','eda','completed',?)",
+            [tid1],
         )
         assert prune_deprecated(helix_con, "prt") == 0
 
@@ -348,21 +447,25 @@ class TestPruneDeprecated:
 # open_stabilization / close_stabilization
 # ---------------------------------------------------------------------------
 
+
 class TestStabilization:
     def _hot(self, con, name: str = "st"):
         from analysis.tool_registry import register_tool
+
         fns = [_stab_v1, _stab_v2, _stab_v3]
         for i, fn in enumerate(fns):
             register_tool(con, name, fn, f"1.{i}.0", "d")
 
     def test_open_returns_log_id(self, helix_con):
         from analysis.tool_registry import open_stabilization
+
         self._hot(helix_con)
         lid = open_stabilization(helix_con, "st", "diag", "action")
         assert len(lid) == 36
 
     def test_duplicate_ongoing_raises(self, helix_con):
         from analysis.tool_registry import open_stabilization
+
         self._hot(helix_con)
         open_stabilization(helix_con, "st", "diag", "action")
         with pytest.raises(ValueError, match="already has an open stabilization"):
@@ -370,11 +473,13 @@ class TestStabilization:
 
     def test_tool_not_found_raises(self, helix_con):
         from analysis.tool_registry import open_stabilization
+
         with pytest.raises(ValueError, match="not found"):
             open_stabilization(helix_con, "ghost", "d", "a")
 
     def test_close_sets_outcome_and_closed_at(self, helix_con):
         from analysis.tool_registry import open_stabilization, close_stabilization
+
         self._hot(helix_con)
         lid = open_stabilization(helix_con, "st", "d", "a")
         close_stabilization(helix_con, lid, outcome="stabilized")
@@ -386,6 +491,7 @@ class TestStabilization:
 
     def test_close_invalid_outcome_raises(self, helix_con):
         from analysis.tool_registry import open_stabilization, close_stabilization
+
         self._hot(helix_con)
         lid = open_stabilization(helix_con, "st", "d", "a")
         with pytest.raises(ValueError):
@@ -393,11 +499,17 @@ class TestStabilization:
 
     def test_close_nonexistent_raises(self, helix_con):
         from analysis.tool_registry import close_stabilization
+
         with pytest.raises(ValueError, match="No stabilization log"):
             close_stabilization(helix_con, "00000000-0000-0000-0000-000000000000", "stabilized")
 
     def test_get_open_filter_by_name(self, helix_con):
-        from analysis.tool_registry import open_stabilization, get_open_stabilizations, register_tool
+        from analysis.tool_registry import (
+            open_stabilization,
+            get_open_stabilizations,
+            register_tool,
+        )
+
         self._hot(helix_con, "st")
         for i, fn in enumerate([_other_v1, _other_v2, _other_v3]):
             register_tool(helix_con, "other", fn, f"2.{i}.0", "d")
@@ -411,20 +523,24 @@ class TestStabilization:
 # mark_stable / is_marked_stable
 # ---------------------------------------------------------------------------
 
+
 class TestMarkStable:
     def test_unmarked_by_default(self, helix_con):
         from analysis.tool_registry import register_tool, is_marked_stable
+
         register_tool(helix_con, "ms", _ms_v1, "1.0.0", "d")
         assert is_marked_stable(helix_con, "ms") is False
 
     def test_marked_after_call(self, helix_con):
         from analysis.tool_registry import register_tool, mark_stable, is_marked_stable
+
         register_tool(helix_con, "ms", _ms_v1, "1.0.0", "d")
         mark_stable(helix_con, "ms", "reason")
         assert is_marked_stable(helix_con, "ms") is True
 
     def test_sentinel_prefix(self, helix_con):
         from analysis.tool_registry import register_tool, mark_stable
+
         register_tool(helix_con, "ms", _ms_v1, "1.0.0", "d")
         mark_stable(helix_con, "ms", "完整測試")
         note = helix_con.execute(
@@ -437,25 +553,30 @@ class TestMarkStable:
 # auto_revert_stale_stabilizations
 # ---------------------------------------------------------------------------
 
+
 class TestAutoRevert:
     def _hot_new(self, con):
         from analysis.tool_registry import register_tool
+
         for i, fn in enumerate([_ar_new_v1, _ar_new_v2, _ar_new_v3]):
             register_tool(con, "ar_new", fn, f"1.{i}.0", "d")
 
     def _hot_old(self, con):
         from analysis.tool_registry import register_tool
+
         for i, fn in enumerate([_ar_old_v1, _ar_old_v2, _ar_old_v3]):
             register_tool(con, "ar_old", fn, f"1.{i}.0", "d")
 
     def test_recent_not_reverted(self, helix_con):
         from analysis.tool_registry import open_stabilization, auto_revert_stale_stabilizations
+
         self._hot_new(helix_con)
         open_stabilization(helix_con, "ar_new", "d", "a")
         assert auto_revert_stale_stabilizations(helix_con, days=30) == []
 
     def test_old_iteration_reverted(self, helix_con):
         from analysis.tool_registry import open_stabilization, auto_revert_stale_stabilizations
+
         self._hot_old(helix_con)
         open_stabilization(helix_con, "ar_old", "d", "a")
         cutoff = datetime.now(timezone.utc) - timedelta(days=40)
@@ -475,25 +596,35 @@ class TestAutoRevert:
 # tool_health_report
 # ---------------------------------------------------------------------------
 
+
 class TestToolHealthReport:
     def test_required_keys(self, helix_con):
         from analysis.tool_registry import tool_health_report
+
         report = tool_health_report(helix_con)
         for key in (
-            "total_active", "total_deprecated", "hot_zones",
-            "open_stabilizations", "stale_analyses", "prune_candidates",
-            "regression_zones", "helix_self_health", "recommendation",
+            "total_active",
+            "total_deprecated",
+            "hot_zones",
+            "open_stabilizations",
+            "stale_analyses",
+            "prune_candidates",
+            "regression_zones",
+            "helix_self_health",
+            "recommendation",
         ):
             assert key in report, f"missing key: {key}"
 
     def test_empty_db_healthy_recommendation(self, helix_con):
         from analysis.tool_registry import tool_health_report
+
         report = tool_health_report(helix_con)
         assert isinstance(report["recommendation"], str)
         assert "健康" in report["recommendation"]
 
     def test_counts_zero_on_empty_db(self, helix_con):
         from analysis.tool_registry import tool_health_report
+
         report = tool_health_report(helix_con)
         assert report["total_active"] == 0
         assert report["total_deprecated"] == 0
@@ -503,18 +634,24 @@ class TestToolHealthReport:
 # helix_self_health
 # ---------------------------------------------------------------------------
 
+
 class TestHelixSelfHealth:
     def test_required_keys(self, helix_con):
         from analysis.tool_registry import helix_self_health
+
         h = helix_self_health(helix_con)
         for key in (
-            "tools_table_rows", "stabilization_log_rows",
-            "change_log_rows", "orphan_iterations", "downsample_coverage_pct",
+            "tools_table_rows",
+            "stabilization_log_rows",
+            "change_log_rows",
+            "orphan_iterations",
+            "downsample_coverage_pct",
         ):
             assert key in h, f"missing key: {key}"
 
     def test_empty_zeros(self, helix_con):
         from analysis.tool_registry import helix_self_health
+
         h = helix_self_health(helix_con)
         assert h["tools_table_rows"] == 0
         assert h["orphan_iterations"] == 0
@@ -525,10 +662,12 @@ class TestHelixSelfHealth:
 # _compute_churn (unit)
 # ---------------------------------------------------------------------------
 
+
 class TestComputeChurn:
     def test_no_change_zero_churn(self):
         from analysis.tool_registry import _compute_churn
         import json
+
         src = "def f():\n    return 1\n"
         cl, cr = _compute_churn(src, src)
         assert cl is not None
@@ -538,6 +677,7 @@ class TestComputeChurn:
     def test_added_lines_detected(self):
         from analysis.tool_registry import _compute_churn
         import json
+
         old = "def f():\n    x = 1\n    return x\n"
         new = "def f():\n    x = 1\n    y = 2\n    return x + y\n"
         cl, cr = _compute_churn(old, new)
@@ -548,11 +688,13 @@ class TestComputeChurn:
 
     def test_none_source_returns_none(self):
         from analysis.tool_registry import _compute_churn
+
         assert _compute_churn(None, "def f(): pass") == (None, None)
         assert _compute_churn("def f(): pass", None) == (None, None)
 
     def test_churn_ratio_between_zero_and_one(self):
         from analysis.tool_registry import _compute_churn
+
         old = "def f():\n    return 1\n"
         new = "def f():\n    x = 99\n    return x\n"
         _, cr = _compute_churn(old, new)
@@ -561,6 +703,7 @@ class TestComputeChurn:
 
     def test_delete_only_has_nonzero_churn(self):
         from analysis.tool_registry import _compute_churn
+
         old = "def f():\n    x = 1\n    y = 2\n    z = 3\n    return x\n"
         new = "def f():\n    x = 1\n    return x\n"
         cl, cr = _compute_churn(old, new)
@@ -570,8 +713,9 @@ class TestComputeChurn:
     def test_empty_string_differs_from_none(self):
         from analysis.tool_registry import _compute_churn
         import json
+
         cl, cr = _compute_churn("", "")
-        assert cl is not None   # not None — both sources are present (just empty)
+        assert cl is not None  # not None — both sources are present (just empty)
         assert json.loads(cl) == []
         assert cr == 0.0
 
@@ -580,9 +724,11 @@ class TestComputeChurn:
 # register_tool churn columns
 # ---------------------------------------------------------------------------
 
+
 class TestRegisterToolChurn:
     def test_source_snapshot_stored(self, helix_con):
         from analysis.tool_registry import register_tool
+
         register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
         row = helix_con.execute(
             "SELECT source_snapshot FROM tool_change_log WHERE tool_name='t'"
@@ -593,6 +739,7 @@ class TestRegisterToolChurn:
 
     def test_churn_ratio_second_revision(self, helix_con):
         from analysis.tool_registry import register_tool
+
         register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
         row = helix_con.execute(
@@ -605,6 +752,7 @@ class TestRegisterToolChurn:
     def test_changed_lines_json_parseable(self, helix_con):
         import json
         from analysis.tool_registry import register_tool
+
         register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
         row = helix_con.execute(
@@ -620,9 +768,11 @@ class TestRegisterToolChurn:
 # get_hot_lines
 # ---------------------------------------------------------------------------
 
+
 class TestGetHotLines:
     def test_no_data_returns_empty(self, helix_con):
         from analysis.tool_registry import get_hot_lines
+
         result = get_hot_lines(helix_con, "nonexistent")
         assert result["hot_lines"] == []
         assert result["revisions_used"] == 0
@@ -630,6 +780,7 @@ class TestGetHotLines:
 
     def test_repeated_changes_detected(self, helix_con):
         from analysis.tool_registry import register_tool, get_hot_lines
+
         register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
         register_tool(helix_con, "t", _churn_v3, "1.2.0", "d")
@@ -639,6 +790,7 @@ class TestGetHotLines:
 
     def test_avg_churn_present_after_revisions(self, helix_con):
         from analysis.tool_registry import register_tool, get_hot_lines
+
         register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
         result = get_hot_lines(helix_con, "t")
@@ -648,6 +800,7 @@ class TestGetHotLines:
 
     def test_suggestion_present_when_hot(self, helix_con):
         from analysis.tool_registry import register_tool, get_hot_lines
+
         register_tool(helix_con, "t", _churn_v1, "1.0.0", "d")
         register_tool(helix_con, "t", _churn_v2, "1.1.0", "d")
         register_tool(helix_con, "t", _churn_v3, "1.2.0", "d")
@@ -661,19 +814,23 @@ class TestGetHotLines:
 # tool_health_report hot_lines_report key
 # ---------------------------------------------------------------------------
 
+
 class TestToolHealthReportHotLines:
     def test_hot_lines_report_key_present(self, helix_con):
         from analysis.tool_registry import tool_health_report
+
         report = tool_health_report(helix_con)
         assert "hot_lines_report" in report
 
     def test_hot_lines_report_empty_on_no_hot_tools(self, helix_con):
         from analysis.tool_registry import tool_health_report
+
         report = tool_health_report(helix_con)
         assert report["hot_lines_report"] == {}
 
     def test_hot_lines_report_populated_for_hot_tool(self, helix_con):
         from analysis.tool_registry import register_tool, tool_health_report
+
         # Register 3 revisions so the tool enters the hot zone (revision_count >= 3)
         register_tool(helix_con, "hot_t", _churn_v1, "1.0.0", "d")
         register_tool(helix_con, "hot_t", _churn_v2, "1.1.0", "d")
@@ -686,6 +843,7 @@ class TestToolHealthReportHotLines:
 
     def test_hot_tool_in_hot_zones(self, helix_con):
         from analysis.tool_registry import register_tool, tool_health_report
+
         register_tool(helix_con, "hot_t", _churn_v1, "1.0.0", "d")
         register_tool(helix_con, "hot_t", _churn_v2, "1.1.0", "d")
         register_tool(helix_con, "hot_t", _churn_v3, "1.2.0", "d")
@@ -697,6 +855,7 @@ class TestToolHealthReportHotLines:
 # ---------------------------------------------------------------------------
 # Cache invalidation on tool update
 # ---------------------------------------------------------------------------
+
 
 class TestCacheInvalidation:
     """invalidate_tool_cache() is called by register_tool() when source changes."""
@@ -726,6 +885,7 @@ class TestCacheInvalidation:
 
     def _insert(self, con, query_text: str) -> None:
         import uuid as _uuid
+
         con.execute(
             "INSERT INTO memory_recent (id, sample_id, query_text, report_text, summary, embedding) "
             "VALUES (?, 's1', ?, 'r', 'sum', [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8])",
@@ -734,6 +894,7 @@ class TestCacheInvalidation:
 
     def test_invalidate_removes_matching_rows(self, l1_con):
         from analysis.l1_cache import invalidate_tool_cache
+
         con, db_path = l1_con
         self._insert(con, "bio_plot_volcano Group_A vs B pval=0.05")
         self._insert(con, "bio_plot_volcano Group_A vs C pval=0.01")
@@ -749,6 +910,7 @@ class TestCacheInvalidation:
 
     def test_invalidate_returns_zero_when_no_match(self, l1_con):
         from analysis.l1_cache import invalidate_tool_cache
+
         con, db_path = l1_con
         self._insert(con, "bio_run_spatial_eda sample_id=crc_v4")
         con.execute("CHECKPOINT")
@@ -758,12 +920,14 @@ class TestCacheInvalidation:
 
     def test_invalidate_returns_zero_when_cache_missing(self, tmp_path):
         from analysis.l1_cache import invalidate_tool_cache
+
         missing = tmp_path / "nonexistent.duckdb"
         assert invalidate_tool_cache("bio_plot_volcano", cache_path=missing) == 0
 
     def test_register_tool_triggers_invalidation(self, helix_con, l1_con, monkeypatch):
         """register_tool() must call invalidate_tool_cache with the tool_name."""
         from analysis.tool_registry import register_tool
+
         con, db_path = l1_con
         self._insert(con, "inv_tool sample run")
         con.execute("CHECKPOINT")
@@ -777,10 +941,17 @@ class TestCacheInvalidation:
         monkeypatch.setattr("analysis.l1_cache.invalidate_tool_cache", _fake_invalidate)
 
         import analysis.tool_registry as tr
-        monkeypatch.setattr(tr, "invalidate_tool_cache" if hasattr(tr, "invalidate_tool_cache") else "__builtins__", _fake_invalidate, raising=False)
+
+        monkeypatch.setattr(
+            tr,
+            "invalidate_tool_cache" if hasattr(tr, "invalidate_tool_cache") else "__builtins__",
+            _fake_invalidate,
+            raising=False,
+        )
 
         # Patch at the import site inside register_tool's try block
         import unittest.mock as mock
+
         with mock.patch("analysis.l1_cache.invalidate_tool_cache", side_effect=_fake_invalidate):
             register_tool(helix_con, "inv_tool", _churn_v1, "1.0.0", "d")
             register_tool(helix_con, "inv_tool", _churn_v2, "1.1.0", "d")
@@ -792,21 +963,16 @@ class TestCacheInvalidation:
 # AST-normalized hash (9C-1)
 # ---------------------------------------------------------------------------
 
+
 class TestAstNormalizedHash:
     def test_comment_only_change_same_hash(self, tmp_path):
         """Comment-only edits must NOT change the hash (AST strips comments)."""
         from analysis.tool_registry import compute_tool_hash
         import importlib.util
 
-        src_v1 = (
-            "def my_tool():\n"
-            "    # original comment\n"
-            "    return 1 + 1\n"
-        )
+        src_v1 = "def my_tool():\n    # original comment\n    return 1 + 1\n"
         src_v2 = (
-            "def my_tool():\n"
-            "    # completely different comment\n"
-            "    return 1 + 1  # inline note\n"
+            "def my_tool():\n    # completely different comment\n    return 1 + 1  # inline note\n"
         )
 
         def _load(src, name):
@@ -846,4 +1012,5 @@ class TestAstNormalizedHash:
     def test_unavailable_for_builtin(self):
         """Built-in functions must return 'unavailable'."""
         from analysis.tool_registry import compute_tool_hash
+
         assert compute_tool_hash(len) == "unavailable"

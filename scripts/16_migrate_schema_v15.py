@@ -54,9 +54,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         )
         print("Index: idx_search_metrics_created — OK")
 
-        existing = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 15"
-        ).fetchone()
+        existing = con.execute("SELECT 1 FROM schema_migrations WHERE version = 15").fetchone()
         if not existing:
             con.execute(
                 """
@@ -72,7 +70,8 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         print("CHECKPOINT OK")
 
         cols = [
-            r[0] for r in con.execute(
+            r[0]
+            for r in con.execute(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_name = 'engram_search_metrics' AND table_schema = 'main' "
                 "ORDER BY ordinal_position"

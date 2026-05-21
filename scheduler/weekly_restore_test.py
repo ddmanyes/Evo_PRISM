@@ -35,8 +35,7 @@ def _latest_backup() -> Path | None:
     if not BACKUP_ROOT.exists():
         return None
     dirs = sorted(
-        d for d in BACKUP_ROOT.iterdir()
-        if d.is_dir() and re.match(r"^\d{8}_\d{4}$", d.name)
+        d for d in BACKUP_ROOT.iterdir() if d.is_dir() and re.match(r"^\d{8}_\d{4}$", d.name)
     )
     return dirs[-1] if dirs else None
 
@@ -50,14 +49,19 @@ def _write_status(success: bool, backup: Path | None, stats: dict, error: str | 
         except json.JSONDecodeError:
             prev = {}
     now_iso = datetime.now().isoformat(timespec="seconds")
-    STATUS_PATH.write_text(json.dumps({
-        "last_run_at": now_iso,
-        "last_success_at": now_iso if success else prev.get("last_success_at"),
-        "last_failure_at": prev.get("last_failure_at") if success else now_iso,
-        "last_backup_tested": str(backup) if backup else prev.get("last_backup_tested"),
-        "last_stats": stats,
-        "last_error": None if success else error,
-    }, indent=2))
+    STATUS_PATH.write_text(
+        json.dumps(
+            {
+                "last_run_at": now_iso,
+                "last_success_at": now_iso if success else prev.get("last_success_at"),
+                "last_failure_at": prev.get("last_failure_at") if success else now_iso,
+                "last_backup_tested": str(backup) if backup else prev.get("last_backup_tested"),
+                "last_stats": stats,
+                "last_error": None if success else error,
+            },
+            indent=2,
+        )
+    )
 
 
 def _cleanup_verify_db() -> None:

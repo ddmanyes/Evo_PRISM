@@ -74,9 +74,7 @@ def _is_allowed(user_id: int) -> bool:
 async def _reject(update: Update) -> None:
     user = update.effective_user
     logger.warning("Rejected user_id=%s username=%s", user.id, user.username)
-    await update.message.reply_text(
-        "⛔ 抱歉，您沒有使用此 Bot 的權限。請聯絡實驗室管理員。"
-    )
+    await update.message.reply_text("⛔ 抱歉，您沒有使用此 Bot 的權限。請聯絡實驗室管理員。")
 
 
 # ── 文字分段 ──────────────────────────────────────────────────────────────────
@@ -144,13 +142,12 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     try:
         from analysis.history_query import recent_analyses
+
         df = recent_analyses(n=10, sample_id=sample_id)
         header = f"📋 **{sample_id}** 的最近 10 筆分析" if sample_id else "📋 最近 10 筆分析記錄"
 
         if df.empty:
-            await update.message.reply_text(
-                f"{header}\n\n（無記錄）", parse_mode="Markdown"
-            )
+            await update.message.reply_text(f"{header}\n\n（無記錄）", parse_mode="Markdown")
             return
 
         lines = [header, ""]
@@ -179,6 +176,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.chat.send_action(ChatAction.TYPING)
     try:
         from config.db_utils import db_health_check
+
         health = db_health_check()
         lines = [
             "🟢 **系統狀態**\n",
@@ -190,6 +188,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         ]
         try:
             from analysis.embed import server_health
+
             emb_status = "🟢 在線" if server_health().get("ok") else "🔴 離線"
         except Exception:
             emb_status = "🔴 無法連線"
@@ -223,9 +222,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     reply = ""
     try:
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: handle_message(user_msg, history)
-        )
+        result = await loop.run_in_executor(None, lambda: handle_message(user_msg, history))
         reply = result.text
         tool_info = (
             f"\n\n_[tools: {len(result.tool_calls)} | tokens: {result.total_tokens}]_"
@@ -272,6 +269,7 @@ def main() -> None:
         import duckdb as _ddb
         from config.settings import DUCKDB_PATH
         from config.db_utils import cleanup_stale_runs
+
         with _ddb.connect(str(DUCKDB_PATH)) as _con:
             cleanup_stale_runs(_con)
     except Exception:

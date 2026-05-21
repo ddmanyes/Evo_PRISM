@@ -7,6 +7,7 @@
 若未指定輸入，依序嘗試：
     gene_counts_mapped_symbol.tsv → gene_counts_ensembl.tsv → gene_counts.tsv
 """
+
 from __future__ import annotations
 
 import csv
@@ -19,15 +20,15 @@ from config.settings import BIO_DB_ROOT
 
 logger = logging.getLogger(__name__)
 
-RESULTS_DIR    = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
-DEFAULTS       = [
+RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
+DEFAULTS = [
     RESULTS_DIR / "gene_counts_mapped_symbol.tsv",
     RESULTS_DIR / "gene_counts_ensembl.tsv",
     RESULTS_DIR / "gene_counts.tsv",
 ]
-OUT_COUNTS     = RESULTS_DIR / "deseq2_counts.tsv"
+OUT_COUNTS = RESULTS_DIR / "deseq2_counts.tsv"
 OUT_COUNTS_CSV = RESULTS_DIR / "deseq2_counts.csv"
-OUT_COLDATA    = RESULTS_DIR / "deseq2_coldata.tsv"
+OUT_COLDATA = RESULTS_DIR / "deseq2_coldata.tsv"
 
 
 def choose_input() -> Path:

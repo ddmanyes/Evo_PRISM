@@ -37,9 +37,11 @@ def mock_tool_call():
 @pytest.fixture
 def assert_no_llm():
     """斷言三個 LLM 路徑都不會被呼叫。"""
-    with patch.object(agent, "_make_local_call") as ml, \
-         patch.object(agent, "_make_claude_call") as mc, \
-         patch.object(agent, "_make_google_call") as mg:
+    with (
+        patch.object(agent, "_make_local_call") as ml,
+        patch.object(agent, "_make_claude_call") as mc,
+        patch.object(agent, "_make_google_call") as mg,
+    ):
         yield (ml, mc, mg)
 
 
@@ -79,18 +81,24 @@ class TestFastPathBypassesLLM:
 class TestFastPathFallback:
     def test_tool_failure_falls_back_to_llm(self) -> None:
         """fast-path 工具 raise 時應退回 LLM 路徑（而非把例外往外丟）。"""
-        with patch.object(agent, "_make_local_call",
-                          return_value=_fake_local_response("FALLBACK_LLM_REPLY")) as ml, \
-             patch.object(agent, "execute_tool", side_effect=RuntimeError("DB down")):
+        with (
+            patch.object(
+                agent, "_make_local_call", return_value=_fake_local_response("FALLBACK_LLM_REPLY")
+            ) as ml,
+            patch.object(agent, "execute_tool", side_effect=RuntimeError("DB down")),
+        ):
             resp = handle_message("最近 5 筆分析", backend="local")
         ml.assert_called()
         assert resp.text == "FALLBACK_LLM_REPLY"
 
     def test_image_input_skips_fast_path(self) -> None:
         """多模態訊息一律不走 fast-path（即使文字命中也要交給 VLM）。"""
-        with patch.object(agent, "_make_local_call",
-                          return_value=_fake_local_response("VLM_REPLY")) as ml, \
-             patch.object(agent, "execute_tool") as et:
+        with (
+            patch.object(
+                agent, "_make_local_call", return_value=_fake_local_response("VLM_REPLY")
+            ) as ml,
+            patch.object(agent, "execute_tool") as et,
+        ):
             resp = handle_message(
                 "最近 5 筆分析",
                 backend="local",
@@ -101,9 +109,12 @@ class TestFastPathFallback:
         assert resp.text == "VLM_REPLY"
 
     def test_non_matching_message_goes_to_llm(self) -> None:
-        with patch.object(agent, "_make_local_call",
-                          return_value=_fake_local_response("REGULAR_LLM_REPLY")) as ml, \
-             patch.object(agent, "execute_tool") as et:
+        with (
+            patch.object(
+                agent, "_make_local_call", return_value=_fake_local_response("REGULAR_LLM_REPLY")
+            ) as ml,
+            patch.object(agent, "execute_tool") as et,
+        ):
             resp = handle_message("幫我做 PCA 並解釋結果", backend="local")
         et.assert_not_called()
         ml.assert_called()

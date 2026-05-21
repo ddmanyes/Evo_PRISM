@@ -43,6 +43,7 @@ def _insert_record(db_path: Path, *, expired: bool = False) -> str:
 
     # Fake embedding matching current EMBEDDING_DIM
     from config.settings import EMBEDDING_DIM
+
     embedding = [0.0] * EMBEDDING_DIM
 
     con = duckdb.connect(str(db_path))
@@ -103,6 +104,7 @@ class TestInitL1Cache:
 
     def test_embedding_dim(self, l1_db):
         from config.settings import EMBEDDING_DIM
+
         con = duckdb.connect(str(l1_db))
         row = con.execute(
             "SELECT data_type FROM information_schema.columns "

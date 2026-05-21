@@ -7,6 +7,7 @@ mcseg_quality 從扁平 REPORTS_DIR 改為同一慣例：
 
 好處：多樣本輸出不混雜、易清理；含路徑遍歷防護（resolve 後須落在 BIO_DB_ROOT 內）。
 """
+
 from __future__ import annotations
 
 import re
@@ -22,9 +23,7 @@ _SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 def results_dir(sample_id: str, analysis_type: str) -> Path:
     """回傳 ``results/<sample_id>/<analysis_type>/``（自動建立，含遍歷防護）。"""
     if not _SEGMENT_RE.match(sample_id):
-        raise ValueError(
-            f"Invalid sample_id {sample_id!r}: only A-Z a-z 0-9 _ - are allowed"
-        )
+        raise ValueError(f"Invalid sample_id {sample_id!r}: only A-Z a-z 0-9 _ - are allowed")
     if not _SEGMENT_RE.match(analysis_type):
         raise ValueError(f"Invalid analysis_type {analysis_type!r}")
     d = (BIO_DB_ROOT / "results" / sample_id / analysis_type).resolve()

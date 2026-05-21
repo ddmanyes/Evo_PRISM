@@ -21,6 +21,7 @@ Frontmatter 必填欄位：
     list_playbooks()              — 列出所有說明書的 frontmatter metadata
     get_playbook(name_or_dtype)   — 依 name 或 data_type 載入單一說明書
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,9 +52,9 @@ class PlaybookError(Exception):
 class Playbook:
     """一份載入後的分析說明書。"""
 
-    meta: dict[str, Any]   # frontmatter（已驗證必填欄位）
-    body: str              # Markdown 正文（方法學 + 有序步驟）
-    path: Path             # 來源檔路徑
+    meta: dict[str, Any]  # frontmatter（已驗證必填欄位）
+    body: str  # Markdown 正文（方法學 + 有序步驟）
+    path: Path  # 來源檔路徑
 
     @property
     def name(self) -> str:
@@ -83,13 +84,13 @@ def _parse_frontmatter(text: str, path: Path) -> tuple[dict[str, Any], str]:
         raise PlaybookError(f"{path.name}：缺少 frontmatter（檔案須以 '---' 開頭）")
 
     # 切掉開頭的 '---'，再找下一個 '---' 作為 frontmatter 結尾
-    rest = stripped[len(_FRONTMATTER_DELIM):]
+    rest = stripped[len(_FRONTMATTER_DELIM) :]
     end = rest.find(f"\n{_FRONTMATTER_DELIM}")
     if end == -1:
         raise PlaybookError(f"{path.name}：frontmatter 未正確以 '---' 結尾")
 
     fm_raw = rest[:end]
-    body = rest[end + len(_FRONTMATTER_DELIM) + 1:]
+    body = rest[end + len(_FRONTMATTER_DELIM) + 1 :]
 
     try:
         meta = yaml.safe_load(fm_raw) or {}
@@ -163,6 +164,4 @@ def get_playbook(name_or_data_type: str) -> Playbook:
         return found
 
     available = [m.get("name") for m in list_playbooks()]
-    raise PlaybookError(
-        f"找不到說明書 {key!r}（依 name / data_type 皆 miss）。可用：{available}"
-    )
+    raise PlaybookError(f"找不到說明書 {key!r}（依 name / data_type 皆 miss）。可用：{available}")

@@ -6,6 +6,7 @@
 
 策略：scheduler / HELIX 真實函數一律 monkeypatch 掉，測試不碰真實 DB / 不跑備份。
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -17,12 +18,19 @@ import server.dashboard_actions as da
 
 # ── dispatch / list_actions 純邏輯 ───────────────────────────────────────────
 
+
 def test_list_actions_shape():
     actions = da.list_actions()
     names = {a["action"] for a in actions}
     assert {
-        "backup", "cleanup_l1", "cleanup_figure", "cleanup_dynamic",
-        "rebuild_hnsw", "mark_stable", "close_stabilize", "prune_deprecated",
+        "backup",
+        "cleanup_l1",
+        "cleanup_figure",
+        "cleanup_dynamic",
+        "rebuild_hnsw",
+        "mark_stable",
+        "close_stabilize",
+        "prune_deprecated",
     } <= names
     by_name = {a["action"]: a for a in actions}
     assert by_name["prune_deprecated"]["destructive"] is True
@@ -92,6 +100,7 @@ def test_scheduler_error_wrapped(monkeypatch):
 
 # ── HELIX 操作（monkeypatch con + tool_registry）──────────────────────────────
 
+
 @pytest.fixture
 def _fake_helix(monkeypatch):
     """讓 _helix_con() 回傳一個 dummy CM，並捕捉 tool_registry 呼叫參數。"""
@@ -114,7 +123,7 @@ def _fake_helix(monkeypatch):
     )
     monkeypatch.setattr(
         "analysis.tool_registry.prune_deprecated",
-        lambda con, name: (calls.__setitem__("prune", (con, name)) or 4),
+        lambda con, name: calls.__setitem__("prune", (con, name)) or 4,
     )
     return calls
 
@@ -158,6 +167,7 @@ def test_prune_deprecated_success(_fake_helix):
 
 
 # ── web_app guard 三層防護（HTTP）─────────────────────────────────────────────
+
 
 def _enable(monkeypatch, *, enabled=True, remote=False, token=""):
     monkeypatch.setattr("config.settings.DASHBOARD_ACTIONS_ENABLED", enabled)

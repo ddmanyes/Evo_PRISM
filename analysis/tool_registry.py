@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # Hash computation
 # ---------------------------------------------------------------------------
 
+
 def compute_tool_hash(fn: Callable) -> str:
     """Return first 16 hex chars of SHA-256 over AST-normalized source of *fn*.
 
@@ -78,6 +79,7 @@ def compute_tool_hash(fn: Callable) -> str:
 # Churn helpers
 # ---------------------------------------------------------------------------
 
+
 def _safe_getsource(fn: Callable) -> Optional[str]:
     """Return raw source of *fn*, or None if unavailable (built-ins, etc.)."""
     try:
@@ -110,15 +112,15 @@ def _compute_churn(
     old_lines = old_source.splitlines(keepends=True)
     new_lines = new_source.splitlines(keepends=True)
     hunks: list[list[int]] = []
-    added_count   = 0
+    added_count = 0
     deleted_count = 0
 
     # 'equal' entries (including zero-width sentinels from n=0) are intentionally ignored.
     for group in difflib.SequenceMatcher(None, old_lines, new_lines).get_grouped_opcodes(0):
         for tag, i1, i2, j1, j2 in group:
             if tag in ("replace", "insert"):
-                start = j1 + 1    # 1-based, inclusive
-                end   = j2        # inclusive; j1==j2 means pure deletion marker
+                start = j1 + 1  # 1-based, inclusive
+                end = j2  # inclusive; j1==j2 means pure deletion marker
                 hunks.append([start, end])
                 added_count += j2 - j1
             if tag in ("replace", "delete"):
@@ -132,6 +134,7 @@ def _compute_churn(
 # ---------------------------------------------------------------------------
 # Registry operations
 # ---------------------------------------------------------------------------
+
 
 def register_tool(
     con: duckdb.DuckDBPyConnection,
@@ -182,9 +185,7 @@ def register_tool(
         [tool_name, content_hash],
     ).fetchone()
     if existing:
-        logger.debug(
-            "register_tool: %r already registered (hash=%s)", tool_name, content_hash
-        )
+        logger.debug("register_tool: %r already registered (hash=%s)", tool_name, content_hash)
         return str(existing[0])
 
     # --- get old hash + compute next revision_number before deprecating ---
@@ -223,9 +224,15 @@ def register_tool(
         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
         """,
         [
-            new_tool_id, tool_name, version, content_hash,
-            module_path, function_name, description,
-            now, next_revision,
+            new_tool_id,
+            tool_name,
+            version,
+            content_hash,
+            module_path,
+            function_name,
+            description,
+            now,
+            next_revision,
         ],
     )
 
@@ -253,14 +260,25 @@ def register_tool(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
-            tool_name, old_hash, content_hash, new_tool_id, next_revision, now,
-            new_source, changed_lines_json, churn_ratio,
+            tool_name,
+            old_hash,
+            content_hash,
+            new_tool_id,
+            next_revision,
+            now,
+            new_source,
+            changed_lines_json,
+            churn_ratio,
         ],
     )
 
     logger.info(
         "register_tool: registered %r  version=%s  hash=%s  revision=%d  tool_id=%s",
-        tool_name, version, content_hash, next_revision, new_tool_id,
+        tool_name,
+        version,
+        content_hash,
+        next_revision,
+        new_tool_id,
     )
 
     # SQL-9: assert revision_count in tools matches max revision_number in change log
@@ -280,17 +298,19 @@ def register_tool(
             logger.error(
                 "register_tool: revision_count mismatch for %r: "
                 "tools.revision_count=%d, tool_change_log.max=%d",
-                tool_name, db_rev, log_rev,
+                tool_name,
+                db_rev,
+                log_rev,
             )
             raise AssertionError(
-                f"revision_count sync broken for {tool_name!r}: "
-                f"tools={db_rev}, log={log_rev}"
+                f"revision_count sync broken for {tool_name!r}: tools={db_rev}, log={log_rev}"
             )
 
     # Invalidate L1 cache entries that reference this tool so users cannot
     # receive stale results produced by the previous version.
     try:
         from analysis.l1_cache import invalidate_tool_cache
+
         invalidate_tool_cache(tool_name)
     except Exception as exc:  # cache file missing or VSS unavailable → non-fatal
         logger.warning("register_tool: cache invalidation skipped for %r: %s", tool_name, exc)
@@ -302,6 +322,7 @@ def register_tool(
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         try:
             from analysis.tool_search import index_registered_tool
+
             index_registered_tool(tool_name, module_path, function_name, description)
         except Exception as exc:  # noqa: BLE001
             logger.warning("register_tool: tool_search indexing skipped for %r: %s", tool_name, exc)
@@ -378,6 +399,7 @@ def backfill_tool_id(
 # Drift detection
 # ---------------------------------------------------------------------------
 
+
 def check_tool_drift(
     con: duckdb.DuckDBPyConnection,
     tool_name: str,
@@ -434,6 +456,7 @@ def check_tool_drift(
 # ---------------------------------------------------------------------------
 # Stability diagnosis
 # ---------------------------------------------------------------------------
+
 
 def set_stability_note(
     con: duckdb.DuckDBPyConnection,
@@ -506,26 +529,29 @@ def get_hot_tools(
 
     # Group log rows by tool_name, keeping at most 10 per tool
     from collections import defaultdict
+
     log_by_tool: dict[str, list[dict]] = defaultdict(list)
     for tool_name_log, rev, old_h, new_h, reason, changed_at in log_all:
         entries = log_by_tool[tool_name_log]
         if len(entries) < 10:
-            entries.append({
-                "revision":   rev,
-                "old_hash":   old_h,
-                "new_hash":   new_h,
-                "reason":     reason,
-                "changed_at": str(changed_at),
-            })
+            entries.append(
+                {
+                    "revision": rev,
+                    "old_hash": old_h,
+                    "new_hash": new_h,
+                    "reason": reason,
+                    "changed_at": str(changed_at),
+                }
+            )
 
     return [
         {
-            "tool_name":      tool_name,
+            "tool_name": tool_name,
             "revision_count": rev_count,
             "stability_note": note,
-            "content_hash":   chash,
-            "tool_id":        str(tool_id),
-            "change_log":     log_by_tool.get(tool_name, []),
+            "content_hash": chash,
+            "tool_id": str(tool_id),
+            "change_log": log_by_tool.get(tool_name, []),
         }
         for tool_name, rev_count, note, chash, tool_id in rows
     ]
@@ -534,6 +560,7 @@ def get_hot_tools(
 # ---------------------------------------------------------------------------
 # Intra-tool hotspot (line-level churn)
 # ---------------------------------------------------------------------------
+
 
 def get_hot_lines(
     con: duckdb.DuckDBPyConnection,
@@ -575,7 +602,7 @@ def get_hot_lines(
             "suggestion": None,
         }
 
-    _MAX_RANGE_LINES = 10_000   # guard against malformed/oversized ranges
+    _MAX_RANGE_LINES = 10_000  # guard against malformed/oversized ranges
 
     # Count per-line hit frequency across revisions
     line_hits: dict[int, int] = {}
@@ -588,12 +615,14 @@ def get_hot_lines(
             continue
         seen_in_this_rev: set[int] = set()
         for start, end in ranges:
-            if end < start:          # pure-deletion marker (start > end) → skip iteration
+            if end < start:  # pure-deletion marker (start > end) → skip iteration
                 continue
             if end - start > _MAX_RANGE_LINES:
                 logger.warning(
                     "get_hot_lines: oversized range [%d, %d] in tool %r, skipping",
-                    start, end, tool_name,
+                    start,
+                    end,
+                    tool_name,
                 )
                 continue
             for lineno in range(start, end + 1):
@@ -617,21 +646,23 @@ def get_hot_lines(
         f"Lines {', '.join(f'{s}-{e}' for s, e in hot_ranges)} "
         f"changed in {min_hits}+ of the last {len(rows)} revisions — "
         "consider extracting as configurable parameters."
-        if hot_ranges else None
+        if hot_ranges
+        else None
     )
 
     return {
-        "tool_name":     tool_name,
+        "tool_name": tool_name,
         "revisions_used": len(rows),
-        "hot_lines":     hot_ranges,
-        "avg_churn":     avg_churn,
-        "suggestion":    suggestion,
+        "hot_lines": hot_ranges,
+        "avg_churn": avg_churn,
+        "suggestion": suggestion,
     }
 
 
 # ---------------------------------------------------------------------------
 # Pruning (stability-aware)
 # ---------------------------------------------------------------------------
+
 
 def prune_deprecated(
     con: duckdb.DuckDBPyConnection,
@@ -685,7 +716,10 @@ def prune_deprecated(
     if deleted:
         logger.info(
             "prune_deprecated: %r — deleted %d deprecated rows (hot=%s, kept=%d)",
-            tool_name, deleted, is_hot, keep_n,
+            tool_name,
+            deleted,
+            is_hot,
+            keep_n,
         )
 
     # Clear diagnosis_img for closed iterations older than 1 year.
@@ -709,7 +743,8 @@ def prune_deprecated(
     if img_cleared:
         logger.info(
             "prune_deprecated: %r — cleared diagnosis_img for %d old iteration(s)",
-            tool_name, img_cleared,
+            tool_name,
+            img_cleared,
         )
 
     return deleted
@@ -718,6 +753,7 @@ def prune_deprecated(
 # ---------------------------------------------------------------------------
 # Stabilization iteration tracking
 # ---------------------------------------------------------------------------
+
 
 def open_stabilization(
     con: duckdb.DuckDBPyConnection,
@@ -773,6 +809,7 @@ def open_stabilization(
                 compute_halstead_volume,
                 render_diagnosis_snapshot,
             )
+
             complexity_before = compute_complexity(fn)
             loc = compute_loc(fn)
             halstead_volume = compute_halstead_volume(fn)
@@ -785,7 +822,10 @@ def open_stabilization(
             )
             logger.info(
                 "open_stabilization: snapshot rendered for %r  CC=%s  LOC=%s  HV=%s",
-                tool_name, complexity_before, loc, halstead_volume,
+                tool_name,
+                complexity_before,
+                loc,
+                halstead_volume,
             )
         except Exception as exc:
             logger.warning("open_stabilization: snapshot failed — %s", exc)
@@ -800,9 +840,19 @@ def open_stabilization(
              complexity_before, diagnosis_img, loc, halstead_volume)
         VALUES (?, ?, ?, ?, ?, 'ongoing', ?, ?, ?, ?, ?, ?)
         """,
-        [log_id, tool_name, revision_now, diagnosis, action_taken,
-         revision_now, now, complexity_before, diagnosis_img,
-         loc, halstead_volume],
+        [
+            log_id,
+            tool_name,
+            revision_now,
+            diagnosis,
+            action_taken,
+            revision_now,
+            now,
+            complexity_before,
+            diagnosis_img,
+            loc,
+            halstead_volume,
+        ],
     )
     con.execute("CHECKPOINT")
     logger.info("open_stabilization: %r  revision=%d  log_id=%s", tool_name, revision_now, log_id)
@@ -852,6 +902,7 @@ def close_stabilization(
     if fn is not None:
         try:
             from analysis.tool_visualizer import compute_complexity, render_diagnosis_snapshot
+
             complexity_after = compute_complexity(fn)
             # Fetch original diagnosis text for the after snapshot
             orig = con.execute(
@@ -866,7 +917,8 @@ def close_stabilization(
             )
             logger.info(
                 "close_stabilization: after_img rendered for %r  CC=%s",
-                tool_name, complexity_after,
+                tool_name,
+                complexity_after,
             )
         except Exception as exc:
             logger.warning("close_stabilization: after_img/complexity failed — %s", exc)
@@ -874,7 +926,7 @@ def close_stabilization(
     now = datetime.now(timezone.utc)
     updates = ["outcome = ?", "revision_after = ?", "closed_at = ?"]
     params: list = [outcome, revision_after, now]
-    if action_taken is not None:   # allow empty string to clear the field
+    if action_taken is not None:  # allow empty string to clear the field
         updates.append("action_taken = ?")
         params.append(action_taken)
     if complexity_after is not None:
@@ -893,7 +945,9 @@ def close_stabilization(
     delta = revision_after - revision_before
     logger.info(
         "close_stabilization: log_id=%s  outcome=%s  revision_delta=+%d",
-        log_id, outcome, delta,
+        log_id,
+        outcome,
+        delta,
     )
 
 
@@ -920,13 +974,13 @@ def get_open_stabilizations(
     rows = con.execute(sql, params).fetchall()
     return [
         {
-            "log_id":           str(r[0]),
-            "tool_name":        r[1],
+            "log_id": str(r[0]),
+            "tool_name": r[1],
             "trigger_revision": r[2],
-            "diagnosis":        r[3],
-            "action_taken":     r[4],
-            "revision_before":  r[5],
-            "created_at":       str(r[6]),
+            "diagnosis": r[3],
+            "action_taken": r[4],
+            "revision_before": r[5],
+            "created_at": str(r[6]),
         }
         for r in rows
     ]
@@ -968,6 +1022,7 @@ def backfill_revision_after(con: duckdb.DuckDBPyConnection) -> int:
 # Health report
 # ---------------------------------------------------------------------------
 
+
 def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     """Return a summary dict for ``bio_tool_health`` agent tool.
 
@@ -980,9 +1035,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
       prune_candidates      dict[tool_name → int]
       recommendation        str
     """
-    active_count = con.execute(
-        "SELECT count(*) FROM tools WHERE status = 'active'"
-    ).fetchone()[0]
+    active_count = con.execute("SELECT count(*) FROM tools WHERE status = 'active'").fetchone()[0]
 
     deprecated_count = con.execute(
         "SELECT count(*) FROM tools WHERE status = 'deprecated'"
@@ -1047,10 +1100,10 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     ).fetchall()
     regression_zones = [
         {
-            "tool_name":              r[0],
-            "complexity_now":         r[1],
-            "complexity_after_last":  r[2],
-            "regression":             r[1] - r[2],
+            "tool_name": r[0],
+            "complexity_now": r[1],
+            "complexity_after_last": r[2],
+            "regression": r[1] - r[2],
         }
         for r in regression_rows
     ]
@@ -1059,7 +1112,9 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     parts: list[str] = []
     if open_stabilizations:
         names = ", ".join(s["tool_name"] for s in open_stabilizations)
-        parts.append(f"進行中穩定化迭代（{len(open_stabilizations)} 筆）：{names}。完成後呼叫 close_stabilize 記錄結果。")
+        parts.append(
+            f"進行中穩定化迭代（{len(open_stabilizations)} 筆）：{names}。完成後呼叫 close_stabilize 記錄結果。"
+        )
     if hot_zones:
         # Only flag hot zones that don't already have an open stabilization
         open_names = {s["tool_name"] for s in open_stabilizations}
@@ -1075,9 +1130,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         )
     if stale_analyses:
         total_stale = sum(stale_analyses.values())
-        parts.append(
-            f"共 {total_stale} 筆分析結果由舊版工具產生，建議評估是否重跑。"
-        )
+        parts.append(f"共 {total_stale} 筆分析結果由舊版工具產生，建議評估是否重跑。")
     if regression_zones:
         names = ", ".join(r["tool_name"] for r in regression_zones)
         parts.append(
@@ -1103,6 +1156,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
 
         # group by tool_name, keep top-5 per tool, then reuse get_hot_lines aggregation
         from collections import defaultdict
+
         cl_by_tool: dict[str, list[tuple]] = defaultdict(list)
         for row_name, row_cl, row_cr in cl_rows:
             if len(cl_by_tool[row_name]) < 5:
@@ -1148,11 +1202,11 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
                 "consider extracting as configurable parameters."
             )
             hot_lines_report[tool_name_hl] = {
-                "tool_name":      tool_name_hl,
+                "tool_name": tool_name_hl,
                 "revisions_used": len(tool_rows),
-                "hot_lines":      hot_ranges,
-                "avg_churn":      avg_churn,
-                "suggestion":     suggestion,
+                "hot_lines": hot_ranges,
+                "avg_churn": avg_churn,
+                "suggestion": suggestion,
             }
     if hot_lines_report:
         names = ", ".join(hot_lines_report)
@@ -1165,16 +1219,16 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         parts.append("工具庫健康，無需立即處理。")
 
     return {
-        "total_active":          active_count,
-        "total_deprecated":      deprecated_count,
-        "hot_zones":             hot_zones,
-        "open_stabilizations":   open_stabilizations,
-        "stale_analyses":        stale_analyses,
-        "prune_candidates":      prune_candidates,
-        "regression_zones":      regression_zones,
-        "hot_lines_report":      hot_lines_report,
-        "helix_self_health":     helix_self_health(con),
-        "recommendation":        " ".join(parts),
+        "total_active": active_count,
+        "total_deprecated": deprecated_count,
+        "hot_zones": hot_zones,
+        "open_stabilizations": open_stabilizations,
+        "stale_analyses": stale_analyses,
+        "prune_candidates": prune_candidates,
+        "regression_zones": regression_zones,
+        "hot_lines_report": hot_lines_report,
+        "helix_self_health": helix_self_health(con),
+        "recommendation": " ".join(parts),
     }
 
 
@@ -1207,14 +1261,14 @@ def get_complexity_trend(
     rows = con.execute(sql, params).fetchall()
     return [
         {
-            "log_id":             str(r[0]),
-            "tool_name":          r[1],
-            "created_at":         str(r[2]),
-            "closed_at":          str(r[3]),
-            "complexity_before":  r[4],
-            "complexity_after":   r[5],
-            "delta":              r[4] - r[5],   # positive = improvement
-            "outcome":            r[6],
+            "log_id": str(r[0]),
+            "tool_name": r[1],
+            "created_at": str(r[2]),
+            "closed_at": str(r[3]),
+            "complexity_before": r[4],
+            "complexity_after": r[5],
+            "delta": r[4] - r[5],  # positive = improvement
+            "outcome": r[6],
         }
         for r in rows
     ]
@@ -1250,11 +1304,11 @@ def get_stale_analyses(
 
     return [
         {
-            "analysis_id":   str(r[0]),
-            "sample_id":     str(r[1]),
+            "analysis_id": str(r[0]),
+            "sample_id": str(r[1]),
             "analysis_type": str(r[2]),
-            "completed_at":  r[3],
-            "summary":       str(r[4]) if r[4] is not None else None,
+            "completed_at": r[3],
+            "summary": str(r[4]) if r[4] is not None else None,
         }
         for r in rows
     ]
@@ -1263,6 +1317,7 @@ def get_stale_analyses(
 # ---------------------------------------------------------------------------
 # Stable-tool whitelist
 # ---------------------------------------------------------------------------
+
 
 def mark_stable(
     con: duckdb.DuckDBPyConnection,
@@ -1304,6 +1359,7 @@ def is_marked_stable(con: duckdb.DuckDBPyConnection, tool_name: str) -> bool:
 # ---------------------------------------------------------------------------
 # Stale-iteration auto-revert
 # ---------------------------------------------------------------------------
+
 
 def auto_revert_stale_stabilizations(
     con: duckdb.DuckDBPyConnection,
@@ -1348,7 +1404,9 @@ def auto_revert_stale_stabilizations(
         reverted.append(str(log_id))
         logger.info(
             "auto_revert_stale_stabilizations: %r log_id=%s created_at=%s",
-            tool_name, log_id, str(created_at)[:10],
+            tool_name,
+            log_id,
+            str(created_at)[:10],
         )
 
     con.execute("CHECKPOINT")
@@ -1358,6 +1416,7 @@ def auto_revert_stale_stabilizations(
 # ---------------------------------------------------------------------------
 # HELIX self-health
 # ---------------------------------------------------------------------------
+
 
 def helix_self_health(con: duckdb.DuckDBPyConnection) -> dict:
     """Return operational metrics about HELIX itself.
@@ -1370,8 +1429,8 @@ def helix_self_health(con: duckdb.DuckDBPyConnection) -> dict:
       downsample_coverage_pct float — % of closed iterations that have diagnosis_img
     """
     tools_rows = con.execute("SELECT count(*) FROM tools").fetchone()[0]
-    stab_rows  = con.execute("SELECT count(*) FROM tool_stabilization_log").fetchone()[0]
-    chg_rows   = con.execute("SELECT count(*) FROM tool_change_log").fetchone()[0]
+    stab_rows = con.execute("SELECT count(*) FROM tool_stabilization_log").fetchone()[0]
+    chg_rows = con.execute("SELECT count(*) FROM tool_change_log").fetchone()[0]
 
     orphan_count = con.execute(
         """
@@ -1396,9 +1455,9 @@ def helix_self_health(con: duckdb.DuckDBPyConnection) -> dict:
     coverage_pct = round(100.0 * with_img / total_closed, 1) if total_closed > 0 else 0.0
 
     return {
-        "tools_table_rows":        tools_rows,
-        "stabilization_log_rows":  stab_rows,
-        "change_log_rows":         chg_rows,
-        "orphan_iterations":       orphan_count,
+        "tools_table_rows": tools_rows,
+        "stabilization_log_rows": stab_rows,
+        "change_log_rows": chg_rows,
+        "orphan_iterations": orphan_count,
         "downsample_coverage_pct": coverage_pct,
     }

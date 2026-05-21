@@ -44,6 +44,7 @@ def _build_starlette_app():
 def http_client():
     """每個測試建新 app，因為 StreamableHTTPSessionManager.run() 每實例只能呼叫一次。"""
     from starlette.testclient import TestClient
+
     with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
         yield client
 
@@ -58,6 +59,7 @@ def _mcp_headers():
 class TestCreateHttpApp:
     def test_returns_handler_and_lifespan_tuple(self):
         from server.bio_memory_server import create_http_app
+
         result = create_http_app()
         assert isinstance(result, tuple) and len(result) == 2
         handler, lifespan_cm = result
@@ -67,12 +69,14 @@ class TestCreateHttpApp:
     def test_handler_has_asgi_call_signature(self):
         import inspect
         from server.bio_memory_server import create_http_app
+
         handler, _ = create_http_app()
         sig = inspect.signature(handler)
         assert list(sig.parameters) == ["scope", "receive", "send"]
 
     def test_idempotent_creation(self):
         from server.bio_memory_server import create_http_app
+
         h1, l1 = create_http_app()
         h2, l2 = create_http_app()
         assert callable(h1) and callable(l1)
@@ -84,16 +88,18 @@ class TestCreateHttpApp:
 
 class TestMCPInitialize:
     def _payload(self, req_id: int) -> bytes:
-        return json.dumps({
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test-client", "version": "0.1"},
-            },
-        }).encode()
+        return json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "0.1"},
+                },
+            }
+        ).encode()
 
     def test_returns_200(self, http_client):
         resp = http_client.post("/", content=self._payload(1), headers=_mcp_headers())
@@ -137,7 +143,9 @@ class TestMCPToolsList:
     }
 
     def _payload(self, req_id: int) -> bytes:
-        return json.dumps({"jsonrpc": "2.0", "id": req_id, "method": "tools/list", "params": {}}).encode()
+        return json.dumps(
+            {"jsonrpc": "2.0", "id": req_id, "method": "tools/list", "params": {}}
+        ).encode()
 
     def test_returns_200(self, http_client):
         resp = http_client.post("/", content=self._payload(10), headers=_mcp_headers())
@@ -148,6 +156,7 @@ class TestMCPToolsList:
         # 改用顯式 TestClient 與下方 test_tool_count_is_* 寫法一致，避免依賴 fixture 與 monkeypatch 的執行序。
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from starlette.testclient import TestClient
+
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(11), headers=_mcp_headers())
         # 以工具「名稱」比對，而非 raw 子字串——工具描述可能合法提到別的工具名
@@ -155,15 +164,14 @@ class TestMCPToolsList:
         names = set(re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode()))
         safe_tools = self._EXPECTED_TOOLS - {"bio_execute_code"}
         assert safe_tools <= names, f"缺少 safe 工具：{safe_tools - names}"
-        assert "bio_execute_code" not in names, (
-            "bio_execute_code 在預設 env 下應該被隱藏"
-        )
+        assert "bio_execute_code" not in names, "bio_execute_code 在預設 env 下應該被隱藏"
 
     def test_tool_count_is_14_when_dangerous_enabled(self, monkeypatch):
         """env=true 時，新建 client 應看到 22 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         # 重新建 app 確保 env 生效
         from starlette.testclient import TestClient
+
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(12), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
@@ -173,6 +181,7 @@ class TestMCPToolsList:
         """env 未設時，client 只看到 21 個（無 bio_execute_code）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from starlette.testclient import TestClient
+
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(13), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
@@ -185,7 +194,9 @@ class TestMCPToolsList:
 
 class TestMCPInvalidRequest:
     def test_unknown_method_not_500(self, http_client):
-        payload = json.dumps({"jsonrpc": "2.0", "id": 20, "method": "unknown/method", "params": {}}).encode()
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": 20, "method": "unknown/method", "params": {}}
+        ).encode()
         resp = http_client.post("/", content=payload, headers=_mcp_headers())
         assert resp.status_code < 500
 
@@ -200,11 +211,13 @@ class TestMCPInvalidRequest:
 class TestWebAppMCPMount:
     def test_mcp_route_mounted(self):
         from server.web_app import app
+
         paths = {getattr(r, "path", None) for r in app.routes}
         assert "/mcp" in paths
 
     def test_mcp_mount_app_is_not_none(self):
         from server.web_app import app
+
         mcp_route = next((r for r in app.routes if getattr(r, "path", None) == "/mcp"), None)
         assert mcp_route is not None
         assert mcp_route.app is not None
@@ -302,6 +315,7 @@ def _setup_e2e_db(tmp_path: Path) -> Path:
 
 def _run_async(coro):
     import asyncio
+
     return asyncio.get_event_loop().run_until_complete(coro)
 
 
@@ -313,6 +327,7 @@ def _patch_db_path(monkeypatch, db):
     monkeypatch.setattr("config.settings.DUCKDB_PATH", db)
     try:
         import analysis.history_query as _hq
+
         monkeypatch.setattr(_hq, "DUCKDB_PATH", db)
     except ImportError:
         pass
@@ -325,6 +340,7 @@ class TestE2EToolCalls:
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
+
         result = _run_async(call_tool("bio_history_lookup", {"sample_id": "e2e_sample"}))
         text = result[0].text
         assert "e2e_sample" in text
@@ -336,6 +352,7 @@ class TestE2EToolCalls:
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
+
         result = _run_async(call_tool("bio_history_timeline", {"n_days": 30, "limit": 5}))
         assert "e2e_sample" in result[0].text
 
@@ -343,20 +360,26 @@ class TestE2EToolCalls:
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
-        result = _run_async(call_tool(
-            "bio_history_check",
-            {"sample_id": "e2e_sample", "analysis_type": "spatial_eda"},
-        ))
+
+        result = _run_async(
+            call_tool(
+                "bio_history_check",
+                {"sample_id": "e2e_sample", "analysis_type": "spatial_eda"},
+            )
+        )
         assert "exists: true" in result[0].text
 
     def test_bio_history_check_exists_false(self, tmp_path, monkeypatch):
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
-        result = _run_async(call_tool(
-            "bio_history_check",
-            {"sample_id": "e2e_sample", "analysis_type": "no_such_type"},
-        ))
+
+        result = _run_async(
+            call_tool(
+                "bio_history_check",
+                {"sample_id": "e2e_sample", "analysis_type": "no_such_type"},
+            )
+        )
         assert "exists: false" in result[0].text
 
     def test_unknown_tool_recorded_as_user_error(self, tmp_path, monkeypatch):
@@ -364,6 +387,7 @@ class TestE2EToolCalls:
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
+
         result = _run_async(call_tool("no_such_tool", {}))
         assert "未知工具" in result[0].text
 
@@ -376,8 +400,8 @@ class TestArtifactE2E:
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
-        result = _run_async(call_tool("bio_artifact_summary",
-                                      {"sample_id": "e2e_sample"}))
+
+        result = _run_async(call_tool("bio_artifact_summary", {"sample_id": "e2e_sample"}))
         text = result[0].text
         assert "e2e_sample" in text
         assert "total_runs: 1" in text
@@ -388,8 +412,8 @@ class TestArtifactE2E:
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         from server.bio_memory_server import call_tool
-        result = _run_async(call_tool("bio_artifact_summary",
-                                      {"sample_id": "no_such_sample"}))
+
+        result = _run_async(call_tool("bio_artifact_summary", {"sample_id": "no_such_sample"}))
         assert "尚無" in result[0].text
 
     def test_bio_artifact_search_subtype_only(self, tmp_path, monkeypatch):
@@ -397,14 +421,19 @@ class TestArtifactE2E:
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         # 強制走 Layer 1 only：mock embed 失敗 → search_artifacts 仍可回 Layer 1 結果
-        monkeypatch.setattr("analysis.artifact_registry._get_embedding",
-                            lambda q: None)
+        monkeypatch.setattr("analysis.artifact_registry._get_embedding", lambda q: None)
         from server.bio_memory_server import call_tool
-        result = _run_async(call_tool("bio_artifact_search", {
-            "query": "ptprc",
-            "artifact_subtype": "gene_spatial_map",
-            "threshold": 0.001,
-        }))
+
+        result = _run_async(
+            call_tool(
+                "bio_artifact_search",
+                {
+                    "query": "ptprc",
+                    "artifact_subtype": "gene_spatial_map",
+                    "threshold": 0.001,
+                },
+            )
+        )
         text = result[0].text
         assert "ENGRAM 命中" in text or "ENGRAM 搜尋無命中" in text
         # 若命中，必須含 subtype
@@ -429,8 +458,7 @@ class TestAuthMiddleware:
         async def recv():
             return {"type": "http.request", "body": b"", "more_body": False}
 
-        scope = {"type": "http", "method": "POST", "path": "/",
-                 "headers": [], "query_string": b""}
+        scope = {"type": "http", "method": "POST", "path": "/", "headers": [], "query_string": b""}
         _run_async(handler(scope, recv, send))
         assert sent and sent[0]["status"] == 401
 
@@ -447,9 +475,13 @@ class TestAuthMiddleware:
         async def recv():
             return {"type": "http.request", "body": b"", "more_body": False}
 
-        scope = {"type": "http", "method": "POST", "path": "/",
-                 "headers": [(b"authorization", b"Bearer wrong")],
-                 "query_string": b""}
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [(b"authorization", b"Bearer wrong")],
+            "query_string": b"",
+        }
         _run_async(handler(scope, recv, send))
         assert sent and sent[0]["status"] == 401
 
@@ -469,9 +501,11 @@ class TestRateLimitGate:
         monkeypatch.setenv("MCP_RATE_LIMIT_PER_MIN", "2")
         # 模組已 import；直接覆寫 max calls 常數
         import server.bio_memory_server as bms
+
         monkeypatch.setattr(bms, "_RATE_LIMIT_MAX_CALLS", 2)
         bms._rate_buckets.clear()
         from server.bio_memory_server import call_tool
+
         # 前 2 次容許（不論結果）；第 3 次必被擋
         _run_async(call_tool("bio_history_search", {"query": "x"}))
         _run_async(call_tool("bio_history_search", {"query": "y"}))
@@ -485,18 +519,23 @@ class TestRateLimitGate:
 class TestMetricsRecording:
     def test_metric_row_written_on_success(self, tmp_path, monkeypatch):
         import duckdb
+
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         # 強制 lazy init 重跑
         import server.bio_memory_server as bms
+
         bms._METRICS_SCHEMA_READY = False
         from server.bio_memory_server import call_tool
-        _run_async(call_tool("bio_history_check",
-                             {"sample_id": "e2e_sample", "analysis_type": "spatial_eda"}))
+
+        _run_async(
+            call_tool(
+                "bio_history_check", {"sample_id": "e2e_sample", "analysis_type": "spatial_eda"}
+            )
+        )
         with duckdb.connect(str(db), read_only=True) as con:
             row = con.execute(
-                "SELECT tool_name, status FROM mcp_tool_metrics "
-                "ORDER BY recorded_at DESC LIMIT 1"
+                "SELECT tool_name, status FROM mcp_tool_metrics ORDER BY recorded_at DESC LIMIT 1"
             ).fetchone()
         assert row is not None
         assert row[0] == "bio_history_check"
@@ -505,38 +544,49 @@ class TestMetricsRecording:
     def test_metric_records_user_error(self, tmp_path, monkeypatch):
         # 用 unknown-tool 觸發 user_error 路徑（不依賴 handler 內部行為）
         import duckdb
+
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         import server.bio_memory_server as bms
+
         bms._METRICS_SCHEMA_READY = False
         from server.bio_memory_server import call_tool
+
         _run_async(call_tool("no_such_tool", {}))
         with duckdb.connect(str(db), read_only=True) as con:
-            statuses = [r[0] for r in con.execute(
-                "SELECT status FROM mcp_tool_metrics WHERE tool_name = ?",
-                ["no_such_tool"],
-            ).fetchall()]
+            statuses = [
+                r[0]
+                for r in con.execute(
+                    "SELECT status FROM mcp_tool_metrics WHERE tool_name = ?",
+                    ["no_such_tool"],
+                ).fetchall()
+            ]
         assert "user_error" in statuses
 
     def test_metric_records_requested_by_and_error_class(self, tmp_path, monkeypatch):
         import duckdb
+
         db = _setup_e2e_db(tmp_path)
         _patch_db_path(monkeypatch, db)
         import server.bio_memory_server as bms
+
         bms._METRICS_SCHEMA_READY = False
         from server.bio_memory_server import call_tool
-        
+
         # 1. 正常呼叫，傳入 requested_by
-        _run_async(call_tool("bio_history_check", {
-            "sample_id": "e2e_sample",
-            "analysis_type": "spatial_eda",
-            "requested_by": "custom_agent"
-        }))
-        
+        _run_async(
+            call_tool(
+                "bio_history_check",
+                {
+                    "sample_id": "e2e_sample",
+                    "analysis_type": "spatial_eda",
+                    "requested_by": "custom_agent",
+                },
+            )
+        )
+
         # 2. 參數錯誤，觸發 ValueError/KeyError/TypeError，傳入 requested_by
-        _run_async(call_tool("bio_history_check", {
-            "requested_by": "error_agent"
-        }))
+        _run_async(call_tool("bio_history_check", {"requested_by": "error_agent"}))
 
         with duckdb.connect(str(db), read_only=True) as con:
             # 驗證 custom_agent 寫入
@@ -545,7 +595,7 @@ class TestMetricsRecording:
                 "WHERE requested_by = 'custom_agent' "
                 "ORDER BY recorded_at DESC LIMIT 1"
             ).fetchone()
-            
+
             # 驗證 error_agent 寫入
             row_err = con.execute(
                 "SELECT tool_name, status, requested_by, error_class FROM mcp_tool_metrics "
@@ -564,4 +614,3 @@ class TestMetricsRecording:
         assert row_err[1] == "user_error"
         assert row_err[2] == "error_agent"
         assert row_err[3] in ("KeyError", "ValueError", "TypeError")
-

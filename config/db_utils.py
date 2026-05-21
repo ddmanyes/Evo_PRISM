@@ -183,14 +183,11 @@ def db_health_check(con: duckdb.DuckDBPyConnection | None = None) -> dict:
     快速健康檢查，回傳各表筆數與殭屍狀態統計。
     Agent 啟動時可選擇性呼叫。con 可選：未傳入時自動開啟 read_only 連線。
     """
+
     def _run(c: duckdb.DuckDBPyConnection) -> dict:
         result = {}
-        result["sample_count"] = c.execute(
-            "SELECT COUNT(*) FROM sample_registry"
-        ).fetchone()[0]
-        result["history_count"] = c.execute(
-            "SELECT COUNT(*) FROM analysis_history"
-        ).fetchone()[0]
+        result["sample_count"] = c.execute("SELECT COUNT(*) FROM sample_registry").fetchone()[0]
+        result["history_count"] = c.execute("SELECT COUNT(*) FROM analysis_history").fetchone()[0]
         result["stale_count"] = c.execute(
             "SELECT COUNT(*) FROM analysis_history WHERE status = 'stale'"
         ).fetchone()[0]

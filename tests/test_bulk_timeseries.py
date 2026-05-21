@@ -8,6 +8,7 @@
   - tpm_to_log2 / log2fc：log2(x+1) 精確值 + baseline 歸零 + 缺 baseline 報錯。
   - timeseries_summary：端到端、baseline 欄恆為 0、TSV round-trip、組織過濾。
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -18,6 +19,7 @@ from analysis import bulk_timeseries as ts
 
 
 # ── parse_timepoint_cols ──────────────────────────────────────────────────────
+
 
 def test_parse_basic_grouping():
     cols = ["ctrl_1_HG", "ctrl_2_HG", "pw6hr_1_HG", "pw24hr_1_HG"]
@@ -48,6 +50,7 @@ def test_parse_tissue_filter():
 
 
 # ── mean_by_timepoint ─────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def counts():
@@ -80,6 +83,7 @@ def test_mean_by_timepoint_skips_missing_cols(counts):
 
 # ── tpm_to_log2 / log2fc ──────────────────────────────────────────────────────
 
+
 def test_tpm_to_log2_exact():
     df = pd.DataFrame({"a": [0, 1, 3, 7]}, index=list("wxyz"))
     out = ts.tpm_to_log2(df)  # log2(x+1)
@@ -89,8 +93,8 @@ def test_tpm_to_log2_exact():
 def test_log2fc_already_log_transformed():
     expr = pd.DataFrame({"0h": [1, 2], "6h": [3, 5]}, index=["g1", "g2"])
     fc = ts.log2fc(expr, baseline="0h", log_transformed=True)
-    np.testing.assert_allclose(fc["0h"].values, [0, 0])      # baseline 恆 0
-    np.testing.assert_allclose(fc["6h"].values, [2, 3])      # 3-1, 5-2
+    np.testing.assert_allclose(fc["0h"].values, [0, 0])  # baseline 恆 0
+    np.testing.assert_allclose(fc["6h"].values, [2, 3])  # 3-1, 5-2
 
 
 def test_log2fc_raw_applies_log_first():
@@ -109,6 +113,7 @@ def test_log2fc_missing_baseline_raises():
 
 # ── timeseries_summary（端到端）───────────────────────────────────────────────
 
+
 def test_timeseries_summary_baseline_zero(counts):
     log2_mean, fc = ts.timeseries_summary(counts, baseline="0h")
     assert list(log2_mean.columns) == ["0h", "6h"]
@@ -116,8 +121,7 @@ def test_timeseries_summary_baseline_zero(counts):
     np.testing.assert_allclose(log2_mean["0h"].values, np.log2([3, 21]))
     np.testing.assert_allclose(fc["0h"].values, [0, 0])
     # fc 6h = log2(9)-log2(3) 等
-    np.testing.assert_allclose(fc["6h"].values,
-                               np.log2([9, 81]) - np.log2([3, 21]))
+    np.testing.assert_allclose(fc["6h"].values, np.log2([9, 81]) - np.log2([3, 21]))
 
 
 def test_timeseries_summary_tissue_filter(counts):

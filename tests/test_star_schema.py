@@ -4,6 +4,7 @@ Verifies that v_analysis_throughput_by_sample_type and v_tool_stability_signal
 DDL works against an in-memory schema mirroring the production tables, and
 that aggregations / signal classification produce expected values.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -29,7 +30,9 @@ def _load_v19_module():
 
 def _load_v21_module():
     """Load scripts/22_migrate_schema_v21_mcp_metrics.py — filename starts with a digit."""
-    path = Path(__file__).resolve().parent.parent / "scripts" / "22_migrate_schema_v21_mcp_metrics.py"
+    path = (
+        Path(__file__).resolve().parent.parent / "scripts" / "22_migrate_schema_v21_mcp_metrics.py"
+    )
     spec = importlib.util.spec_from_file_location("migrate_v21", path)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -103,6 +106,7 @@ def star_con():
 # v_analysis_throughput_by_sample_type
 # ---------------------------------------------------------------------------
 
+
 class TestThroughputView:
     def test_view_created_and_empty_table_yields_no_rows(self, star_con):
         mod = _load_v19_module()
@@ -112,9 +116,12 @@ class TestThroughputView:
             "WHERE table_name='v_analysis_throughput_by_sample_type'"
         ).fetchone()
         assert row is not None
-        assert star_con.execute(
-            "SELECT COUNT(*) FROM v_analysis_throughput_by_sample_type"
-        ).fetchone()[0] == 0
+        assert (
+            star_con.execute(
+                "SELECT COUNT(*) FROM v_analysis_throughput_by_sample_type"
+            ).fetchone()[0]
+            == 0
+        )
 
     def test_aggregates_runs_per_sample_type_and_week(self, star_con):
         mod = _load_v19_module()
@@ -175,6 +182,7 @@ class TestThroughputView:
 # v_tool_stability_signal
 # ---------------------------------------------------------------------------
 
+
 class TestStabilitySignalView:
     def test_ok_signal_for_quiet_tool(self, star_con):
         mod = _load_v19_module()
@@ -214,8 +222,7 @@ class TestStabilitySignalView:
                 "VALUES ('bio_hot', now() - INTERVAL 5 DAY, 0.4)"
             )
         row = star_con.execute(
-            "SELECT signal, changes_30d FROM v_tool_stability_signal "
-            "WHERE tool_name = 'bio_hot'"
+            "SELECT signal, changes_30d FROM v_tool_stability_signal WHERE tool_name = 'bio_hot'"
         ).fetchone()
         assert row == ("HOT", 3)
 
@@ -248,8 +255,7 @@ class TestStabilitySignalView:
             "VALUES ('bio_stale', now() - INTERVAL 60 DAY, NULL)"
         )
         row = star_con.execute(
-            "SELECT signal FROM v_tool_stability_signal "
-            "WHERE tool_name = 'bio_stale'"
+            "SELECT signal FROM v_tool_stability_signal WHERE tool_name = 'bio_stale'"
         ).fetchone()
         assert row == ("STALE_ITERATION",)
 
@@ -270,20 +276,18 @@ class TestStabilitySignalView:
 # v_tool_perf_30d
 # ---------------------------------------------------------------------------
 
+
 class TestToolPerfView:
     def test_view_created_and_empty_yields_no_rows(self, star_con):
         mod = _load_v21_module()
         star_con.execute(mod._ddl_mcp_metrics_table())
         star_con.execute(mod._ddl_tool_perf_view())
-        
+
         row = star_con.execute(
-            "SELECT 1 FROM information_schema.views "
-            "WHERE table_name='v_tool_perf_30d'"
+            "SELECT 1 FROM information_schema.views WHERE table_name='v_tool_perf_30d'"
         ).fetchone()
         assert row is not None
-        assert star_con.execute(
-            "SELECT COUNT(*) FROM v_tool_perf_30d"
-        ).fetchone()[0] == 0
+        assert star_con.execute("SELECT COUNT(*) FROM v_tool_perf_30d").fetchone()[0] == 0
 
     def test_aggregates_perf_metrics_correctly(self, star_con):
         mod = _load_v21_module()
@@ -301,7 +305,7 @@ class TestToolPerfView:
             "('bio_test_tool', 100, 'ok', ?), "
             "('bio_test_tool', 200, 'user_error', ?), "
             "('bio_test_tool', 300, 'rate_limited', ?)",
-            [now, now, now]
+            [now, now, now],
         )
 
         row = star_con.execute(
@@ -311,13 +315,13 @@ class TestToolPerfView:
 
         assert row is not None
         assert row[0] == "bio_test_tool"
-        assert row[1] == 3 # n_calls
-        assert abs(row[2] - 200.0) < 0.01 # avg_duration_ms
+        assert row[1] == 3  # n_calls
+        assert abs(row[2] - 200.0) < 0.01  # avg_duration_ms
         # p95: 100, 200, 300 之間的 95th quantile 預計會在 290 左右
         assert row[3] > 200.0 and row[3] <= 300.0
         # error_rate: status 不為 'ok' 的比例 = 2 / 3 * 100 = 66.67%
         assert abs(row[4] - 66.67) < 0.01
-        assert row[5] == 1 # n_rate_limited
+        assert row[5] == 1  # n_rate_limited
 
     def test_excludes_records_older_than_30_days(self, star_con):
         mod = _load_v21_module()
@@ -332,15 +336,13 @@ class TestToolPerfView:
             "INSERT INTO mcp_tool_metrics (tool_name, duration_ms, status, recorded_at) VALUES "
             "('bio_filtered', 100, 'ok', ?), "
             "('bio_filtered', 500, 'ok', ?)",
-            [now, old]
+            [now, old],
         )
 
         row = star_con.execute(
-            "SELECT n_calls, avg_duration_ms FROM v_tool_perf_30d "
-            "WHERE tool_name = 'bio_filtered'"
+            "SELECT n_calls, avg_duration_ms FROM v_tool_perf_30d WHERE tool_name = 'bio_filtered'"
         ).fetchone()
 
         assert row is not None
         assert row[0] == 1
         assert abs(row[1] - 100.0) < 0.01
-

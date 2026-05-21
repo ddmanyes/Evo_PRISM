@@ -17,6 +17,7 @@
 批次掃描（自動登記 results_kallisto/ 下所有樣本）：
     python scripts/01_register_sample.py --scan-bulk-rna
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,19 +38,33 @@ logger = logging.getLogger(__name__)
 BULK_RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
 
 VALID_DATA_TYPES = {
-    "visium_hd", "visium", "scrna", "bulk_rnaseq",
-    "multiome", "atac", "proteomics", "imaging", "other",
+    "visium_hd",
+    "visium",
+    "scrna",
+    "bulk_rnaseq",
+    "multiome",
+    "atac",
+    "proteomics",
+    "imaging",
+    "other",
 }
 VALID_PLATFORMS = {
-    "10x_visium_hd", "cellranger", "kallisto", "salmon",
-    "cellranger_arc", "snapatac2", "maxquant", "other",
+    "10x_visium_hd",
+    "cellranger",
+    "kallisto",
+    "salmon",
+    "cellranger_arc",
+    "snapatac2",
+    "maxquant",
+    "other",
 }
 
 
 def _sample_exists(con: duckdb.DuckDBPyConnection, sample_id: str) -> bool:
-    return con.execute(
-        "SELECT 1 FROM sample_registry WHERE sample_id = ?", [sample_id]
-    ).fetchone() is not None
+    return (
+        con.execute("SELECT 1 FROM sample_registry WHERE sample_id = ?", [sample_id]).fetchone()
+        is not None
+    )
 
 
 def register_sample(
@@ -76,8 +91,19 @@ def register_sample(
                (sample_id, project, data_type, platform, species, tissue,
                 l3_path, l2_ready, analysis_done, added_by, notes, last_updated)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, false, ?, ?, ?)""",
-        [sample_id, project, data_type, platform, species, tissue,
-         l3_path, l2_ready, added_by, notes, datetime.now(timezone.utc)],
+        [
+            sample_id,
+            project,
+            data_type,
+            platform,
+            species,
+            tissue,
+            l3_path,
+            l2_ready,
+            added_by,
+            notes,
+            datetime.now(timezone.utc),
+        ],
     )
     logger.info("已登記樣本 %r  data_type=%s  platform=%s", sample_id, data_type, platform)
     return True
@@ -135,10 +161,12 @@ def scan_bulk_rna(con: duckdb.DuckDBPyConnection, added_by: str = "scan") -> Non
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="登記樣本至 sample_registry")
     mode = p.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--scan-bulk-rna", action="store_true",
-                      help="自動掃描 bulk_rna_data/results_kallisto/ 並批次登記")
-    mode.add_argument("--sample-id", metavar="ID",
-                      help="樣本 ID（小寫底線，如 hair_ctrl_1）")
+    mode.add_argument(
+        "--scan-bulk-rna",
+        action="store_true",
+        help="自動掃描 bulk_rna_data/results_kallisto/ 並批次登記",
+    )
+    mode.add_argument("--sample-id", metavar="ID", help="樣本 ID（小寫底線，如 hair_ctrl_1）")
 
     p.add_argument("--data-type", choices=sorted(VALID_DATA_TYPES))
     p.add_argument("--platform", choices=sorted(VALID_PLATFORMS))

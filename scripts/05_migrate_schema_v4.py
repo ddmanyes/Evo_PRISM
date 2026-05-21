@@ -24,12 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DUCKDB_PATH
 
 
-_ADD_REVISION_COUNT = (
-    "ALTER TABLE tools ADD COLUMN IF NOT EXISTS revision_count INTEGER DEFAULT 0"
-)
-_ADD_STABILITY_NOTE = (
-    "ALTER TABLE tools ADD COLUMN IF NOT EXISTS stability_note VARCHAR"
-)
+_ADD_REVISION_COUNT = "ALTER TABLE tools ADD COLUMN IF NOT EXISTS revision_count INTEGER DEFAULT 0"
+_ADD_STABILITY_NOTE = "ALTER TABLE tools ADD COLUMN IF NOT EXISTS stability_note VARCHAR"
 
 _TOOL_CHANGE_LOG_DDL = """
 CREATE TABLE IF NOT EXISTS tool_change_log (
@@ -92,8 +88,10 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         missing_cols = {"revision_count", "stability_note"} - cols
         missing_tables = {"tool_change_log"} - tables
         if missing_cols or missing_tables:
-            print(f"\nERROR: missing_cols={missing_cols}, missing_tables={missing_tables}",
-                  file=sys.stderr)
+            print(
+                f"\nERROR: missing_cols={missing_cols}, missing_tables={missing_tables}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         print("\n--- Migration v4 summary ---")

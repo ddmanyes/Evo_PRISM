@@ -1,4 +1,5 @@
 """MCP Resources：artifact 列舉 + 取回的單元測試。"""
+
 import duckdb
 import pytest
 

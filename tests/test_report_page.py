@@ -7,6 +7,7 @@
     - _resolve_result_path 相對路徑以 BIO_DB_ROOT 為基底
     - HTTP 整合：四種 analysis_type 都不再 500
 """
+
 from __future__ import annotations
 
 import base64
@@ -17,6 +18,7 @@ import pytest
 
 
 # ── _synthesize_dynamic_code_view（meta + code 結構） ─────────────────────
+
 
 def _mk_dynamic_archive(arch: Path, **meta_extra) -> None:
     """測試 helper：建一個最小可行的 dynamic_code 目錄（meta + code）。"""
@@ -29,9 +31,7 @@ def _mk_dynamic_archive(arch: Path, **meta_extra) -> None:
         "duration_sec": 0.42,
     }
     default_meta.update(meta_extra)
-    (arch / "meta.json").write_text(
-        json.dumps(default_meta, ensure_ascii=False), encoding="utf-8"
-    )
+    (arch / "meta.json").write_text(json.dumps(default_meta, ensure_ascii=False), encoding="utf-8")
     (arch / "code.py").write_text("print('hello')\n", encoding="utf-8")
 
 
@@ -95,6 +95,7 @@ def test_dynamic_code_view_handles_traceback(tmp_path):
 
 # ── _synthesize_directory_browser_view（l2_convert / 通用） ────────────────
 
+
 def test_directory_browser_lists_parquet_with_size(tmp_path):
     """通用目錄瀏覽：列出 parquet 檔 + 大小（不渲染 dynamic_code 元素）。"""
     from server.web_app import _synthesize_archive_view
@@ -102,7 +103,7 @@ def test_directory_browser_lists_parquet_with_size(tmp_path):
     silver = tmp_path / "silver" / "sample1"
     silver.mkdir(parents=True)
     (silver / "expression.parquet").write_bytes(b"\x00" * 3072)  # 3.0 KB
-    (silver / "obs.parquet").write_bytes(b"\x00" * 1024)         # 1.0 KB
+    (silver / "obs.parquet").write_bytes(b"\x00" * 1024)  # 1.0 KB
 
     md = _synthesize_archive_view(silver)
 
@@ -131,6 +132,7 @@ def test_directory_browser_handles_empty_dir(tmp_path):
 
 # ── 派發器路由 ─────────────────────────────────────────────────────────────
 
+
 def test_dispatcher_routes_dynamic_code_vs_browser(tmp_path):
     """有 meta.json + code.py → dynamic_code 視圖；無 → 通用瀏覽。"""
     from server.web_app import _synthesize_archive_view
@@ -153,6 +155,7 @@ def test_dispatcher_routes_dynamic_code_vs_browser(tmp_path):
 
 # ── _resolve_result_path 行為 ──────────────────────────────────────────────
 
+
 def test_resolve_relative_uses_bio_db_root(monkeypatch, tmp_path):
     """相對 result_path 應以 BIO_DB_ROOT 為基底解析，不依賴 CWD。"""
     from server import web_app as wa
@@ -174,6 +177,7 @@ def test_resolve_absolute_path_unchanged(tmp_path):
 
 
 # ── /results/{analysis_id} 整合（用真實 DB，只驗 status code） ──────────────
+
 
 def test_results_route_does_not_500_for_any_type(web_app_client):
     """回歸保護：四種分析類型 GET /results/{id} 都不該再 500。"""
@@ -201,10 +205,6 @@ def test_results_route_does_not_500_for_any_type(web_app_client):
 
     for atype, aid in samples.items():
         resp = web_app_client.get(f"/results/{aid}")
-        assert resp.status_code != 500, (
-            f"{atype} 報告頁 500 回歸；body={resp.text[:200]!r}"
-        )
+        assert resp.status_code != 500, f"{atype} 報告頁 500 回歸；body={resp.text[:200]!r}"
         # 200（成功）或 404（路徑不存在/已遷移）皆可接受，但不可 500
-        assert resp.status_code in (200, 404), (
-            f"{atype} unexpected status {resp.status_code}"
-        )
+        assert resp.status_code in (200, 404), f"{atype} unexpected status {resp.status_code}"

@@ -25,9 +25,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DUCKDB_PATH
 
 _NEW_COLS: list[tuple[str, str]] = [
-    ("diagnosis_img",     "VARCHAR"),   # base64 data URI PNG
-    ("complexity_before", "INTEGER"),   # cyclomatic complexity at open
-    ("complexity_after",  "INTEGER"),   # cyclomatic complexity at close
+    ("diagnosis_img", "VARCHAR"),  # base64 data URI PNG
+    ("complexity_before", "INTEGER"),  # cyclomatic complexity at open
+    ("complexity_after", "INTEGER"),  # cyclomatic complexity at close
 ]
 
 
@@ -38,8 +38,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
     try:
         for col_name, col_type in _NEW_COLS:
             sql = (
-                f"ALTER TABLE tool_stabilization_log "
-                f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                f"ALTER TABLE tool_stabilization_log ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
             )
             print(f"ALTER tool_stabilization_log: add {col_name} ...", end=" ")
             con.execute(sql)

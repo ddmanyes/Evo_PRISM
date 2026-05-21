@@ -5,6 +5,7 @@ _file_to_b64_md，外加既有純函數 qc_stats / top_genes / sample_correlatio
 
 策略：用合成 count 矩陣，不碰真實 L3 數據或 DUCKDB——圖檔寫入 tmp_path。
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -25,6 +26,7 @@ def counts() -> pd.DataFrame:
 
 
 # ── 純函數 ────────────────────────────────────────────────────────────────────
+
 
 def test_qc_stats_columns(counts):
     qc = be.qc_stats(counts)
@@ -47,6 +49,7 @@ def test_sample_correlation_square_and_unit_diagonal(counts):
 
 
 # ── 系列圖（Phase 11.1 核心）────────────────────────────────────────────────────
+
 
 def test_qc_barplot_writes_png(counts, tmp_path):
     out = tmp_path / "qc.png"
@@ -72,6 +75,7 @@ def test_pca_plot_writes_png(counts, tmp_path):
 
 # ── inline base64 helper ──────────────────────────────────────────────────────
 
+
 def test_file_to_b64_md_is_data_uri(counts, tmp_path):
     out = be.qc_barplot(be.qc_stats(counts), output_path=tmp_path / "qc.png")
     md = be._file_to_b64_md(out, alt="QC barplot")
@@ -79,5 +83,6 @@ def test_file_to_b64_md_is_data_uri(counts, tmp_path):
     assert md.strip().endswith(")")
     # base64 段非空且可解碼
     import base64
+
     b64 = md.split("base64,", 1)[1].rstrip(")\n")
     assert len(base64.b64decode(b64)) > 0

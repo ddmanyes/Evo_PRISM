@@ -3,6 +3,7 @@
 
 同時產生 gene_symbol_to_ensembl.tsv 對照表，供 map_ensembl_to_symbol.py 使用。
 """
+
 from __future__ import annotations
 
 import csv
@@ -17,9 +18,9 @@ from config.settings import BIO_DB_ROOT
 logger = logging.getLogger(__name__)
 
 RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
-OUT_COUNTS  = RESULTS_DIR / "gene_counts_ensembl.tsv"
-OUT_TPM     = RESULTS_DIR / "gene_tpm_ensembl.tsv"
-MAPPING     = RESULTS_DIR / "gene_symbol_to_ensembl.tsv"
+OUT_COUNTS = RESULTS_DIR / "gene_counts_ensembl.tsv"
+OUT_TPM = RESULTS_DIR / "gene_tpm_ensembl.tsv"
+MAPPING = RESULTS_DIR / "gene_symbol_to_ensembl.tsv"
 
 
 def parse_abundance(
@@ -36,7 +37,7 @@ def parse_abundance(
             if not target:
                 continue
             parts = target.split("|")
-            ensg     = parts[1].strip() if len(parts) >= 2 and parts[1].startswith("ENSMUSG") else None
+            ensg = parts[1].strip() if len(parts) >= 2 and parts[1].startswith("ENSMUSG") else None
             gene_sym = parts[5].strip() if len(parts) >= 6 and parts[5].strip() else None
             key = ensg or gene_sym or parts[0]
 
@@ -68,15 +69,15 @@ def main() -> None:
 
     samples: list[str] = []
     per_sample_counts: dict[str, dict[str, float]] = {}
-    per_sample_tpm:    dict[str, dict[str, float]] = {}
-    mapping:           dict[str, str] = {}
-    gene_set:          set[str] = set()
+    per_sample_tpm: dict[str, dict[str, float]] = {}
+    mapping: dict[str, str] = {}
+    gene_set: set[str] = set()
 
     for path in files:
         sample = path.parent.name
         samples.append(sample)
         counts: dict[str, float] = defaultdict(float)
-        tpms:   dict[str, float] = defaultdict(float)
+        tpms: dict[str, float] = defaultdict(float)
         parse_abundance(path, mapping, counts, tpms)
         per_sample_counts[sample] = counts
         per_sample_tpm[sample] = tpms

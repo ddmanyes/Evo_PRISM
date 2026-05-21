@@ -7,6 +7,7 @@
   - analysis_id 為空 → no-op
 並驗證直接呼叫 run_deg_analysis（不經 MCP）也會回填 tool_id。
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -50,8 +51,7 @@ class TestBackfillToolId:
             INSERT INTO tools VALUES
               ('11111111-1111-1111-1111-111111111111','bio_run_bulk_eda','1.0.0','active')
         """)
-        ok = backfill_tool_id(con, "bio_run_bulk_eda",
-                              "aaaaaaaa-0000-0000-0000-000000000001")
+        ok = backfill_tool_id(con, "bio_run_bulk_eda", "aaaaaaaa-0000-0000-0000-000000000001")
         assert ok is True
         tid = con.execute(
             "SELECT tool_id FROM analysis_history WHERE analysis_id='aaaaaaaa-0000-0000-0000-000000000001'"
@@ -62,8 +62,7 @@ class TestBackfillToolId:
     def test_noop_when_tool_not_registered(self):
         con = duckdb.connect(":memory:")
         _make_history_db(con, with_tools=True)  # tools 表存在但無此工具
-        ok = backfill_tool_id(con, "bio_run_bulk_eda",
-                              "aaaaaaaa-0000-0000-0000-000000000001")
+        ok = backfill_tool_id(con, "bio_run_bulk_eda", "aaaaaaaa-0000-0000-0000-000000000001")
         assert ok is False
         con.close()
 
@@ -71,8 +70,7 @@ class TestBackfillToolId:
         con = duckdb.connect(":memory:")
         _make_history_db(con, with_tools=False)  # 無 tools 表
         # 不可 raise
-        ok = backfill_tool_id(con, "bio_run_bulk_eda",
-                              "aaaaaaaa-0000-0000-0000-000000000001")
+        ok = backfill_tool_id(con, "bio_run_bulk_eda", "aaaaaaaa-0000-0000-0000-000000000001")
         assert ok is False
         con.close()
 
@@ -92,8 +90,7 @@ class TestBackfillToolId:
               ('11111111-1111-1111-1111-111111111111','bio_run_bulk_eda','1.0.0','deprecated'),
               ('22222222-2222-2222-2222-222222222222','bio_run_bulk_eda','1.1.0','active')
         """)
-        backfill_tool_id(con, "bio_run_bulk_eda",
-                         "aaaaaaaa-0000-0000-0000-000000000001")
+        backfill_tool_id(con, "bio_run_bulk_eda", "aaaaaaaa-0000-0000-0000-000000000001")
         tid = con.execute(
             "SELECT tool_id FROM analysis_history WHERE analysis_id='aaaaaaaa-0000-0000-0000-000000000001'"
         ).fetchone()[0]
@@ -102,6 +99,7 @@ class TestBackfillToolId:
 
 
 # ── 端對端：直接呼叫分析函數（不經 MCP）也回填 tool_id ──────────────────────
+
 
 class TestDirectCallBackfills:
     def test_run_deg_analysis_backfills_tool_id(self, tmp_path, monkeypatch):
@@ -130,23 +128,37 @@ class TestDirectCallBackfills:
 
         # mock omicverse pyDEG（避免實跑 DESeq2）
         fake_deg = pd.DataFrame(
-            {"log2FC": rng.normal(0, 1, 50), "qvalue": rng.uniform(0, 1, 50)}, index=genes,
+            {"log2FC": rng.normal(0, 1, 50), "qvalue": rng.uniform(0, 1, 50)},
+            index=genes,
         )
 
         class _FakePyDEG:
-            def __init__(self, c): pass
-            def drop_duplicates_index(self): pass
-            def deg_analysis(self, a, b, method="DEseq2", alpha=0.05): return fake_deg.copy()
-            def foldchange_set(self, **k): pass
+            def __init__(self, c):
+                pass
+
+            def drop_duplicates_index(self):
+                pass
+
+            def deg_analysis(self, a, b, method="DEseq2", alpha=0.05):
+                return fake_deg.copy()
+
+            def foldchange_set(self, **k):
+                pass
 
         fake_ov = SimpleNamespace(bulk=SimpleNamespace(pyDEG=_FakePyDEG))
 
         from analysis.bulk_deg import run_deg_analysis
         import analysis.path_utils as pu
-        with patch.dict("sys.modules", {"omicverse": fake_ov, "omicverse.bulk": fake_ov.bulk}), \
-             patch.object(pu, "BIO_DB_ROOT", tmp_path):
+
+        with (
+            patch.dict("sys.modules", {"omicverse": fake_ov, "omicverse.bulk": fake_ov.bulk}),
+            patch.object(pu, "BIO_DB_ROOT", tmp_path),
+        ):
             aid, _ = run_deg_analysis(
-                "S1", counts_path=cp, coldata_path=dp, comparisons=[("t", "c")],
+                "S1",
+                counts_path=cp,
+                coldata_path=dp,
+                comparisons=[("t", "c")],
             )
 
         # 直接呼叫即應回填 tool_id（不靠 MCP wrapper）

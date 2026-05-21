@@ -7,6 +7,7 @@ MCseg 匯出 CLI
 
 不修改任何現有後端檔案。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 # ── GeoJSON 輪廓提取 ──────────────────────────────────────────────────────────
 
+
 def _masks_to_geojson(
-    masks_dir:     Path,
+    masks_dir: Path,
     pixel_size_um: float = 0.2737,
 ) -> dict:
     """從所有 _mcseg.npy 遮罩提取細胞輪廓，轉為 GeoJSON（µm 座標）。"""
@@ -44,21 +46,22 @@ def _masks_to_geojson(
             # 取最大輪廓
             contour = max(contours, key=len)
             # row,col → x,y (µm)
-            coords = [[float(c[1]) * pixel_size_um, float(c[0]) * pixel_size_um]
-                      for c in contour]
+            coords = [[float(c[1]) * pixel_size_um, float(c[0]) * pixel_size_um] for c in contour]
             if len(coords) < 3:
                 continue
             coords.append(coords[0])  # 閉合多邊形
 
-            features.append({
-                "type": "Feature",
-                "id": cell_global_id,
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [coords],
-                },
-                "properties": {"cell_id": cell_global_id},
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": cell_global_id,
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [coords],
+                    },
+                    "properties": {"cell_id": cell_global_id},
+                }
+            )
             cell_global_id += 1
 
     return {"type": "FeatureCollection", "features": features}
@@ -66,10 +69,11 @@ def _masks_to_geojson(
 
 # ── Xenium Explorer 匯出 ──────────────────────────────────────────────────────
 
+
 def export_xenium(
-    adata:         ad.AnnData,
-    masks_dir:     Path,
-    output_dir:    Path,
+    adata: ad.AnnData,
+    masks_dir: Path,
+    output_dir: Path,
     pixel_size_um: float = 0.2737,
 ) -> Path:
     """
@@ -92,7 +96,7 @@ def export_xenium(
 
     # 2. cell_feature_matrix.zarr（稀疏矩陣）
     zarr_path = output_dir / "cell_feature_matrix.zarr"
-    store     = zarr.open(str(zarr_path), mode="w")
+    store = zarr.open(str(zarr_path), mode="w")
 
     X = adata.X
     if sp.issparse(X):
@@ -100,31 +104,30 @@ def export_xenium(
     else:
         X_csr = sp.csr_matrix(X)
 
-    store.create_dataset("data",    data=X_csr.data,    overwrite=True)
+    store.create_dataset("data", data=X_csr.data, overwrite=True)
     store.create_dataset("indices", data=X_csr.indices, overwrite=True)
-    store.create_dataset("indptr",  data=X_csr.indptr,  overwrite=True)
-    store.attrs["shape"]     = list(X_csr.shape)
-    store.attrs["barcodes"]  = list(adata.obs_names)
-    store.attrs["features"]  = list(adata.var_names)
+    store.create_dataset("indptr", data=X_csr.indptr, overwrite=True)
+    store.attrs["shape"] = list(X_csr.shape)
+    store.attrs["barcodes"] = list(adata.obs_names)
+    store.attrs["features"] = list(adata.var_names)
     store.attrs["pixel_size_um"] = pixel_size_um
     print(f"  zarr：{X_csr.shape} → {zarr_path}")
 
     # 3. experiment.xenium 元數據
     meta = {
-        "cell_count":    int(adata.n_obs),
-        "gene_count":    int(adata.n_vars),
+        "cell_count": int(adata.n_obs),
+        "gene_count": int(adata.n_vars),
         "pixel_size_um": pixel_size_um,
         "software_version": "msseg-skill-1.0",
     }
-    (output_dir / "experiment.xenium").write_text(
-        json.dumps(meta, indent=2), encoding="utf-8"
-    )
+    (output_dir / "experiment.xenium").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     print(f"[OK] Xenium export done: {output_dir}")
     return output_dir
 
 
 # ── h5ad 匯出 ─────────────────────────────────────────────────────────────────
+
 
 def export_h5ad(adata: ad.AnnData, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -136,20 +139,22 @@ def export_h5ad(adata: ad.AnnData, output_dir: Path) -> Path:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="MSseg 匯出工具")
-    parser.add_argument("--input",      required=True, help="輸入 h5ad 路徑")
-    parser.add_argument("--masks-dir",  required=True, help="MCseg 遮罩目錄（含 *_mcseg.npy）")
-    parser.add_argument("--output",     required=True, help="輸出根目錄")
-    parser.add_argument("--format",     default="both",
-                        choices=["xenium", "h5ad", "both"],
-                        help="輸出格式（預設 both）")
-    parser.add_argument("--pixel-size", type=float, default=0.2737,
-                        help="µm/px（預設 0.2737 Visium HD）")
+    parser.add_argument("--input", required=True, help="輸入 h5ad 路徑")
+    parser.add_argument("--masks-dir", required=True, help="MCseg 遮罩目錄（含 *_mcseg.npy）")
+    parser.add_argument("--output", required=True, help="輸出根目錄")
+    parser.add_argument(
+        "--format", default="both", choices=["xenium", "h5ad", "both"], help="輸出格式（預設 both）"
+    )
+    parser.add_argument(
+        "--pixel-size", type=float, default=0.2737, help="µm/px（預設 0.2737 Visium HD）"
+    )
     args = parser.parse_args()
 
-    adata      = ad.read_h5ad(args.input)
-    masks_dir  = Path(args.masks_dir)
+    adata = ad.read_h5ad(args.input)
+    masks_dir = Path(args.masks_dir)
     output_dir = Path(args.output)
 
     if args.format in ("xenium", "both"):

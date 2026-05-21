@@ -10,6 +10,7 @@
       register_tool、去硬編碼、改圖片輸出），故畢業助手只產出「可複製的骨架」交人工審。
     - archive 讀取沙盒限定在 DYNAMIC_CODE_DIR 內，杜絕路徑穿越。
 """
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ from config.settings import (
 
 
 # ── 候選查詢 ─────────────────────────────────────────────────────────────────
+
 
 def list_candidates(
     con,
@@ -74,6 +76,7 @@ def _rows_to_dicts(cur) -> list[dict]:
 
 
 # ── archive 讀取（沙盒）──────────────────────────────────────────────────────
+
 
 def read_archive(con, analysis_id: str) -> dict[str, Any]:
     """讀取某次 dynamic_code 執行的 archive 目錄內容。
@@ -136,6 +139,7 @@ def _read_json(p: Path) -> dict:
 
 
 # ── 骨架生成 ─────────────────────────────────────────────────────────────────
+
 
 def slugify(description: str) -> str:
     """description → Python 識別字安全的 snake_case slug。"""

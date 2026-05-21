@@ -279,5 +279,8 @@ if __name__ == "__main__":
 
     print("\n[history_query] sample_summary crc_official_v4:")
     s = sample_summary("crc_official_v4")
-    print("  sample_info:", {k: v for k, v in s["sample_info"].items() if k in ["sample_id", "data_type", "l2_ready"]})
+    print(
+        "  sample_info:",
+        {k: v for k, v in s["sample_info"].items() if k in ["sample_id", "data_type", "l2_ready"]},
+    )
     print("  analysis_counts:\n", s["analysis_counts"].to_string(index=False))

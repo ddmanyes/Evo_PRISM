@@ -3,6 +3,7 @@ Scanpy 分析一鍵執行器
 QC 過濾 → 標準化 → PCA → UMAP → Leiden 分群
 輸出 results/analysis/cellpose_cells_clustered.h5ad
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,13 +24,13 @@ def _auto_resolution(n_cells: int) -> float:
 
 
 def run_analysis(
-    input_path:  Path | str,
-    output_dir:  Path | str,
-    min_genes:   int   = 150,
-    max_pct_mt:  float = 12.0,
-    min_counts:  int   = 80,
-    resolution:  float | None = None,
-    n_pcs:       int | None = None,
+    input_path: Path | str,
+    output_dir: Path | str,
+    min_genes: int = 150,
+    max_pct_mt: float = 12.0,
+    min_counts: int = 80,
+    resolution: float | None = None,
+    n_pcs: int | None = None,
 ) -> sc.AnnData:
     input_path = Path(input_path)
     output_dir = Path(output_dir)
@@ -45,9 +46,9 @@ def run_analysis(
 
     before = adata.n_obs
     adata = adata[
-        (adata.obs["n_genes_by_counts"] >= min_genes) &
-        (adata.obs["pct_counts_mt"]     <= max_pct_mt) &
-        (adata.obs["total_counts"]      >= min_counts)
+        (adata.obs["n_genes_by_counts"] >= min_genes)
+        & (adata.obs["pct_counts_mt"] <= max_pct_mt)
+        & (adata.obs["total_counts"] >= min_counts)
     ].copy()
     print(f"QC 過濾：{before} → {adata.n_obs} cells (移除 {before - adata.n_obs})")
 
@@ -65,10 +66,10 @@ def run_analysis(
     # PCA
     sc.tl.pca(adata, svd_solver="arpack")
     var_ratio = adata.uns["pca"]["variance_ratio"]
-    cumvar    = np.cumsum(var_ratio)
-    auto_pcs  = int(np.argmax(cumvar >= 0.85)) + 1
-    used_pcs  = n_pcs if n_pcs else max(10, min(auto_pcs, 50))
-    print(f"PCA：使用 {used_pcs} PCs（累積變異 {cumvar[used_pcs-1]:.1%}）")
+    cumvar = np.cumsum(var_ratio)
+    auto_pcs = int(np.argmax(cumvar >= 0.85)) + 1
+    used_pcs = n_pcs if n_pcs else max(10, min(auto_pcs, 50))
+    print(f"PCA：使用 {used_pcs} PCs（累積變異 {cumvar[used_pcs - 1]:.1%}）")
 
     # UMAP + Leiden
     sc.pp.neighbors(adata, n_neighbors=15, n_pcs=used_pcs)
@@ -87,23 +88,23 @@ def run_analysis(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="MSseg Scanpy 分析流程")
-    parser.add_argument("--input",       required=True,        help="輸入 h5ad 路徑")
-    parser.add_argument("--output-dir",  required=True,        help="輸出目錄")
-    parser.add_argument("--min-genes",   type=int,   default=150)
-    parser.add_argument("--max-pct-mt",  type=float, default=12.0)
-    parser.add_argument("--min-counts",  type=int,   default=80)
-    parser.add_argument("--resolution",  type=float, default=None)
-    parser.add_argument("--n-pcs",       type=int,   default=None)
+    parser.add_argument("--input", required=True, help="輸入 h5ad 路徑")
+    parser.add_argument("--output-dir", required=True, help="輸出目錄")
+    parser.add_argument("--min-genes", type=int, default=150)
+    parser.add_argument("--max-pct-mt", type=float, default=12.0)
+    parser.add_argument("--min-counts", type=int, default=80)
+    parser.add_argument("--resolution", type=float, default=None)
+    parser.add_argument("--n-pcs", type=int, default=None)
     args = parser.parse_args()
 
     run_analysis(
-        input_path = args.input,
-        output_dir = args.output_dir,
-        min_genes  = args.min_genes,
-        max_pct_mt = args.max_pct_mt,
-        min_counts = args.min_counts,
-        resolution = args.resolution,
-        n_pcs      = args.n_pcs,
+        input_path=args.input,
+        output_dir=args.output_dir,
+        min_genes=args.min_genes,
+        max_pct_mt=args.max_pct_mt,
+        min_counts=args.min_counts,
+        resolution=args.resolution,
+        n_pcs=args.n_pcs,
     )
 
 

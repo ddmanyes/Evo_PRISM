@@ -59,8 +59,18 @@ def _make_main_db(tmp_path: Path) -> Path:
     """)
     con.execute(
         "INSERT INTO sample_registry VALUES (?,?,?,?,?,?,?,true,false,?,?,?)",
-        ["crc_test", "crc", "visium_hd", "10x", "human", "colon",
-         "/data/crc", "test", "", datetime.now(timezone.utc)],
+        [
+            "crc_test",
+            "crc",
+            "visium_hd",
+            "10x",
+            "human",
+            "colon",
+            "/data/crc",
+            "test",
+            "",
+            datetime.now(timezone.utc),
+        ],
     )
     analysis_id = str(uuid.uuid4())
     con.execute(
@@ -68,10 +78,18 @@ def _make_main_db(tmp_path: Path) -> Path:
                (analysis_id,sample_id,analysis_type,parameters,status,
                 result_path,requested_by,started_at,completed_at,summary)
            VALUES (?,?,?,?,?,?,?,?,?,?)""",
-        [analysis_id, "crc_test", "spatial_eda", "{}", "completed",
-         "/results/eda.md", "test",
-         datetime.now(timezone.utc), datetime.now(timezone.utc),
-         "CRC EDA 摘要"],
+        [
+            analysis_id,
+            "crc_test",
+            "spatial_eda",
+            "{}",
+            "completed",
+            "/results/eda.md",
+            "test",
+            datetime.now(timezone.utc),
+            datetime.now(timezone.utc),
+            "CRC EDA 摘要",
+        ],
     )
     con.close()
     return db_path
@@ -90,46 +108,54 @@ def main_db(tmp_path: Path):
 class TestIsSafe:
     def test_safe_pandas(self):
         from server.code_executor import is_safe
+
         ok, reason = is_safe("import pandas as pd\nprint(pd.__version__)")
         assert ok
         assert reason == ""
 
     def test_safe_numpy(self):
         from server.code_executor import is_safe
+
         ok, _ = is_safe("import numpy as np\nprint(np.zeros(3))")
         assert ok
 
     def test_blocked_os_system(self):
         from server.code_executor import is_safe
+
         ok, reason = is_safe("import os; os.system('ls')")
         assert not ok
         assert "os.system" in reason
 
     def test_blocked_subprocess(self):
         from server.code_executor import is_safe
+
         ok, reason = is_safe("import subprocess\nsubprocess.run(['ls'])")
         assert not ok
         assert "subprocess" in reason
 
     def test_blocked_eval(self):
         from server.code_executor import is_safe
+
         ok, reason = is_safe("eval('1+1')")
         assert not ok
         assert "eval(" in reason
 
     def test_blocked_open(self):
         from server.code_executor import is_safe
+
         ok, reason = is_safe("f = open('/etc/passwd')")
         assert not ok
         assert "open(" in reason
 
     def test_blocked_requests(self):
         from server.code_executor import is_safe
+
         ok, reason = is_safe("import requests\nrequests.get('http://x.com')")
         assert not ok
 
     def test_disallowed_import(self):
         from server.code_executor import is_safe
+
         ok, reason = is_safe("import flask")
         assert not ok
         assert "flask" in reason
@@ -137,11 +163,13 @@ class TestIsSafe:
     def test_syntax_error_raises_security_error(self):
         """語法錯誤的程式碼應被拒絕執行（不放行）。"""
         from server.code_executor import is_safe, SecurityError
+
         with pytest.raises(SecurityError, match="語法錯誤"):
             is_safe("def foo(:\n    pass")
 
     def test_allowed_stdlib(self):
         from server.code_executor import is_safe
+
         ok, _ = is_safe("import math\nprint(math.pi)")
         assert ok
 
@@ -149,6 +177,7 @@ class TestIsSafe:
 class TestSandboxExec:
     def test_successful_execution(self):
         from server.code_executor import sandbox_exec
+
         result = sandbox_exec("print('hello hermes')", timeout=10)
         assert result.success
         assert "hello hermes" in result.output
@@ -156,25 +185,27 @@ class TestSandboxExec:
 
     def test_import_numpy(self):
         from server.code_executor import sandbox_exec
-        result = sandbox_exec(
-            "import numpy as np\nprint(np.arange(3).tolist())", timeout=10
-        )
+
+        result = sandbox_exec("import numpy as np\nprint(np.arange(3).tolist())", timeout=10)
         assert result.success
         assert "[0, 1, 2]" in result.output
 
     def test_runtime_error(self):
         from server.code_executor import sandbox_exec
+
         result = sandbox_exec("raise ValueError('boom')", timeout=10)
         assert not result.success
         assert "ValueError" in result.traceback
 
     def test_security_error_raised(self):
         from server.code_executor import sandbox_exec, SecurityError
+
         with pytest.raises(SecurityError):
             sandbox_exec("import os; os.system('ls')", timeout=5)
 
     def test_timeout(self):
         from server.code_executor import sandbox_exec
+
         # time.sleep via a while loop (no import needed) triggers timeout
         result = sandbox_exec("while True: pass", timeout=2)
         assert not result.success
@@ -189,25 +220,34 @@ class TestSandboxExec:
 class TestExecuteToolDispatch:
     def test_safe_code_success(self):
         from server.agent import execute_tool
-        result = execute_tool("bio_execute_code", {
-            "code": "print('agent exec ok')",
-            "description": "smoke test",
-            "timeout": 10,
-        })
+
+        result = execute_tool(
+            "bio_execute_code",
+            {
+                "code": "print('agent exec ok')",
+                "description": "smoke test",
+                "timeout": 10,
+            },
+        )
         assert "執行成功" in result
         assert "agent exec ok" in result
 
     def test_blocked_code_returns_security_error(self):
         from server.agent import execute_tool
-        result = execute_tool("bio_execute_code", {
-            "code": "import os; os.system('ls')",
-            "description": "bad code",
-            "timeout": 5,
-        })
+
+        result = execute_tool(
+            "bio_execute_code",
+            {
+                "code": "import os; os.system('ls')",
+                "description": "bad code",
+                "timeout": 5,
+            },
+        )
         assert "SecurityError" in result
 
     def test_unknown_tool_returns_error(self):
         from server.agent import execute_tool
+
         result = execute_tool("bio_nonexistent_tool", {})
         assert "未知工具" in result or "Error" in result
 
@@ -226,7 +266,9 @@ class TestExecuteToolDispatch:
                 ).fetchone()
             if row:
                 return f"exists: true\nanalysis_id: {row[0]}"
-            return f"exists: false\n{args['sample_id']!r} × {args['analysis_type']!r} 尚無完成存檔。"
+            return (
+                f"exists: false\n{args['sample_id']!r} × {args['analysis_type']!r} 尚無完成存檔。"
+            )
 
         with patch.dict(ag._TOOL_HANDLERS, {"bio_history_check": _handler}):
             result = ag.execute_tool(
@@ -247,7 +289,11 @@ class TestExecuteToolDispatch:
                        LIMIT 1""",
                     [args["sample_id"], args["analysis_type"]],
                 ).fetchone()
-            return "exists: true" if row else f"exists: false\n{args['sample_id']!r} × {args['analysis_type']!r} 尚無完成存檔。"
+            return (
+                "exists: true"
+                if row
+                else f"exists: false\n{args['sample_id']!r} × {args['analysis_type']!r} 尚無完成存檔。"
+            )
 
         with patch.dict(ag._TOOL_HANDLERS, {"bio_history_check": _handler}):
             result = ag.execute_tool(
@@ -263,28 +309,40 @@ class TestExecuteToolDispatch:
 
         def _handler(args):
             with _ddb.connect(str(main_db)) as con:
-                if con.execute("SELECT 1 FROM sample_registry WHERE sample_id=?",
-                               [args["sample_id"]]).fetchone():
+                if con.execute(
+                    "SELECT 1 FROM sample_registry WHERE sample_id=?", [args["sample_id"]]
+                ).fetchone():
                     return f"樣本 {args['sample_id']!r} 已存在，跳過。"
                 con.execute(
                     """INSERT INTO sample_registry
                        (sample_id,project,data_type,platform,species,tissue,
                         l3_path,l2_ready,analysis_done,added_by,notes,last_updated)
                        VALUES (?,?,?,?,?,?,?,false,false,?,?,?)""",
-                    [args["sample_id"], args.get("project", ""), args["data_type"],
-                     args.get("platform", ""), args.get("species", "human"),
-                     args.get("tissue", ""), args["l3_path"],
-                     "agent", args.get("notes", ""), datetime.now(timezone.utc)],
+                    [
+                        args["sample_id"],
+                        args.get("project", ""),
+                        args["data_type"],
+                        args.get("platform", ""),
+                        args.get("species", "human"),
+                        args.get("tissue", ""),
+                        args["l3_path"],
+                        "agent",
+                        args.get("notes", ""),
+                        datetime.now(timezone.utc),
+                    ],
                 )
                 con.execute("CHECKPOINT")
             return f"樣本 {args['sample_id']!r} 已登記。data_type={args['data_type']!r}"
 
         with patch.dict(ag._TOOL_HANDLERS, {"bio_register_sample": _handler}):
-            result = ag.execute_tool("bio_register_sample", {
-                "sample_id": "new_sample_01",
-                "data_type": "bulk_rnaseq",
-                "l3_path": "/data/new",
-            })
+            result = ag.execute_tool(
+                "bio_register_sample",
+                {
+                    "sample_id": "new_sample_01",
+                    "data_type": "bulk_rnaseq",
+                    "l3_path": "/data/new",
+                },
+            )
         assert "已登記" in result
 
     def test_bio_register_sample_duplicate(self, main_db):
@@ -293,16 +351,20 @@ class TestExecuteToolDispatch:
 
         def _handler(args):
             with _ddb.connect(str(main_db), read_only=True) as con:
-                exists = con.execute("SELECT 1 FROM sample_registry WHERE sample_id=?",
-                                     [args["sample_id"]]).fetchone()
+                exists = con.execute(
+                    "SELECT 1 FROM sample_registry WHERE sample_id=?", [args["sample_id"]]
+                ).fetchone()
             return f"樣本 {args['sample_id']!r} 已存在，跳過。" if exists else "已登記"
 
         with patch.dict(ag._TOOL_HANDLERS, {"bio_register_sample": _handler}):
-            result = ag.execute_tool("bio_register_sample", {
-                "sample_id": "crc_test",
-                "data_type": "visium_hd",
-                "l3_path": "/data/crc",
-            })
+            result = ag.execute_tool(
+                "bio_register_sample",
+                {
+                    "sample_id": "crc_test",
+                    "data_type": "visium_hd",
+                    "l3_path": "/data/crc",
+                },
+            )
         assert "已存在" in result
 
 
@@ -348,9 +410,7 @@ class TestHandleMessage:
         from server.agent import handle_message
         import server.agent as ag
 
-        mock_client = self._mock_local_client(
-            _make_openai_text_response("你好，我是 Hermes。")
-        )
+        mock_client = self._mock_local_client(_make_openai_text_response("你好，我是 Hermes。"))
         with patch.object(ag, "_local_client", mock_client):
             result = handle_message("你好", backend="local")
 
@@ -365,8 +425,9 @@ class TestHandleMessage:
         import server.agent as ag
 
         mock_client = self._mock_local_client(
-            _make_openai_tool_response("bio_execute_code",
-                                       {"code": "print('42')", "description": "test"}),
+            _make_openai_tool_response(
+                "bio_execute_code", {"code": "print('42')", "description": "test"}
+            ),
             _make_openai_text_response("程式碼執行完成，輸出為 42。"),
         )
         with patch.object(ag, "_local_client", mock_client):
@@ -415,6 +476,7 @@ class TestHandleMessage:
 
     def test_agent_response_total_tokens(self):
         from server.agent import AgentResponse
+
         r = AgentResponse(text="ok", tool_calls=[], input_tokens=5, output_tokens=10)
         assert r.total_tokens == 15
 
@@ -480,17 +542,22 @@ class TestDynamicCodeArchive:
         import json as _json
         from server.agent import execute_tool
 
-        result = execute_tool("bio_execute_code", {
-            "code": "print('archived ok')\nx = 1 + 2\nprint(x)",
-            "description": "archive smoke",
-            "timeout": 10,
-        })
+        result = execute_tool(
+            "bio_execute_code",
+            {
+                "code": "print('archived ok')\nx = 1 + 2\nprint(x)",
+                "description": "archive smoke",
+                "timeout": 10,
+            },
+        )
 
         assert "執行成功" in result
         rel = self._parse_rel(result, "歸檔：")
         archive_dir = isolated_archive.root / rel
         assert archive_dir.is_relative_to(isolated_archive.archive)
-        assert (archive_dir / "code.py").read_text(encoding="utf-8").startswith("print('archived ok')")
+        assert (
+            (archive_dir / "code.py").read_text(encoding="utf-8").startswith("print('archived ok')")
+        )
         assert "archived ok" in (archive_dir / "output.txt").read_text(encoding="utf-8")
         meta = _json.loads((archive_dir / "meta.json").read_text(encoding="utf-8"))
         assert meta["status"] == "completed"
@@ -502,11 +569,14 @@ class TestDynamicCodeArchive:
         import duckdb as _ddb
         from server.agent import execute_tool
 
-        result = execute_tool("bio_execute_code", {
-            "code": "raise ValueError('boom-archive-test')",
-            "description": "fail smoke",
-            "timeout": 10,
-        })
+        result = execute_tool(
+            "bio_execute_code",
+            {
+                "code": "raise ValueError('boom-archive-test')",
+                "description": "fail smoke",
+                "timeout": 10,
+            },
+        )
         assert "執行失敗" in result
         rel = self._parse_rel(result, "歸檔（含 traceback）：")
         archive_dir = isolated_archive.root / rel
@@ -530,11 +600,14 @@ class TestDynamicCodeArchive:
         import json as _json
         from server.agent import execute_tool
 
-        result = execute_tool("bio_execute_code", {
-            "code": "import os; os.system('ls')",
-            "description": "blocked",
-            "timeout": 5,
-        })
+        result = execute_tool(
+            "bio_execute_code",
+            {
+                "code": "import os; os.system('ls')",
+                "description": "blocked",
+                "timeout": 5,
+            },
+        )
         assert "SecurityError" in result
         rel = self._parse_rel(result, "歸檔：")
         archive_dir = isolated_archive.root / rel

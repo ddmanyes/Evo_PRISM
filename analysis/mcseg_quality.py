@@ -16,6 +16,7 @@
     size_distribution_plot()   — 多遮罩細胞面積分布直方圖
     generate_mcseg_qc_report() — 掃 qc_dir 內所有 ROI，彙整報告 + 寫 analysis_history
 """
+
 from __future__ import annotations
 
 import json
@@ -61,14 +62,13 @@ def cell_metrics(mask: np.ndarray) -> dict[str, float]:
     labels = mask[mask > 0]
     n_cells = int(mask.max())
     if labels.size == 0 or n_cells == 0:
-        return {"n_cells": 0, "mean_area": 0.0, "median_area": 0.0,
-                "foreground_frac": 0.0}
+        return {"n_cells": 0, "mean_area": 0.0, "median_area": 0.0, "foreground_frac": 0.0}
     areas = np.bincount(labels.ravel())[1:]  # 跳過背景 0
     areas = areas[areas > 0]
     return {
-        "n_cells":         n_cells,
-        "mean_area":       float(np.mean(areas)),
-        "median_area":     float(np.median(areas)),
+        "n_cells": n_cells,
+        "mean_area": float(np.mean(areas)),
+        "median_area": float(np.median(areas)),
         "foreground_frac": float((mask > 0).sum() / mask.size),
     }
 
@@ -87,10 +87,10 @@ def _boundaries(mask: np.ndarray) -> np.ndarray:
     b = np.zeros(mask.shape, dtype=bool)
     diff_v = mask[:-1, :] != mask[1:, :]
     b[:-1, :] |= diff_v
-    b[1:, :]  |= diff_v
+    b[1:, :] |= diff_v
     diff_h = mask[:, :-1] != mask[:, 1:]
     b[:, :-1] |= diff_h
-    b[:, 1:]  |= diff_h
+    b[:, 1:] |= diff_h
     return b
 
 
@@ -209,12 +209,10 @@ def generate_mcseg_qc_report(
         raise FileNotFoundError(f"MCseg QC 目錄不存在：{qc_dir}")
     pairs = discover_roi_pairs(qc_dir)
     if not pairs:
-        raise FileNotFoundError(
-            f"{qc_dir} 下找不到成對的 *_nuc.npy / *_mcseg.npy"
-        )
+        raise FileNotFoundError(f"{qc_dir} 下找不到成對的 *_nuc.npy / *_mcseg.npy")
 
     analysis_id = str(uuid.uuid4())
-    started_at  = datetime.now(timezone.utc)
+    started_at = datetime.now(timezone.utc)
     params_json = json.dumps({"qc_dir": str(qc_dir)})
 
     import duckdb
@@ -238,7 +236,7 @@ def generate_mcseg_qc_report(
         all_mcseg: dict[str, np.ndarray] = {}
 
         for roi, nuc_path, mcseg_path in pairs:
-            nuc   = np.load(nuc_path)
+            nuc = np.load(nuc_path)
             mcseg = np.load(mcseg_path)
             cmp_out = out_dir / f"cmp_{sample_id}_{roi}_{ts}.png"
             comparison_plot(nuc, mcseg, cmp_out, roi_name=roi)
@@ -268,15 +266,15 @@ def generate_mcseg_qc_report(
             f"**樣本**：{sample_id}\n"
             f"**ROI 數**：{len(pairs)}\n"
             f"**MCseg 總細胞數**：{total_cells}\n\n---\n\n"
-            f"## 1. 各 ROI：NUC vs MCseg\n\n" + "\n---\n\n".join(sections) +
-            f"\n\n---\n\n## 2. 細胞面積分布\n{_file_to_b64_md(dist_out, 'size distribution')}\n"
+            f"## 1. 各 ROI：NUC vs MCseg\n\n"
+            + "\n---\n\n".join(sections)
+            + f"\n\n---\n\n## 2. 細胞面積分布\n{_file_to_b64_md(dist_out, 'size distribution')}\n"
             f"\n---\n\n*由 BioAgent analysis/mcseg_quality.py 自動生成*\n"
         )
         report_path = out_dir / f"mcseg_qc_{sample_id}_{ts}.md"
         report_path.write_text(report_text, encoding="utf-8")
 
-        summary = (f"MCseg {sample_id}：{len(pairs)} ROI，"
-                   f"MCseg 共 {total_cells} 細胞。")[:50]
+        summary = (f"MCseg {sample_id}：{len(pairs)} ROI，MCseg 共 {total_cells} 細胞。")[:50]
 
         completed_at = datetime.now(timezone.utc)
         with duckdb.connect(str(DUCKDB_PATH)) as con:
@@ -290,17 +288,26 @@ def generate_mcseg_qc_report(
             # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
             try:
                 from analysis.tool_registry import backfill_tool_id
+
                 backfill_tool_id(con, "bio_run_mcseg_qc", analysis_id)
             except Exception as _exc:
                 logger.warning("mcseg_qc: backfill_tool_id 失敗（非致命）: %s", _exc)
             try:
                 from analysis.artifact_registry import register_artifact
+
                 for path, desc, subtype in artifacts:
                     if path.exists():
-                        register_artifact(con, analysis_id, path, "figure", desc,
-                                          artifact_subtype=subtype)
-                register_artifact(con, analysis_id, report_path, "report",
-                                  "MCseg QC 報告", artifact_subtype="mcseg_report")
+                        register_artifact(
+                            con, analysis_id, path, "figure", desc, artifact_subtype=subtype
+                        )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    report_path,
+                    "report",
+                    "MCseg QC 報告",
+                    artifact_subtype="mcseg_report",
+                )
             except Exception as _exc:
                 logger.warning("mcseg_quality: register_artifact 失敗（非致命）: %s", _exc)
 

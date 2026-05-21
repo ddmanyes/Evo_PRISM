@@ -46,6 +46,7 @@ DEFAULT_HEAD_FRACTION: float = 0.75  # 75% head, 25% tail when truncating
 @dataclass(frozen=True)
 class ReportReadResult:
     """Structured return so callers (MCP tool / Agent) can render predictably."""
+
     path: str
     size_bytes: int
     total_chars: int
@@ -84,13 +85,11 @@ def _validate_path(raw: str | Path, allowed_roots: Iterable[Path]) -> Path:
 
     if not any(_is_within(p, root) for root in allowed_roots):
         raise ReportReadError(
-            f"path outside allowed roots: {p} "
-            f"(allowed: {[str(r) for r in allowed_roots]})"
+            f"path outside allowed roots: {p} (allowed: {[str(r) for r in allowed_roots]})"
         )
     if p.suffix.lower() not in ALLOWED_SUFFIXES:
         raise ReportReadError(
-            f"extension not allowed: {p.suffix} "
-            f"(allowed: {sorted(ALLOWED_SUFFIXES)})"
+            f"extension not allowed: {p.suffix} (allowed: {sorted(ALLOWED_SUFFIXES)})"
         )
     if not p.exists():
         raise ReportReadError(f"file not found: {p}")

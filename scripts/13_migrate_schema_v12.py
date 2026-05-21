@@ -55,9 +55,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         else:
             print("No absolute paths found — already relative or table empty")
 
-        existing = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 12"
-        ).fetchone()
+        existing = con.execute("SELECT 1 FROM schema_migrations WHERE version = 12").fetchone()
         if not existing:
             con.execute(
                 """
@@ -72,9 +70,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         con.execute("CHECKPOINT")
         print("CHECKPOINT OK")
 
-        sample = con.execute(
-            "SELECT file_path FROM analysis_artifacts LIMIT 3"
-        ).fetchall()
+        sample = con.execute("SELECT file_path FROM analysis_artifacts LIMIT 3").fetchall()
         if sample:
             print("\nSample file_path values (should be relative):")
             for r in sample:

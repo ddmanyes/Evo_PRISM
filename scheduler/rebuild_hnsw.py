@@ -68,9 +68,7 @@ def rebuild_hnsw(
                 return {"status": "error", "error": f"Cannot load VSS: {e}"}
 
         try:
-            row_count = con.execute(
-                "SELECT COUNT(*) FROM memory_recent"
-            ).fetchone()[0]
+            row_count = con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0]
 
             if row_count == 0 and not force:
                 print("[rebuild_hnsw] Skipped — memory_recent is empty (use --force to override)")
@@ -142,12 +140,12 @@ def rebuild_artifact_fts(
                 return {"status": "error", "error": f"Cannot load FTS: {exc}"}
 
         try:
-            row_count = con.execute(
-                "SELECT COUNT(*) FROM analysis_artifacts"
-            ).fetchone()[0]
+            row_count = con.execute("SELECT COUNT(*) FROM analysis_artifacts").fetchone()[0]
 
             if row_count == 0 and not force:
-                print("[rebuild_artifact_fts] Skipped — analysis_artifacts is empty (use --force to override)")
+                print(
+                    "[rebuild_artifact_fts] Skipped — analysis_artifacts is empty (use --force to override)"
+                )
                 return {"status": "skipped", "reason": "empty table", "row_count": 0}
 
             print(f"[rebuild_artifact_fts] Rebuilding FTS index ({row_count:,} rows)...")
@@ -223,6 +221,7 @@ def refresh_tool_catalog() -> dict:
     """
     try:
         from analysis.tool_search import index_modules
+
         return index_modules()
     except Exception as exc:  # embedding server 離線等 → 非致命
         return {"status": "error", "error": str(exc)}

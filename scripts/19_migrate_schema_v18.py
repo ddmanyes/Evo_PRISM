@@ -15,6 +15,7 @@ sidecar schema `fts_main_analysis_artifacts` with auxiliary tables.
 
 Idempotent: re-running drops + recreates the FTS index (overwrite=1).
 """
+
 from __future__ import annotations
 
 import sys
@@ -68,15 +69,11 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
                 f"FTS index reported created but schema `{FTS_SCHEMA_NAME}` not found"
             )
 
-        row = con.execute(
-            f"SELECT COUNT(*) FROM {FTS_SCHEMA_NAME}.docs"
-        ).fetchone()
+        row = con.execute(f"SELECT COUNT(*) FROM {FTS_SCHEMA_NAME}.docs").fetchone()
         row_count = row[0] if row else 0
         print(f"FTS indexed rows: {row_count}")
 
-        existing = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 18"
-        ).fetchone()
+        existing = con.execute("SELECT 1 FROM schema_migrations WHERE version = 18").fetchone()
         if not existing:
             con.execute(
                 """

@@ -12,6 +12,7 @@ v_tool_perf_30d
 
 Idempotent: uses DROP TABLE CASCADE and CREATE OR REPLACE VIEW. Safe to re-run.
 """
+
 from __future__ import annotations
 
 import sys
@@ -25,8 +26,7 @@ from config.settings import DUCKDB_PATH
 
 def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
     row = con.execute(
-        "SELECT 1 FROM information_schema.tables "
-        "WHERE table_name = ? AND table_schema = 'main'",
+        "SELECT 1 FROM information_schema.tables WHERE table_name = ? AND table_schema = 'main'",
         [name],
     ).fetchone()
     return row is not None
@@ -34,8 +34,7 @@ def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
 
 def _view_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
     row = con.execute(
-        "SELECT 1 FROM information_schema.views "
-        "WHERE table_name = ? AND table_schema = 'main'",
+        "SELECT 1 FROM information_schema.views WHERE table_name = ? AND table_schema = 'main'",
         [name],
     ).fetchone()
     return row is not None
@@ -107,9 +106,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
             raise RuntimeError("v_tool_perf_30d not created")
 
         # 3. 註冊 migration version 21
-        row = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 21"
-        ).fetchone()
+        row = con.execute("SELECT 1 FROM schema_migrations WHERE version = 21").fetchone()
         if not row:
             con.execute(
                 """

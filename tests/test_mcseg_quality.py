@@ -3,6 +3,7 @@
 無真實分割數據 → 用合成標籤遮罩驗證量化、邊界、繪圖與 ROI 探索。
 generate_mcseg_qc_report 走真實 DUCKDB，僅測「無數據」graceful 路徑。
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -23,6 +24,7 @@ def _synthetic_mask(n_cells: int = 4, size: int = 40) -> np.ndarray:
 
 
 # ── 量化 ──────────────────────────────────────────────────────────────────────
+
 
 def test_cell_metrics_counts():
     mask = _synthetic_mask(n_cells=4)
@@ -55,14 +57,16 @@ def test_boundaries_detects_edges():
 
 # ── 繪圖 ──────────────────────────────────────────────────────────────────────
 
+
 def test_mask_overlay_writes_png(tmp_path):
     out = mq.mask_overlay_plot(_synthetic_mask(), tmp_path / "ov.png", title="t")
     assert out.exists() and out.stat().st_size > 0
 
 
 def test_comparison_plot_writes_png(tmp_path):
-    out = mq.comparison_plot(_synthetic_mask(3), _synthetic_mask(5),
-                             tmp_path / "cmp.png", roi_name="ROI1")
+    out = mq.comparison_plot(
+        _synthetic_mask(3), _synthetic_mask(5), tmp_path / "cmp.png", roi_name="ROI1"
+    )
     assert out.exists() and out.stat().st_size > 0
 
 
@@ -74,6 +78,7 @@ def test_size_distribution_plot_writes_png(tmp_path):
 
 # ── ROI 探索 ──────────────────────────────────────────────────────────────────
 
+
 def test_discover_roi_pairs(tmp_path):
     np.save(tmp_path / "roiA_nuc.npy", _synthetic_mask(3))
     np.save(tmp_path / "roiA_mcseg.npy", _synthetic_mask(4))
@@ -83,6 +88,7 @@ def test_discover_roi_pairs(tmp_path):
 
 
 # ── 報告 graceful 路徑 ────────────────────────────────────────────────────────
+
 
 def test_report_missing_dir_raises(tmp_path):
     with pytest.raises(FileNotFoundError):

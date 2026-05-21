@@ -3,6 +3,7 @@
 涵蓋：slugify / generate_scaffold 純函數、list_candidates 嚴格門檻、
 read_archive 沙盒、graduation_plan 組合，以及 web_app 兩條唯讀 route。
 """
+
 from __future__ import annotations
 
 import json
@@ -14,6 +15,7 @@ import server.graduation as grad
 
 
 # ── 純函數：slugify / generate_scaffold ───────────────────────────────────────
+
 
 @pytest.mark.parametrize(
     "desc,expected",
@@ -56,6 +58,7 @@ def test_generate_scaffold_empty_code_uses_pass():
 
 # ── DB fixture ───────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def con(tmp_path, monkeypatch):
     """最小 analysis_history + tmp 沙盒路徑。"""
@@ -94,19 +97,44 @@ def _insert(c, analysis_id, desc, status, code_lines, result_path, when="now()")
 
 # ── list_candidates 嚴格門檻 ──────────────────────────────────────────────────
 
+
 def test_list_candidates_filters_noise(con):
     # 達標：real analysis ×2 completed, 10 lines
-    _insert(con, "11111111-1111-1111-1111-111111111111", "real analysis", "completed", 10,
-            "results/dynamic_code/r1")
-    _insert(con, "11111111-1111-1111-1111-111111111112", "real analysis", "completed", 12,
-            "results/dynamic_code/r2")
+    _insert(
+        con,
+        "11111111-1111-1111-1111-111111111111",
+        "real analysis",
+        "completed",
+        10,
+        "results/dynamic_code/r1",
+    )
+    _insert(
+        con,
+        "11111111-1111-1111-1111-111111111112",
+        "real analysis",
+        "completed",
+        12,
+        "results/dynamic_code/r2",
+    )
     # 噪音：1 行 → 過濾（即使 completed 3 次）
     for i in range(3):
-        _insert(con, f"22222222-2222-2222-2222-22222222220{i}", "loop", "completed", 1,
-                f"results/dynamic_code/l{i}")
+        _insert(
+            con,
+            f"22222222-2222-2222-2222-22222222220{i}",
+            "loop",
+            "completed",
+            1,
+            f"results/dynamic_code/l{i}",
+        )
     # 只跑 1 次 → 過濾（completed < 2）
-    _insert(con, "33333333-3333-3333-3333-333333333333", "once", "completed", 20,
-            "results/dynamic_code/o1")
+    _insert(
+        con,
+        "33333333-3333-3333-3333-333333333333",
+        "once",
+        "completed",
+        20,
+        "results/dynamic_code/o1",
+    )
 
     cands = grad.list_candidates(con)
     assert len(cands) == 1
@@ -119,10 +147,22 @@ def test_list_candidates_filters_noise(con):
 
 
 def test_list_candidates_threshold_override(con):
-    _insert(con, "44444444-4444-4444-4444-444444444401", "loop", "completed", 1,
-            "results/dynamic_code/l1")
-    _insert(con, "44444444-4444-4444-4444-444444444402", "loop", "completed", 1,
-            "results/dynamic_code/l2")
+    _insert(
+        con,
+        "44444444-4444-4444-4444-444444444401",
+        "loop",
+        "completed",
+        1,
+        "results/dynamic_code/l1",
+    )
+    _insert(
+        con,
+        "44444444-4444-4444-4444-444444444402",
+        "loop",
+        "completed",
+        1,
+        "results/dynamic_code/l2",
+    )
     # 預設 min_code_lines=3 → 過濾
     assert grad.list_candidates(con) == []
     # 放寬到 1 → 命中
@@ -131,6 +171,7 @@ def test_list_candidates_threshold_override(con):
 
 
 # ── read_archive 沙盒 ─────────────────────────────────────────────────────────
+
 
 def _make_archive(con, monkeypatch, *, code="print('archived ok')\nx=1+2\nprint(x)"):
     aid = "55555555-5555-5555-5555-555555555555"
@@ -142,8 +183,7 @@ def _make_archive(con, monkeypatch, *, code="print('archived ok')\nx=1+2\nprint(
         encoding="utf-8",
     )
     (arc / "output.txt").write_text("5\n", encoding="utf-8")
-    _insert(con, aid, "archive smoke", "completed", 3,
-            "results/dynamic_code/2026-05-19_55555555")
+    _insert(con, aid, "archive smoke", "completed", 3, "results/dynamic_code/2026-05-19_55555555")
     return aid
 
 
@@ -164,8 +204,7 @@ def test_read_archive_not_found(con):
 
 def test_read_archive_sandbox_escape(con):
     # result_path 指向沙盒外
-    _insert(con, "66666666-6666-6666-6666-666666666666", "evil", "completed", 5,
-            "/etc/passwd_dir")
+    _insert(con, "66666666-6666-6666-6666-666666666666", "evil", "completed", 5, "/etc/passwd_dir")
     with pytest.raises(ValueError, match="逸出"):
         grad.read_archive(con, "66666666-6666-6666-6666-666666666666")
 
@@ -179,15 +218,27 @@ def test_read_archive_sandbox_sibling_prefix(con):
     sibling = grad.BIO_DB_ROOT / "results" / "dynamic_code_evil" / "x"
     sibling.mkdir(parents=True)
     (sibling / "code.py").write_text("print('pwned')", encoding="utf-8")
-    _insert(con, "88888888-8888-8888-8888-888888888888", "sibling", "completed", 5,
-            "results/dynamic_code_evil/x")
+    _insert(
+        con,
+        "88888888-8888-8888-8888-888888888888",
+        "sibling",
+        "completed",
+        5,
+        "results/dynamic_code_evil/x",
+    )
     with pytest.raises(ValueError, match="逸出"):
         grad.read_archive(con, "88888888-8888-8888-8888-888888888888")
 
 
 def test_read_archive_missing_dir(con):
-    _insert(con, "77777777-7777-7777-7777-777777777777", "gone", "completed", 5,
-            "results/dynamic_code/does_not_exist")
+    _insert(
+        con,
+        "77777777-7777-7777-7777-777777777777",
+        "gone",
+        "completed",
+        5,
+        "results/dynamic_code/does_not_exist",
+    )
     with pytest.raises(ValueError, match="不存在"):
         grad.read_archive(con, "77777777-7777-7777-7777-777777777777")
 
@@ -202,6 +253,7 @@ def test_graduation_plan_combines(con, monkeypatch):
 
 
 # ── web_app 唯讀 route（真實 DB）──────────────────────────────────────────────
+
 
 def test_graduation_candidates_route(web_app_client):
     r = web_app_client.get("/api/dashboard/graduation")

@@ -3,6 +3,7 @@
 策略：在 tmp_path 建一個最小 schema 的 DuckDB，避開真實 DB 路徑依賴；
 覆蓋 overview / dynamic_code / cache / system / helix 與聚合 full_snapshot。
 """
+
 from __future__ import annotations
 
 import duckdb

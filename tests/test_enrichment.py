@@ -4,6 +4,7 @@
   - gseapy.enrichr 需網路,絕不在 CI 跑;monkeypatch 取代為 fake function。
   - gseapy.dotplot 也 monkeypatch,避免畫圖時實際呼叫 gseapy 內部。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,21 +27,26 @@ from analysis.enrichment import (
 @pytest.fixture
 def fake_deg_df() -> pd.DataFrame:
     rng = np.random.default_rng(0)
-    return pd.DataFrame({
-        "log2FC": rng.normal(0, 1.5, size=100),
-        "qvalue": rng.uniform(0, 1, size=100),
-    }, index=[f"GENE_{i:04d}" for i in range(100)])
+    return pd.DataFrame(
+        {
+            "log2FC": rng.normal(0, 1.5, size=100),
+            "qvalue": rng.uniform(0, 1, size=100),
+        },
+        index=[f"GENE_{i:04d}" for i in range(100)],
+    )
 
 
 @pytest.fixture
 def fake_enrichr_res() -> pd.DataFrame:
-    return pd.DataFrame({
-        "Term": [f"Term_{i}" for i in range(8)],
-        "Overlap": ["5/20"] * 8,
-        "P-value": [0.001 * (i + 1) for i in range(8)],
-        "Adjusted P-value": [0.01 * (i + 1) for i in range(8)],
-        "Genes": ["A;B;C"] * 8,
-    })
+    return pd.DataFrame(
+        {
+            "Term": [f"Term_{i}" for i in range(8)],
+            "Overlap": ["5/20"] * 8,
+            "P-value": [0.001 * (i + 1) for i in range(8)],
+            "Adjusted P-value": [0.01 * (i + 1) for i in range(8)],
+            "Genes": ["A;B;C"] * 8,
+        }
+    )
 
 
 @pytest.fixture
@@ -56,8 +62,9 @@ def fake_gseapy(fake_enrichr_res):
         ax.plot([0, 1], [0, 1])
         return ax
 
-    fake = SimpleNamespace(enrichr=_fake_enrichr, dotplot=_fake_dotplot,
-                           plot=SimpleNamespace(dotplot=_fake_dotplot))
+    fake = SimpleNamespace(
+        enrichr=_fake_enrichr, dotplot=_fake_dotplot, plot=SimpleNamespace(dotplot=_fake_dotplot)
+    )
     with patch.dict("sys.modules", {"gseapy": fake}):
         yield fake
 
@@ -83,6 +90,7 @@ def isolated_db(tmp_path, monkeypatch):
 
 # ── split_deg_genes ─────────────────────────────────────────────────────────
 
+
 class TestSplitDegGenes:
     def test_splits_up_down(self, fake_deg_df):
         out = split_deg_genes(fake_deg_df, fc_threshold=0.5, pval_threshold=0.5)
@@ -101,6 +109,7 @@ class TestSplitDegGenes:
 
 # ── run_enrichr_single ─────────────────────────────────────────────────────
 
+
 class TestRunEnrichrSingle:
     def test_returns_df(self, fake_gseapy, fake_enrichr_res):
         res = run_enrichr_single(["A", "B"], "GO_Biological_Process_2023")
@@ -116,18 +125,21 @@ class TestRunEnrichrSingle:
 
 # ── run_ora full flow ──────────────────────────────────────────────────────
 
+
 class TestRunOra:
     def test_full_flow(self, tmp_path, fake_deg_df, fake_gseapy, isolated_db):
         deg_path = tmp_path / "DEG_treat_vs_ctrl.csv"
         fake_deg_df.to_csv(deg_path)
 
         import analysis.path_utils as pu
+
         with patch.object(pu, "BIO_DB_ROOT", tmp_path):
             aid, rpath = run_ora(
                 "test_sid",
                 deg_table_path=deg_path,
                 libraries=("GO_BP",),
-                fc_threshold=0.5, pval_threshold=0.5,
+                fc_threshold=0.5,
+                pval_threshold=0.5,
             )
         assert aid and Path(rpath).exists()
         con = duckdb.connect(str(isolated_db), read_only=True)

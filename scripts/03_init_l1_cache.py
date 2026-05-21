@@ -113,18 +113,24 @@ def verify_schema(con: duckdb.DuckDBPyConnection) -> dict:
     cols = {
         r[0]
         for r in con.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'memory_recent'"
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'memory_recent'"
         ).fetchall()
     }
-    required = {"id", "sample_id", "query_text", "report_text", "summary",
-                "embedding", "analysis_id", "created_at", "expires_at"}
+    required = {
+        "id",
+        "sample_id",
+        "query_text",
+        "report_text",
+        "summary",
+        "embedding",
+        "analysis_id",
+        "created_at",
+        "expires_at",
+    }
     result["columns_ok"] = required.issubset(cols)
     result["missing_cols"] = sorted(required - cols)
 
-    result["row_count"] = con.execute(
-        "SELECT COUNT(*) FROM memory_recent"
-    ).fetchone()[0]
+    result["row_count"] = con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0]
 
     # 確認 embedding 維度
     dim_row = con.execute(

@@ -45,8 +45,17 @@ _TOOL_CHANGE_LOG_COLS = (
     "change_reason, changed_at, source_snapshot, changed_lines, churn_ratio"
 )
 _TOOL_CHANGE_LOG_EXPECTED = {
-    "log_id", "tool_name", "old_hash", "new_hash", "new_tool_id", "revision_number",
-    "change_reason", "changed_at", "source_snapshot", "changed_lines", "churn_ratio",
+    "log_id",
+    "tool_name",
+    "old_hash",
+    "new_hash",
+    "new_tool_id",
+    "revision_number",
+    "change_reason",
+    "changed_at",
+    "source_snapshot",
+    "changed_lines",
+    "churn_ratio",
 }
 
 _TOOL_DEPENDENCIES_NEW = """
@@ -118,10 +127,20 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         con.execute("SET hnsw_enable_experimental_persistence = true")
 
         print("移除 tools(tool_id) 硬性 FK（改軟引用）：")
-        _rebuild(con, "tool_change_log", _TOOL_CHANGE_LOG_NEW,
-                 _TOOL_CHANGE_LOG_COLS, _TOOL_CHANGE_LOG_EXPECTED)
-        _rebuild(con, "tool_dependencies", _TOOL_DEPENDENCIES_NEW,
-                 _TOOL_DEPENDENCIES_COLS, _TOOL_DEPENDENCIES_EXPECTED)
+        _rebuild(
+            con,
+            "tool_change_log",
+            _TOOL_CHANGE_LOG_NEW,
+            _TOOL_CHANGE_LOG_COLS,
+            _TOOL_CHANGE_LOG_EXPECTED,
+        )
+        _rebuild(
+            con,
+            "tool_dependencies",
+            _TOOL_DEPENDENCIES_NEW,
+            _TOOL_DEPENDENCIES_COLS,
+            _TOOL_DEPENDENCIES_EXPECTED,
+        )
 
         con.execute("CHECKPOINT")
         print("CHECKPOINT OK")

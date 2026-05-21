@@ -1,4 +1,5 @@
 """Tests for analysis/bulk_heatmap.py — DEG / top variable heatmaps。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,10 +31,13 @@ def synthetic_counts() -> pd.DataFrame:
 @pytest.fixture
 def fake_deg_table(tmp_path) -> Path:
     rng = np.random.default_rng(0)
-    df = pd.DataFrame({
-        "log2FC": rng.normal(0, 2, size=80),
-        "qvalue": rng.uniform(0, 1, size=80),
-    }, index=[f"G{i:03d}" for i in range(80)])
+    df = pd.DataFrame(
+        {
+            "log2FC": rng.normal(0, 2, size=80),
+            "qvalue": rng.uniform(0, 1, size=80),
+        },
+        index=[f"G{i:03d}" for i in range(80)],
+    )
     p = tmp_path / "DEG_a_vs_b.csv"
     df.to_csv(p)
     return p
@@ -60,6 +64,7 @@ def isolated_db(tmp_path, monkeypatch):
 
 # ── deg_heatmap / top_var_heatmap pure plotting ─────────────────────────────
 
+
 class TestDegHeatmap:
     def test_produces_png(self, tmp_path, synthetic_counts):
         sig = [f"G{i:03d}" for i in range(15)]
@@ -68,14 +73,14 @@ class TestDegHeatmap:
         assert result == out and out.exists() and out.stat().st_size > 1000
 
     def test_no_overlap_returns_none(self, tmp_path, synthetic_counts):
-        assert deg_heatmap(
-            synthetic_counts, ["nope1", "nope2"], output_path=tmp_path / "h.png"
-        ) is None
+        assert (
+            deg_heatmap(synthetic_counts, ["nope1", "nope2"], output_path=tmp_path / "h.png")
+            is None
+        )
 
     def test_normalize_false_still_runs(self, tmp_path, synthetic_counts):
         out = tmp_path / "h.png"
-        deg_heatmap(synthetic_counts, ["G000", "G001", "G002"],
-                    output_path=out, normalize=False)
+        deg_heatmap(synthetic_counts, ["G000", "G001", "G002"], output_path=out, normalize=False)
         assert out.exists()
 
 
@@ -86,24 +91,27 @@ class TestTopVarHeatmap:
         assert result == out and out.exists()
 
     def test_empty_returns_none(self, tmp_path):
-        assert top_var_heatmap(
-            pd.DataFrame(), output_path=tmp_path / "x.png"
-        ) is None
+        assert top_var_heatmap(pd.DataFrame(), output_path=tmp_path / "x.png") is None
 
 
 # ── collect_sig_genes ──────────────────────────────────────────────────────
+
 
 class TestCollectSigGenes:
     def test_unions_across_tables(self, tmp_path):
         for tag, seed in [("a", 1), ("b", 2)]:
             rng = np.random.default_rng(seed)
-            pd.DataFrame({
-                "log2FC": rng.normal(0, 2, 30),
-                "qvalue": rng.uniform(0, 0.1, 30),  # 全顯著
-            }, index=[f"{tag}_G{i}" for i in range(30)]).to_csv(tmp_path / f"DEG_{tag}.csv")
+            pd.DataFrame(
+                {
+                    "log2FC": rng.normal(0, 2, 30),
+                    "qvalue": rng.uniform(0, 0.1, 30),  # 全顯著
+                },
+                index=[f"{tag}_G{i}" for i in range(30)],
+            ).to_csv(tmp_path / f"DEG_{tag}.csv")
         sig = collect_sig_genes(
             [tmp_path / "DEG_a.csv", tmp_path / "DEG_b.csv"],
-            fc_threshold=0.0, pval_threshold=0.5,
+            fc_threshold=0.0,
+            pval_threshold=0.5,
         )
         # 同種子下大部分基因應顯著;至少跨兩表 union > 30
         assert len(sig) > 30
@@ -114,19 +122,22 @@ class TestCollectSigGenes:
 
 # ── run_bulk_heatmaps full flow ─────────────────────────────────────────────
 
+
 class TestRunBulkHeatmaps:
     def test_full_flow(self, tmp_path, synthetic_counts, fake_deg_table, isolated_db):
         cp = tmp_path / "counts.csv"
         synthetic_counts.to_csv(cp)
 
         import analysis.path_utils as pu
+
         with patch.object(pu, "BIO_DB_ROOT", tmp_path):
             aid, rpath = run_bulk_heatmaps(
                 "test_sid",
                 counts_path=cp,
                 deg_tables=[fake_deg_table],
                 top_n=20,
-                fc_threshold=0.0, pval_threshold=0.5,
+                fc_threshold=0.0,
+                pval_threshold=0.5,
             )
 
         assert aid and Path(rpath).exists()

@@ -2,6 +2,7 @@
 Centralized configuration for BioAgent.
 All file paths and constants are defined here — no hardcoding in scripts.
 """
+
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -12,28 +13,28 @@ load_dotenv()
 BIO_DB_ROOT = Path(os.getenv("BIO_DB_ROOT", Path(__file__).parent.parent))
 
 # ── 資料層路徑 ─────────────────────────────────────────────
-L3_ROOT      = Path(os.getenv("L3_DATA_ROOT",  BIO_DB_ROOT / "crc_visium_data"))
-L2_ROOT      = BIO_DB_ROOT / "silver"
-L1_ROOT      = BIO_DB_ROOT / "gold"
+L3_ROOT = Path(os.getenv("L3_DATA_ROOT", BIO_DB_ROOT / "crc_visium_data"))
+L2_ROOT = BIO_DB_ROOT / "silver"
+L1_ROOT = BIO_DB_ROOT / "gold"
 RESULTS_ROOT = BIO_DB_ROOT / "results_ana"
-DATA_ROOT    = BIO_DB_ROOT / "data_ana"
+DATA_ROOT = BIO_DB_ROOT / "data_ana"
 DYNAMIC_CODE_DIR = BIO_DB_ROOT / "results" / "dynamic_code"
 
 # ── DuckDB ─────────────────────────────────────────────────
-DUCKDB_PATH    = Path(os.getenv("DUCKDB_PATH",   BIO_DB_ROOT / "bio_memory.duckdb"))
-L1_CACHE_PATH  = Path(os.getenv("L1_CACHE_PATH", L1_ROOT / "hermes_cache.duckdb"))
+DUCKDB_PATH = Path(os.getenv("DUCKDB_PATH", BIO_DB_ROOT / "bio_memory.duckdb"))
+L1_CACHE_PATH = Path(os.getenv("L1_CACHE_PATH", L1_ROOT / "hermes_cache.duckdb"))
 
 # ── Embedding ──────────────────────────────────────────────
-EMBEDDING_PROVIDER   = os.getenv("EMBEDDING_PROVIDER", "llamacpp")  # "llamacpp" | "google" | "openai"
-EMBEDDING_MODEL      = os.getenv("EMBEDDING_MODEL", "bge-m3-Q8_0")
-EMBEDDING_DIM        = int(os.getenv("EMBEDDING_DIM", "1024"))
-LLAMACPP_BASE_URL    = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
-LLAMACPP_MODEL_PATH  = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "llamacpp")  # "llamacpp" | "google" | "openai"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "bge-m3-Q8_0")
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
+LLAMACPP_BASE_URL = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
+LLAMACPP_MODEL_PATH = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
 
 # Matryoshka dual-layer index (9D): coarse index uses first MATRYOSHKA_DIM dims
 # bge-m3 supports Matryoshka — truncating to 256 dims retains ~95% recall
-MATRYOSHKA_DIM       = int(os.getenv("MATRYOSHKA_DIM", "256"))
-MATRYOSHKA_ENABLED   = os.getenv("MATRYOSHKA_ENABLED", "false").lower() == "true"
+MATRYOSHKA_DIM = int(os.getenv("MATRYOSHKA_DIM", "256"))
+MATRYOSHKA_ENABLED = os.getenv("MATRYOSHKA_ENABLED", "false").lower() == "true"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── 推理後端 ───────────────────────────────────────────────
@@ -41,10 +42,10 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 # "claude" → Anthropic Claude API（需 ANTHROPIC_API_KEY）
 # "google" → Google Gemini API（需 GOOGLE_API_KEY）
 INFERENCE_BACKEND = os.getenv("INFERENCE_BACKEND", "local")
-CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
-GOOGLE_API_KEY    = os.getenv("GOOGLE_API_KEY", "")
-GOOGLE_MODEL      = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
-OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 
 def validate_inference_backend(backend: str | None = None) -> None:
@@ -66,19 +67,19 @@ def validate_inference_backend(backend: str | None = None) -> None:
         )
     if resolved == "google" and not GOOGLE_API_KEY:
         raise RuntimeError(
-            "INFERENCE_BACKEND=google 但 GOOGLE_API_KEY 未設定。"
-            "請於 .env 或 shell env 補上後重啟。"
+            "INFERENCE_BACKEND=google 但 GOOGLE_API_KEY 未設定。請於 .env 或 shell env 補上後重啟。"
         )
+
 
 # ── L1 快取參數 ────────────────────────────────────────────
 L1_COSINE_THRESHOLD = 0.88
-L1_TTL_DAYS         = 7
+L1_TTL_DAYS = 7
 L1_SUMMARY_MAX_CHARS = 50
 
 # ── 工具語意搜尋（tool discovery）參數 ──────────────────────
 # 門檻刻意比 L1（0.88，近重複才命中）寬鬆——發現要的是「相關工具」而非「同一筆」。
 TOOL_SEARCH_COSINE_THRESHOLD = float(os.getenv("TOOL_SEARCH_COSINE_THRESHOLD", "0.45"))
-TOOL_SEARCH_TOP_N            = int(os.getenv("TOOL_SEARCH_TOP_N", "5"))
+TOOL_SEARCH_TOP_N = int(os.getenv("TOOL_SEARCH_TOP_N", "5"))
 
 # Figure cache（bio_get_figure 索取用；content-addressed，過期後報告重跑會自動重建）
 FIGURE_CACHE_TTL_DAYS = int(os.getenv("FIGURE_CACHE_TTL_DAYS", "14"))
@@ -92,12 +93,16 @@ WEB_APP_BASE_URL = os.getenv("WEB_APP_BASE_URL", "http://localhost:8000").rstrip
 
 # ── 控制面板手動操作（dashboard Phase 2）──────────────────────
 # 手動操作會觸發備份/清理/HELIX 寫入等高權限動作 → 預設關閉，需顯式開啟。
-DASHBOARD_ACTIONS_ENABLED = (
-    os.getenv("DASHBOARD_ACTIONS_ENABLED", "false").lower() in ("true", "1", "yes")
+DASHBOARD_ACTIONS_ENABLED = os.getenv("DASHBOARD_ACTIONS_ENABLED", "false").lower() in (
+    "true",
+    "1",
+    "yes",
 )
 # 即使啟用，預設僅允許 loopback 來源觸發；設 true 才放行遠端（不建議，僅供反向代理場景）。
-DASHBOARD_ACTIONS_ALLOW_REMOTE = (
-    os.getenv("DASHBOARD_ACTIONS_ALLOW_REMOTE", "false").lower() in ("true", "1", "yes")
+DASHBOARD_ACTIONS_ALLOW_REMOTE = os.getenv("DASHBOARD_ACTIONS_ALLOW_REMOTE", "false").lower() in (
+    "true",
+    "1",
+    "yes",
 )
 # 選用：設定後 POST /api/dashboard/action 必須帶 X-Dashboard-Token header 相符（額外一層）。
 DASHBOARD_ACTION_TOKEN = os.getenv("DASHBOARD_ACTION_TOKEN", "")
@@ -105,7 +110,7 @@ DASHBOARD_ACTION_TOKEN = os.getenv("DASHBOARD_ACTION_TOKEN", "")
 # ── 動態程式碼畢業（dashboard Phase 3）─────────────────────────
 # 畢業候選門檻：同 description 的 completed 次數 + 最大 code_lines 須同時達標，
 # 才視為「值得固化成正式 analysis/ 函數」。預設過濾掉 1 行的 smoke/test 噪音。
-GRADUATION_MIN_CODE_LINES    = int(os.getenv("GRADUATION_MIN_CODE_LINES", "3"))
+GRADUATION_MIN_CODE_LINES = int(os.getenv("GRADUATION_MIN_CODE_LINES", "3"))
 GRADUATION_MIN_COMPLETED_RUNS = int(os.getenv("GRADUATION_MIN_COMPLETED_RUNS", "2"))
 
 # ── Visium HD 解析度 ────────────────────────────────────────
@@ -113,20 +118,21 @@ VISIUM_RESOLUTIONS = ["002um", "008um", "016um"]
 DEFAULT_RESOLUTION = "008um"
 
 # ── Telegram（Phase 0）─────────────────────────────────────
-TELEGRAM_BOT_TOKEN       = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_ALLOWED_USER_IDS = [
     int(uid) for uid in os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",") if uid
 ]
 
 # ── HELIX 設定 ─────────────────────────────────────────────
 # 工具 revision_count 達到此值即列入熱區（hot zone）
-HELIX_HOT_THRESHOLD         = int(os.getenv("HELIX_HOT_THRESHOLD", "3"))
+HELIX_HOT_THRESHOLD = int(os.getenv("HELIX_HOT_THRESHOLD", "3"))
 # 穩定化迭代超過此天數未關閉則視為失效（auto_revert 觸發閾值）
-HELIX_STALE_ITERATION_DAYS  = int(os.getenv("HELIX_STALE_ITERATION_DAYS", "30"))
+HELIX_STALE_ITERATION_DAYS = int(os.getenv("HELIX_STALE_ITERATION_DAYS", "30"))
 # diagnosis_img 遺忘曲線：超過此天數後 downsample to 0.5x
 HELIX_SNAPSHOT_DECAY_DAYS_1 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_1", "180"))
 # 超過此天數後 downsample to 0.25x
 HELIX_SNAPSHOT_DECAY_DAYS_2 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_2", "365"))
+
 
 # ── Artifact 路徑工具 ──────────────────────────────────────
 def resolve_artifact_path(rel_path: str) -> Path:
@@ -147,4 +153,4 @@ def resolve_artifact_path(rel_path: str) -> Path:
 
 # ── 開發設定 ───────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-DRY_RUN   = os.getenv("DRY_RUN", "false").lower() == "true"
+DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"

@@ -3,6 +3,7 @@
 讀取 handoff_report.json，對所有 MCseg 遮罩執行 RNA 計數，
 合併後寫入 results/analysis/cellpose_cells.h5ad。
 """
+
 from __future__ import annotations
 
 import gc
@@ -20,15 +21,15 @@ def _find_root(start: Path) -> Path:
     return start
 
 
-ROOT   = _find_root(Path(__file__).resolve().parent)
+ROOT = _find_root(Path(__file__).resolve().parent)
 logger = logging.getLogger(__name__)
 
 
 def build_adata(
     handoff_json: Path | str | None = None,
-    rois_json:    Path | str | None = None,
-    out_path:     Path | str | None = None,
-    dilation_px:  int = 6,
+    rois_json: Path | str | None = None,
+    out_path: Path | str | None = None,
+    dilation_px: int = 6,
 ) -> ad.AnnData:
     from backend.src.cellpose_counter.counter import count_rna_per_cell
 
@@ -39,7 +40,7 @@ def build_adata(
     if out_path is None:
         out_path = ROOT / "results" / "analysis" / "cellpose_cells.h5ad"
 
-    report    = json.loads(Path(handoff_json).read_text(encoding="utf-8"))
+    report = json.loads(Path(handoff_json).read_text(encoding="utf-8"))
     masks_dir = Path(report["masks_dir"])
     binned_dir = Path(report["binned_dir"])
 
@@ -62,12 +63,12 @@ def build_adata(
 
         try:
             a = count_rna_per_cell(
-                adata_path   = adata_path,
-                mask_path    = mask_path,
-                roi_x_px     = roi["x"],
-                roi_y_px     = roi["y"],
-                pixel_size_um= roi.get("pixel_size_um", 0.2737),
-                dilation_px  = dilation_px,
+                adata_path=adata_path,
+                mask_path=mask_path,
+                roi_x_px=roi["x"],
+                roi_y_px=roi["y"],
+                pixel_size_um=roi.get("pixel_size_um", 0.2737),
+                dilation_px=dilation_px,
             )
         except Exception as e:
             logger.warning(f"跳過 {name}：計數失敗 — {e}")

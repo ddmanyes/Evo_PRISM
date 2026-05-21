@@ -4,6 +4,7 @@
 依 CLAUDE.md《圖片輸出規則》：分析函數回傳的 Markdown 須內嵌 base64 data URI，
 不得回傳本地檔案路徑給呼叫端（MCP 邊界會再行剝離快取，見 figure_cache.py）。
 """
+
 from __future__ import annotations
 
 import base64

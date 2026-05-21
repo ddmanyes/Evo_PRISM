@@ -42,8 +42,7 @@ _INDEXES = [
     ),
     (
         "idx_tools_name_status",
-        "CREATE INDEX IF NOT EXISTS idx_tools_name_status "
-        "ON tools (tool_name, status)",
+        "CREATE INDEX IF NOT EXISTS idx_tools_name_status ON tools (tool_name, status)",
     ),
 ]
 
@@ -88,9 +87,7 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
 
         print(f"\nFK policy: {_FK_POLICY}")
 
-        existing = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 13"
-        ).fetchone()
+        existing = con.execute("SELECT 1 FROM schema_migrations WHERE version = 13").fetchone()
         if not existing:
             con.execute(
                 """

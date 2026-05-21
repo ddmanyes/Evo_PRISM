@@ -1,4 +1,5 @@
 """figure_cache：base64 剝除 + 按需索取的單元測試。"""
+
 import base64
 
 import pytest
@@ -21,9 +22,7 @@ def _isolate_cache(tmp_path, monkeypatch):
 
 
 def _report_with_img(n: int = 1) -> str:
-    imgs = "".join(
-        f"\n![fig {i}](data:image/png;base64,{_PNG_B64})\n" for i in range(n)
-    )
+    imgs = "".join(f"\n![fig {i}](data:image/png;base64,{_PNG_B64})\n" for i in range(n))
     return f"# 報告\n摘要文字。\n{imgs}\n結論文字。"
 
 
@@ -100,6 +99,7 @@ def test_cache_is_idempotent():
 
 # ── prune_stale_figures ────────────────────────────────────────────────────
 
+
 def test_prune_removes_only_stale():
     import os
     import time
@@ -110,9 +110,7 @@ def test_prune_removes_only_stale():
     old = time.time() - 20 * 86400
     os.utime(stale, (old, old))
 
-    fresh_id = fc.cache_figure(
-        base64.b64encode(b"\x89PNG\r\nfresh").decode(), "png"
-    )
+    fresh_id = fc.cache_figure(base64.b64encode(b"\x89PNG\r\nfresh").decode(), "png")
 
     deleted, freed = fc.prune_stale_figures(ttl_days=14)
     assert deleted == 1 and freed > 0
