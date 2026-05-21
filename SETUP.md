@@ -1,6 +1,8 @@
-# 智慧生資分析平台 — 環境建置指南
+# Bio_PRISM — 環境建置指南 / Setup Guide
 
-本文件說明如何在新機器上從零開始建置「智慧生資分析平台」執行環境。
+本文件說明如何在新機器上從零開始建置 Bio_PRISM 執行環境。
+
+*This guide walks you through setting up Bio_PRISM on a new machine from scratch.*
 
 ---
 
@@ -8,7 +10,7 @@
 
 | 項目 | 版本 / 說明 |
 | ---- | ----------- |
-| Python | 3.11 以上 |
+| Python | 3.10 以上（建議 3.11+）|
 | [uv](https://github.com/astral-sh/uv) | 套件管理工具 |
 | llama.cpp | 已編譯的 `llama-server` 執行檔 |
 | bge-m3-Q8_0.gguf | 605 MB，本機 embedding 模型 |
