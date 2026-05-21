@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS tools (
 
 _TOOL_DEPENDENCIES_DDL = """
 CREATE TABLE IF NOT EXISTS tool_dependencies (
-    tool_id      UUID REFERENCES tools(tool_id),
-    depends_on   UUID REFERENCES tools(tool_id),
+    tool_id      UUID,              -- 軟引用：刻意不加 REFERENCES tools(tool_id)，見 migration v20
+    depends_on   UUID,              -- 軟引用：同上（DuckDB FK 會擋死 tools UPDATE/DELETE）
     PRIMARY KEY (tool_id, depends_on)
 )
 """

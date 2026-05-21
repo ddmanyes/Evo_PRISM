@@ -24,14 +24,14 @@ import matplotlib.pyplot as plt
 
 matplotlib.use("Agg")  # 無 display 環境
 
-import base64
-import io
 import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import BIO_DB_ROOT, L2_ROOT, DUCKDB_PATH
+from config.settings import L2_ROOT, DUCKDB_PATH
 from config.db_utils import safe_write
+from analysis.viz_utils import fig_to_b64_md as _fig_to_b64_md
+from analysis.path_utils import results_dir as _results_dir
 
 logger = logging.getLogger(__name__)
 
@@ -63,23 +63,6 @@ def _l2_obs_path(sample_id: str) -> str:
     if not p.is_relative_to(L2_ROOT.resolve()):
         raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
     return str(p)
-
-
-def _results_dir(sample_id: str, analysis_type: str) -> Path:
-    d = (BIO_DB_ROOT / "results" / sample_id / analysis_type).resolve()
-    if not d.is_relative_to(BIO_DB_ROOT.resolve()):
-        raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _fig_to_b64_md(fig, alt: str = "figure") -> str:
-    """將 matplotlib Figure 轉為 Markdown inline base64 字串。"""
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    buf.seek(0)
-    b64 = base64.b64encode(buf.read()).decode()
-    return f"\n![{alt}](data:image/png;base64,{b64})\n"
 
 
 def _record_analysis(

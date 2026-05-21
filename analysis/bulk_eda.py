@@ -31,6 +31,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BIO_DB_ROOT, DUCKDB_PATH
 from config.db_utils import safe_write
+from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
+from analysis.path_utils import results_dir
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +158,60 @@ def pca_plot(
     return out
 
 
+def qc_barplot(
+    qc: pd.DataFrame,
+    output_path: Optional[Path] = None,
+) -> Path:
+    """每樣本 library size 與偵測基因數雙 barplot，儲存圖檔並回傳路徑。"""
+    samples = qc.index.tolist()
+    fig, axes = plt.subplots(1, 2, figsize=(max(8, len(samples) * 0.6), 5))
+
+    axes[0].bar(samples, qc["total_counts"], color="#4C72B0")
+    axes[0].set_ylabel("total counts", fontsize=11)
+    axes[0].set_title("Library size", fontsize=12)
+
+    axes[1].bar(samples, qc["n_genes"], color="#55A868")
+    axes[1].set_ylabel("n genes (>0)", fontsize=11)
+    axes[1].set_title("Detected genes", fontsize=12)
+
+    for ax in axes:
+        ax.tick_params(axis="x", labelrotation=90, labelsize=7)
+        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+    fig.tight_layout()
+
+    out = output_path or (REPORTS_DIR / f"qc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    logger.info("QC barplot 儲存至 %s", out)
+    return out
+
+
+def correlation_heatmap(
+    corr: pd.DataFrame,
+    output_path: Optional[Path] = None,
+) -> Path:
+    """樣本間相關矩陣 heatmap，儲存圖檔並回傳路徑。"""
+    n = corr.shape[0]
+    fig, ax = plt.subplots(figsize=(max(6, n * 0.5), max(5, n * 0.5)))
+    im = ax.imshow(corr.values, cmap="viridis", vmin=corr.values.min(), vmax=1.0)
+
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(corr.columns, rotation=90, fontsize=7)
+    ax.set_yticklabels(corr.index, fontsize=7)
+    ax.set_title("Sample correlation (Pearson, log1p)", fontsize=12)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.tight_layout()
+
+    out = output_path or (REPORTS_DIR / f"corr_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    logger.info("相關矩陣 heatmap 儲存至 %s", out)
+    return out
+
+
 # ── 報告生成 ──────────────────────────────────────────────────────────────────
 
 _REPORT_TEMPLATE = """\
@@ -171,6 +227,7 @@ _REPORT_TEMPLATE = """\
 ## 1. QC 統計
 
 {qc_table}
+{qc_fig}
 
 ---
 
@@ -183,12 +240,12 @@ _REPORT_TEMPLATE = """\
 ## 3. 樣本相關矩陣（Pearson, log1p）
 
 {corr_table}
+{corr_fig}
 
 ---
 
 ## 4. PCA 圖
-
-![PCA]({pca_path})
+{pca_fig}
 
 ---
 
@@ -227,18 +284,28 @@ def generate_bulk_report(
         top    = top_genes(counts, n=20)
         corr   = sample_correlation(counts)
 
-        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        out_dir = results_dir(sample_id, "bulk_eda")
         ts      = started_at.strftime("%Y%m%d_%H%M%S")
-        pca_out = REPORTS_DIR / f"pca_{sample_id}_{ts}.png"
 
-        try:
-            import base64 as _b64
-            pca_file = pca_plot(counts, output_path=pca_out)
-            pca_b64  = _b64.b64encode(pca_file.read_bytes()).decode()
-            pca_path = f"data:image/png;base64,{pca_b64}"
-        except Exception:
-            logger.warning("PCA 生成失敗（可能缺 scikit-learn），跳過", exc_info=True)
-            pca_path = "(PCA 圖生成失敗)"
+        # 系列圖：QC barplot、相關矩陣 heatmap、PCA。任一失敗不致命，記警告續行。
+        qc_out   = out_dir / f"qc_{sample_id}_{ts}.png"
+        corr_out = out_dir / f"corr_{sample_id}_{ts}.png"
+        pca_out  = out_dir / f"pca_{sample_id}_{ts}.png"
+
+        def _safe_fig(plot_fn, out_path: Path, alt: str) -> tuple[Optional[Path], str]:
+            try:
+                f = plot_fn(out_path)
+                return f, _file_to_b64_md(f, alt)
+            except Exception:
+                logger.warning("%s 生成失敗，跳過", alt, exc_info=True)
+                return None, f"\n（{alt} 生成失敗）\n"
+
+        qc_file,   qc_fig   = _safe_fig(lambda p: qc_barplot(qc, output_path=p),
+                                        qc_out, "QC barplot")
+        corr_file, corr_fig = _safe_fig(lambda p: correlation_heatmap(corr, output_path=p),
+                                        corr_out, "Sample correlation heatmap")
+        pca_file,  pca_fig  = _safe_fig(lambda p: pca_plot(counts, output_path=p),
+                                        pca_out, "PCA")
 
         report_text = _REPORT_TEMPLATE.format(
             timestamp=started_at.isoformat(),
@@ -246,13 +313,15 @@ def generate_bulk_report(
             n_samples=counts.shape[1],
             n_genes=counts.shape[0],
             qc_table=qc.to_markdown(floatfmt=".1f"),
+            qc_fig=qc_fig,
             n_top=20,
             top_table=top.to_markdown(floatfmt=".1f"),
             corr_table=corr.to_markdown(floatfmt=".3f"),
-            pca_path=pca_path,
+            corr_fig=corr_fig,
+            pca_fig=pca_fig,
         )
 
-        report_path = REPORTS_DIR / f"bulk_eda_{sample_id}_{ts}.md"
+        report_path = out_dir / f"bulk_eda_{sample_id}_{ts}.md"
         report_path.write_text(report_text, encoding="utf-8")
         logger.info("報告儲存至 %s", report_path)
 
@@ -275,8 +344,16 @@ def generate_bulk_report(
             )
             try:
                 from analysis.artifact_registry import register_artifact
-                if pca_out.exists():
-                    register_artifact(con, analysis_id, pca_out,
+                if qc_file and qc_file.exists():
+                    register_artifact(con, analysis_id, qc_file,
+                                      "figure", "QC barplot（library size + 偵測基因數）",
+                                      artifact_subtype="qc")
+                if corr_file and corr_file.exists():
+                    register_artifact(con, analysis_id, corr_file,
+                                      "figure", "樣本相關矩陣 heatmap",
+                                      artifact_subtype="correlation")
+                if pca_file and pca_file.exists():
+                    register_artifact(con, analysis_id, pca_file,
                                       "figure", "PCA 主成分分析圖",
                                       artifact_subtype="pca")
                 register_artifact(con, analysis_id, report_path,

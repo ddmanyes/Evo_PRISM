@@ -103,10 +103,13 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     print("Table: tools — OK")
 
     # tool_dependencies — directed dependency graph between tools
+    # 注意：tool_id / depends_on 為「軟引用」UUID，刻意不加 REFERENCES tools(tool_id)。
+    # DuckDB 1.5.2 禁止對「被 FK 引用的表」UPDATE/DELETE，會掐死 register_tool 停用舊版
+    # 與 prune_deprecated 清理；引用完整性由 HELIX 應用層維護（見 migration v20）。
     con.execute("""
         CREATE TABLE IF NOT EXISTS tool_dependencies (
-            tool_id      UUID REFERENCES tools(tool_id),
-            depends_on   UUID REFERENCES tools(tool_id),
+            tool_id      UUID,
+            depends_on   UUID,
             PRIMARY KEY (tool_id, depends_on)
         )
     """)

@@ -216,7 +216,7 @@ class TestReportGenerator:
         # Patch results dir to use tmp_path
         import analysis.report_generator as rg
 
-        monkeypatch.setattr(rg, "_results_dir", lambda sid: tmp_path)
+        monkeypatch.setattr(rg, "_results_dir", lambda sid, atype="report": tmp_path)
 
         from analysis.report_generator import write_report_to_history
 
@@ -246,7 +246,7 @@ class TestReportGenerator:
 
         import analysis.report_generator as rg
 
-        monkeypatch.setattr(rg, "_results_dir", lambda sid: tmp_path)
+        monkeypatch.setattr(rg, "_results_dir", lambda sid, atype="report": tmp_path)
 
         from analysis.report_generator import run_full_eda_report
 

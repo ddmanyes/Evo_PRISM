@@ -27,8 +27,9 @@ import duckdb
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH
+from config.settings import DUCKDB_PATH
 from config.db_utils import safe_write
+from analysis.path_utils import results_dir as _results_dir
 
 logger = logging.getLogger(__name__)
 
@@ -112,12 +113,6 @@ def _l2_expr_glob(sample_id: str) -> str:
 def _l2_obs_path(sample_id: str) -> str:
     from config.settings import L2_ROOT
     return str(L2_ROOT / sample_id / "obs_metadata.parquet")
-
-
-def _results_dir(sample_id: str) -> Path:
-    d = BIO_DB_ROOT / "results" / sample_id / "report"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 def _collect_stats(sample_id: str, db_path: Path) -> dict:
@@ -326,7 +321,7 @@ def write_report_to_history(
 
     result_path = ""
     if save_file:
-        out_dir = _results_dir(sample_id)
+        out_dir = _results_dir(sample_id, "report")
         fname = f"eda_report_{now.strftime('%Y%m%d_%H%M%S')}.md"
         result_path = str(out_dir / fname)
         Path(result_path).write_text(report_text, encoding="utf-8")

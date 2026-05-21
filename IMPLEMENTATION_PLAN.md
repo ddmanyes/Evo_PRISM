@@ -224,4 +224,45 @@ bio_history_search / bio_memory_query / bio_memory_write / bio_register_sample
 
 ---
 
+## Phase 11 — 分析技能說明書層（Analysis Skill Playbooks）
+
+> 規劃於 2026-05-20。動機：兩套分析（bulk / msseg）的方法學被埋死在單體函數內，
+> agent 是「路由器」而非「方法學家」，導致分析不分步、無系列圖；msseg 根本未接進 agent。
+> 解法：引入 Claude SKILL.md 風格的「技能說明書」層 — 每領域一份 playbook，
+> 顯性聲明有序步驟與每步該呼叫的既有 `analysis.*` 函數。混合驅動：先補真圖，再加說明書層。
+
+### [x] 11.1 bulk_eda 系列圖
+
+**目標**：`generate_bulk_report()` 從只出 1 張 PCA → 出完整系列圖
+**新增圖**：library-size barplot、n_genes barplot、相關矩陣 heatmap（目前僅表格）、保留 PCA
+**規範**：每圖 inline base64 嵌入報告（CLAUDE.md《圖片輸出規則》）+ 各自 `register_artifact`
+**HELIX**：升版 → `register_tool(con, "bio_run_bulk_eda", generate_bulk_report, "1.1.0", ...)`
+**驗收**：報告含 ≥4 張 inline base64 圖；`tests/test_bulk_eda.py` 全綠
+
+### [x] 11.2 playbook 格式 + loader
+
+**目標**：`playbooks/<domain>.md`（frontmatter metadata + 方法學正文，有序步驟指向 `analysis.*` 函數）
+**新增**：`analysis/playbook.py` — `list_playbooks()` / `get_playbook(name|data_type)`（pyyaml 解析 frontmatter）
+**驗收**：`tests/test_playbook.py` 解析正確、缺檔/壞 frontmatter 有明確錯誤
+
+### [x] 11.3 撰寫 playbook：bulk_rnaseq / spatial_visium
+
+**目標**：兩份說明書，每步聲明 目的 / 呼叫函數 / 預期圖 / 品質關卡
+**驗收**：loader 可載入；frontmatter `data_type` 對得上 sample_registry
+
+### [x] 11.4 bio_get_playbook 工具 + SYSTEM_PROMPT 方法學段
+
+**目標**：agent 開領域分析前先取說明書、依步驟逐一執行、確保每步出圖
+**改動**：`server/agent.py` 加 `bio_get_playbook(domain|sample_id)` 工具 + system prompt「領域分析方法學」段
+**驗收**：agent 對 bulk 樣本能依 playbook 跑出系列圖
+
+### [x] 11.5 msseg 納入工具箱
+
+**現實限制**：`scripts/msseg/seg_quality.py` 依賴 MSseg 原專案 cellpose+GPU，本機不即時重跑
+**目標**：`analysis/msseg_quality.py` 讀既有 `.npy` 遮罩 + H&E ROI → 系列圖（遮罩疊圖 / NUC vs MCseg 對比 / 細胞數·大小分佈）
+**新增**：`playbooks/msseg.md` + agent 工具 `bio_run_msseg_qc`（寫 analysis_history + register_tool + register_artifact）
+**驗收**：`tests/test_msseg_quality.py` 全綠；agent 可自然語言叫動
+
+---
+
 ## 執行日誌 → execution_trace.md
