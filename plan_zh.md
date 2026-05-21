@@ -1550,38 +1550,42 @@ graph TD
     classDef memory fill:#fef7e0,stroke:#f9ab00,stroke-width:1px;
 
     %% 1. 監測與追蹤
-    subgraph Monitoring["1. 監測與追蹤層 (Observation & Tracking)"]
-        code["分析工具源碼 (.py)"] -->|"SHA256 Content-Hash"| tracker["tool_change_log (版本變更)"]
-        metrics["mcp_tool_metrics (調用指標)"] -->|"30天效能診斷視圖"| v_perf["v_tool_perf_30d"]
-        tracker -->|"修訂次數 revision_count ≥ 3"| hotspot{"熱區偵測 (Hotspot)"}
+    subgraph Monitoring["1. 監測與追蹤層 - Observation & Tracking"]
+        code["分析工具源碼 py"] -->|"SHA256 Content-Hash"| tracker["tool_change_log - 版本變更"]
+        metrics["mcp_tool_metrics - 調用指標"] -->|"30天效能診斷視圖"| v_perf["v_tool_perf_30d"]
+        tracker -->|"修訂次數 revision_count 大於等於 3"| hotspot["熱區偵測 - Hotspot"]
     end
 
     %% 2. 多維度健康度評估
-    subgraph Evaluation["2. 多維度健康評估 (Multi-Dimensional Metrics)"]
-        hotspot --> CC["Radon 循環複雜度 (complexity_before)"]
-        hotspot --> Churn["相對代碼變動率 (Relative Churn)"]
-        hotspot --> Xray["行級變動分析 (Tornhill X-Ray)"]
+    subgraph Evaluation["2. 多維度健康評估 - Multi-Dimensional Metrics"]
+        hotspot --> CC["Radon 循環複雜度 complexity_before"]
+        hotspot --> Churn["相對代碼變動率 Relative Churn"]
+        hotspot --> Xray["行級變動分析 Tornhill X-Ray"]
     end
 
     %% 3. VLM 診斷與穩定化閉環
-    subgraph Loop["3. 穩定化迭代閉環 (Stabilization Loop)"]
-        CC & Churn & Xray -->|"觸發穩定化迭代"| diag["診斷記錄 (Diagnostic Log)"]
-        diag --> plan["行動計畫 (Action Plan)"]
-        plan -->|"Agent 優化改寫"| opt["優化實體工具 (complexity_after)"]
+    subgraph Loop["3. 穩定化迭代閉環 - Stabilization Loop"]
+        CC -->|"觸發穩定化迭代"| diag["診斷記錄 Diagnostic Log"]
+        Churn -->|"觸發穩定化迭代"| diag
+        Xray -->|"觸發穩定化迭代"| diag
+        diag --> plan["行動計畫 Action Plan"]
+        plan -->|"Agent 優化改寫"| opt["優化實體工具 complexity_after"]
     end
 
     %% 4. 雙軌記憶與忘卻機制
-    subgraph Memory["4. 雙軌記憶與忘卻機制 (Evolutionary Memory & Expiration)"]
-        opt -->|"迭代存檔"| png["VLM 視覺快照 (640x640 PNG, ~100 tokens)"]
-        png -->|"艾賓浩斯遺忘曲線"| forget{"時間閘門"}
-        forget -->|"穩定 > 180 天"| p320["漸進式降採樣 (320x320 PNG)"]
-        forget -->|"穩定 > 365 天"| p160["極簡降採樣 (160x160 PNG)"]
+    subgraph Memory["4. 雙軌記憶與忘卻機制 - Evolutionary Memory"]
+        opt -->|"迭代存檔"| png["VLM 視覺快照 640x640 PNG"]
+        png -->|"艾賓浩斯遺忘曲線"| forget["時間閘門"]
+        forget -->|"穩定大於 180 天"| p320["漸進式降採樣 320x320 PNG"]
+        forget -->|"穩定大於 365 天"| p160["極簡降採樣 160x160 PNG"]
         
-        opt -->|"寫入交易"| db_table[("bio_memory.duckdb\ntool_stabilization_log")]
+        opt -->|"寫入交易"| db_table["bio_memory.duckdb - tool_stabilization_log"]
     end
 
     %% 閉環回讀與協同
-    p320 & p160 & png -->|"後續迭代由 VLM 視覺讀回"| diag
+    png -->|"後續迭代由 VLM 視覺讀回"| diag
+    p320 -->|"後續迭代由 VLM 視覺讀回"| diag
+    p160 -->|"後續迭代由 VLM 視覺讀回"| diag
     db_table -.->|"Provenance 溯源鏈"| engram["ENGRAM 產出標記"]
 
     class db_table db;
