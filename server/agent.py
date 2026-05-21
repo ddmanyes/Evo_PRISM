@@ -1804,6 +1804,37 @@ def handle_message(
         if m.get("role") in _HISTORY_ROLES and m.get("role") != "system":
             messages.append(m)
 
+    # ── Fast-Path 攔截 ──────────────────────────────────────────────────────
+    # 簡單唯讀查詢（最近 N 筆/時間軸/樣本列表）直接呼叫工具，跳過 LLM。
+    # 多模態訊息（image_base64）一律不走 fast-path，留給 VLM。
+    if not image_base64:
+        from server.fast_path import try_fast_path, render_header
+        hit = try_fast_path(user_msg)
+        if hit is not None:
+            try:
+                tool_result = execute_tool(hit.tool_name, hit.args)
+            except Exception as exc:  # noqa: BLE001 — 任何錯誤都 fallback 給 LLM
+                logger.warning("fast_path intent=%s tool=%s failed, fallback to LLM: %s",
+                               hit.intent, hit.tool_name, exc)
+            else:
+                text = render_header(hit) + tool_result
+                messages.append({"role": "user", "content": user_msg})
+                messages.append({"role": "assistant", "content": text})
+                logger.info("fast_path hit intent=%s tool=%s (bypassed LLM)",
+                            hit.intent, hit.tool_name)
+                return AgentResponse(
+                    text=text,
+                    tool_calls=[{
+                        "name": hit.tool_name,
+                        "input": hit.args,
+                        "result": tool_result,
+                        "fast_path": True,
+                    }],
+                    input_tokens=0,
+                    output_tokens=0,
+                    messages=messages,
+                )
+
     if image_base64:
         # 確保帶 data URI prefix（llama.cpp openai-compatible 格式）
         if not image_base64.startswith("data:"):
