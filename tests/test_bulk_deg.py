@@ -106,21 +106,25 @@ def isolated_db(tmp_path, monkeypatch):
 
 class TestLoadDegInputs:
     def test_loads_aligned(self, tmp_path, synthetic_counts, synthetic_coldata):
-        cp = tmp_path / "counts.csv"; synthetic_counts.to_csv(cp)
-        dp = tmp_path / "coldata.tsv"; synthetic_coldata.to_csv(dp, sep="\t")
+        cp = tmp_path / "counts.csv"
+        synthetic_counts.to_csv(cp)
+        dp = tmp_path / "coldata.tsv"
+        synthetic_coldata.to_csv(dp, sep="\t")
         counts, coldata = load_deg_inputs(cp, dp)
         assert list(counts.columns) == list(coldata.index)
         assert "group" in coldata.columns
 
     def test_raises_when_coldata_missing_group(self, tmp_path, synthetic_counts):
-        cp = tmp_path / "counts.csv"; synthetic_counts.to_csv(cp)
+        cp = tmp_path / "counts.csv"
+        synthetic_counts.to_csv(cp)
         dp = tmp_path / "coldata.tsv"
         pd.DataFrame({"foo": ["a"] * 6}, index=synthetic_counts.columns).to_csv(dp, sep="\t")
         with pytest.raises(ValueError, match="group"):
             load_deg_inputs(cp, dp)
 
     def test_raises_when_no_overlap(self, tmp_path, synthetic_counts):
-        cp = tmp_path / "counts.csv"; synthetic_counts.to_csv(cp)
+        cp = tmp_path / "counts.csv"
+        synthetic_counts.to_csv(cp)
         dp = tmp_path / "coldata.tsv"
         pd.DataFrame({"group": ["a"]}, index=["unknown_sample"]).to_csv(dp, sep="\t")
         with pytest.raises(ValueError, match="重疊"):
@@ -164,8 +168,10 @@ class TestRunDegAnalysis:
     def test_full_flow(
         self, tmp_path, synthetic_counts, synthetic_coldata, fake_pydeg, isolated_db
     ):
-        cp = tmp_path / "counts.csv"; synthetic_counts.to_csv(cp)
-        dp = tmp_path / "coldata.tsv"; synthetic_coldata.to_csv(dp, sep="\t")
+        cp = tmp_path / "counts.csv"
+        synthetic_counts.to_csv(cp)
+        dp = tmp_path / "coldata.tsv"
+        synthetic_coldata.to_csv(dp, sep="\t")
 
         # results_dir 會寫到 BIO_DB_ROOT/results/... — patch 至 tmp_path
         import analysis.path_utils as pu
@@ -187,8 +193,10 @@ class TestRunDegAnalysis:
         assert row == ("completed", "bulk_deg")
 
     def test_rejects_empty_comparisons(self, tmp_path, synthetic_counts, synthetic_coldata):
-        cp = tmp_path / "counts.csv"; synthetic_counts.to_csv(cp)
-        dp = tmp_path / "coldata.tsv"; synthetic_coldata.to_csv(dp, sep="\t")
+        cp = tmp_path / "counts.csv"
+        synthetic_counts.to_csv(cp)
+        dp = tmp_path / "coldata.tsv"
+        synthetic_coldata.to_csv(dp, sep="\t")
         with pytest.raises(ValueError, match="不可為空"):
             run_deg_analysis("test_sid", counts_path=cp, coldata_path=dp, comparisons=[])
 

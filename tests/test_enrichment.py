@@ -142,7 +142,8 @@ class TestRunOra:
             run_ora("test_sid", deg_table_path=tmp_path / "nope.csv")
 
     def test_rejects_empty_libraries(self, tmp_path, fake_deg_df):
-        deg = tmp_path / "d.csv"; fake_deg_df.to_csv(deg)
+        deg = tmp_path / "d.csv"
+        fake_deg_df.to_csv(deg)
         with pytest.raises(ValueError, match="不可為空"):
             run_ora("test_sid", deg_table_path=deg, libraries=())
 
