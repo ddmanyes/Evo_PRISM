@@ -329,6 +329,51 @@ def get_active_tool_id(
     return str(row[0]) if row else None
 
 
+def backfill_tool_id(
+    con: duckdb.DuckDBPyConnection,
+    tool_name: str,
+    analysis_id: Optional[str],
+) -> bool:
+    """Best-effort: 把 ``analysis_history.tool_id`` 設為 *tool_name* 當前 active 版本。
+
+    這是 HELIX §7.3「analysis_history.tool_id 必須填入」的單一實作出口——
+    所有分析函數在寫完 ``status='completed'`` 後呼叫此函數，**任何呼叫路徑**
+    （MCP / agent / 直接 Python / 排程）都會回填 tool_id，不再只靠 MCP wrapper。
+
+    完全 best-effort：以下情況靜默 no-op（回 False），絕不讓主分析流程因此失敗：
+      - analysis_id 為空
+      - tools 表不存在（如隔離測試 DB）
+      - 該 tool_name 尚未 register_tool（無 active 版本）
+
+    成功回填回 True。回填後立即 CHECKPOINT（對齊 HELIX §7.6 寫入規則）。
+    """
+    if not analysis_id:
+        return False
+    try:
+        tool_id = get_active_tool_id(con, tool_name)
+    except Exception:
+        # tools 表不存在或查詢失敗（隔離測試 DB）→ 靜默略過
+        return False
+    if not tool_id:
+        return False
+    try:
+        con.execute(
+            "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
+            [tool_id, analysis_id],
+        )
+    except Exception as exc:
+        logger.warning("backfill_tool_id(%s, %s): %s", tool_name, analysis_id, exc)
+        return False
+    # CHECKPOINT 為 best-effort：UPDATE 已成功即視為回填成功；
+    # 若該連線未載 vss（HNSW 索引存在時 CHECKPOINT 需要），靜默略過——
+    # 下一次 safe_write 的 CHECKPOINT 會把 WAL 刷入主檔。
+    try:
+        con.execute("CHECKPOINT")
+    except Exception as exc:
+        logger.debug("backfill_tool_id CHECKPOINT 略過（vss 未載於此連線）: %s", exc)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Drift detection
 # ---------------------------------------------------------------------------

@@ -349,6 +349,12 @@ def write_report_to_history(
                     WHERE analysis_id=?""",
                 [result_path, completed_at, summary, analysis_id],
             )
+            # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
+            try:
+                from analysis.tool_registry import backfill_tool_id
+                backfill_tool_id(con, "bio_run_spatial_eda", analysis_id)
+            except Exception as _exc:
+                logger.warning("report_generator: backfill_tool_id 失敗（非致命）: %s", _exc)
 
     return analysis_id, result_path
 

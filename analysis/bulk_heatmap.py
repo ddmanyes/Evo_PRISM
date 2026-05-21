@@ -248,6 +248,12 @@ def run_bulk_heatmaps(
                 WHERE analysis_id=?""",
             [str(report_path), completed_at, summary, analysis_id],
         )
+        # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
+        try:
+            from analysis.tool_registry import backfill_tool_id
+            backfill_tool_id(con, "bio_run_heatmaps", analysis_id)
+        except Exception as _exc:
+            logger.warning("bulk_heatmap: backfill_tool_id 失敗（非致命）: %s", _exc)
 
         try:
             from analysis.artifact_registry import register_artifact
