@@ -138,7 +138,7 @@ bash start_bioagent.sh
 
 ## 步驟八：設定 MCP Server（讓 Claude Code / Antigravity / Web UI 共用）
 
-MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 14 個工具，跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
+MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 15 個工具（啟用沙盒後 16 個），跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
 
 ### 共通前置：建 symlink 避開含空格 / 中文路徑（macOS Google Drive 必做）
 
@@ -213,7 +213,7 @@ cp .mcp.json.example .mcp.json
 }
 ```
 
-存檔後 **重啟 Antigravity**。Tool palette 應出現 14 個 `bio_*` 工具。
+存檔後 **重啟 Antigravity**。Tool palette 應出現 15 個 `bio_*` 工具。
 
 ### 想啟用 `bio_execute_code` 沙盒（dangerous）
 
@@ -229,7 +229,7 @@ cp .mcp.json.example .mcp.json
 - 對外暴露時搭配 `MCP_AUTH_TOKEN`
 - 已 review `server/code_executor.py` 的 `BLOCKED_PATTERNS` 白名單
 
-詳細安全建議見 [docs/MCP_JSON_SETUP.md](docs/MCP_JSON_SETUP.md)。
+詳細安全建議見 [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md)。
 
 ---
 
@@ -264,7 +264,7 @@ cp .mcp.json.example .mcp.json
 | 文件 | 說明 |
 | ---- | ---- |
 | [CLAUDE.md](CLAUDE.md) | 專案憲法（規範、架構、路徑） |
-| [plan_zh.md](plan_zh.md) | 完整系統設計 |
-| [PROGRESS.md](PROGRESS.md) | 當前進度與待辦事項 |
-| [docs/STAR_SCHEMA.md](docs/STAR_SCHEMA.md) | Star Schema views 設計與使用範例 |
+| [docs/plans/plan_zh.md](docs/plans/plan_zh.md) | 完整系統設計 |
+| [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md) | 當前進度與待辦事項 |
+| [docs/guides/STAR_SCHEMA.md](docs/guides/STAR_SCHEMA.md) | Star Schema views 設計與使用範例 |
 | [docs/PREFILTER_VERIFICATION.md](docs/PREFILTER_VERIFICATION.md) | ENGRAM metadata pre-filter pushdown 驗證 |

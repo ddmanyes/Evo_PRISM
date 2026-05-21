@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd：開機自動啟動 llama-server embedding service
+
+  啟動後提供 OpenAI-compatible /v1/embeddings API（port 8081）。
+  Hermes Bio-Memory 的 analysis/embed.py 依賴此服務。
+
+  安裝：
+    cp docs/launchd_embedding_server.plist.example \
+       ~/Library/LaunchAgents/com.hermes.embedding_server.plist
+    launchctl load ~/Library/LaunchAgents/com.hermes.embedding_server.plist
+
+  手動啟動（不需 launchd）：
+    ~/llama.cpp/build/bin/llama-server \
+      -m ~/llama.cpp/models/bge-m3-Q8_0.gguf \
+      --embedding --port 8081 --ctx-size 8192 --n-gpu-layers 99
+
+  確認在線：
+    curl http://localhost:8081/health
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.embedding_server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhanqiru/llama.cpp/build/bin/llama-server</string>
+        <string>-m</string>
+        <string>/Users/zhanqiru/llama.cpp/models/bge-m3-Q8_0.gguf</string>
+        <string>--embedding</string>
+        <string>--port</string>
+        <string>8081</string>
+        <string>--ctx-size</string>
+        <string>8192</string>
+        <string>--n-gpu-layers</string>
+        <string>99</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/embedding_server.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/embedding_server_err.log</string>
+</dict>
+</plist>

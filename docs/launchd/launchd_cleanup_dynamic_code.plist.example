@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd：每日 04:30 清理 dynamic_code 歸檔（預設保留 90 天）。
+
+  bio_execute_code 每次執行會在 results/dynamic_code/ 下留下一個目錄
+  （code.py / output.txt / traceback.txt / meta.json / fig_*.png）。
+  此排程依 meta.json.created_at 清理超過 90 天的紀錄；analysis_history
+  記錄永久保留（CLAUDE.md §2 鐵律）。
+
+  安裝：
+    cp docs/launchd_cleanup_dynamic_code.plist.example \
+       ~/Library/LaunchAgents/com.hermes.cleanup_dynamic_code.plist
+    launchctl load ~/Library/LaunchAgents/com.hermes.cleanup_dynamic_code.plist
+
+  手動執行（不需 launchd）：
+    .venv/bin/python scheduler/cleanup_dynamic_code.py --days 90
+    .venv/bin/python scheduler/cleanup_dynamic_code.py --dry-run
+
+  注意：請將以下 <string> 中的 ABSOLUTE_BIO_DB_ROOT 替換成實際絕對路徑。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.cleanup_dynamic_code</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/ABSOLUTE_BIO_DB_ROOT/.venv/bin/python</string>
+        <string>/ABSOLUTE_BIO_DB_ROOT/scheduler/cleanup_dynamic_code.py</string>
+        <string>--days</string>
+        <string>90</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/ABSOLUTE_BIO_DB_ROOT</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhanqiru/Library/Logs/bioagent/cleanup_dynamic_code.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhanqiru/Library/Logs/bioagent/cleanup_dynamic_code_err.log</string>
+</dict>
+</plist>

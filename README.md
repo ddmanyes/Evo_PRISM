@@ -1,82 +1,94 @@
-# 實驗室生資智慧分析平台
+# Bio_PRISM — 智慧生資分析平台
 
-讓實驗室成員用自然語言查詢空間轉錄體與 Bulk RNA 分析結果，無需任何程式能力，無需重複運算。
+> **Bio_PRISM** · *Bioinformatics Platform for Research Intelligence, Semantic Memory*
+
+[![CI](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml/badge.svg)](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml)
+[![Python ≥ 3.10](https://img.shields.io/badge/Python-%E2%89%A53.10-blue)](https://www.python.org/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-1.5-yellow)](https://duckdb.org/)
+[![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-green)](https://modelcontextprotocol.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
+
+讓實驗室成員以自然語言查詢空間轉錄體與 Bulk RNA 分析結果，無需程式能力，無需重複運算，建立實驗室永久知識資產。
+
+*Enable lab members to query spatial transcriptomics and Bulk RNA results in natural language — no coding required, no repeated computation, permanent knowledge accumulation.*
 
 ---
 
-## 系統概覽
+## 系統架構 / Architecture
+
+### 三層資料架構 / Three-Layer Data Architecture
+
+![Bio_PRISM 三層架構](docs/images/三層架構.png)
+
+| 層 / Layer | 名稱 / Name | 說明 / Description |
+|:---:|:---:|:---|
+| L3 | Bronze | 不可變原始數據 / Immutable raw data (FASTQ, SpaceRanger outs) |
+| L2 | Silver | DuckDB + Parquet 結構化特徵 / Structured features (30B → 416 MB) |
+| L1 | Gold | HNSW 語意快取，TTL 7 天 / Semantic cache, TTL 7 days |
+
+### HELIX — 工具健康進化迴路 / Tool Health-Evolving Loop
+
+![HELIX 架構](docs/images/HELIX_架構圖.png)
+
+**HELIX** 負責追蹤所有分析工具的版本、熱區偵測、複雜度量測與穩定化重構，確保 Agent 呼叫的永遠是健康版本。
+
+*HELIX tracks every analysis tool's version, detects hot-spots, measures complexity (Radon CC), and drives stabilization refactors — ensuring Agent always calls a healthy version.*
+
+### ENGRAM — 分析產出永久記憶 / Permanent Artifact Memory
+
+![ENGRAM 架構](docs/images/engram_架構圖1.png)
+
+**ENGRAM** 將每次分析產出（CSV、Parquet、圖片、報告）永久歸檔，支援 Hybrid 3-way RRF 語意搜尋（Exact SQL + HNSW + BM25 FTS），並與 HELIX 工具帳本關聯防止版本漂移。
+
+*ENGRAM permanently archives every analysis artifact and enables Hybrid 3-way RRF semantic search (Exact SQL + HNSW + BM25 FTS), linked to HELIX for version provenance.*
+
+### Agent 決策流程 / Agent Decision Flow
 
 ```text
-使用者（Web UI / Telegram）
-         │ 自然語言提問
-         ▼
-    server/agent.py
-    ├─ BIO_TOOLS（SQL / Parquet / 沙盒執行 / ENGRAM 搜尋）
-    ├─ 雙推理後端（本機 Gemma 4 Vision / Claude API）
-    └─ plt.show() hook → 分析圖回傳聊天框
-         │
-    ┌────┴────────────────────────────┐
-    │                                 │
-    ▼                                 ▼
-L2 bio_memory.duckdb             L1 hermes_cache.duckdb
-sample_registry                  memory_recent (HNSW)
-analysis_history                 TTL 7 天
-analysis_artifacts (ENGRAM)
-analysis_index VIEW
-         │
-         ▼
-L3 原始數據（唯讀）
-crc_visium_data/  bulk_rna_data/  proteome_data/
+提問 / Query
+ ├─ Step 1  SQL 精確比對（0 token，< 1 秒）  ← 做過？直接回傳
+ ├─ Step 2  HNSW 語意搜尋（cosine ≥ 0.88）   ← 問過類似？快取回傳
+ ├─ Step 3A 標準分析工具（L2 Parquet 就緒）
+ ├─ Step 3B Code Promotion 重用（曾生成過？）
+ └─ Step 3C 全新程式碼生成（沙盒執行 + 失敗重試）
+               └─ 執行成功 → 存入歷史 → 下次可被 3B 查詢
+               └─ 重用 ≥ 3 次 → 升格為 3A 永久工具
 ```
-
-**三層架構**：
-
-- **L3 Bronze**：不可變原始數據（FASTQ、SpaceRanger outs/）
-- **L2 Silver**：DuckDB + Parquet 結構化特徵（30 億數字 → 416 MB，集中計算一次）
-- **L1 Gold**：HNSW 語意快取，TTL 7 天，問過的問題直接回傳
-
-**核心模組**：
-
-- **HELIX**（`analysis/tool_registry.py`）：工具版本管理、熱區偵測、穩定化迭代
-- **ENGRAM**（`analysis/artifact_registry.py`）：分析產出永久記憶，支援 Hybrid 3-way RRF 語意搜尋（exact + HNSW + BM25 FTS）
-- **MCP Server**（`server/bio_memory_server.py`）：stdio + HTTP 雙 transport，可供外部客戶端呼叫
 
 ---
 
-## 快速開始
+## 快速開始 / Quick Start
 
-### 前置需求
+### 前置需求 / Prerequisites
 
 - macOS（測試平台）或 Linux（生產部署）
 - Python ≥ 3.10
 - [uv](https://github.com/astral-sh/uv) 套件管理器
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) 已編譯（`~/llama.cpp/build/bin/llama-server`）
 - 模型檔案（放於 `~/`）：
-  - `gemma-4-26B-A4B-it-UD-IQ2_M.gguf`（推理引擎）
-  - `mmproj-F16.gguf`（視覺投影層）
-  - `bge-m3-Q8_0.gguf`（Embedding，605 MB）
+  - `gemma-4-26B-A4B-it-UD-IQ2_M.gguf` — 推理引擎 / Inference engine
+  - `mmproj-F16.gguf` — 視覺投影層 / Vision projector
+  - `bge-m3-Q8_0.gguf` — Embedding（605 MB）
 
-### 安裝
+### 安裝 / Installation
 
 ```bash
-# 將 BIO_DB_ROOT 設為你 clone 後的專案根目錄
+# 設定專案根目錄
 export BIO_DB_ROOT="$(pwd)"
 
-# 1. 建立 venv（若專案位於 ExFAT 或雲端同步資料夾，venv 必須建在 APFS / 本機檔案系統）
+# 1. 建立 venv（若位於 ExFAT 或雲端同步資料夾，venv 必須建在 APFS 本機）
 python3 -m venv ~/.venvs/hermes-bio-memory
 ln -s ~/.venvs/hermes-bio-memory "$BIO_DB_ROOT/.venv"
 
-# 2. 安裝依賴
+# 2. 安裝依賴 / Install dependencies
 cd "$BIO_DB_ROOT"
 uv sync --no-install-project
 
-# 3. 設定環境變數
+# 3. 設定環境變數 / Configure environment
 cp .env.example .env
-# 填入 ANTHROPIC_API_KEY（使用 Claude 後端時才需要）
-# 填入 GOOGLE_API_KEY（使用 Google 後端時才需要）
-# 注意：BIO_DB_ROOT / DUCKDB_PATH 等 4 個路徑保持註解狀態即可（settings.py 會自動偵測）
+# 填入 API keys / Fill in API keys
 
-# 4. 初始化資料庫 Schema
+# 4. 初始化資料庫 / Initialize database
 .venv/bin/python scripts/00_init_db.py
 
 # 5. 執行所有 Schema migration（v9 → v19）
@@ -85,351 +97,228 @@ for script in scripts/[12][0-9]_migrate_schema_*.py; do
 done
 ```
 
-### 啟動系統
+### 啟動 / Launch
 
 ```bash
-cd "$BIO_DB_ROOT"
-bash start_bioagent.sh
+bash start_bioagent.sh           # 互動式選擇後端 / Interactive backend select
+bash start_bioagent.sh --claude  # Claude API（需 ANTHROPIC_API_KEY）
+bash start_bioagent.sh --google  # Google Gemini API（需 GOOGLE_API_KEY）
+bash start_bioagent.sh --local   # 本機 Gemma 4 Vision（需 ~16 GB RAM）
 ```
 
 啟動後開啟瀏覽器：**<http://localhost:8000>**
 
-啟動選項：
+---
 
+## 測試資料庫 / Test Database
+
+本專案的測試資料（L2 Parquet + DuckDB + 基因集）**不包含在 git repository** 中，因為原始生信資料體積龐大（~39 GB）且含實驗室內部數據。
+
+*The test dataset (L2 Parquet + DuckDB + gene sets) is **not included** in this repository due to large file sizes (~39 GB) and proprietary lab data.*
+
+如需取得測試資料壓縮包以在本機驗證系統，請聯絡作者：
+
+*To obtain the test data archive for local evaluation, please contact the author:*
+
+> **✉️ 請聯絡作者取得下載連結 / Ask the author for download link**
+>
+> 詹麒儒 (Chan Chi Ru) — u9013039@gmail.com
+
+測試資料包含 / Test archive includes:
+- `bio_memory.duckdb` — 已初始化的主資料庫（含 Schema v19、範例 sample 登記）
+- `silver/spatial_counts_crc_official_v4_8um/` — CRC Visium HD 8µm L2 Parquet（416 MB，215M nonzero）
+- `gene_sets/hair_follicle.yaml` — 路徑基因集範例
+
+預期測試結果 / Expected test results:
 ```bash
-bash start_bioagent.sh           # 互動式選擇後端
-bash start_bioagent.sh --claude  # Claude API（需 ANTHROPIC_API_KEY）
-bash start_bioagent.sh --google  # Google Gemini API（需 GOOGLE_API_KEY）
-bash start_bioagent.sh --local   # 本機 Gemma 4 Vision（需 ~16GB RAM）
-```
-
-啟動順序：
-
-1. Gemma 4 Vision 推理引擎（port 8080）— 等待模型載入，最多 120 秒（`--local` 模式）
-2. Embedding Server bge-m3（port 8081）— 若已透過 launchd 自動啟動則跳過
-3. FastAPI Web UI（port 8000）— 同時在 `/mcp` 掛載 MCP HTTP endpoint
-
-### 關閉系統
-
-```bash
-# 方法一：在 start_bioagent.sh 執行的終端機按 Ctrl+C（停止由腳本啟動的服務）
-# 方法二：強制停止所有服務
-pkill -f "llama-server" && pkill -f "uvicorn"
+.venv/bin/python -m pytest tests/ -v --tb=short
+# 283 passed / 5 skipped
 ```
 
 ---
 
-## MCP Server 設定
+## MCP Server
 
-MCP（Model Context Protocol）讓外部 AI 客戶端直接呼叫 bio_DB 的 14 個生資工具（含 `bio_read_report` 讀回任何歷史分析全文、`bio_artifact_search` 等）。本系統同時提供兩種 transport：
+同時提供 **stdio** 與 **HTTP** 兩種 transport，供外部 AI 客戶端呼叫。
 
-| Transport | 適用場景 | 啟動方式 |
-| --------- | -------- | -------- |
-| **stdio** | 桌面 IDE（Claude Code、Antigravity、Claude Desktop） | IDE 自動 spawn 子 process |
-| **HTTP** | 跨機器、curl 測試、Web UI 內嵌 | `bash start_bioagent.sh` 自動掛載到 `:8000/mcp`；或獨立 `python ... --transport http` |
-
-### 三種客戶端的設定
-
-> **共通前置（stdio 客戶端必看）**：若專案位於 Google Drive 或路徑含中文 / 空格，先建 symlink 避開：
->
-> ```bash
-> ln -sfn "/Users/<you>/Library/CloudStorage/.../我的雲端硬碟/PJ_save/bio_DB" ~/bio_DB
-> ```
->
-> 後續 B/C 段的 `.mcp.json` 與 Antigravity 設定都以 `/Users/<you>/bio_DB/...` 純 ASCII 路徑為例。Web UI（A 段）走 HTTP，不受路徑影響可略過此前置。
-
-#### A. Web UI（最簡單，無需額外設定）
-
-`bash start_bioagent.sh` 啟動後，MCP HTTP endpoint 自動掛載於 `http://localhost:8000/mcp`。瀏覽器開啟 <http://localhost:8000> 直接用聊天介面，背後就是 MCP 工具鏈。
-
-對外部客戶端用 curl 測試：
+*Supports both **stdio** and **HTTP** transport for external AI client integration.*
 
 ```bash
-# 列出所有可用工具
-curl -s -X POST http://localhost:8000/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-
-# 查詢樣本分析歷史
-curl -s -X POST http://localhost:8000/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
-       "params":{"name":"bio_history_lookup",
-                 "arguments":{"sample_id":"crc_official_v4","limit":5}}}'
-```
-
-獨立啟動 MCP HTTP Server（不需 Web UI）：
-
-```bash
+# HTTP 獨立啟動 / Standalone HTTP
 .venv/bin/python server/bio_memory_server.py --transport http --port 8082
 ```
 
-#### B. Claude Code CLI（stdio）
+### 可用工具 / Available Tools（預設 15 個）
 
-專案根目錄已有 `.mcp.json.example`。複製成 `.mcp.json`（gitignored）並填入絕對路徑：
-
-```bash
-cp .mcp.json.example .mcp.json
-# 編輯把 /ABSOLUTE/PATH/TO/... 換成實際路徑（建議用 ~/bio_DB symlink 避開中文/空格）
-```
-
-最終 `.mcp.json` 範例：
-
-```json
-{
-  "mcpServers": {
-    "bio-memory": {
-      "command": "/Users/zhanqiru/bio_DB/.venv/bin/python",
-      "args": ["/Users/zhanqiru/bio_DB/server/bio_memory_server.py"],
-      "env": {
-        "PYTHONPATH": "/Users/zhanqiru/bio_DB",
-        "MCP_AUTH_TOKEN": "",
-        "MCP_BIND_HOST": "127.0.0.1",
-        "MCP_RATE_LIMIT_PER_MIN": "30",
-        "MCP_ENABLE_DANGEROUS_TOOLS": "false"
-      }
-    }
-  }
-}
-```
-
-下次在專案目錄啟動 `claude` CLI 時自動連接，輸入 `/mcp` 即可看到 `bio-memory` server 狀態與工具列表。
-
-#### C. Antigravity IDE（stdio）
-
-開啟 Antigravity 的 **Settings → MCP Servers**（或直接編輯 `~/Library/Application Support/Antigravity/User/settings.json`），新增條目：
-
-```json
-{
-  "mcpServers": {
-    "bio-memory": {
-      "command": "/Users/zhanqiru/bio_DB/.venv/bin/python",
-      "args": ["/Users/zhanqiru/bio_DB/server/bio_memory_server.py"],
-      "env": {
-        "PYTHONPATH": "/Users/zhanqiru/bio_DB",
-        "MCP_BIND_HOST": "127.0.0.1",
-        "MCP_ENABLE_DANGEROUS_TOOLS": "false"
-      }
-    }
-  }
-}
-```
-
-存檔後 **重啟 Antigravity**。工具列應出現 14 個 `bio_*` 工具。Antigravity 內建 Gemini 推理直接呼叫，跳過 web_app 的雙輪 Agent 流程，回應更快且不會發生「列表類查詢被第 2 輪 LLM 截斷」的問題。
-
-> 若 IDE 啟動後看不到工具，檢查 stderr log：通常是 `PYTHONPATH` 缺失導致 `from server.agent import ...` ImportError。
-
-### 可用 MCP 工具（預設 14 個 / 啟用沙盒後 15 個）
-
-| 工具 | 說明 | Token 消耗 |
-| ---- | ---- | ---------- |
-| `bio_history_lookup` | 查詢樣本分析歷史 | 0 token |
-| `bio_history_timeline` | 最近 N 天時間軸 | 0 token |
-| `bio_history_check` | 確認分析是否已完成 | 0 token |
-| `bio_history_search` | L1 HNSW 語意搜尋（summary） | 少量 |
-| `bio_memory_query` | L1 快取完整報告查詢 | 少量 |
-| `bio_memory_write` | 寫入 L1 語意快取 | 少量 |
-| `bio_register_sample` | 登記新樣本 | 0 token |
-| `bio_read_report` | 沙盒讀取分析報告原文（含 dynamic_code 歸檔的 code.py / output.txt / traceback.txt / meta.json；失敗執行可能無 output.txt） | 0 token |
+| 工具 / Tool | 說明 / Description | Token |
+|:---|:---|:---:|
+| `bio_history_lookup` | 樣本分析歷史 / Sample analysis history | 0 |
+| `bio_history_timeline` | 最近 N 天時間軸 / Recent N-day timeline | 0 |
+| `bio_history_check` | 確認分析是否完成 / Check analysis completion | 0 |
+| `bio_history_search` | L1 HNSW 語意搜尋 / L1 semantic search | 少量 |
+| `bio_memory_query` | L1 快取完整報告 / L1 full report query | 少量 |
+| `bio_memory_write` | 寫入 L1 快取 / Write L1 cache | 少量 |
+| `bio_register_sample` | 登記新樣本 / Register new sample | 0 |
+| `bio_read_report` | 讀取分析報告原文 / Read analysis report | 0 |
 | `bio_artifact_search` | ENGRAM 3-way RRF 語意搜尋 | 少量 |
-| `bio_artifact_summary` | ENGRAM artifact 摘要與 metadata | 0 token |
-| `bio_check_l2_sufficiency` | 檢查樣本 L2 是否就緒 | 0 token |
-| `bio_run_spatial_eda` | 觸發空間 EDA 分析 | 高 |
-| `bio_run_bulk_eda` | 觸發 Bulk RNA EDA 分析 | 高 |
-| `bio_tool_health` | HELIX 工具版本健檢 | 0 token |
-| `bio_execute_code` ⚠️ | 沙盒 Python 執行（需 `MCP_ENABLE_DANGEROUS_TOOLS=true`，產出自動歸檔到 `results/dynamic_code/`） | 高 |
+| `bio_artifact_summary` | ENGRAM artifact 摘要 / Artifact summary | 0 |
+| `bio_check_l2_sufficiency` | 檢查 L2 就緒狀態 / Check L2 readiness | 0 |
+| `bio_run_spatial_eda` | 空間 EDA 分析 / Spatial EDA analysis | 高 |
+| `bio_run_bulk_eda` | Bulk RNA EDA 分析 | 高 |
+| `bio_tool_health` | HELIX 工具健檢 / HELIX health report | 0 |
+| `bio_impact` | 變更爆炸範圍評估 / Change blast radius | 0 |
+| `bio_execute_code` ⚠️ | 沙盒 Python 執行（需 `MCP_ENABLE_DANGEROUS_TOOLS=true`） | 高 |
 
-### 環境變數速查
+詳細設定見 [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) 與 [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md)。
 
-| Env Var | 預設 | 說明 |
-| ------- | ---- | ---- |
-| `MCP_AUTH_TOKEN` | 空（auth 關閉） | HTTP transport 對外暴露時必填 |
-| `MCP_BIND_HOST` | `127.0.0.1` | 設 `0.0.0.0` 開放區網**必須**搭配 token |
-| `MCP_RATE_LIMIT_PER_MIN` | `30` | 重量級工具速率上限 |
-| `MCP_ENABLE_DANGEROUS_TOOLS` | 未設 | `true` 才啟用 `bio_execute_code` |
-
-詳細安全建議與 transport 細節見 [docs/MCP_JSON_SETUP.md](docs/MCP_JSON_SETUP.md) 與 [docs/MCP_HTTP_GUIDE.md](docs/MCP_HTTP_GUIDE.md)。
+*For detailed configuration, see [MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) and [MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md).*
 
 ---
 
-## 測試
+## 推理後端 / Inference Backends
+
+| 後端 / Backend | 模型 / Model | 用途 / Use |
+|:---|:---|:---|
+| `--local`（預設） | Gemma 4 26B Vision IQ2_M | 離線、隱私、多模態圖片分析 |
+| `--claude` | claude-sonnet-4-6 | 更強推理，需 ANTHROPIC_API_KEY |
+| `--google` | gemini-2.0-flash | 需 GOOGLE_API_KEY |
+
+---
+
+## 排程任務 / Scheduled Tasks
+
+| 腳本 | 時間 | 功能 |
+|:---|:---|:---|
+| `scheduler/backup_db.py` | 每日 02:00 | EXPORT DATABASE → `~/bio_db_backups/`（保留 7 天） |
+| `scheduler/cleanup_l1_cache.py` | 每日 03:30 | 清理 L1 TTL 到期快取 |
+| `scheduler/rebuild_hnsw.py` | 每週日 03:00 | 重建 HNSW + ENGRAM BM25 FTS 索引 |
+| `scheduler/scan_new_samples.py` | 每 30 分鐘 | 掃描並登記新樣本 |
+| `scheduler/helix_expire_snapshots.py` | 每週日 04:00 | HELIX 視覺快照遺忘曲線降採樣 |
+
+launchd 範本在 [docs/launchd/](docs/launchd/)。
+
+---
+
+## 專案結構 / Project Structure
+
+```text
+bio_DB/                         ← Bio_PRISM 專案根目錄
+│
+├── 核心程式碼（git 追蹤）
+│   ├── config/                 ← 集中設定（路徑、safe_write、db_utils）
+│   ├── scripts/                ← 一次性 L3→L2 轉換 + Schema migration（v0–v19）
+│   ├── analysis/               ← 分析函式庫（HELIX / ENGRAM / EDA / 快取）
+│   │   ├── tool_registry.py    ← HELIX-Core（版本管理）
+│   │   ├── artifact_registry.py← ENGRAM-Core（永久記憶）
+│   │   └── tool_visualizer.py  ← HELIX-Vision（視覺快照）
+│   ├── server/                 ← FastAPI Web UI + Agent + MCP Server
+│   ├── scheduler/              ← 排程任務（備份/清理/重建/掃描）
+│   ├── tests/                  ← 測試套件（293 tests）
+│   ├── gene_sets/              ← 路徑基因集 YAML
+│   └── start_bioagent.sh       ← 一鍵啟動腳本
+│
+├── 文件（git 追蹤）
+│   └── docs/
+│       ├── images/             ← 架構圖（三層架構 / HELIX / ENGRAM）
+│       ├── guides/             ← 操作指南（MCP / L3 Ingest / Data Integration）
+│       ├── plans/              ← 設計計畫（plan_zh / plan / IMPLEMENTATION_PLAN）
+│       ├── launchd/            ← macOS launchd plist 範本
+│       └── logs/               ← 開發日誌（PROGRESS / execution_trace）
+│
+└── 本地數據目錄（.gitignore 排除）
+    ├── bio_memory.duckdb       ← 主資料庫（*.duckdb）
+    ├── silver/                 ← L2 Parquet 特徵存儲
+    ├── gold/                   ← L1 語意快取 DuckDB
+    ├── crc_visium_data/        ← L3 原始數據（~39 GB）
+    ├── bulk_rna_data/          ← Bulk RNA 原始數據
+    └── proteome_data/          ← Proteomics 數據
+```
+
+---
+
+## 測試 / Testing
 
 ```bash
 cd "$BIO_DB_ROOT"
 .venv/bin/python -m pytest tests/ -v --tb=short
 ```
 
-預期結果（共 293 tests collected）：**283 passed / 5 skipped**（5 個 sandbox 相關 `FileNotFoundError` 為環境依賴，非邏輯失敗）
+預期 / Expected: **562 tests collected**（少數 sandbox `FileNotFoundError` 為環境依賴，非邏輯失敗）
 
-| 測試檔 | 測試數 | 涵蓋範圍 |
-| ------ | ------ | -------- |
-| `test_init_db.py` | 4 | Schema + Views 正確性 |
-| `test_phase2b.py` | 14 | 歷史查詢 + 報告生成 |
-| `test_phase3.py` | 15 | L1 快取 + HNSW |
+| 測試檔 | 數量 | 涵蓋範圍 |
+|:---|:---:|:---|
+| `test_tool_registry.py` | 56 | HELIX 版本管理、穩定化、churn |
+| `test_fast_path.py` | 46 | Agent 快速路徑（SQL / timeline / sample list）|
+| `test_artifact_registry.py` | 44 | ENGRAM 3-way RRF + Provenance |
 | `test_phase4.py` | 35 | MCP Server stdio 工具 |
-| `test_phase5.py` | 28 | Agent Loop + 沙盒執行 |
+| `test_phase5.py` | 31 | Agent Loop + 沙盒執行 |
+| `test_phase10.py` | 31 | MCP HTTP transport |
 | `test_phase6.py` | 23 | Telegram Bot 指令與訊息分派 |
-| `test_artifact_registry.py` | 44 | ENGRAM artifact 搜尋（3-way RRF）+ Provenance |
-| `test_tool_registry.py` | 56 | HELIX 版本管理 + 穩定化 |
+| `test_dashboard_actions.py` | 19 | 控制面板操作層 |
+| `test_graduation.py` | 18 | Code Promotion 升格機制 |
+| `test_impact.py` | 16 | HELIX blast radius 評估 |
+| `test_artifact_resources.py` | 15 | MCP Resources artifact 交付 |
+| `test_phase3.py` | 15 | L1 快取 + HNSW |
 | `test_tool_visualizer.py` | 15 | HELIX 視覺快照 + 降採樣 |
-| `test_phase10.py` | 30 | MCP HTTP transport |
-| `test_star_schema.py` | 10 | Star Schema views（throughput / stability signal） |
-| 其他 | 19 | migration / spatial / bulk |
+| `test_phase2b.py` | 14 | 歷史查詢 + 報告生成 |
+| `test_bulk_timeseries.py` | 13 | 時間序列均值 + log2 FC |
+| `test_figure_cache.py` | 13 | MCP 圖片快取 + base64 剝離 |
+| `test_report_reader.py` | 13 | 報告讀取 + 路徑沙盒 |
+| `test_star_schema.py` | 13 | Star Schema views（throughput / stability）|
+| `test_phase2b.py` | 14 | 歷史查詢 + 報告生成 |
+| `test_pathway_scoring.py` | 14 | ssGSEA / Z-score 路徑評分 |
+| `test_bulk_deg.py` | 11 | DEG + Volcano plot |
+| `test_validate_inference_backend.py` | 10 | 推理後端 fail-fast 驗證 |
+| `test_tool_search.py` | 10 | 工具語意搜尋 |
+| `test_enrichment.py` | 10 | ORA 富集分析 |
+| `test_mcseg_quality.py` | 10 | MCseg 品質評估 |
+| `test_playbook.py` | 10 | Playbook 工具展開 |
+| 其他 | ~69 | bulk_eda / heatmap / spatial / init / dashboard / migration |
 
 ---
 
-## 功能說明
-
-### Web UI（<http://localhost:8000>）
-
-- **聊天介面**：自然語言提問 → SSE 串流回覆
-- **圖片上傳**：附件按鈕或 `Ctrl+V` 貼圖 → Gemma 4 Vision 視覺分析
-- **分析結果圖**：matplotlib QC 圖直接顯示於聊天框，支援下載
-- **後端切換**：Sidebar 即時切換本機 Gemma 4 / Claude API
-- **歷史頁面**（`/history`）：所有分析記錄 + 縮圖預覽
-- **報告頁面**（`/results/{id}`）：完整 HTML 分析報告含 QC 圖
-- **ENGRAM 頁面**（`/engram`）：分析產出永久記憶瀏覽、語意搜尋、並排比較
-- **MCP endpoint**（`/mcp`）：外部客戶端直接呼叫 MCP 工具
-
-### Agent 決策流程
-
-```text
-提問
- ├─ Step 1  SQL 精確比對（0 token，< 1 秒）   ← 做過？直接回傳
- ├─ Step 2  HNSW 語意搜尋（cosine ≥ 0.88）   ← 問過類似？快取回傳
- ├─ Step 3A 標準分析工具（L2 Parquet 就緒）
- ├─ Step 3B Code Promotion 重用（曾生成過？）
- └─ Step 3C 全新程式碼生成（沙盒執行 + 失敗重試）
-               └─ 執行成功 → 存入歷史，下次可被 3B 查詢
-               └─ 重用 ≥ 3 次 → 升格為 3A 永久工具
-```
-
-### 推理後端
-
-| 後端 | 模型 | 用途 |
-| ---- | ---- | ---- |
-| local（預設） | Gemma 4 26B Vision IQ2_M | 離線、隱私、多模態圖片分析 |
-| claude | claude-sonnet-4-6 | 更強推理，需 `ANTHROPIC_API_KEY` |
-| google | gemini-2.0-flash | 需 `GOOGLE_API_KEY` |
-
----
-
-## 驗證架構與資料庫
-
-```bash
-# 健檢（確認 sample / history / stale 數量）
-.venv/bin/python config/db_utils.py
-
-# 確認 L2 Parquet 資料正確
-.venv/bin/python -c "
-import duckdb
-r = duckdb.execute(\"\"\"
-    SELECT COUNT(*) as bins, COUNT(DISTINCT gene_name) as genes
-    FROM 'silver/spatial_counts_crc_official_v4_8um/*.parquet'
-    WHERE in_tissue = TRUE
-\"\"\").fetchone()
-print(f'bins={r[0]}, genes={r[1]}')
-"
-# 預期：bins≈516880, genes≈18000
-
-# 列出資料庫所有表格
-.venv/bin/python -c "
-import duckdb
-con = duckdb.connect('bio_memory.duckdb', read_only=True)
-print(con.execute('SHOW TABLES').fetchall())
-"
-```
-
----
-
-## 專案結構
-
-```text
-bio_DB/
-├── config/              ← 路徑與 API key 集中設定
-├── scripts/             ← 一次性 L3→L2 轉換 + Schema migration（v0–v19，含 ENGRAM BM25 FTS 與 Star Schema views）
-├── analysis/            ← 分析函式庫（Agent 呼叫）
-│   ├── artifact_registry.py   ← ENGRAM-Core（永久記憶）
-│   ├── tool_registry.py       ← HELIX-Core（版本管理）
-│   └── tool_visualizer.py     ← HELIX-Vision（視覺快照）
-├── server/              ← FastAPI Web UI + Agent + 沙盒執行器
-│   ├── bio_memory_server.py   ← MCP Server（stdio + HTTP）
-│   ├── agent.py               ← Agent Loop + 工具分發
-│   └── static/                ← index.html / history.html / engram.html
-├── scheduler/           ← 排程任務（備份/清理/重建/掃描/HELIX 降採樣）
-├── tests/               ← 測試套件（228 tests）
-├── gene_sets/           ← 路徑基因集 YAML
-├── silver/              ← L2 Parquet（scripts/ 寫入，analysis/ 唯讀）
-├── gold/                ← L1 快取 DuckDB（hermes_cache.duckdb）
-├── results/             ← 分析結果（.md 報告 + QC 圖）
-├── references/          ← 技術論文摘要（.md）
-├── start_bioagent.sh    ← 一鍵啟動腳本
-└── bio_memory.duckdb    ← 主資料庫（sample_registry + analysis_history + ENGRAM + HELIX）
-```
-
----
-
-## 排程任務
-
-| 腳本 | 時間 | 功能 |
-| ---- | ---- | ---- |
-| `scheduler/backup_db.py` | 每日 02:00 | EXPORT DATABASE → `~/bio_db_backups/`（保留 7 天） |
-| `scheduler/cleanup_l1_cache.py` | 每日 03:30 | 清理 L1 TTL 到期快取 |
-| `scheduler/rebuild_hnsw.py` | 每週日 03:00 | 重建 HNSW + ENGRAM BM25 FTS 索引 |
-| `scheduler/scan_new_samples.py` | 每 30 分鐘 | 掃描並登記新樣本至 sample_registry |
-| `scheduler/helix_expire_snapshots.py` | 每週日 04:00 | HELIX 視覺快照遺忘曲線降採樣 |
-
-手動備份與還原：
-
-```bash
-.venv/bin/python scheduler/backup_db.py            # 備份
-.venv/bin/python scheduler/backup_db.py --restore  # 還原最新備份
-```
-
----
-
-## 測試數據規模
-
-| 資料集 | 大小 | 說明 |
-| ------ | ---- | ---- |
-| CRC Visium HD（L3） | ~39 GB | 官方測試數據，唯讀 |
-| L2 Parquet | 416 MB | 8µm bins，215M nonzero entries |
-| Bulk RNA-seq | 84 樣本 | Kallisto 定量輸出 |
-| Proteomics | 5 個時間點 | sHG Perseus log2 intensity |
-
----
-
-## 文件
+## 文件索引 / Documentation
 
 | 文件 | 說明 |
-| ---- | ---- |
-| [plan_zh.md](plan_zh.md) | 完整系統設計（中文，18 章 + 附錄） |
-| [CLAUDE.md](CLAUDE.md) | 專案憲法（開發規範 + 架構 + 路徑） |
-| [PROGRESS.md](PROGRESS.md) | 實作進度封存 |
-| [presentation.md](presentation.md) | 系統簡報（Marp 格式，13 張） |
-| [docs/DATA_INTEGRATION_GUIDE.md](docs/DATA_INTEGRATION_GUIDE.md) | 跨專案數據整合指南 |
-| [docs/L3_DATA_INGEST_GUIDE.md](docs/L3_DATA_INGEST_GUIDE.md) | 新增 L3 樣本操作指南 |
-| [docs/STAR_SCHEMA.md](docs/STAR_SCHEMA.md) | Star Schema views 設計與使用範例（P1-C） |
-| [docs/PREFILTER_VERIFICATION.md](docs/PREFILTER_VERIFICATION.md) | ENGRAM metadata pre-filter pushdown 驗證（P0-A） |
-| [docs/DB114_MODULE_11_12_REVIEW.md](docs/DB114_MODULE_11_12_REVIEW.md) | DB114 Module 11/12 架構建議評估 |
+|:---|:---|
+| [CLAUDE.md](CLAUDE.md) | 專案憲法（開發規範 + Schema + 路徑） |
+| [SETUP.md](SETUP.md) | 詳細環境安裝手冊 |
+| [docs/plans/plan_zh.md](docs/plans/plan_zh.md) | 完整系統設計（中文，18 章） |
+| [docs/plans/plan.md](docs/plans/plan.md) | 完整系統設計（英文） |
+| [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md) | 實作進度封存 |
+| [docs/guides/DATA_INTEGRATION_GUIDE.md](docs/guides/DATA_INTEGRATION_GUIDE.md) | 跨專案數據整合指南 |
+| [docs/guides/L3_DATA_INGEST_GUIDE.md](docs/guides/L3_DATA_INGEST_GUIDE.md) | 新增 L3 樣本操作指南 |
+| [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) | MCP stdio 設定（Claude Code / Antigravity） |
+| [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md) | MCP HTTP transport 說明 |
+| [docs/guides/STAR_SCHEMA.md](docs/guides/STAR_SCHEMA.md) | Star Schema views 設計與範例 |
 
 ---
 
-## 下一步
+## 下一步 / Roadmap
 
 ```text
-現在可做（本機）
+本機可做 / Local
     ├── 端對端測試：填入 ANTHROPIC_API_KEY，驗證 Claude 後端切換
-    ├── launchd 排程安裝（launchctl load × 5，plist 範本在 docs/）
-    └── 啟用 launchd_scan_samples.plist 自動掃描新樣本
+    └── launchd 排程安裝（launchctl load × 5，plist 範本在 docs/launchd/）
 
-接著（需 Linux 伺服器）
+接著 / Next（需 Linux 伺服器）
     ├── 路徑設定遷移（config/settings.py）
-    ├── Docker 沙盒替換 code_executor.py（生產安全隔離）
-    └── FASTQ 自動 Kallisto 觸發
+    └── Docker 沙盒替換 code_executor.py（生產安全隔離）
 
-之後
+之後 / Later
     └── 5 位實驗室成員實際使用驗證
 ```
+
+---
+
+## 貢獻 / Contributing
+
+歡迎 PR 與 Issue！請先閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+*PRs and Issues welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.*
+
+---
+
+## 授權 / License
+
+MIT License — © 2026 詹麒儒 (Chan Chi Ru). See [LICENSE](LICENSE).
