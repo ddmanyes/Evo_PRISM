@@ -15,7 +15,7 @@
   手動啟動（不需 launchd）：
     ~/llama.cpp/build/bin/llama-server \
       -m /Users/zhanqiru/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
-      --mmproj /Users/zhanqiru/mmproj-BF16.gguf \
+      --mmproj /Users/zhanqiru/mmproj-F16.gguf \
       --port 8080 --ctx-size 8192 --n-gpu-layers 99 \
       --flash-attn -ctk q8_0 -ctv q8_0
 
@@ -33,7 +33,7 @@
         <string>-m</string>
         <string>/Users/zhanqiru/gemma-4-26B-A4B-it-UD-IQ2_M.gguf</string>
         <string>--mmproj</string>
-        <string>/Users/zhanqiru/mmproj-BF16.gguf</string>
+        <string>/Users/zhanqiru/mmproj-F16.gguf</string>
         <string>--port</string>
         <string>8080</string>
         <string>--ctx-size</string>

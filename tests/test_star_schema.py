@@ -27,6 +27,16 @@ def _load_v19_module():
     return mod
 
 
+def _load_v21_module():
+    """Load scripts/22_migrate_schema_v21_mcp_metrics.py — filename starts with a digit."""
+    path = Path(__file__).resolve().parent.parent / "scripts" / "22_migrate_schema_v21_mcp_metrics.py"
+    spec = importlib.util.spec_from_file_location("migrate_v21", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 @pytest.fixture()
 def star_con():
     """In-memory DuckDB with the minimal tables needed for star schema views."""
@@ -254,3 +264,83 @@ class TestStabilitySignalView:
             "SELECT COUNT(*) FROM v_tool_stability_signal WHERE tool_name = 'bio_dep'"
         ).fetchone()[0]
         assert n == 0
+
+
+# ---------------------------------------------------------------------------
+# v_tool_perf_30d
+# ---------------------------------------------------------------------------
+
+class TestToolPerfView:
+    def test_view_created_and_empty_yields_no_rows(self, star_con):
+        mod = _load_v21_module()
+        star_con.execute(mod._ddl_mcp_metrics_table())
+        star_con.execute(mod._ddl_tool_perf_view())
+        
+        row = star_con.execute(
+            "SELECT 1 FROM information_schema.views "
+            "WHERE table_name='v_tool_perf_30d'"
+        ).fetchone()
+        assert row is not None
+        assert star_con.execute(
+            "SELECT COUNT(*) FROM v_tool_perf_30d"
+        ).fetchone()[0] == 0
+
+    def test_aggregates_perf_metrics_correctly(self, star_con):
+        mod = _load_v21_module()
+        star_con.execute(mod._ddl_mcp_metrics_table())
+        star_con.execute(mod._ddl_tool_perf_view())
+
+        # 寫入測試數據：3 次呼叫
+        # 1. ok, 100ms
+        # 2. user_error, 200ms
+        # 3. rate_limited, 300ms
+        now = datetime.now(timezone.utc)
+        star_con.execute(
+            "INSERT INTO mcp_tool_metrics (tool_name, duration_ms, status, recorded_at) "
+            "VALUES "
+            "('bio_test_tool', 100, 'ok', ?), "
+            "('bio_test_tool', 200, 'user_error', ?), "
+            "('bio_test_tool', 300, 'rate_limited', ?)",
+            [now, now, now]
+        )
+
+        row = star_con.execute(
+            "SELECT tool_name, n_calls, avg_duration_ms, p95_duration_ms, error_rate, n_rate_limited "
+            "FROM v_tool_perf_30d WHERE tool_name = 'bio_test_tool'"
+        ).fetchone()
+
+        assert row is not None
+        assert row[0] == "bio_test_tool"
+        assert row[1] == 3 # n_calls
+        assert abs(row[2] - 200.0) < 0.01 # avg_duration_ms
+        # p95: 100, 200, 300 之間的 95th quantile 預計會在 290 左右
+        assert row[3] > 200.0 and row[3] <= 300.0
+        # error_rate: status 不為 'ok' 的比例 = 2 / 3 * 100 = 66.67%
+        assert abs(row[4] - 66.67) < 0.01
+        assert row[5] == 1 # n_rate_limited
+
+    def test_excludes_records_older_than_30_days(self, star_con):
+        mod = _load_v21_module()
+        star_con.execute(mod._ddl_mcp_metrics_table())
+        star_con.execute(mod._ddl_tool_perf_view())
+
+        now = datetime.now(timezone.utc)
+        old = now - timedelta(days=31)
+
+        # 寫入一筆新的和一筆過期的
+        star_con.execute(
+            "INSERT INTO mcp_tool_metrics (tool_name, duration_ms, status, recorded_at) VALUES "
+            "('bio_filtered', 100, 'ok', ?), "
+            "('bio_filtered', 500, 'ok', ?)",
+            [now, old]
+        )
+
+        row = star_con.execute(
+            "SELECT n_calls, avg_duration_ms FROM v_tool_perf_30d "
+            "WHERE tool_name = 'bio_filtered'"
+        ).fetchone()
+
+        assert row is not None
+        assert row[0] == 1
+        assert abs(row[1] - 100.0) < 0.01
+

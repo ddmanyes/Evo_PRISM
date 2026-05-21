@@ -53,7 +53,7 @@ crc_visium_data/  bulk_rna_data/  proteome_data/
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) 已編譯（`~/llama.cpp/build/bin/llama-server`）
 - 模型檔案（放於 `~/`）：
   - `gemma-4-26B-A4B-it-UD-IQ2_M.gguf`（推理引擎）
-  - `mmproj-BF16.gguf`（視覺投影層）
+  - `mmproj-F16.gguf`（視覺投影層）
   - `bge-m3-Q8_0.gguf`（Embedding，605 MB）
 
 ### 安裝

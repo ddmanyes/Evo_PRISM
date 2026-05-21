@@ -12,7 +12,7 @@
 | [uv](https://github.com/astral-sh/uv) | 套件管理工具 |
 | llama.cpp | 已編譯的 `llama-server` 執行檔 |
 | bge-m3-Q8_0.gguf | 605 MB，本機 embedding 模型 |
-| Gemma 4 Vision 模型 | `gemma-4-26B-A4B-it-UD-IQ2_M.gguf` + `mmproj-BF16.gguf` |
+| Gemma 4 Vision 模型 | `gemma-4-26B-A4B-it-UD-IQ2_M.gguf` + `mmproj-F16.gguf` |
 
 ---
 
@@ -100,7 +100,7 @@ done
 LLAMA_SERVER_BIN   = "~/llama.cpp/build/bin/llama-server"
 EMBEDDING_MODEL    = "~/llama.cpp/models/bge-m3-Q8_0.gguf"
 MULTIMODAL_MODEL   = "~/gemma-4-26B-A4B-it-UD-IQ2_M.gguf"
-MULTIMODAL_MMPROJ  = "~/mmproj-BF16.gguf"
+MULTIMODAL_MMPROJ  = "~/mmproj-F16.gguf"
 ```
 
 ---
