@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS tool_change_log (
     tool_name       VARCHAR NOT NULL,
     old_hash        VARCHAR(16),          -- NULL for first registration
     new_hash        VARCHAR(16) NOT NULL,
-    new_tool_id     UUID REFERENCES tools(tool_id),
+    new_tool_id     UUID,                 -- 軟引用：刻意不加 REFERENCES tools(tool_id)，見 migration v20
     revision_number INTEGER NOT NULL,     -- monotonically increasing per tool_name
     change_reason   VARCHAR,              -- optional: why the code changed
     changed_at      TIMESTAMP DEFAULT now()
