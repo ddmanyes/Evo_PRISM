@@ -60,6 +60,7 @@
 - **ENGRAM（Evidence & iNdexed Graph of Research Artifacts & Memory）**：為本系統首創之分析產出永久記憶與跨樣本比對模組。每次分析任務完成，ENGRAM 自動將圖表、矩陣與報告註冊至資料庫並生成高維語意向量。檢索端採用倒排倒數融合（RRF，Reciprocal Rank Fusion）演算法，無縫融合第一層之 `analysis_subtype` 精確過濾與第二層之 HNSW 語意搜尋。配合 ENGRAM 交互式 UI 的多圖 Lightbox 與並排比對功能，以及涵蓋「輸入數據、程式碼 content-hash、軟硬體環境」之嚴格實驗溯源鏈（Provenance），確保所有分析成果 100% 可溯源、可重現與跨樣本對照。
 - **METRICS 可觀測性監控**：於底層插樁實時收集工具之調用時延、執行狀態與錯誤分類（Error Class），藉由 30 天效能診斷視圖（`v_tool_perf_30d`），為 Agent 工具選擇與自適應路由提供最優化之量化數據依據。
 - **雙軌記憶協同**：ENGRAM 記錄之溯源鏈能精確鎖定產出所對應之工具 content-hash；當 HELIX 辨識出某工具因修改頻繁而設計不穩（進入熱區）時，能瞬間反查並標記該版本產出之所有歷史成果，使用戶在進行跨樣本比對時，得以清晰判別差異究竟源於生物學參數之擾動，抑或是工具代碼本身之版本漂移。
+- **前瞻性影響分析（Proactive Impact Analysis）**：借鏡 GitNexus 之「關係預計算」哲學，吸收 **Confidence-on-Edges（邊上的信心分級）** 精神，設計並實作前瞻性的 `bio_impact` 爆炸範圍（Blast Radius）評估模組。當分析工具面臨升級、重構或廢棄時，系統能依據依賴鏈之信心度（精確關聯 `1.0`、產物同源 `0.9`、名稱啟發式 `0.6`）秒級推導出受波及之樣本與歷史成果，將版本治理從事後診斷躍升為事前預防。
 
 ### 2.3 技術元件選型
 
