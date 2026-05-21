@@ -37,6 +37,7 @@ dependencies = [
     "omicverse",
     "gseapy",
     "adjusttext",
+    "pydeseq2",
 ]
 
 [project.optional-dependencies]
