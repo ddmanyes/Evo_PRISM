@@ -1,16 +1,30 @@
-# Bio_PRISM — 智慧生資分析平台
+# Bio_PRISM
 
-> **Bio_PRISM** · *Bioinformatics Platform for Research Intelligence, Semantic Memory*
+**Bioinformatics Platform for Research Intelligence, Semantic Memory**
 
-[![CI](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml/badge.svg)](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml)
+實驗室 AI 生資分析平台：用自然語言查詢任何組學數據，分析結果永久記憶，不再重複運算。
+
+*An AI-powered lab platform that lets anyone query omics data — spatial Tx, Bulk RNA, scRNA, proteomics, and beyond — in plain language. Every analysis is stored, versioned, and instantly searchable.*
+
+[![CI](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml)
 [![Python ≥ 3.10](https://img.shields.io/badge/Python-%E2%89%A53.10-blue)](https://www.python.org/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-1.5-yellow)](https://duckdb.org/)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-green)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-讓實驗室成員以自然語言查詢空間轉錄體與 Bulk RNA 分析結果，無需程式能力，無需重複運算，建立實驗室永久知識資產。
+---
 
-*Enable lab members to query spatial transcriptomics and Bulk RNA results in natural language — no coding required, no repeated computation, permanent knowledge accumulation.*
+## 為什麼是 Bio_PRISM？ / Why Bio_PRISM?
+
+傳統生資分析的三個痛點，Bio_PRISM 逐一解決：
+
+| 痛點 / Problem | Bio_PRISM 的解法 / Solution |
+|:---|:---|
+| 🔁 每次提問都要重跑程式 | **L1 語意快取**：相似問題毫秒回答，節省 GPU / 記憶體 |
+| 📂 分析結果散落各地、無法搜尋 | **ENGRAM 永久記憶**：每次分析產出自動歸檔，支援語意搜尋 |
+| 🐛 不知道結果是哪版程式跑出來的 | **HELIX 版本追蹤**：工具版本與分析歷史強制關聯，可追溯 |
+| 🧑‍💻 非工程師無法查詢數據 | **自然語言 Agent**：Web UI + Telegram，無需寫程式 |
+| 📊 只支援特定數據類型 | **可擴充架構**：任何組學格式皆可接入三層架構 |
 
 ---
 
