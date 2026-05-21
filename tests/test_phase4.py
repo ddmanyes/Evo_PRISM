@@ -127,20 +127,20 @@ def run(coro):
 
 class TestListTools:
     def test_tool_count_default_hides_dangerous(self, monkeypatch):
-        """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（20 個）。"""
+        """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（21 個）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from server.bio_memory_server import list_tools
         tools = run(list_tools())
-        assert len(tools) == 20
+        assert len(tools) == 21
         names = {t.name for t in tools}
         assert "bio_execute_code" not in names
 
     def test_tool_count_with_dangerous_enabled(self, monkeypatch):
-        """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 21 個工具。"""
+        """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 22 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         from server.bio_memory_server import list_tools
         tools = run(list_tools())
-        assert len(tools) == 21
+        assert len(tools) == 22
         names = {t.name for t in tools}
         assert "bio_execute_code" in names
 
@@ -157,6 +157,7 @@ class TestListTools:
             "bio_check_l2_sufficiency",
             "bio_run_spatial_eda", "bio_run_bulk_eda",
             "bio_run_deg", "bio_run_enrichment", "bio_run_heatmaps",
+            "bio_impact",
             "bio_find_tool", "bio_execute_code", "bio_tool_health",
             "bio_read_report", "bio_get_figure", "bio_get_artifact",
         }
