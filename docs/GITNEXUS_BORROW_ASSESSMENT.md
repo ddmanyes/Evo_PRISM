@@ -119,4 +119,4 @@ analysis_artifacts(artifact_id)
 
 - **候選 1**：當 `bio_impact` 或其他流程開始實際寫 `artifact_relations`（> 數百筆）→ 把推導出的 confidence 落到邊上。
 - **候選 2**：當某聚合 query 實測 > 1s 或 `analysis_artifacts > 5 萬筆`→ 將該 view 物化為表 + launchd 刷新。
-- **共通**：tool_id 回填覆蓋率應提升（目前工具產出分析僅 ~17% 有 tool_id）——這是 impact / stale 兩個治理功能的共同前置；建議所有 `bio_run_*` 經 MCP `_exec_*` 呼叫時確實走 `_backfill_tool_id`。
+- **共通（✅ 2026-05-21 已解決，commit `48e0a0c`）**：~~tool_id 回填覆蓋率應提升（目前工具產出分析僅 ~17% 有 tool_id）~~ → 已將回填下沉到 6 個分析函數（`analysis.tool_registry.backfill_tool_id`），所有呼叫路徑（MCP / 直接 / 排程）統一回填；工具產出分析覆蓋率 **4/23 → 23/23（100%）**，impact 信心由 heuristic 升為 exact。
