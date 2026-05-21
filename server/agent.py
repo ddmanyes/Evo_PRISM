@@ -1184,20 +1184,7 @@ def _exec_bio_run_spatial_eda(args: dict) -> str:
             except Exception:
                 pass
         analysis_id = result.get('analysis_id', '')
-        # Track which tool version produced this result
-        try:
-            from analysis.tool_registry import get_active_tool_id
-            from config.db_utils import safe_write
-            with duckdb.connect(str(DUCKDB_PATH)) as _con:
-                _tool_id = get_active_tool_id(_con, "bio_run_spatial_eda")
-                if _tool_id and analysis_id:
-                    safe_write(
-                        _con,
-                        "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
-                        [_tool_id, analysis_id],
-                    )
-        except Exception as _te:
-            logger.warning("bio_run_spatial_eda: tool_id tracking failed: %s", _te)
+        # tool_id 已由分析函數內部回填（analysis.report_generator）；此處不再重複。
 
         header = (
             f"EDA 完成。\n"
@@ -1240,9 +1227,7 @@ def _exec_bio_register_sample(args: dict) -> str:
 
 
 def _exec_bio_run_bulk_eda(args: dict) -> str:
-    import duckdb
     from analysis.bulk_eda import generate_bulk_report
-    from config.settings import DUCKDB_PATH
     sample_id    = args["sample_id"]
     requested_by = args.get("requested_by", "agent")
     try:
@@ -1255,20 +1240,7 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
                 report_text = _Path(report_path).read_text(encoding="utf-8")
             except Exception:
                 pass
-        # Track which tool version produced this result
-        try:
-            from analysis.tool_registry import get_active_tool_id
-            from config.db_utils import safe_write
-            with duckdb.connect(str(DUCKDB_PATH)) as _con:
-                _tool_id = get_active_tool_id(_con, "bio_run_bulk_eda")
-                if _tool_id and analysis_id:
-                    safe_write(
-                        _con,
-                        "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
-                        [_tool_id, analysis_id],
-                    )
-        except Exception as _te:
-            logger.warning("bio_run_bulk_eda: tool_id tracking failed: %s", _te)
+        # tool_id 已由分析函數內部回填（analysis.bulk_eda）；此處不再重複。
 
         header = (
             f"Bulk EDA 完成。\n"
@@ -1281,9 +1253,7 @@ def _exec_bio_run_bulk_eda(args: dict) -> str:
 
 
 def _exec_bio_run_mcseg_qc(args: dict) -> str:
-    import duckdb
     from analysis.mcseg_quality import generate_mcseg_qc_report
-    from config.settings import DUCKDB_PATH
     sample_id    = args["sample_id"]
     qc_dir       = args.get("qc_dir")
     requested_by = args.get("requested_by", "agent")
@@ -1297,19 +1267,7 @@ def _exec_bio_run_mcseg_qc(args: dict) -> str:
                 report_text = _Path(report_path).read_text(encoding="utf-8")
             except Exception:
                 pass
-        try:
-            from analysis.tool_registry import get_active_tool_id
-            from config.db_utils import safe_write
-            with duckdb.connect(str(DUCKDB_PATH)) as _con:
-                _tool_id = get_active_tool_id(_con, "bio_run_mcseg_qc")
-                if _tool_id and analysis_id:
-                    safe_write(
-                        _con,
-                        "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
-                        [_tool_id, analysis_id],
-                    )
-        except Exception as _te:
-            logger.warning("bio_run_mcseg_qc: tool_id tracking failed: %s", _te)
+        # tool_id 已由分析函數內部回填（analysis.mcseg_quality）；此處不再重複。
 
         header = (
             f"MCseg QC 完成。\n"
@@ -1325,27 +1283,6 @@ def _exec_bio_run_mcseg_qc(args: dict) -> str:
         )
     except Exception as e:
         return f"MCseg QC 執行失敗：{e}"
-
-
-def _backfill_tool_id(tool_name: str, analysis_id: Optional[str]) -> None:
-    """為 bulk_deg / enrichment / heatmap 等工具回填 analysis_history.tool_id（HELIX 追蹤）。"""
-    if not analysis_id:
-        return
-    try:
-        import duckdb
-        from analysis.tool_registry import get_active_tool_id
-        from config.db_utils import safe_write
-        from config.settings import DUCKDB_PATH
-        with duckdb.connect(str(DUCKDB_PATH)) as _con:
-            tid = get_active_tool_id(_con, tool_name)
-            if tid:
-                safe_write(
-                    _con,
-                    "UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
-                    [tid, analysis_id],
-                )
-    except Exception as exc:
-        logger.warning("%s: tool_id backfill failed: %s", tool_name, exc)
 
 
 def _exec_bio_run_deg(args: dict) -> str:
@@ -1374,7 +1311,7 @@ def _exec_bio_run_deg(args: dict) -> str:
             pval_threshold=float(args.get("pval_threshold", 0.05)),
             requested_by=args.get("requested_by", "agent"),
         )
-        _backfill_tool_id("bio_run_deg", analysis_id)
+        # tool_id 由 run_deg_analysis 內部回填
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
         except Exception:
@@ -1409,7 +1346,7 @@ def _exec_bio_run_enrichment(args: dict) -> str:
             top_term=int(args.get("top_term", 10)),
             requested_by=args.get("requested_by", "agent"),
         )
-        _backfill_tool_id("bio_run_enrichment", analysis_id)
+        # tool_id 由 run_ora 內部回填
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
         except Exception:
@@ -1460,7 +1397,7 @@ def _exec_bio_run_heatmaps(args: dict) -> str:
             pval_threshold=float(args.get("pval_threshold", 0.05)),
             requested_by=args.get("requested_by", "agent"),
         )
-        _backfill_tool_id("bio_run_heatmaps", analysis_id)
+        # tool_id 由 run_bulk_heatmaps 內部回填
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
         except Exception:
