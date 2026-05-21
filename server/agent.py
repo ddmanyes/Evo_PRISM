@@ -375,6 +375,24 @@ BIO_TOOLS = [
         },
     },
     {
+        "name": "bio_impact",
+        "description": (
+            "影響分析 / 爆炸範圍(blast radius)。回答『改版/deprecate 某工具,或重跑/撤回某樣本,"
+            "會影響哪些分析與產物』。借鏡 GitNexus 的 impact tool,每條影響邊帶 confidence:"
+            "tool_id 精確=1.0 / 同分析=0.9 / analysis_type 啟發式=0.6。"
+            "恰好給一個目標:tool_name 或 artifact_id 或 sample_id。0 LLM token 純 SQL。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tool_name":   {"type": "string", "description": "工具名(如 bio_run_bulk_eda)→ 該工具改版會影響哪些分析"},
+                "artifact_id": {"type": "string", "description": "產物 ID → 下游受影響的 artifacts"},
+                "sample_id":   {"type": "string", "description": "樣本 ID → 該樣本所有分析與產物"},
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "bio_find_tool",
         "description": (
             "語意搜尋既有可重用的分析函數（tool discovery）。"
@@ -1408,6 +1426,23 @@ def _exec_bio_run_enrichment(args: dict) -> str:
         return f"富集執行失敗：{e}"
 
 
+def _exec_bio_impact(args: dict) -> str:
+    """影響分析 / 爆炸範圍（read-only，0 token）。"""
+    from analysis.impact import compute_impact, render_impact_md
+    tool_name = args.get("tool_name") or None
+    artifact_id = args.get("artifact_id") or None
+    sample_id = args.get("sample_id") or None
+    try:
+        report = compute_impact(
+            tool_name=tool_name, artifact_id=artifact_id, sample_id=sample_id,
+        )
+    except ValueError as e:
+        return f"影響分析參數錯誤：{e}"
+    except Exception as e:
+        return f"影響分析失敗：{e}"
+    return render_impact_md(report)
+
+
 def _exec_bio_run_heatmaps(args: dict) -> str:
     """產出顯著基因熱圖 + top variable heatmap。"""
     from pathlib import Path as _Path
@@ -1740,6 +1775,7 @@ _TOOL_HANDLERS = {
     "bio_run_deg":         _exec_bio_run_deg,
     "bio_run_enrichment":  _exec_bio_run_enrichment,
     "bio_run_heatmaps":    _exec_bio_run_heatmaps,
+    "bio_impact":          _exec_bio_impact,
     "bio_run_mcseg_qc":    _exec_bio_run_mcseg_qc,
     "bio_register_sample": _exec_bio_register_sample,
     "bio_execute_code": _exec_bio_execute_code,

@@ -128,6 +128,7 @@ class TestMCPToolsList:
         "bio_run_deg",
         "bio_run_enrichment",
         "bio_run_heatmaps",
+        "bio_impact",
         "bio_find_tool",
         "bio_execute_code",
         "bio_tool_health",
@@ -159,23 +160,23 @@ class TestMCPToolsList:
         )
 
     def test_tool_count_is_14_when_dangerous_enabled(self, monkeypatch):
-        """env=true 時，新建 client 應看到 21 個工具。"""
+        """env=true 時，新建 client 應看到 22 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         # 重新建 app 確保 env 生效
         from starlette.testclient import TestClient
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(12), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 21
+        assert len(names) == 22
 
     def test_tool_count_is_13_by_default(self, monkeypatch):
-        """env 未設時，client 只看到 20 個（無 bio_execute_code）。"""
+        """env 未設時，client 只看到 21 個（無 bio_execute_code）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from starlette.testclient import TestClient
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(13), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 20
+        assert len(names) == 21
         assert "bio_execute_code" not in names
 
 

@@ -674,6 +674,23 @@ def _build_all_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="bio_impact",
+            description=(
+                "影響分析 / 爆炸範圍。改版/deprecate 工具或重跑/撤回樣本前,查會影響哪些分析與產物。"
+                "每條影響邊帶 confidence(tool_id 精確 1.0 / 同分析 0.9 / analysis_type 啟發式 0.6)。"
+                "恰好給一個目標:tool_name 或 artifact_id 或 sample_id。0 token 純 SQL,唯讀。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "tool_name":   {"type": "string"},
+                    "artifact_id": {"type": "string"},
+                    "sample_id":   {"type": "string"},
+                },
+                "required": [],
+            },
+        ),
+        types.Tool(
             name="bio_find_tool",
             description=(
                 "語意搜尋既有可重用的分析函數（tool discovery）。"
@@ -1244,6 +1261,11 @@ async def _handle_bio_run_heatmaps(args: dict) -> str:
     return await asyncio.to_thread(_exec_bio_run_heatmaps, args)
 
 
+async def _handle_bio_impact(args: dict) -> str:
+    from server.agent import _exec_bio_impact
+    return await asyncio.to_thread(_exec_bio_impact, args)
+
+
 async def _handle_bio_execute_code(args: dict) -> str:
     from server.agent import _exec_bio_execute_code
     # timeout clamp（防 MCP 客戶端傳大數）
@@ -1353,6 +1375,7 @@ _HANDLERS = {
     "bio_run_deg":         _handle_bio_run_deg,
     "bio_run_enrichment":  _handle_bio_run_enrichment,
     "bio_run_heatmaps":    _handle_bio_run_heatmaps,
+    "bio_impact":          _handle_bio_impact,
     "bio_execute_code": _handle_bio_execute_code,
     "bio_find_tool": _handle_bio_find_tool,
     "bio_tool_health": _handle_bio_tool_health,
