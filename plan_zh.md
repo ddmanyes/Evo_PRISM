@@ -114,10 +114,11 @@ end
 subgraph L2["L2 銀層 — 結構化特徵儲存 + 雙軌記憶系統"]
 parquet["silver/*.parquet — 中間數據（計數矩陣）"]
 results["results/ — 分析產出（.png / .csv / .md）"]
+analysis_funcs["analysis/ — 分析工具函數（程式碼邏輯）"]
 subgraph db["bio_memory.duckdb — 記憶核心"]
 core["sample_registry + analysis_history"]
 helix["HELIX — tools / tool_change_log / tool_stabilization_log"]
-engram["ENGRAM — analysis_artifacts（blob + HNSW）"]
+engram["ENGRAM — analysis_artifacts + blobs（HNSW）"]
 end
 end
 
@@ -128,8 +129,9 @@ end
 
 raw -->|"scripts/ 一次性轉換"| parquet
 parquet -->|"分析執行"| results
+analysis_funcs -->|"分析執行"| results
+analysis_funcs -->|"register_tool()"| helix
 results -->|"register_artifact()"| engram
-parquet -->|"register_tool()"| helix
 results -->|"analysis_history 寫入"| core
 core -->|"分析完成後寫入"| cache
 ```
