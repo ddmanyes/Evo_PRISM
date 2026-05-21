@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd 排程：每週日 05:00 還原最新備份至 /tmp/bio_memory_verify.duckdb，
+  驗證 sample_registry 與 analysis_history 行數，狀態寫至 logs/restore_test_status.json。
+
+  安裝步驟：
+    1. cp docs/launchd_weekly_restore_test.plist.example ~/Library/LaunchAgents/com.hermes.weekly_restore_test.plist
+    2. launchctl load ~/Library/LaunchAgents/com.hermes.weekly_restore_test.plist
+    3. 驗證：launchctl list | grep weekly_restore
+
+  手動觸發：
+    launchctl start com.hermes.weekly_restore_test
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.weekly_restore_test</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhanqiru/.venvs/hermes-bio-memory/bin/python</string>
+        <string>/Volumes/NO NAME/bio_DB/scheduler/weekly_restore_test.py</string>
+    </array>
+
+    <!-- Sunday 05:00 (avoids 02:00 backup, 03:00 hnsw rebuild, 04:00 helix expire) -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>5</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/weekly_restore_test.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/weekly_restore_test_err.log</string>
+</dict>
+</plist>

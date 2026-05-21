@@ -1,9 +1,40 @@
 [project]
-name = "bioagent"
+name = "bio-prism"
 version = "0.1.0"
-description = "BioAgent：AI Agent 驅動的實驗室生資智慧分析平台"
+description = "Natural language bioinformatics platform: spatial Tx, Bulk RNA & proteomics. MCP Agent + HELIX tool versioning + ENGRAM semantic memory."
+readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
+authors = [
+    {name = "Chan Chi Ru", email = "u9013039@gmail.com"},
+]
+keywords = [
+    "bioinformatics",
+    "spatial-transcriptomics",
+    "bulk-rna-seq",
+    "ai-agent",
+    "mcp",
+    "duckdb",
+    "natural-language-processing",
+    "knowledge-management",
+    "llm",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Science/Research",
+]
+
+[project.urls]
+Homepage = "https://github.com/ddmanyes/Bio_PRISM"
+"Bug Tracker" = "https://github.com/ddmanyes/Bio_PRISM/issues"
 
 dependencies = [
     # === 核心資料庫 ===

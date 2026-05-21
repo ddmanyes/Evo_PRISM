@@ -67,6 +67,10 @@ bio_db_backups/
 
 # Temp / scratch files
 file_info_input.md
+*.bak
+
+# Architecture diagram source files (keep compiled PNG in docs/images/, ignore raw sources)
+# docs/images/*.png  ← intentionally tracked (documentation assets)
 
 # MCP 設定（含本機絕對路徑，不跨機器）
 .mcp.json
@@ -74,3 +78,13 @@ file_info_input.md
 # IDE
 .vscode/
 .idea/
+
+# 蛋白質體數據（L3 數據，不進 git）
+proteome_data/
+
+# 大型簡報二進位檔案
+*.pptx
+
+# 臨時備份檔案
+*.bak
+

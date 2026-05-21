@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd：開機自動啟動 llama-server Multimodal service (Gemma 4)
+
+  啟動後提供 OpenAI-compatible /v1/chat/completions API（port 8080）。
+  支援影像輸入（Multimodal）。
+
+  安裝：
+    cp docs/launchd_multimodal_server.plist.example \
+       ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
+    launchctl load ~/Library/LaunchAgents/com.hermes.multimodal_server.plist
+
+  手動啟動（不需 launchd）：
+    ~/llama.cpp/build/bin/llama-server \
+      -m /Users/zhanqiru/gemma-4-26B-A4B-it-UD-IQ2_M.gguf \
+      --mmproj /Users/zhanqiru/mmproj-F16.gguf \
+      --port 8080 --ctx-size 8192 --n-gpu-layers 99 \
+      --flash-attn -ctk q8_0 -ctv q8_0
+
+  確認在線：
+    curl http://localhost:8080/health
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.multimodal_server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhanqiru/llama.cpp/build/bin/llama-server</string>
+        <string>-m</string>
+        <string>/Users/zhanqiru/gemma-4-26B-A4B-it-UD-IQ2_M.gguf</string>
+        <string>--mmproj</string>
+        <string>/Users/zhanqiru/mmproj-F16.gguf</string>
+        <string>--port</string>
+        <string>8080</string>
+        <string>--ctx-size</string>
+        <string>8192</string>
+        <string>--n-gpu-layers</string>
+        <string>99</string>
+        <string>--flash-attn</string>
+        <string>--cache-type-k</string>
+        <string>q8_0</string>
+        <string>--cache-type-v</string>
+        <string>q8_0</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/multimodal_server.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhanqiru/bio_db_backups/multimodal_server_err.log</string>
+</dict>
+</plist>

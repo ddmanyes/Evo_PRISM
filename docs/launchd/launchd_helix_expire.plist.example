@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.helix_expire</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/zhanqiru/.venvs/hermes-bio-memory/bin/python</string>
+        <string>/Volumes/NO NAME/bio_DB/scheduler/helix_expire_snapshots.py</string>
+    </array>
+
+    <!-- Weekly on Sunday 04:00 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Do NOT run at load — disk may not be mounted yet -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhanqiru/Library/Logs/bioagent/helix_expire.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhanqiru/Library/Logs/bioagent/helix_expire.log</string>
+</dict>
+</plist>
