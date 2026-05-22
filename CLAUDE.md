@@ -83,9 +83,9 @@ L2 Silver �bio_DB/
 ├── crc_visium_data/        ← L3 測試數據（~39GB，唯讀，本地數據目錄）
 ├── data_ana/               ← 參考分析中間數據（唯讀，來自 MSseg 專案）
 ├── results_ana/            ← 參考分析結果（唯讀，來自 MSseg 專案）
-├── analysis_msseg/         ← MSseg 分析程式碼（參考用）
-├── backend_msseg/          ← MSseg FastAPI 後端（參考用）
-└── msseg_docs/             ← MSseg 文件（參考用）
+├── analysis_msseg/         ← MSseg 分析程式碼（本機參考用，未納入 git）
+├── backend_msseg/          ← MSseg FastAPI 後端（本機參考用，未納入 git）
+└── msseg_docs/             ← MSseg 文件（本機參考用，未納入 git）
 ```
 
 ---
@@ -448,7 +448,7 @@ memory_recent(id UUID, sample_id, query_text, report_text,
 | CRC Visium HD (官方) | `crc_visium_data/official_v4/` | L2 轉換測試、管道驗證 |
 | MSseg 分析結果 | `results_ana/` | 分析輸出格式參考 |
 | MSseg 中間數據 | `data_ana/` | AnnData 格式參考 |
-| MSseg 程式碼 | `analysis_msseg/` `backend_msseg/` | 細胞分割、API 實作參考 |
+| MSseg 程式碼 | `analysis_msseg/` `backend_msseg/`（本機，未納入 git） | 細胞分割、API 實作參考 |
 
 ---
 
@@ -470,4 +470,3 @@ memory_recent(id UUID, sample_id, query_text, report_text,
 | [docs/launchd/launchd_scan_samples.plist.example](docs/launchd/launchd_scan_samples.plist.example) | macOS 每 30 分鐘掃描新樣本排程範本 |
 | [docs/launchd/launchd_helix_expire.plist.example](docs/launchd/launchd_helix_expire.plist.example) | macOS 每週日 04:00 HELIX snapshot 遺忘曲線降採樣排程範本 |
 | [docs/launchd/launchd_cleanup_figure_cache.plist.example](docs/launchd/launchd_cleanup_figure_cache.plist.example) | macOS 每日 03:35 清理 figure cache 過期圖檔排程範本 |
-| [msseg_docs/CLAUDE.md](msseg_docs/CLAUDE.md) | MSseg 子專案開發規範 |
