@@ -4,7 +4,7 @@
 
 實驗室 AI 生資分析平台：用自然語言查詢任何組學數據，分析結果永久記憶，不再重複運算。
 
-*An AI-powered lab platform that lets anyone query omics data — spatial Tx, Bulk RNA, scRNA, proteomics, and beyond — in plain language. Every analysis is stored, versioned, and instantly searchable.*
+*An AI-powered lab platform that lets anyone query omics data — spatial Tx, Bulk RNA, scRNA, proteomics, and beyond — in plain language via LLM + MCP. Every analysis is stored, versioned, and instantly searchable.*
 
 [![CI](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml)
 [![Python ≥ 3.10](https://img.shields.io/badge/Python-%E2%89%A53.10-blue)](https://www.python.org/)
@@ -16,15 +16,17 @@
 
 ## 為什麼是 Bio_PRISM？ / Why Bio_PRISM?
 
-傳統生資分析的三個痛點，Bio_PRISM 逐一解決：
+傳統生資分析的五個痛點，Bio_PRISM 逐一解決。
+
+*Bio_PRISM addresses five common pain points in bioinformatics workflows.*
 
 | 痛點 / Problem | Bio_PRISM 的解法 / Solution |
 |:---|:---|
-| 🔁 每次提問都要重跑程式 | **L1 語意快取**：相似問題毫秒回答，節省 GPU / 記憶體 |
-| 📂 分析結果散落各地、無法搜尋 | **ENGRAM 永久記憶**：每次分析產出自動歸檔，支援語意搜尋 |
-| 🐛 不知道結果是哪版程式跑出來的 | **HELIX 版本追蹤**：工具版本與分析歷史強制關聯，可追溯 |
-| 🧑‍💻 非工程師無法查詢數據 | **自然語言 Agent**：Web UI + Telegram，無需寫程式 |
-| 📊 只支援特定數據類型 | **可擴充架構**：任何組學格式皆可接入三層架構 |
+| 🔁 每次提問都要重跑程式 / Re-running the same analysis repeatedly | **L1 語意快取**：相似問題毫秒回答，節省 GPU / 記憶體 · *Semantic cache answers similar queries in milliseconds* |
+| 📂 分析結果散落各地、無法搜尋 / Results scattered and unsearchable | **ENGRAM 永久記憶**：每次產出自動歸檔，支援語意搜尋 · *Every artifact auto-archived with hybrid semantic search* |
+| 🐛 不知道結果是哪版程式跑出來的 / No traceability between results and code | **HELIX 版本追蹤**：工具版本與分析歷史強制關聯 · *Tool versions hard-linked to analysis history* |
+| 🧑‍💻 非工程師無法查詢數據 / Non-coders locked out of data | **自然語言 Agent**：Web UI + Telegram，無需寫程式 · *Plain-language queries via Web UI or Telegram* |
+| 📊 只支援特定數據類型 / Platform locked to one data type | **可擴充三層架構**：空間轉錄體、Bulk RNA、scRNA、蛋白質體、ATAC 等皆可接入 · *Extensible to any omics: spatial Tx, bulk RNA, scRNA, proteomics, ATAC, and more* |
 
 ---
 
@@ -139,19 +141,23 @@ bash start_bioagent.sh --local   # 本機 Gemma 4 Vision（需 ~16 GB RAM）
 > 詹麒儒 (Chan Chi Ru) — u9013039@gmail.com
 
 測試資料包含 / Test archive includes:
-- `bio_memory.duckdb` — 已初始化的主資料庫（含 Schema v19、範例 sample 登記）
+- `bio_memory.duckdb` — 已初始化的主資料庫（Schema v19 + 範例 sample 登記）/ Pre-initialized database with sample registry
 - `silver/spatial_counts_crc_official_v4_8um/` — CRC Visium HD 8µm L2 Parquet（416 MB，215M nonzero）
-- `gene_sets/hair_follicle.yaml` — 路徑基因集範例
+- `gene_sets/hair_follicle.yaml` — 路徑基因集範例 / Example pathway gene set
 
 預期測試結果 / Expected test results:
 ```bash
 .venv/bin/python -m pytest tests/ -v --tb=short
-# 283 passed / 5 skipped
+# 562 tests collected
 ```
 
 ---
 
-## MCP Server
+## LLM + MCP Server 整合 / LLM + MCP Integration
+
+Bio_PRISM 以 **MCP（Model Context Protocol）** 作為 LLM 與生資工具之間的標準橋樑。任何支援 MCP 的 AI 客戶端（Claude Code、Antigravity IDE、Web UI）都能直接呼叫 15 個生資工具，讓 LLM 決定何時查詢歷史、何時觸發分析、何時讀回報告——無需人工介入。
+
+*Bio_PRISM uses **MCP (Model Context Protocol)** as the standard bridge between LLMs and bioinformatics tools. Any MCP-compatible client (Claude Code, Antigravity IDE, Web UI) can invoke 15 bio tools directly — the LLM autonomously decides when to query history, trigger analysis, or retrieve reports.*
 
 同時提供 **stdio** 與 **HTTP** 兩種 transport，供外部 AI 客戶端呼叫。
 
