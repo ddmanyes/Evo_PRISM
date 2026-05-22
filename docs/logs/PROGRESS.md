@@ -36,9 +36,9 @@
   - [x] [analysis/tool_registry.py](../../analysis/tool_registry.py) 新增 `compute_health_score()` (Eq.2 clip[0,1])；`tool_health_report()` 新增 `tool_health_scores` 欄位 + HealthScore 低於 θ_warning 的 recommendation
   - [x] [tests/test_helix_formulas.py](../../tests/test_helix_formulas.py) 26 個單元測試，含 paper 例題驗算（f_promote=3.4）
 
-- [x] **AA2. UserApproval 蒐集入口** *(2026-05-22 完成，DB層)*
+- [x] **AA2. UserApproval 蒐集入口** *(2026-05-23 全數完成)*
   - [x] [scripts/00_init_db.py](../../scripts/00_init_db.py) v22 idempotent migration：`analysis_history ADD COLUMN IF NOT EXISTS user_approval INTEGER DEFAULT NULL`（NULL=未評/0=負評/1=正評）
-  - [ ] [server/web_app.py](../../server/web_app.py) dashboard report 頁面加 👍 / 👎 按鈕 POST 端點 *(待續)*
+  - [x] [server/web_app.py](../../server/web_app.py) `POST /api/analysis/{id}/feedback` 端點（body: `{"approval": 1|-1}`，safe_write 寫入 user_approval，供 HELIX Eq.(1) f_promote 使用）*(2026-05-23 Session L 完成)*
   - [ ] [server/telegram_bot.py](../../server/telegram_bot.py) 同步加 inline keyboard 反饋按鈕（可選）*(待續)*
 
 - [x] **AA3. Fast-Path 整合到 MCP server** *(2026-05-22 完成)*
@@ -62,10 +62,11 @@
   - [ ] inline_data ≤ 500 KB CHECK 或寫入層 guard（超過自動 spill 為 file_path）
   - [ ] 既有大 blob retrospective 掃描 + migrate 為外部檔案
 
-- [ ] **AB3. scripts/ 去硬編碼 L3 路徑**
-  - [ ] [scripts/00_init_db.py:155](../../scripts/00_init_db.py) 與 [scripts/02_spatial_to_parquet.py:202](../../scripts/02_spatial_to_parquet.py) 改用 `config.settings.L3_ROOT`
-  - [ ] [scripts/01_register_sample.py:38](../../scripts/01_register_sample.py) 同步改 `L3_ROOT / "bulk_rna_data"`
-  - [ ] 新增 `L3_ROOT` env var 至 .env.example
+- [x] **AB3. scripts/ 去硬編碼 L3 路徑** *(2026-05-23 Session L 完成)*
+  - [x] [scripts/00_init_db.py](../../scripts/00_init_db.py) 匯入 `L3_ROOT`，`/Volumes/NO NAME/.../official_v4` → `str(L3_ROOT / "official_v4")`
+  - [x] [scripts/02_spatial_to_parquet.py](../../scripts/02_spatial_to_parquet.py) `--l3-path` 預設值同步改用 `str(L3_ROOT / "official_v4")`
+  - [x] [scripts/01_register_sample.py](../../scripts/01_register_sample.py) `BULK_RESULTS_DIR` 改用新增的 `BULK_RNA_ROOT`（`config/settings.py` 新增，env: `BULK_RNA_ROOT`，預設 `BIO_DB_ROOT/bulk_rna_data`）
+  - [x] `.env.example` 補 `L3_DATA_ROOT` 與 `BULK_RNA_ROOT` 說明
 
 - [ ] **AB4. register_tool 改 module-level**（降低新工具忘記登記風險）
   - [ ] 設計 `@register_tool_on_import(name, version, ...)` decorator
@@ -81,8 +82,8 @@
   - [ ] `agent_bulk.py`（_exec_bio_run_bulk_eda / _exec_bio_run_deg / _exec_bio_run_heatmaps / _exec_bio_run_enrichment）
   - [ ] `agent_history.py`（_exec_bio_history_* / _exec_bio_memory_* / _exec_bio_artifact_*）
 
-- [ ] **AB7. pyrightconfig.json 環境變數化**
-  - [ ] 移除 `/Users/zhanqiru/.venvs` macOS 硬編碼，改用相對路徑或 env var
+- [x] **AB7. pyrightconfig.json 環境變數化** *(2026-05-23 Session L 完成)*
+  - [x] 移除 `/Users/zhanqiru/.venvs` macOS 硬編碼，改用 `venvPath="."` + `venv=".venv"`（專案根的 `.venv` symlink）
 
 - [ ] **AB8. start_bioagent.{sh,ps1} 路徑邏輯統一**
   - [ ] sh 版改用 `${HOME}` 或 env var；與 ps1 版 `$env:USERPROFILE` 邏輯對等
@@ -167,6 +168,35 @@
 - [ ] I1. 把 D/E/F/G 真實數據回填 paper §3 對應子節（目前為空 placeholder）。
 - [ ] I2. 將 mermaid graph 與 SQL block 匯出靜態圖檔，避免 LaTeX 編排炸版。
 - [ ] I3. 整理論文草稿，確保圖表 / 公式編號 / 參考文獻完善，準備學術發表。
+
+---
+
+## ✅ 2026-05-23 Session L：Code Review 修正 + AA2 Web UI + AB3/AB7 路徑去硬編碼
+
+**動機**：Session K 提交 AA1 後，Code Review 發現 3 個遺漏問題（BUG-CR-1/2/3），其中 BUG-CR-1/2 為高風險——若不修正，Benchmark 2 (HELIX) 的演化曲線數據無效。本 Session 逐一修正，同時補完 AA2 Web UI 端點，並清理 AB3/AB7 路徑問題。
+
+### 🔴 BUG-CR-1：register_tool() 遺漏呼叫
+- **問題**：AA1 commit (`4a8ebef`) 修改了 `scan_candidates()` 與 `tool_health_report()` 但未呼叫 `register_tool()`，導致 `tool_change_log` 空白、`revision_count` 不累積，Benchmark 2 演化曲線會是假數據。
+- **修正**：新建 [`scripts/patch_aa1_tool_registration.py`](../../scripts/patch_aa1_tool_registration.py)，呼叫 `register_tool()` 為兩個函數補登記；腳本已執行（`bio_scan_promotion_candidates` tool_id=c7741177、`bio_tool_health` tool_id=88bd91e5）。
+
+### 🔴 BUG-CR-2：churn_ratio 查詢無 Migration Guard
+- **問題**：`tool_health_report()` 中新增的 `churn_ratio` 查詢缺 `try/except`，舊 schema（pre-v19）欄位不存在時整個 `bio_tool_health` MCP 工具崩潰。
+- **修正**：[`analysis/tool_registry.py`](../../analysis/tool_registry.py) `churn_rows` 查詢加 `try/except`，fallback `avg_churn_by_tool = {}`（對齊 CLAUDE.md §7.6.1 規範）。
+
+### 👍 AA2 Web UI 端點（完成 AA2 剩餘 50%）
+- [`server/web_app.py`](../../server/web_app.py) 新增 `POST /api/analysis/{analysis_id}/feedback`（body: `{"approval": 1|-1}`）。驗證 analysis_id UUID 格式 + approval 值域，`safe_write()` 寫入 `user_approval`，回傳 `{"status":"ok","label":"👍/👎"}`。AA2 DB 層（v22 migration）+ Web UI 層現均完成，HELIX Eq.(1) β·UserApproval 訊號蒐集管道全通。
+
+### 🔧 AB3：scripts/ 去硬編碼 L3 路徑
+- `config/settings.py`：新增 `BULK_RNA_ROOT`（env: `BULK_RNA_ROOT`，預設 `BIO_DB_ROOT/bulk_rna_data`）
+- `scripts/00_init_db.py`：匯入 `L3_ROOT`，`/Volumes/NO NAME/...` macOS 絕對路徑 → `str(L3_ROOT / "official_v4")`
+- `scripts/01_register_sample.py`：`BULK_RESULTS_DIR` 改用 `BULK_RNA_ROOT / "Kallisto_v1" / "results_kallisto"`
+- `scripts/02_spatial_to_parquet.py`：`--l3-path` 預設值 → `str(L3_ROOT / "official_v4")`
+- `.env.example`：補 `L3_DATA_ROOT` 與 `BULK_RNA_ROOT` 說明條目
+
+### 🔧 AB7：pyrightconfig.json 去 macOS 硬編碼
+- `pyrightconfig.json`：`/Users/zhanqiru/.venvs` → `venvPath=".", venv=".venv"`（使用專案根既有的 `.venv` symlink，跨平台可用）
+
+**Commits**：`3f7a189` fix(HELIX): post-AA1 code review corrections | `2b22983` refactor(AB3,AB7): remove hardcoded paths; add BULK_RNA_ROOT setting
 
 ---
 
