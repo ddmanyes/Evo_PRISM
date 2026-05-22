@@ -52,25 +52,25 @@ graph TD
     classDef lake fill:#eceff1,stroke:#37474f,stroke-width:2px;
     classDef core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     
-    Q(["使用者自然語言 / API 請求"]) --> Agent(["Evo_PRISM LLM Agent 中樞"]):::entry
+    Q("使用者自然語言 / API 請求"):::entry --> Agent("Evo_PRISM LLM Agent 中樞"):::entry
     
     subgraph Gateway["自適應去重與路由閘道 (Deduplication & Routing)"]
-        r1{"L1: 3-way RRF 語意匹配?"}
-        r2{"L2: 既存分析代碼/SQL?"}
-        r3["L3: 啟動實體計算 Pipeline"]
+        r1{"\"L1: 3-way RRF 語意匹配?\""}
+        r2{"\"L2: 既存分析代碼/SQL?\""}
+        r3["\"L3: 啟動實體計算 Pipeline\""]
     end
     
     Agent --> r1
-    r1 -->|Yes (Cosine >= 0.88)| L1_Hit["L1 Gold Cache 秒級傳回結果"]:::core
+    r1 -->|Yes Cosine >= 0.88| L1_Hit("L1 Gold Cache 秒級傳回結果"):::core
     r1 -->|No| r2
     
-    r2 -->|Yes| L2_Hit["L2 Silver SQL 快速響應"]:::core
+    r2 -->|Yes| L2_Hit("L2 Silver SQL 快速響應"):::core
     r2 -->|No| r3
     
     subgraph Lakehouse["L1-L2-L3 數據湖儲存層 (Medallion Data Lake)"]
-        L1[("L1 Gold: hermes_cache.duckdb<br/>(memory_recent, TTL 7d)")]:::lake
-        L2[("L2 Silver: bio_memory.duckdb<br/>(sample_registry / analysis_history)<br/>Parquet 特徵儲存 (silver/*.parquet)")]:::lake
-        L3[("L3 Bronze: 原始唯讀數據<br/>(SpaceRanger outs / FASTQ)")]:::lake
+        L1["L1 Gold: hermes_cache.duckdb (memory_recent, TTL 7d)"]:::lake
+        L2["L2 Silver: bio_memory.duckdb (sample_registry / analysis_history)"]:::lake
+        L3["L3 Bronze: 原始唯讀數據 (SpaceRanger outs / FASTQ)"]:::lake
     end
     
     r3 -->|"實體沙盒執行"| L3
