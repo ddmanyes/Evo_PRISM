@@ -30,12 +30,12 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH
+from config.settings import BULK_RNA_ROOT, DUCKDB_PATH
 from config.db_utils import safe_write
 
 logger = logging.getLogger(__name__)
 
-BULK_RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
+BULK_RESULTS_DIR = BULK_RNA_ROOT / "Kallisto_v1" / "results_kallisto"
 
 VALID_DATA_TYPES = {
     "visium_hd",

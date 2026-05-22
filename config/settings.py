@@ -14,6 +14,7 @@ BIO_DB_ROOT = Path(os.getenv("BIO_DB_ROOT", Path(__file__).parent.parent))
 
 # ── 資料層路徑 ─────────────────────────────────────────────
 L3_ROOT = Path(os.getenv("L3_DATA_ROOT", BIO_DB_ROOT / "crc_visium_data"))
+BULK_RNA_ROOT = Path(os.getenv("BULK_RNA_ROOT", BIO_DB_ROOT / "bulk_rna_data"))
 L2_ROOT = BIO_DB_ROOT / "silver"
 L1_ROOT = BIO_DB_ROOT / "gold"
 RESULTS_ROOT = BIO_DB_ROOT / "results_ana"

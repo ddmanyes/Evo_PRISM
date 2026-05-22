@@ -1,5 +1,5 @@
 {
-  "venvPath": "/Users/zhanqiru/.venvs",
-  "venv": "hermes-bio-memory",
+  "venvPath": ".",
+  "venv": ".venv",
   "pythonVersion": "3.11"
 }

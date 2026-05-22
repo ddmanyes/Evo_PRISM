@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import DUCKDB_PATH, L2_ROOT
+from config.settings import DUCKDB_PATH, L2_ROOT, L3_ROOT
 
 # ── Visium HD 8µm h5ad relative path inside a sample's outs/ ──────────────
 _H5AD_SUBPATH = "binned_outputs/binned_outputs/square_008um/filtered_feature_bc_matrix_agg.h5ad"
@@ -199,7 +199,7 @@ def main():
     parser.add_argument("--sample-id", default="crc_official_v4", help="sample_registry key")
     parser.add_argument(
         "--l3-path",
-        default="/Volumes/NO NAME/bio_DB/crc_visium_data/official_v4",
+        default=str(L3_ROOT / "official_v4"),
         help="Path to sample outs directory (L3)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Skip actual conversion")
