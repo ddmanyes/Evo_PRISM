@@ -1,14 +1,18 @@
-# Bio_PRISM — 環境建置指南 / Setup Guide
+# Evo_PRISM (Evo-PRISM) — 環境建置指南 / Setup Guide
 
-本文件說明如何在新機器上從零開始建置 Bio_PRISM 執行環境。
+本文件說明如何在新機器上從零開始建置 Evo_PRISM 執行環境。
 
-*This guide walks you through setting up Bio_PRISM on a new machine from scratch.*
+*This guide walks you through setting up Evo_PRISM on a new machine from scratch.*
+
+> [!NOTE]
+> **API 與實體命名相容性說明**：
+> 雖然本平台已被重塑為通用的 `Evo_PRISM` 自進化平台，但為保持現有代碼、自動化測試以及生物資訊旗艦模組的百分之百相容性，本機底層的 Python 虛擬環境名稱 `hermes-bio-memory`、實體資料庫名稱 `bio_memory.duckdb` 與以 `bio_*` 為首的命令行指令將維持不變，請安心依照以下指南進行設置。
 
 ---
 
 ## 前置需求 / Prerequisites
 
-Bio_PRISM 採用 **MCP-First（MCP 伺服器優先）** 的設計。若您主要是在 IDE（如 Antigravity）或 CLI（如 Claude Code）中透過雲端 LLM 客戶端來調用工具，**本機的 26B Gemma 模型為選配（Optional）**。
+Evo_PRISM 採用 **MCP-First（MCP 伺服器優先）** 的設計。若您主要是在 IDE（如 Antigravity）或 CLI（如 Claude Code）中透過雲端 LLM 客戶端來調用工具，**本機的 26B Gemma 模型為選配（Optional）**。
 
 | 項目 | 類型 | 版本 / 說明 |
 | ---- | ---- | ----------- |
