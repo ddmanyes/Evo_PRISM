@@ -15,91 +15,96 @@ AI agent, semantic caching, code provenance, data lake, bioinformatics reproduci
 
 ---
 
-## 摘要
+## 縮寫表（Terminology & Abbreviations）
 
-**研究背景：** AI Agent 編程工具的普及使生物資訊分析人員得以透過自然語言驅動大型語言模型在數分鐘內生成完整分析管道。然而，這一典範轉移引入了三類傳統工作流前所未有的系統性失效：LLM 生成的分析程式碼往往是臨時性的，若未主動版本提交，代碼與結果之間的溯源鏈即告斷裂（代碼溯源真空）；LLM 幻覺特性可能導致方法論瑕疵難以察覺而污染科學結論（靜默失效）；以及缺乏統一分析框架造成跨時間、跨人員的方法不一致性（方法漂移）。上述失效因 LLM 推理成本的持續攀升而被放大——溯源真空迫使系統對類似分析反覆重算，造成 Token 與算力的雙重浪費。
-
-本文提出 **Evo_PRISM**（Evolutionary Platform for Runtime Intelligence & Semantic Memory），透過三項技術貢獻強制建立完整溯源鏈：（1）L1-L2-L3 三層語意資料湖，在架構層面強制記錄「代碼版本 → 分析執行 → 多模態產物」的完整血緣；（2）HELIX 工具演化框架，透過監控循環複雜度與代碼變動率，自動將穩定的臨時腳本晉升為受版本治理的 MCP 服務；（3）3-way RRF 語意快取與 Figure Cache 剝離技術，實現計算型多模態科學產物的亞秒級零 Token 重用。
-
-**結論：** 在包含 39 GB 空間轉錄組數據的生物資訊展示模組上，Evo_PRISM 將高頻分析延遲從數小時壓縮至亞秒級，Token 開銷降低逾 90%，並達成 100% 數據溯源鏈覆蓋率，驗證了統一三層架構可同時解決 AI Agent 驅動生物資訊分析中的溯源、品質與成本三類挑戰。
+| 縮寫 | 全名 | 說明 |
+| --- | --- | --- |
+| **Evo_PRISM** | Evolutionary Platform for Runtime Intelligence & Semantic Memory | 本文提出之自演化執行期智慧平台 |
+| **HELIX** | Health-Evolving Loop with Iterative eXpiration | 工具版本治理與健康度監測閉環 |
+| **ENGRAM** | Evolutionary Neural Graph for Reproducible Analysis Memory | 分析產物索引庫；以 `analysis_artifacts` 為實體載體 |
+| **MCP** | Model Context Protocol | Anthropic 提出之 Agent 工具呼叫協定（stdio / HTTP-SSE） |
+| **RRF** | Reciprocal Rank Fusion | 多路排序融合演算法；Evo_PRISM L1 快取採用 3-way 變體 |
+| **L1 / L2 / L3** | Gold / Silver / Bronze | Medallion 三層儲存架構之語意快取／結構化特徵／不可變原始數據 |
+| **SemVer** | Semantic Versioning | 工具版本標記規範 |
+| **CTE** | Common Table Expression | SQL 遞迴查詢，用於 `bio_impact` 爆炸範圍走訪 |
 
 ---
 
-## 研究背景
+## 摘要
 
-### 3.1 A Paradigm Shift in Bioinformatics Analysis
+**背景：** AI Agent 編程工具的普及使生物資訊分析人員得以透過自然語言驅動大型語言模型在數分鐘內生成完整分析管道。然而，這一典範轉移引入了三類傳統工作流前所未有的系統性失效：LLM 生成的分析程式碼往往是臨時性的，若未主動版本提交，代碼與結果之間的溯源鏈即告斷裂（**失效一：代碼溯源真空**）；LLM 幻覺特性可能導致方法論瑕疵難以察覺而污染科學結論（**失效二：靜默方法論失效**）；以及缺乏統一分析框架造成跨時間、跨人員的方法不一致性（**失效三：方法漂移**）。上述失效因 LLM 推理成本的持續攀升而被放大——溯源真空迫使系統對類似分析反覆重算，造成 Token 與算力的雙重浪費。
+
+**系統貢獻：** 本文提出 **Evo_PRISM**（Evolutionary Platform for Runtime Intelligence & Semantic Memory），透過三項技術設計分別對應上述三類失效：（1）**對應失效一**——L1-L2-L3 三層語意資料湖，在架構層面強制記錄「代碼版本 → 分析執行 → 多模態產物」的完整血緣；（2）**對應失效二與三**——HELIX 工具演化框架，透過監控循環複雜度與代碼變動率，自動將穩定的臨時腳本晉升為受版本治理的 MCP 服務，並透過爆炸範圍評估識別版本漂移對既有產物的影響；（3）**降低三類失效的算力放大效應**——3-way RRF 語意快取與 Figure Cache 剝離技術，實現計算型多模態科學產物的亞秒級零 Token 重用。
+
+**評估設計：** 我們以包含 39 GB 空間轉錄組數據的生物資訊展示模組與 112 樣本 Bulk RNA-seq 聯合分析作為評估場景，規劃四組量化實驗：3-way RRF 快取與消融分析、HELIX 工具演化與沙盒攔截、爆炸範圍 Recursive CTE 可擴展性、方法漂移可重現性，並輔以 562 項回歸測試套件與系統穩定性指標作為佐證。
+
+**預期成果（待實驗回填）：** Evo_PRISM 設計目標為將高頻分析延遲從數小時量級壓縮至亞秒級、顯著降低 Token 開銷、並達成完整數據溯源鏈覆蓋。實際數值將於 §3 Results 章節以實驗數據回填。
+
+> **論文狀態（v2.1.0, 2026-05-22）：** 本稿為系統設計與評估規劃稿；§3 各子節之數值結果與 §4 Discussion 表格待 `tests/benchmark_*.py` 完成後回填。請見 [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md) §B–G 任務清單。
+
+---
+
+## 背景
+
+### 1.1 生物資訊分析典範的轉變
 
 生物資訊學的分析典範正在經歷一場根本性的轉變。在傳統工作流程中，分析人員須具備紮實的程式設計能力，親手撰寫 Python 或 R 腳本，手動管理套件依賴、版本環境與輸出產物；每一個分析步驟皆有明確的程式碼記錄，可透過版本控制系統（如 Git）進行追蹤與重現。這一模式雖對技術門檻要求甚高，卻天然具備可溯源性（Provenance）——分析結果與產生結果的程式碼之間存在清晰的因果鏈。
 
-然而，隨著以 Claude Code、Cursor 為代表的 AI Agent 編程工具的普及，這一典範正在被快速改寫。研究人員現在可以透過自然語言對話驅動 LLM 在數分鐘內生成完整的分析管道，自動產出 CSV 統計表格、UMAP 降維圖、火山圖等分析產物，而無需深入理解底層程式邏輯。這種「自然語言即分析介面」的新正規化極大地降低了生物資訊分析的技術門檻，使濕實驗背景的生物學家亦能獨立完成複雜的組學數據分析。
+然而，隨著以 Claude Code、Cursor 為代表的 AI Agent 編程工具的普及，研究人員現在可透過自然語言在數分鐘內生成完整的分析管道，使濕實驗背景的生物學家亦能獨立完成複雜的組學數據分析。這種「自然語言即分析介面」的典範在大幅降低技術門檻的同時，也引入了傳統工作流前所未有的系統性失效。
 
-### 3.2 Three Failure Modes of the AI-Driven Analysis Era
+### 1.2 AI 驅動分析時代的三類失效模式
 
-然而，AI Agent 驅動的分析模式在帶來高效率的同時，也引入了傳統工作流中前所未有的三類系統性失效模式。
+我們將此三類失效逐一闡述如下。
 
-**失效模式一：代碼溯源真空（Code Provenance Vacuum）。** LLM 每次對話所生成的分析程式碼往往是臨時性的（Ad-hoc），若使用者未主動進行版本提交（Git Commit），這些程式碼便在對話結束後消散無蹤。分析結果雖然保存在磁碟上，但「以何種程式碼、何種參數設定、何種套件版本產生這份結果」的資訊鏈已然斷裂。當日後需要重現分析、或評審要求提供方法細節時，研究人員將面臨無從舉證的困境。這一問題在跨時間、跨研究人員的大型課題中尤為突出，構成了 AI 時代科學可重複性危機（Reproducibility Crisis）的新型態。
+**失效模式一：代碼溯源真空（Code Provenance Vacuum）。** LLM 每次對話所生成的分析程式碼往往是臨時性的（Ad-hoc），若使用者未主動進行版本提交（Git Commit），這些程式碼便在對話結束後消散無蹤。分析結果雖然保存在磁碟上，但「以何種程式碼、何種參數設定、何種套件版本產生這份結果」的資訊鏈已然斷裂，使研究人員在重現分析或回應審稿意見時面臨無從舉證的困境。
 
-**失效模式二：分析方法靜默失效（Silent Methodological Failure）。** LLM 生成的分析程式碼雖能產出表面合理的結果，但其方法論的正確性無從保證。LLM 可能採用過時的統計假設、錯誤的標準化方法，或在處理稀疏矩陣時引入隱蔽的數值誤差。對於缺乏深厚生物資訊背景的使用者而言，這類方法論瑕疵往往難以察覺——結果圖表看似合理，卻在科學層面悄然失真。此種「靜默失效」的危險性遠高於顯性的程式錯誤，因為它不觸發任何異常警示，而直接污染下游的科學結論。
+**失效模式二：分析方法靜默失效（Silent Methodological Failure）。** LLM 生成的分析程式碼雖能產出表面合理的結果，但方法論的正確性無從保證。LLM 若採用過時的統計假設、錯誤的標準化方法，或在處理稀疏矩陣時引入隱蔽的數值誤差。此類方法論瑕疵不觸發任何異常警示，卻直接污染下游的科學結論，危險性遠高於顯性的程式錯誤。
 
-**失效模式三：分析方法漂移（Methodological Drift）。** 在缺乏統一分析框架的情況下，同一份原始數據在不同時間點或由不同人員進行分析時，往往採用略有差異的方法——例如不同的細胞過濾閾值、不同的基因集版本或不同的降維參數。這種看似微小的方法漂移會導致各次分析結果之間缺乏可比性，使研究人員無法判斷結論差異究竟源於生物學信號還是方法論的不一致，從根本上動搖了多輪迭代分析的科學嚴謹性。
+**失效模式三：分析方法漂移（Methodological Drift）。** 在缺乏統一分析框架的情況下，同一份原始數據在不同時間點或由不同人員進行分析時，往往採用略有差異的方法——例如不同的細胞過濾閾值、不同的基因集版本或不同的降維參數——使研究人員無法判斷結論差異究竟源於生物學信號還是方法論的不一致。
 
-### 3.3 The Token Cost Amplifier
+### 1.3 Token 成本放大效應
 
-上述三類失效模式在 LLM 推理成本（Token Cost）持續上升的背景下，其危害被進一步放大。代碼溯源真空意味著系統無法判斷一項分析是否已被執行過，從而被迫在每次類似查詢時重新驅動 LLM 生成程式碼、重新觸發完整的計算管道。這一「溯源缺失 → 強制重複計算 → Token 消耗爆炸」的惡性鏈條，隨著 LLM API 定價的持續攀升（GPT-4o 每百萬 input token 達 \$5 美元）而呈現指數級的成本放大效應。尤其在空間轉錄組學等大規模組學分析場景中，單次 L3 層重型計算管道（如 STARsolo 對齊、Squidpy 空間聚類）耗時可達數小時，若無有效的快取與溯源機制，冗餘計算成本將成為科研機構難以承受之重。
+上述三類失效模式在 LLM 推理成本持續上升的背景下，其危害被進一步放大。代碼溯源真空意味著系統無法判斷一項分析是否已被執行過，從而被迫對每次類似查詢重新驅動 LLM 生成程式碼、重新觸發完整的計算管道，形成「溯源缺失 → 強制重複計算 → Token 消耗爆炸」的惡性鏈條。若無有效的快取與溯源機制，冗餘計算成本將隨分析規模呈指數級放大。
 
-### 3.4 Limitations of Existing Approaches
+### 1.4 語意記憶、快取與多模態產物管理
 
-現有的解決方案均未能從架構層面同時應對上述挑戰。語意快取系統（如 GPTCache [gptcache2023]、Cortex [cortex2025]）採用 $\langle\text{query},\ \text{response}\rangle$ 鍵值對映射，僅適用於純文字問答場景，無法對計算型多模態產物（矩陣、圖表）進行特徵指紋防重，亦不提供任何代碼版本追蹤機制。自演化技能系統（如 SkillOS [skillos2026]、Agent0 [agent02025]）雖然探索了動態代碼生成與技能累積，但在無保護的執行環境中運行，缺乏對分析方法靜默失效的健康監測機制。科學工作流可重複性框架（如 R-LAM [rlam2026]）雖引入了前瞻性溯源追蹤，但侷限於工作流層級，無法在工具版本更新後自動評估既有產物的潛在污染範圍。
+記憶系統與語意快取是智能 Agent 持久化知識的一體兩面：記憶系統解決「如何跨 Session 積累與索引過去的分析經驗」，快取系統則解決「如何在當次請求中以最低成本重用已有結果」，兩者共同構成了分析產物索引庫（ENGRAM）的概念基礎。
 
-### 3.5 Our Proposal
+在記憶系統方面，MemGPT [1] 借鑑作業系統虛擬記憶體的分頁概念，設計了主記憶體（上下文視窗）與外部儲存之間的自動換頁機制，為長對話 Agent 提供持久記憶能力。SkillOS [2] 引入技能倉庫（SkillRepo），使 Agent 能夠跨任務積累並策展可重用的程式技能，展示了技能演化的可行性。在語意快取方面，GPTCache [3] 以 $\langle\text{query embedding},\ \text{response}\rangle$ 鍵值對為核心對問答型查詢提供顯著加速；Cortex [4] 將快取擴展至 Agentic 場景，以語意元素封裝工具調用與回傳結果，結合近似最近鄰搜尋實現跨區域智能快取；SemanticALLI [5] 則將生成流程分解為意圖解析與視覺化合成兩階段並快取中間表示，使視覺化合成層的快取命中率達 83.10%。
 
-為此，本文提出 **Evo_PRISM**——一個以「追蹤每一次分析的程式碼靈魂」為核心設計哲學的自演化執行期智慧與語意記憶平台。Evo_PRISM 透過三層語意資料湖強制建立「代碼版本 → 分析執行 → 產物血緣」的完整溯源鏈，以 HELIX 閉環持續監測與改善分析工具的方法論健康度，並以 3-way RRF 語意快取實現已執行分析的零 Token 重用。本系統的核心主張是：**解決溯源問題，Token 節省是其自然推論；而持續改善分析品質，才是 AI Agent 驅動的科學分析平台真正應有的樣貌。**
+然而，上述系統均以查詢文字或生成中間表示作為快取鍵，無法區分兩類根本不同的使用情境：「快取重用」（歷史結果已知，LLM 無需看到圖表像素）與「按需視覺推理」（使用者需解讀圖表，才應載入多模態模型）。缺乏此區分機制，導致每次回應均夾帶完整 base64 圖表（單張火山圖可達 1–2 萬 token）。DeepSeek-OCR [6] 提供了解法方向——透過將文件圖像解析為結構化文字表示，實現「視覺資訊壓縮、按需載入原圖」的分離策略，此哲學直接啟發了 Evo_PRISM 的 Figure Cache 設計。然而，包括上述系統在內，現有方案均以數據輸出為記憶單元，**對產生數據的代碼版本及其演化歷程缺乏結構化記錄**——代碼血緣在這些系統中付之闕如。
 
----
+### 1.5 代碼生成、工具智能與科學可重複性
 
-## 相關研究
+代碼生成與工具治理是實現可重複科學分析的核心維度，亦是 HELIX 工具演化框架的緣起。在代碼生成方面，Agent0 [7] 與 CodeAct [8] 論證了以可執行程式碼作為 Agent 行動通用介面的可行性，使 Agent 能夠自主生成並執行 Python 腳本處理開放式任務。然而，LLM 幻覺特性使動態生成的代碼存在引入錯誤 API 或邏輯漏洞的風險。Yan [9] 提出面向 AI 代碼 Agent 的容錯沙盒框架，透過策略攔截層與事務性文件系統快照將每次執行封裝為原子事務以支援自動回滾——此工作在執行期安全隔離上貢獻重要，但關注點僅限於當次執行的安全性，未涉及工具的跨 Session 健康度演化或生命週期治理。
 
-### 4.1 AI Agent Memory Systems
+在工具智能方面，GitNexus [10] 作為 MCP-native 代碼智能引擎，預先計算代碼符號間的調用圖與邊上信心評分，使 Agent 能以靜態依賴分析輔助重構與影響評估。在科學可重複性方面，R-LAM [11] 為大型行動模型引入可重複性約束，透過結構化行動模式與顯式前瞻溯源追蹤確保每一工作流行動均可被審計與重播；然而 R-LAM 聚焦前瞻工作流規劃，不支援後溯式（Retrospective）查詢——即工具版本更新後，系統無法自動識別哪些既有產物因版本漂移而面臨潛在失效。
 
-近年來，研究者在 AI Agent 的記憶機制上投入了大量工作。Packer 等人提出的 MemGPT [memgpt2023] 借鑑作業系統虛擬記憶體的分頁概念，設計了主記憶體（上下文視窗）與外部儲存之間的自動換頁機制，為長對話 Agent 提供了持久記憶能力。然而，MemGPT 的設計前提是以自然語言文字作為記憶的基本單元，無法對高度結構化的計算腳本執行記錄或多模態分析圖表進行語意索引。Liu 等人提出的 SkillOS [skillos2026] 則引入了技能倉庫（SkillRepo）的概念，使 Agent 能夠在跨任務間積累並策展可重用的程式技能。儘管 SkillOS 展示了技能演化的可行性，但其缺乏對動態生成代碼進行軟體工程健康指標監測（如循環複雜度、代碼變動率）以及安全沙盒隔離的機制，亦未提供結構化的數據湖儲存後端以支撐科學產物的版本溯源。
+上述工作均聚焦代碼生成或單次執行安全的單一維度，**缺乏將代碼生成→沙盒隔離→健康監測→自適應晉升→後溯爆炸評估統一納入同一生命週期治理框架的機制**——臨時腳本如何在反覆重用後自動演化為受版本治理的標準工具，在現有系統中仍是未解之題。
 
-### 4.2 LLM Semantic Caching
+### 1.6 研究缺口與本文貢獻
 
-語意快取系統旨在透過識別語意相似的歷史查詢來降低 LLM 推理成本。GPTCache [gptcache2023] 作為該領域的工業界代表，採用 $\langle\text{query embedding},\ \text{response}\rangle$ 鍵值對映射，對問答型查詢提供了顯著的加速效果。Cortex [cortex2025] 進一步將快取擴展至 Agentic 場景，提出語意元素（Semantic Element）封裝 Agent 的查詢、工具調用與回傳結果，並結合近似最近鄰搜尋與 LLM 語意裁判（Semantic Judge）實現跨區域的智能快取。SemanticALLI [semanticalli2026] 則更進一步，提出快取「推理中間表示」而非最終回應——透過分解生成流程為分析意圖解析（AIR）與視覺化合成（VS）兩階段，使視覺化合成層的快取命中率達到 83.10%，較單體快取基線提升了逾兩倍。
+綜上所述，現有研究雖在各自維度取得進展，但**尚無系統同時解決以下三類組合挑戰**，且三者根源於同一個共通缺口——現有系統將「數據輸出」視為記憶基本單元，忽略產生數據的代碼版本與執行脈絡。我們主張：**代碼血緣（Code Provenance）才是科學可重複性的基石，數據應當是輔助而非主體**。
 
-然而，上述系統的設計前提均為自然語言問答或商業分析管道。在科學計算場景中，分析產物同時包含高維數值矩陣、base64 編碼多模態圖表（如火山圖、UMAP 降維圖）以及跨樣本的特徵指紋；傳統快取方案無法捕捉此類「運算型多模態產物」的特徵指紋以防止數據更新後的快取失效，亦不具備將圖表從 LLM Context Window 中剝離的機制，從而無可避免地導致 Token 膨脹。
+| 研究缺口 | 對應 §1.2 失效模式 | 既有系統限制 |
+| --- | --- | --- |
+| **G1. 計算型多模態產物的跨 Session 語意快取** | 失效一（溯源真空）放大算力成本 | GPTCache / Cortex / SemanticALLI 均假設輸出為純文字，無法處理圖表 base64 剝離、輸入指紋防重與零 Token 重用 |
+| **G2. 代碼全生命週期的自適應演化治理** | 失效二（靜默失效）+ 失效三（方法漂移） | Yan [9] / Agent0 [7] 沙盒僅保障當次執行安全，缺跨 Session 健康度追蹤（循環複雜度、代碼變動率）與晉升閉環 |
+| **G3. 工具版本 → 分析 → 產物的後溯信心鏈推導** | 失效一（溯源真空） | R-LAM [11] / GitNexus [10] 聚焦前瞻工作流，無法在工具更新後自動評估既有產物的潛在失效範圍 |
 
-### 4.3 Agent Code Generation and Tool Evolution
+**本文貢獻**：針對上述三缺口，Evo_PRISM 提出三項對應技術設計：
 
-Agent0 [agent02025] 與 CodeAct [codeact2024] 探索了以可執行程式碼作為 Agent 行動的通用介面，論證了讓 Agent 自主生成並執行 Python 腳本的可行性。這一正規化顯著提升了 Agent 處理開放式任務的靈活性。然而，在實際生產環境中，LLM 的幻覺特性使得動態生成的代碼存在引入錯誤 API 調用、不安全指令乃至邏輯漏洞的風險 [skillos2026]。
+1. **C1（對應 G1）：3-way RRF 語意快取與 Figure Cache 剝離技術。** 融合自然語言 Embedding、輸入特徵指紋與執行期上下文三個正交維度的 Reciprocal Rank Fusion 排序；於 MCP 邊界剝離多模態 base64 圖片至外部圖表快取，避免污染 LLM Context Window。
+2. **C2（對應 G2）：HELIX 工具自適應演化框架。** 引入「自適應晉升評估函數」$f_{promote}$ 與「工具健康度指標」$HealthScore$ 兩個量化公式，將臨時腳本透過沙盒測試、循環複雜度監測與代碼變動率追蹤，自動晉升為受 SemVer 治理的 MCP 工具。
+3. **C3（對應 G3）：三層 Medallion 語意資料湖與爆炸範圍 (Blast Radius) 評估。** L1-L2-L3 在架構層面強制記錄「代碼版本 → 分析執行 → 產物」血緣；當工具版本更新時，`bio_impact` 透過遞迴 CTE 走訪 `artifact_relations` 並施加邊上信心分級（Exact 1.0 / Same-Analysis 0.9 / Heuristic 0.6），輸出後溯影響圖譜。
 
-Yan [sandbox2025] 提出了面向 AI 代碼 Agent 的容錯沙盒框架，透過策略攔截層與事務性文件系統快照機制，將 Agent 的每次代碼執行行動封裝為原子事務，從而在執行失敗時能夠自動回滾至一致狀態。該工作在執行期安全隔離層面具有重要貢獻，然而其關注點僅限於「當次執行」的安全性，未涉及工具的跨 Session 健康度演化監控（Health Monitoring）、基於重用頻次的自適應晉升（Adaptive Code Promotion）或代碼生命週期治理（Lifecycle Governance）——而後三者恰恰是科學計算平台中保障工具庫長期可靠性的關鍵環節。
-
-### 4.4 Code Intelligence and Dependency Resolution
-
-GitNexus [gitnexus2026] 是一個 MCP-native 客戶端代碼智能引擎，在索引階段預先計算代碼符號間的調用圖（Call Graph）與邊上信心評分（Confidence-on-Edges），使 Agent 能夠以精確的靜態依賴分析輔助代碼重構與影響評估。Evo_PRISM 吸收了 GitNexus 的預計算信心分級哲學，並將其應用領域由純代碼語意空間拓寬至「計算工具版本 → 分析歷史 → 多模態產物」的科學實體演化空間，從而支撐跨版本工具更新的爆炸範圍評估（Blast Radius Assessment）。
-
-### 4.5 Scientific Workflow Reproducibility and Provenance
-
-科學工作流的可重複性危機長期以來未能從系統架構層面得到根治。Sureshkumar [rlam2026] 提出的 R-LAM 框架為大型行動模型引入了可重複性約束（Reproducibility Constraint），透過結構化行動模式（Structured Action Schema）、確定性執行策略與顯式前瞻溯源追蹤（Prospective Provenance Tracking），確保每一個工作流行動及中間產物均可被審計與重播。R-LAM 代表了將溯源能力整合至 Agent 執行框架的重要進展。
-
-然而，R-LAM 聚焦於工作流層級的前瞻溯源，即預先規劃分析步驟以確保執行過程的確定性，並不支援後溯式（Retrospective）的產物依賴查詢——即當底層分析工具在部署後發生版本更新時，系統無法自動識別哪些既有分析產物因工具版本漂移而受到潛在污染。Evo_PRISM 的 `bio_impact` 工具所實現的正是此類帶信心衰減的後溯爆炸範圍推導，兩者在溯源模型上具有本質的互補關係。
-
-### 4.6 Research Gap
-
-綜上所述，現有研究已在各自專注的子問題上取得顯著進展：語意快取系統（GPTCache、Cortex、SemanticALLI）提升了查詢重用效率；代碼安全執行框架（Fault-Tolerant Sandboxing）保障了當次執行的事務一致性；可重複性約束框架（R-LAM）為科學工作流提供了前瞻溯源能力。然而，上述工作均聚焦於單一維度，**尚無系統同時解決以下三者的組合挑戰**：
-
-1. **計算型多模態產物的跨 Session 語意快取**：現有快取方案均假設輸出為純文字回應，無法處理科學分析圖表的 base64 剝離、特徵指紋防重與零 Token 重用。
-2. **代碼生成全生命週期的安全演化治理**：現有沙盒方案僅保障當次執行安全，缺乏跨 Session 的健康度趨勢追蹤與自適應晉升閉環。
-3. **工具版本 → 分析 → 產物的後溯信心鏈推導**：現有溯源方案聚焦於前瞻工作流規劃，無法在工具版本更新後自動評估既有產物的潛在失效範圍。
-
-Evo_PRISM 提出以統一的三層語意資料湖架構同時攻克上述三個挑戰，填補現有研究在科學計算 Agent 平台領域的系統性缺口。
+本系統的核心主張是：**解決溯源問題，Token 節省是其自然推論；而持續改善分析品質，才是 AI Agent 驅動的科學分析平台真正應有的樣貌。**
 
 ---
 
-## 系統實作
+## 方法
 
-針對第三節所揭示的三類失效模式，本文設計並實現了 **Evo_PRISM**——一個以代碼溯源追蹤為基礎、以工具健康演化為保障、以語意快取重用為效率引擎的自演化科學分析平台。系統的核心設計原則是：每一次由 LLM 生成的分析行為，均應在系統層留下可查、可比、可重用的完整記錄；每一個經過反覆使用而趨於穩定的臨時腳本，均應透過自動化的品質評估後晉升為受版本治理的標準工具。本節依序介紹系統架構、三層資料湖設計、HELIX 工具演化機制、語意快取與資料庫 Schema。
+本節設計並實現了 Evo_PRISM——一個以代碼溯源追蹤為基礎、以工具健康演化為保障、以語意快取重用為效率引擎的自演化科學分析平台。系統的核心設計原則是：每一次由 LLM 生成的分析行為，均應在系統層留下可查、可比、可重用的完整記錄；每一個經過反覆使用而趨於穩定的臨時腳本，均應透過自動化的品質評估後晉升為受版本治理的標準工具。本節依序介紹部署架構、三層資料湖設計、HELIX 工具演化機制、語意快取與資料庫 Schema。
 
 系統的總體架構如下圖所示：
 
@@ -152,20 +157,20 @@ graph TD
     L1 -->|回傳結果給使用者| Resp[回傳結果給使用者]:::hit
 ```
 
-### 5.1 部署模式與計算架構
+### 2.1 部署模式與計算架構
 
 Evo_PRISM 的 MCP Server（`bio_memory_server.py`）是系統的統一對外入口，負責接收 Agent 的 tool call 請求、協調三層資料湖的讀寫，並執行實際的生物資訊計算管道。所有運算（DuckDB 查詢、空間分析、Bulk EDA）均在 MCP Server 所在的機器上執行，Claude Code 等前端 Agent 僅負責傳送指令與接收結果，不直接接觸原始數據或執行計算。
 
 MCP 協議支援兩種 transport 模式，使 Evo_PRISM 能夠無縫適應不同的部署場景，而不需修改任何上層 Agent 代碼：
 
-| 模式 | 適用場景 | 數據與計算位置 |
-|------|---------|--------------|
-| **stdio（本機模式）** | 研究人員個人工作站開發與測試 | 本機（如 macOS ExFAT 外接硬碟） |
+| 模式                           | 適用場景                        | 數據與計算位置                                    |
+| ------------------------------ | ------------------------------- | ------------------------------------------------- |
+| **stdio（本機模式）**    | 研究人員個人工作站開發與測試    | 本機（如 macOS ExFAT 外接硬碟）                   |
 | **HTTP/SSE（遠端模式）** | 實驗室共享 HPC 伺服器多用戶部署 | 遠端 Linux 主機（如 `/mnt/space4/bio_lab_db/`） |
 
 遠端部署模式下，大型組學數據集（如 39 GB Visium HD 矩陣）始終保留在伺服器端，研究人員透過本機的 Claude Code 以自然語言發起分析請求，MCP Server 在伺服器端就地計算後僅回傳結果摘要與圖表，徹底消除了大型數據的傳輸開銷。這一架構設計使 Evo_PRISM 能夠從單人研究工作站線性擴展至多用戶實驗室共享平台，且對前端 Agent 完全透明。
 
-### 5.3 三層數據湖分層設計 (Multi-tier Data Lake)
+### 2.2 三層數據湖分層設計
 
 Evo_PRISM 採用不可變的 Medallion Architecture，並針對 LLM 執行期的行為模式進行深度適配，形成三個職責明確、物理隔離的儲存層。
 
@@ -173,66 +178,101 @@ Evo_PRISM 採用不可變的 Medallion Architecture，並針對 LLM 執行期的
 
 **L2 Silver（銀層，特徵儲存與分析歷史帳本）** 承擔雙重職責。其一，儲存由 L3 轉換而來的結構化 Parquet 計數矩陣（如 `silver/*.parquet`），透過 DuckDB 的列式儲存引擎支援高維矩陣的高速 SQL 聚合查詢。其二，`bio_memory.duckdb` 作為系統的核心記憶大腦，維護 `sample_registry`（樣本元數據登記）與 `analysis_history`（分析執行歷史的永久 append-only 帳本）兩張關鍵表，後者是整個溯源鏈的基石——每一次由 LLM 生成並執行的分析，均強制寫入一筆包含代碼版本 `tool_id`、執行參數與產物路徑的不可刪除記錄。
 
-**L1 Gold（金層，語意快取）** 儲存高頻語意快取（`hermes_cache.duckdb`），記錄近期熱點查詢與對應分析報告的 1024 維 Embedding（`bge-m3` 模型），並配置 HNSW cosine 索引以支援亞秒級向量搜尋。L1 設有 7 天的 TTL 自動過期機制，且在底層工具發生 SemVer 版本更新時主動觸發快取失效（Cache Invalidation），確保快取命中的結果始終與當前工具版本保持一致。
+**L1 Gold（金層，語意快取）** 儲存高頻語意快取（`hermes_cache.duckdb`），記錄近期熱點查詢與對應分析報告的 1024 維 Embedding（`bge-m3` 模型），並配置 HNSW cosine 索引 [12] 以支援亞秒級向量搜尋。L1 設有 7 天的 TTL 自動過期機制，且在底層工具發生 SemVer 版本更新時主動觸發快取失效（Cache Invalidation），確保快取命中的結果始終與當前工具版本保持一致。
 
-### 5.4 HELIX 工具自適應演化與 Code Promotion 機制
+### 2.3 HELIX 工具自適應演化與 Code Promotion 機制
 
 為了根治動態生成代碼在生產環境中的「生命週期無序膨脹與幻覺安全漏洞」，Evo_PRISM 首創了 **HELIX (Health-Evolving Loop with Iterative eXpiration)** 動態升格框架。
 
-#### 5.2.1 臨時工具自適應晉升模型 (Adaptive Code Promotion)
+#### 2.3.1 臨時工具自適應晉升模型
 
-當 Agent 為全新科學查詢生成臨時代碼腳本（Ad-hoc Script）$t$ 時，系統在配置有嚴格 `imports` 白名單與時間限制（60 秒）的安全沙盒中運行該代碼，並動態監測其重用頻次。我們定義「自適應晉升評估函數 $f_{promote}(t)$」如下：
+當 Agent 為全新科學查詢生成臨時代碼腳本（Ad-hoc Script）$t$ 時，系統在配置有嚴格 `imports` 白名單與時間限制（60 秒）的安全沙盒中運行該代碼，並動態監測其重用頻次。我們定義「自適應晉升評估函數 $f_{promote}(t)$」如 Eq. (1)：
 
-$$f_{promote}(t) = \alpha \cdot \text{ReuseCount}(t) + \beta \cdot \text{UserApproval}(t) - \gamma \cdot \text{Complexity}(t)$$
+$$
+f_{promote}(t) = \alpha \cdot \text{ReuseCount}(t) + \beta \cdot \text{UserApproval}(t) - \gamma \cdot \text{Complexity}(t) \quad \text{(1)}
+$$
 
 其中：
+
 - $\text{ReuseCount}(t)$ 為該臨時腳本被重複調用的次數。
 - $\text{UserApproval}(t) \in \{0, 1\}$ 表示使用者是否給予了顯式或隱式的好評（如標註結果正確）。
-- $\text{Complexity}(t)$ 為代碼的 Radon 循環複雜度（Cyclomatic Complexity），反映了維護代碼的成本。
+- $\text{Complexity}(t)$ 為以 Radon 套件實作之 McCabe 循環複雜度（Cyclomatic Complexity）[13]，反映維護代碼的成本。
 - $\alpha, \beta, \gamma$ 為對應權重係數。
 
-**晉升觸發條件**：當 $f_{promote}(t) \ge \theta_{promote}$（默認閥值為 $3.0$），且沙盒自動單元測試通過率 $PassRate(t) = 1.0$ 時，系統自動啟動 **Code Promotion** 流程。此時，AI Agent 對該代碼進行系統化的重構，降低循環複雜度，將其「晉升」為 `analysis/` 目錄下的標準模組，並動態熱加載 (Hot-reloading) 作為 MCP 工具。
+**晉升觸發條件**：當 $f_{promote}(t) \ge \theta_{promote}$ 且沙盒回歸測試通過率 $PassRate(t) = 1.0$ 時，系統自動啟動 **Code Promotion** 流程。AI Agent 對該代碼進行系統化重構，降低循環複雜度，將其晉升為 `analysis/` 目錄下的標準模組，並動態熱加載（Hot-reloading）作為 MCP 工具。沙盒回歸測試由系統既有的 562 項 pytest 套件（涵蓋 schema、序列化、I/O 邊界等）執行，**並非由 LLM 即時生成測試**，避免「LLM 生成代碼 → LLM 生成測試 → 自我驗證」的循環論證。
 
-#### 5.2.2 工具生命週期與健康診斷 (Health Assessment)
+#### 2.3.2 工具生命週期與健康診斷
 
-為了在執行期實時監控工具的技術債與不穩定性，我們定義工具健康度指標 $HealthScore(t)$：
+為了在執行期實時監控工具的技術債與不穩定性，我們定義工具健康度指標 $HealthScore(t)$ 如 Eq. (2)：
 
-$$HealthScore(t) = 1.0 - \omega_{churn} \cdot ChurnRatio(t) - \omega_{complexity} \cdot \Delta Complexity(t)$$
-
-其中：
-- $ChurnRatio(t)$ 為相對代碼變動率（Relative Code Churn）[nagappan2005]，反映了工具在近期修改中的變動劇烈度。
-- $\Delta Complexity(t)$ 為工具近期修改所引入的額外複雜度增量。
-- $\omega_{churn}, \omega_{complexity}$ 為對應懲罰權重。
-
-當 $HealthScore(t) < \theta_{warning}$（默認值 $0.70$）時，熱區偵測器會發出警告，並啟動 AI 醫生重構會診。若重構後健康度無法回升且重用頻率跌至零，則會觸發漸進式忘卻機制（忘卻代碼實體，僅保存視覺降採樣快照），實現長期記憶的智慧衰減。
-
-### 5.5 3-way RRF 語意檢索與多模態圖表快取 (Figure Cache)
-
-在 L1 攔截階段，系統提出 **3-way RRF (Reciprocal Rank Fusion) 語意匹配演算法**。傳統的語意快取僅依賴單一自然語言 Embedding 相似度，容易因細微上下文的擾動而誤導。我們將快取命中的評估公式設計為結合以下三個維度的融合排序：
-
-$$Score_{RRF}(q, a) = \frac{w_1}{r_{embedding}(q, a.query) + k} + \frac{w_2}{r_{fingerprint}(F_{in}, a.input) + k} + \frac{w_3}{r_{context}(C, a.context) + k}$$
+$$
+HealthScore(t) = \mathrm{clip}_{[0,1]} \Big( 1.0 - \omega_{churn} \cdot ChurnRatio(t) - \omega_{complexity} \cdot \widetilde{\Delta Complexity}(t) \Big) \quad \text{(2)}
+$$
 
 其中：
-- $q$ 為當前查詢，$a$ 為快取條目；
-- $r_{embedding}$ 為 Embedding 的相似度排名（採用開源 `bge-m3` 模型，HNSW cosine $\ge 0.88$）；
-- $r_{fingerprint}$ 為輸入檔案的特徵指紋排名，防止數據更新後快取失效；
-- $r_{context}$ 為執行期上下文相似度排名。
 
-**Figure Cache 剝離技術**：科學分析（如火山圖、降維圖）的輸出通常為多模態圖片。我們在 MCP 傳輸邊界對 base64 圖片數據進行剝離，僅將文字摘要與元數據寫入 `analysis_artifacts` (ENGRAM 記憶庫)，圖片實體寫入圖表快取。此種將高維多模態科學圖表壓縮並抽提為關鍵結構化文字與特徵的設計哲學，借鑑了 **DeepSeek-OCR [deepseekocr2025]** 的圖像特徵提取與文檔解析技術。Agent 在 0-token 快取命中時，可以直接透過 `bio_get_figure` 快速檢索並呈現圖片，徹底避免了在 LLM Context Window 中塞入巨大 base64 造成的 Token 膨脹與記憶體溢出。
+- $ChurnRatio(t) \in [0,1]$ 為相對代碼變動率（Relative Code Churn）[14]，為近期修改行數與工具總行數之比。
+- $\widetilde{\Delta Complexity}(t) \in [0,1]$ 為複雜度增量經 min-max 正規化後之比例（以工具歷史最大複雜度為上界）。
+- $\omega_{churn}, \omega_{complexity}$ 為懲罰權重。
+- $\mathrm{clip}_{[0,1]}(\cdot)$ 將輸出截斷於 $[0,1]$，避免極端 churn 或複雜度膨脹導致負值。
 
-### 5.6 前瞻性影響分析與爆炸範圍評估 (Proactive Impact Analysis)
+當 $HealthScore(t) < \theta_{warning}$ 時，熱區偵測器發出警告並啟動重構會診。若重構後健康度無法回升且重用頻率跌至零，則觸發漸進式忘卻機制（忘卻代碼實體，僅保存視覺降採樣快照），實現長期記憶的智慧衰減。
 
-在科學計算平台中，底層分析工具的升級（如 `bulk_eda` 的算法修正）往往會對已存在的分析歷史產生連鎖反應，導致舊分析結果失真或不一致。為了解決這個問題，Evo_PRISM 借鑑了先進客戶端代碼智能引擎 GitNexus [gitnexus2026] 的「關係預計算與邊上信心分級 (Confidence-on-Edges)」設計哲學，設計了前瞻性的影響力圖譜（Proactive Impact Graph）與爆炸範圍（Blast Radius）評估工具 `bio_impact`。
+#### 2.3.3 HELIX 超參數預設值
+
+表 1 列出本研究採用之 HELIX 預設超參數；所有數值可透過環境變數覆寫（見 [CLAUDE.md §7.9](../CLAUDE.md)）。
+
+**表 1. HELIX 公式超參數預設值**
+
+| 參數 | 公式 | 預設值 | 說明 |
+| --- | --- | --- | --- |
+| $\alpha$ | Eq. (1) | 1.0 | 重用次數權重 |
+| $\beta$ | Eq. (1) | 2.0 | 使用者好評權重（強信號） |
+| $\gamma$ | Eq. (1) | 0.2 | 複雜度懲罰（弱信號，避免抑制長腳本） |
+| $\theta_{promote}$ | Eq. (1) | 3.0 | 晉升閾值（對應 ReuseCount ≥ 3） |
+| $\omega_{churn}$ | Eq. (2) | 0.6 | Churn 懲罰權重 |
+| $\omega_{complexity}$ | Eq. (2) | 0.4 | 複雜度增量懲罰權重 |
+| $\theta_{warning}$ | Eq. (2) | 0.70 | 健康警告閾值 |
+| 熱區門檻 | — | revision_count ≥ 3 | 觸發熱區體檢之累積修訂次數 |
+
+### 2.4 3-way RRF 語意檢索與多模態圖表快取
+
+在 L1 攔截階段，我們提出 **3-way RRF (Reciprocal Rank Fusion) 語意匹配演算法**。傳統語意快取僅依賴單一自然語言 Embedding 相似度，對「輸入檔案已變更但自然語言查詢相同」之情境會發生靜默命中錯誤（失效模式二）。我們設計快取命中之融合排序評分如 Eq. (3)：
+
+$$
+Score_{RRF}(q, a) = \frac{w_1}{r_{embedding}(q, a.query) + k} + \frac{w_2}{r_{fingerprint}(F_{in}, a.input) + k} + \frac{w_3}{r_{context}(C, a.context) + k} \quad \text{(3)}
+$$
+
+其中：
+
+- $q$ 為當前查詢，$a$ 為快取候選條目；
+- $r_{embedding}$ 為 Embedding 排名（採用開源 `bge-m3` 模型 1024 維向量，於 HNSW cosine 索引中以 $\ge 0.88$ 作為 **pre-filter 門檻**取得 Top-K 候選）；
+- $r_{fingerprint}$ 為輸入檔案特徵指紋（檔名 + 大小 + SHA256[:16] + schema）排名，防止輸入變更後快取靜默命中；
+- $r_{context}$ 為執行期上下文（sample_id + 啟用工具 tool_id 集合 + 環境 hash）相似度排名；
+- $k$ 為 RRF 平滑常數（預設 $k=60$，沿用 Cormack et al. 之 IR 慣例）；
+- $w_1, w_2, w_3$ 為三軸權重，預設 $(w_1, w_2, w_3) = (1.0, 1.5, 0.5)$，使「指紋變更」具有最強的快取拉低作用。
+
+**門檻語意**：$0.88$ 為 HNSW 候選召回的 pre-filter（控制召回率），最終命中與否由 Eq. (3) 計算之 $Score_{RRF}$ 排名決定（控制精確率）；兩者分屬語意檢索的兩階段。
+
+**Figure Cache 剝離技術**：科學分析（如火山圖、降維圖）輸出通常為多模態圖片。我們在 MCP 傳輸邊界對 base64 圖片數據進行剝離，僅將文字摘要與元數據寫入 `analysis_artifacts`（ENGRAM 記憶庫），圖片實體以內容定址（content-addressed by SHA256[:12]）寫入 `gold/figure_cache/`。此設計借鑑 DeepSeek-OCR [6] 之「視覺資訊壓縮、按需載入原圖」哲學，將科學圖表從 LLM Context Window 剝離。Agent 在 0-token 快取命中時，可直接透過 `bio_get_figure(figure_id)` 經 MCP `ImageContent` 通道單張取回原圖；避免在 Context Window 塞入巨大 base64 造成的 Token 膨脹（單張火山圖可達 1–2 萬 Token）。
+
+### 2.5 前瞻性影響分析與爆炸範圍評估
+
+在科學計算平台中，底層分析工具的升級（如 `bulk_eda` 的算法修正）往往會對已存在的分析歷史產生連鎖反應，導致舊分析結果失真或不一致。為了解決這個問題，Evo_PRISM 借鑑了先進客戶端代碼智能引擎 GitNexus [10] 的「關係預計算與邊上信心分級 (Confidence-on-Edges)」設計哲學，設計了前瞻性的影響力圖譜（Proactive Impact Graph）與爆炸範圍（Blast Radius）評估工具 `bio_impact`。
 
 當底層工具、產物或樣本發生變更時，系統會自動走訪工具帳本、分析歷史與數據產物之間的依賴圖譜：
-$$tools \xrightarrow{analysis\_history} analysis \xrightarrow{analysis\_artifacts} artifacts$$
+
+$$
+tools \xrightarrow{analysis\_history} analysis \xrightarrow{analysis\_artifacts} artifacts
+$$
 
 為了克服實際環境中工具標籤（`tool_id`）回填稀疏的問題，系統設計了「邊上信心分級機制」，對依賴強度進行量化評估：
+
 - **Exact (Confidence = 1.0)**：分析歷史記錄中精確對應至目標工具之 `tool_id`（精確追蹤）。
 - **Same-Analysis (Confidence = 0.9)**：屬於同一次分析流所產出的其他關聯產物。
 - **Heuristic (Confidence = 0.6)**：分析類型與工具名稱之啟發式名稱對照（例如 `bulk_eda` $\rightarrow$ `bio_run_bulk_eda`）。
 
-### 5.7 資料庫 Schema 總覽
+### 2.6 資料庫 Schema 總覽
 
 Evo_PRISM 以 DuckDB 為核心記憶大腦。以下為實現上述機制的關鍵 Schema 定義（精簡版 SQL）：
 
@@ -257,110 +297,213 @@ CREATE TABLE tools (
     module_path    VARCHAR NOT NULL,
     function_name  VARCHAR NOT NULL,
     status         VARCHAR DEFAULT 'active',  -- 'candidate'|'active'|'deprecated'
-    source_hash    VARCHAR(16),               -- 內容SHA256哈希，防止靜默修改
+    content_hash   VARCHAR(16),               -- AST正規化後 SHA256[:16]，防止靜默修改
     revision_count INTEGER DEFAULT 0,         -- 累計變動次數，>= 3 觸發熱區體檢
-    origin_id      UUID,                      -- 指向 Code Promotion 來源之歷史分析 ID
+    stability_note VARCHAR,                   -- 穩定化備註（HELIX §7.7）
     created_at     TIMESTAMP DEFAULT now(),
-    UNIQUE (tool_name, version)
+    deprecated_at  TIMESTAMP,
+    UNIQUE (tool_name, content_hash)          -- 同一內容不重複注冊
 );
 
 -- L2 Silver: tool_change_log (工具修改日記，用於變動率評估)
+-- 注意：new_tool_id 為「軟引用」UUID，刻意不加 REFERENCES tools(tool_id)。
+-- DuckDB 1.5.2 禁止對「被 FK 引用的表」UPDATE/DELETE（阻塞 register_tool 與 prune）；
+-- 引用完整性由 HELIX 應用層維護（migration v20）。
 CREATE TABLE tool_change_log (
     log_id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     tool_name        VARCHAR NOT NULL,
-    old_hash         VARCHAR(16),
-    new_hash         VARCHAR(16) NOT NULL,
-    new_tool_id      UUID REFERENCES tools(tool_id),
+    old_hash         VARCHAR,
+    new_hash         VARCHAR NOT NULL,
+    new_tool_id      UUID,                   -- 軟引用 tools(tool_id)，無 FK 約束
     revision_number  INTEGER NOT NULL,
-    changed_lines    VARCHAR,            -- JSON格式的行號變動區間
-    churn_ratio      DOUBLE,             -- 代碼相對變動率 (Relative Churn)
+    change_reason    VARCHAR,
+    changed_lines    VARCHAR,                -- JSON格式的行號變動區間 [[start,end],...]
+    churn_ratio      DOUBLE,                 -- 代碼相對變動率 (Relative Churn)
     changed_at       TIMESTAMP DEFAULT now()
 );
 
--- L2 Silver: artifact_relations (資料產物血緣關係表)
+-- L2 Silver: artifact_relations (ENGRAM 資料產物血緣關係表)
+-- src/dst 均引用 analysis_artifacts(artifact_id)，非 tools(tool_id)。
 CREATE TABLE artifact_relations (
-    relation_id   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    src_artifact  UUID REFERENCES tools(tool_id),
-    dst_artifact  VARCHAR NOT NULL,
-    relation_type VARCHAR NOT NULL,
-    confidence    DOUBLE DEFAULT 1.0,
-    reason        VARCHAR,
-    created_at    TIMESTAMP DEFAULT now()
+    relation_id     UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    src_artifact_id UUID NOT NULL REFERENCES analysis_artifacts(artifact_id),
+    dst_artifact_id UUID NOT NULL REFERENCES analysis_artifacts(artifact_id),
+    relation_type   VARCHAR NOT NULL,        -- 'derived_from'|'used_by'|'compared_with'
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (src_artifact_id, dst_artifact_id, relation_type)
 );
 
 -- 爆炸範圍遞迴路徑查詢 (Recursive Impact Path CTE)
 WITH RECURSIVE impact_path AS (
     SELECT
-        src_artifact AS node_id,
-        dst_artifact AS target_id,
-        1 AS depth,
-        confidence AS path_confidence,
-        reason
+        src_artifact_id AS node_id,
+        dst_artifact_id AS target_id,
+        1 AS depth
     FROM artifact_relations
-    WHERE src_artifact = 'target-tool-uuid'
+    WHERE src_artifact_id = 'target-artifact-uuid'
 
     UNION ALL
 
     SELECT
-        r.dst_artifact AS node_id,
+        r.dst_artifact_id AS node_id,
         ip.node_id AS target_id,
-        ip.depth + 1,
-        ip.path_confidence * r.confidence,
-        r.reason
+        ip.depth + 1
     FROM artifact_relations r
-    INNER JOIN impact_path ip ON r.src_artifact = ip.node_id
+    INNER JOIN impact_path ip ON r.src_artifact_id = ip.node_id
     WHERE ip.depth < 10
 )
-SELECT * FROM impact_path ORDER BY depth ASC, path_confidence DESC;
+SELECT * FROM impact_path ORDER BY depth ASC;
 ```
 
 ---
 
-## 應用案例與測試
+## 評估設計與結果
 
-為了在論文中提供強大的實驗數據支持，我們規劃了以下三個核心實驗維度：
+> **狀態說明：** §3.1–§3.6 之實驗設計（Experimental Design）已凍結，對應實作位於 `tests/benchmark_*.py`；**Results 子節目前為空白 placeholder，待 benchmark 執行完畢後回填**。任務進度見 [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md) §B–G。
 
-### 6.1 快取效能與 Token 成本分析 (Performance & Cost Analysis)
+### 3.0 共通評估方法論
 
-- **實驗設置**：設計 200 個具備不同語意重疊度（0% 到 100% 關聯）的空間轉錄組與多體學分析查詢。
-- **對比組 (Baselines)**：
-  1. *Naive Agent*：無任何快取機制，每次查詢均啟動 LLM 代碼生成並執行實體 Pipeline (L3)。
-  2. *Traditional Cache*：採用單一 String-Matching 或單純 Question-Embedding 相似度快取（類似傳統 GPTCache 設置）。
-  3. *Evo_PRISM (Ours)*：開啟 L1-L2-L3 三層語意快取與 3-way RRF 檢索。
-- **測量指標**：平均響應延遲 (Average Latency)、單次任務 Token 消耗量與 API 花費 (Token Cost & API Spend)、快取命中精準度與召回率 (Cache Precision & Recall)。
+- **硬體與環境揭露**：所有 benchmark 於同一 Windows 11 工作站執行；CPU / RAM / GPU / Python / DuckDB / `bge-m3` 模型版本詳列於 Supplementary Table S1。stdio 與 HTTP/SSE 兩種 MCP transport 模式之 latency 數據分開報告，避免混淆。
+- **統計嚴謹性**：每筆 latency 數據連跑 $N \ge 5$ 次取中位數與 IQR；多組比較以 paired $t$-test + Bonferroni / FDR correction 控制 family-wise error。所有樣本數依預期 effect size 進行 G*Power 預先 power analysis（Supplementary S2）。
+- **可重現性**：所有隨機種子寫死、查詢資料集以 SHA256 hash 公開、超參數搜尋方法（grid search 範圍與 best config）列於 Supplementary S3。
 
-### 6.2 HELIX 工具自演化與安全性評估 (Evolution & Safety Evaluation)
+### 3.1 快取效能與 3-way RRF 消融 — 設計
 
-- **實驗設置**：模擬 50 次 Agent 自動編寫新代碼的場景，故意在某些代碼生成中引入 10 次 Hallucinated API（不存在的軟體包函數）或邏輯錯誤。
-- **評估指標**：
-  - *過濾率 (Filtering Rate)*：HELIX 的安全沙盒與 562 項自動測試成功攔截「壞工具」的機率。
-  - *代碼優化成效*：對比 Code Promotion 前後，代碼的 Radon 循環複雜度 (Cyclomatic Complexity) 的降低比率。
-  - *熱區體檢響應時間*：從工具累積修訂 $\ge 3$ 次，到觸發體檢與優化完成的平均閉環時間。
+- **數據集**：Bulk RNA-seq 主基準（PROGRESS.md 之 112 樣本 Joint Pipeline 真實 session）+ GEO 獨立泛化測試集 + Visium HD 8µm 空間 Hero Figure 對比。
+- **查詢集**：$N$（鎖定中，見 PROGRESS.md §B1）筆查詢，依語意重疊度分 5 個 bucket（0–20% / 20–40% / 40–60% / 60–80% / 80–100%）。**查詢來源**為人工撰寫 + 真實使用 session 提取的混合集，hash 公開於 supplementary，禁用 LLM 自動生成以避免循環論證。
+- **Baseline / Ablation 矩陣**：
+  | 組別 | $w_1$ (Embedding) | $w_2$ (Fingerprint) | $w_3$ (Context) | 對應系統 |
+  | --- | --- | --- | --- | --- |
+  | B0 Naive | — | — | — | 無快取，每次重算 |
+  | B1 Embedding-only | ✓ | 0 | 0 | 模擬 GPTCache 等傳統快取 |
+  | B2 +Fingerprint | ✓ | ✓ | 0 | 消融 1 |
+  | B3 +Context | ✓ | 0 | ✓ | 消融 2 |
+  | B4 Full RRF | ✓ | ✓ | ✓ | **Evo_PRISM (Ours)** |
+- **測量指標**：
+  - Latency 中位數與 P95（拆 cold-start / warm 兩種快取狀態）。
+  - Token 消耗三段拆分：LLM 推理 token、Embedding 計算 token、DuckDB query cost。
+  - 命中精準度 / 召回率（混淆矩陣 + F1）；定義 ground truth oracle set 於 Supplementary S4。
+  - 「數據更新後快取污染率」：在更新輸入檔案使指紋變化後，仍錯誤命中舊快取的比例。
+- **跨數據集泛化驗證**：在 GEO 獨立測試集上驗證 L2 Hit 行為與工具版本更新後 L1 Invalidation 之自癒閉環。
 
-### 6.3 生物學實用性與 User Study
+#### 3.1 Results 　 *[待補：待 `tests/benchmark_cache_rrf.py` 完成]*
 
-- **實驗設置**：招募 10 位生物學家（濕實驗背景，無命令列與程式設計經驗）與 10 位專業生物資訊分析師，給予他們相同的空間轉錄組交叉分析任務。
-- **測量指標**：任務完成時間 (Task Completion Time)、系統可用性量表評分 (System Usability Scale, SUS)、報告滿意度與數據溯源可信度 (Provenance Trust Score)。
+### 3.2 HELIX 工具自演化與沙盒安全 — 設計
+
+- **臨時腳本場景**：模擬 $N$ 次 Agent 自動編寫新代碼，依文獻所報 LLM coding hallucination 比例（待引文獻支撐，見 PROGRESS.md §E1）注入錯誤樣本。
+- **過濾率完整混淆矩陣**：HELIX 安全沙盒 + 562 項回歸測試對「壞工具」之 Recall（攔截率）與 False Positive Rate（誤殺好工具）並列。
+- **代碼優化多維度指標**：Code Promotion 前後 (a) Radon 循環複雜度 (b) LOC (c) Maintainability Index (d) 執行時間。
+- **HELIX 閉環時間**：工具累積修訂 $\ge 3$ 次至完成熱區體檢與重構的平均閉環時間。
+- **Adversarial 沙盒安全測試**：$\ge 10$ 個 adversarial code（fork bomb / 檔案越界寫入 / 未授權網路請求）測試攔截率。
+- **Longitudinal 工具庫健康度演化**：以本專案 2026-05-16 → 2026-05-22 真實 commit 歷史重建 HELIX 工具庫健康度演化曲線，證明「Evolving」屬性。
+
+#### 3.2 Results 　 *[待補：待 `tests/benchmark_helix_promotion.py` 完成]*
+
+### 3.3 爆炸範圍與 Recursive CTE 可擴展性 — 設計
+
+- **可擴展性曲線**：以隨機產生之 $10^3, 10^4, 10^5, 10^6$ 邊規模依賴圖測量 DuckDB Recursive CTE 遞迴查詢延遲。
+- **真實 topology vs 隨機**：以 §3.4 案例研究自然產生的 `artifact_relations` 真實依賴圖譜對比同規模隨機圖，量化 topology 對延遲之影響。
+- **雙階段信心演進**（對應 §2.5）：
+  - *Phase A（Metadata 稀疏期）*：刻意不回填 `tool_id`，僅依 Heuristic (0.6) 走訪，量化召回率。
+  - *Phase B（Metadata 飽和期）*：啟用 tool_id 回填，使用 Exact (1.0) 與 Same-Analysis (0.9)，量化精準度。
+  - 證明系統「在數據稀疏時依啟發式邊提供高召回率，隨元數據回填無縫收斂至精確影響推導」。
+- **Ground Truth oracle**：人工標註 20–50 個小規模測例做 ground truth，驗證 `bio_impact` 精準度。
+
+#### 3.3 Results 　 *[待補：待 `tests/benchmark_impact.py` 完成]*
+
+### 3.4 案例研究：112 樣本 Bulk RNA-seq Joint Pipeline — 設計
+
+以 PROGRESS.md L26–L28 進行中的 112 樣本 Bulk RNA-seq 聯合下游分析（EDA + DEG + Volcano + Heatmap + ORA）作為端到端真實案例。本案例研究較合成 benchmark 更能反映實際生產環境下的系統行為，量化指標包含：
+
+- `analysis_history.tool_id` 覆蓋率（目標 100%）。
+- `mcp_tool_metrics` 真實 throughput：每工具平均耗時、P95、錯誤率、Rate-limit 觸發次數。
+- 自然產生之 `artifact_relations` 血緣圖譜規模與深度。
+- 全程 ENGRAM artifact 登錄完整性（程式碼 + log + 圖表三類）。
+
+#### 3.4 Results 　 *[待補：待 §A.7–A.8 任務完成]*
+
+### 3.5 方法漂移可重現性 — 設計（對應失效模式三）
+
+針對 §1.2 失效模式三「方法漂移」設計專屬實驗：選定固定樣本（112 樣本子集），於 HELIX 工具庫的 $\ge 3$ 個 SemVer 版本上重跑同一分析任務，量化：
+
+- 結果一致率（artifact hash 比對）。
+- Latency 與 Token 變異係數（CV）。
+- `bio_impact` 對版本變更的後溯影響識別精確率。
+
+此實驗驗證 Evo_PRISM 對「同樣本、不同時間、不同工具版本」之分析結果一致性保障。
+
+#### 3.5 Results 　 *[待補：待 `tests/benchmark_method_drift.py` 完成]*
+
+### 3.6 既有測試套件與系統穩定性
+
+Evo_PRISM 倉庫於本稿撰寫時擁有 562 項回歸測試（pytest），覆蓋 schema 遷移、序列化、I/O 邊界、HELIX 版本治理、爆炸範圍、Fast-Path 路由等模組。該測試套件 pass rate 將作為系統實作品質之穩定性佐證寫入本節，並作為 §3.2 沙盒回歸測試（Eq. 1 之 $PassRate(t)$）的具體實體。
+
+#### 3.6 Results 　 *[待補：執行 `pytest -v` 後填入最新 pass rate 與覆蓋率報告]*
 
 ---
 
 ## 討論
 
-基於 3-way RRF 語意快取的理論攔截率與 HELIX Code Promotion 的閉環穩定機制，預期 Evo_PRISM 達到以下成效：
+### 4.1 預期成效（待實驗回填驗證）
 
-| 指標 | 預期值 | 對比基線 |
-|------|--------|----------|
-| L1 快取命中延遲 | < 1 秒（亞秒級） | Naive Agent: ~4 小時 |
-| Token 開銷減少率 | ≥ 90% | Traditional Cache: ~30% |
-| 壞代碼攔截率 | ≥ 95% | 無沙盒系統: 0% |
-| 數據溯源鏈覆蓋率 | 100% | 現有系統: 不支援 |
-| 軟體相容性 | 100% | — |
+基於 §2 之 3-way RRF 攔截機制與 HELIX Code Promotion 閉環之理論分析，我們列出設計目標如表 2；表中數值為 **設計目標 / 理論上界**，實際數值待 §3 各 benchmark 完成後回填，並標註 95% 信賴區間與 paired $t$-test 顯著性。
+
+**表 2. Evo_PRISM 設計目標（預期值；待實驗驗證）**
+
+| 指標 | 設計目標 | 對比基線 | 對應實驗 |
+| --- | --- | --- | --- |
+| L1 快取命中延遲 | 亞秒級（< 1 s） | Naive Agent：分鐘至小時量級 | §3.1 |
+| Token 開銷減少率 | 顯著降低（具體數值待測） | Traditional Cache | §3.1 |
+| 數據更新後快取污染率 | 趨近 0%（3-way RRF 指紋攔截） | Traditional Cache 預期非零 | §3.1 |
+| HELIX 壞代碼攔截率（Recall） | 高（具體數值待測） | 無沙盒系統 0% | §3.2 |
+| HELIX 誤殺率（FPR） | 低（具體數值待測） | — | §3.2 |
+| 數據溯源鏈覆蓋率（tool_id） | 100% | 現有系統未強制 | §3.4 |
+| Recursive CTE 10⁶ 邊查詢延遲 | 毫秒至秒級 | — | §3.3 |
+| 562 項回歸測試 pass rate | ≥ 99% | — | §3.6 |
+
+### 4.2 設計取捨與威脅有效性
+
+**設計取捨：**
+- **DuckDB 作為 L1/L2 後端**：本研究選擇 DuckDB 是基於其列式儲存、HNSW 向量索引擴充、輕量無 server 架構之優勢；犧牲了多節點分散式擴展能力。本系統定位為「邊緣 + HPC 單節點」協作架構，並非雲端多租戶 SaaS。
+- **`bge-m3` 1024 維 Embedding**：選擇開源中英雙語模型以支援生資中英術語混雜場景，犧牲了若干 SOTA 商用模型的精度上界。
+- **沙盒回歸測試使用既有 562 項套件而非 LLM 即時生成**：避免「LLM 寫代碼 → LLM 寫測試 → 自我驗證」之循環論證，犧牲了對未見 API 的測試覆蓋。
+
+**內部有效性威脅 (Internal Validity)：**
+- 查詢資料集若部分由 LLM 生成，可能與被測 LLM 同分佈而高估命中率 — 故 §3.1 強制人工 + 真實 session 混合 + hash 公開。
+- 單一機器、單一作者長期演化之工具庫不能代表多人協作場景。
+
+**外部有效性威脅 (External Validity)：**
+- 主要評估在生物資訊垂直領域；對其他科學計算領域（材料、地球科學、HEP）的可推廣性需後續實證。
+- Visium HD 39 GB 為展示用 hero data，未測試 TB 級數據。
+
+**統計有效性威脅 (Statistical Validity)：**
+- 樣本數依 G*Power 預先 power analysis 決定；多組比較皆施加 Bonferroni / FDR correction，並於 supplementary 完整揭露未顯著結果。
+
+### 4.3 Limitations
+
+- **單一展示模組**：當前實證評估集中於生物資訊；通用性論述仍需跨領域驗證。
+- **User Study 缺位**：本稿不含人因評估；對使用者體驗、認知負荷、長期採用率之主張需後續 IRB-approved 研究。
+- **規模上限未測**：Recursive CTE 規模測試上限為 $10^6$ 邊；超過此規模之行為與 graph DB 對比為未來工作。
+- **LLM 黑箱依賴**：HELIX 重構由 LLM Agent 執行，重構品質受底層模型能力影響；本研究未做不同 LLM 後端（Claude / GPT / 開源）之橫向對比。
+
+### 4.4 Future Work
+
+- **跨領域驗證**：將 Evo_PRISM 移植至材料科學或地球科學工作流，驗證三層語意資料湖之領域中立性。
+- **多用戶並發治理**：HELIX 在多人協作下的工具版本衝突解決機制。
+- **跨 LLM 後端比較**：不同 LLM 對 HELIX 重構品質之影響。
+- **長期 IRB User Study**：濕實驗背景研究者使用 Evo_PRISM 進行真實研究的 longitudinal 採用研究。
 
 本研究將證明：三層 Medallion 語意資料湖可作為通用 AI Agent 記憶後端的工程基礎，而將代碼健康診斷與數據溯源下沉至儲存層，是實現可擴展、高可靠性科學自演化 Agent 平台的關鍵路徑。
 
 ---
 
-## 聲明事項（Declarations）
+## 結論
+
+本文提出 Evo_PRISM，一個針對 AI Agent 驅動的科學分析場景所設計的自演化執行期智慧平台。透過 L1-L2-L3 三層語意資料湖（C1）、HELIX 工具演化迴路（C2）與 3-way RRF 語意快取與爆炸範圍評估（C3）的協同設計，系統在架構層面建構了「代碼版本 → 分析執行 → 多模態產物」之強制溯源鏈，並以 Eq. (1)–(3) 三項可重現的量化機制對應 §1.2 之三類失效模式。本稿之系統設計與評估規劃已完整呈現；定量驗證（亞秒級延遲、Token 攤提、HELIX 沙盒攔截率、Recursive CTE 可擴展性、方法漂移可重現性）將於 §3 各 benchmark 執行完畢後回填。Evo_PRISM 的設計哲學——將代碼血緣追蹤視為科學計算平台的一等公民、將數據視為其衍生品——預期為 AI Agent 在生物資訊乃至更廣泛科學計算領域的可靠部署提供可複製的工程範式。
+
+---
+
+## 聲明事項
 
 **倫理審查與知情同意：** 不適用（本研究未涉及人體或動物實驗）。
 
@@ -380,23 +523,26 @@ SELECT * FROM impact_path ORDER BY depth ASC, path_confidence DESC;
 
 ## 參考文獻
 
-1. **[Primary]** Liu, S., et al. (2025). Supporting Our AI Overlords: Redesigning Data Systems to be Agent-First. *arXiv preprint arXiv:2509.00997*.
-2. **[New]** Anonymous. (2025). Cortex: Achieving Low-Latency, Cost-Efficient Remote Data Access For LLM via Semantic-Aware Knowledge Caching. *arXiv preprint arXiv:2509.17360*. [cortex2025]
-3. **[New]** Anonymous. (2026). SemanticALLI: Caching Reasoning, Not Just Responses, in Agentic Systems. *arXiv preprint arXiv:2601.16286*. [semanticalli2026]
-4. **[New]** Yan, B. (2025). Fault-Tolerant Sandboxing for AI Coding Agents: A Transactional Approach to Safe Autonomous Execution. *arXiv preprint arXiv:2512.12806*. [sandbox2025]
-5. **[New]** Sureshkumar, S. (2026). R-LAM: Reproducibility-Constrained Large Action Models for Scientific Workflow Automation. *arXiv preprint arXiv:2601.09749*. [rlam2026]
-2. **[Supporting]** Anonymous. (2026). SkillOS: Learning Skill Curation for Self-Evolving Agents. *arXiv preprint arXiv:2605.06614*. [skillos2026]
-3. **[Supporting]** Anonymous. (2025). Agent0: Unleashing Self-Evolving Agents from Zero Data via Tool-Integrated Reasoning. *arXiv preprint arXiv:2511.16043*. [agent02025]
-4. **[Supporting]** Packer, C., et al. (2023). MemGPT: Towards LLMs as Operating Systems. *arXiv preprint arXiv:2310.08560*. [memgpt2023]
-5. **[Supporting]** Bang, J., et al. (2023). GPTCache: A Library for Creating Semantic Cache for LLM Queries. GitHub. [gptcache2023]
-6. **[Supporting]** Wang, X., et al. (2024). Executable Code as Tool Use for Commonsense Reasoning and Mathematical Problem Solving. *arXiv preprint arXiv:2402.01030*. [codeact2024]
-7. **[Supporting]** DeepSeek-AI. (2025). DeepSeek-OCR: Technologies for Compressing Document Images into Structured Text. *arXiv preprint arXiv:2510.18234*. [deepseekocr2025]
-8. **[Supporting]** Malkov, Yu A. and Yashunin, D. A. (2018). Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs. *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 42(4), 824–836. [hnsw2018]
-9. **[Supporting]** Nagappan, N. and Ball, T. (2005). Use of Relative Code Churn Measures to Predict System Defect Density. *Proceedings of ICSE 2005*, pp. 284–292. [nagappan2005]
-10. **[Supporting]** McCabe, T. J. (1976). A Complexity Measure. *IEEE Transactions on Software Engineering*, (4), 308–320. [mccabe1976]
-11. **[Supporting]** Patwari, A. (2026). GitNexus: An MCP-Native Client-Side Code Intelligence Engine. GitHub. [gitnexus2026]
+1. Packer, C., et al. (2023). MemGPT: Towards LLMs as Operating Systems. *arXiv preprint arXiv:2310.08560*.
+2. Liu, S., et al. (2026). SkillOS: Learning Skill Curation for Self-Evolving Agents. *arXiv preprint arXiv:2605.06614*. *(作者列表待最終確認)*
+3. Bang, F., et al. (2023). GPTCache: An Open-Source Semantic Cache for LLM Applications. *Proceedings of the 3rd Workshop for Natural Language Processing Open Source Software (NLP-OSS 2023)*. GitHub: https://github.com/zilliztech/GPTCache
+4. (2025). Cortex: Achieving Low-Latency, Cost-Efficient Remote Data Access For LLM via Semantic-Aware Knowledge Caching. *arXiv preprint arXiv:2509.17360*. *(作者列表待補)*
+5. (2026). SemanticALLI: Caching Reasoning, Not Just Responses, in Agentic Systems. *arXiv preprint arXiv:2601.16286*. *(作者列表待補；arXiv 編號待最終確認)*
+6. DeepSeek-AI. (2025). DeepSeek-OCR: Contexts Optical Compression. *arXiv preprint arXiv:2510.18234*.
+7. (2025). Agent0: Unleashing Self-Evolving Agents from Zero Data via Tool-Integrated Reasoning. *arXiv preprint arXiv:2511.16043*. *(作者列表待補)*
+8. Wang, X., et al. (2024). Executable Code Actions Elicit Better LLM Agents. *Proceedings of ICML 2024*. arXiv:2402.01030.
+9. Yan, B. (2025). Fault-Tolerant Sandboxing for AI Coding Agents: A Transactional Approach to Safe Autonomous Execution. *arXiv preprint arXiv:2512.12806*.
+10. Patwari, A. (2026). GitNexus: An MCP-Native Client-Side Code Intelligence Engine. GitHub repository. https://github.com/abhigyanpatwari/GitNexus
+11. Sureshkumar, S. (2026). R-LAM: Reproducibility-Constrained Large Action Models for Scientific Workflow Automation. *arXiv preprint arXiv:2601.09749*. *(作者列表與編號待最終確認)*
+12. Malkov, Yu. A. and Yashunin, D. A. (2020). Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs. *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 42(4), 824–836. *(arXiv preprint 2016: arXiv:1603.09320)*
+13. McCabe, T. J. (1976). A Complexity Measure. *IEEE Transactions on Software Engineering*, SE-2(4), 308–320. *(本系統實作採用 Radon Python 套件：https://github.com/rubik/radon)*
+14. Nagappan, N. and Ball, T. (2005). Use of Relative Code Churn Measures to Predict System Defect Density. *Proceedings of ICSE 2005*, pp. 284–292.
+15. Cormack, G. V., Clarke, C. L. A., and Büttcher, S. (2009). Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods. *Proceedings of SIGIR 2009*, pp. 758–759. *(Eq. 3 RRF 公式之原始出處)*
+
+> **參考文獻待辦事項：** 標記 *(作者列表待補)* / *(arXiv 編號待最終確認)* 之條目須於投稿前查核作者列表與 arXiv ID 正確性。GitNexus [10] 為 GitHub 工程實作，並非學術論文，採 software citation 格式。
 
 ---
 
-*本論文草稿由 Evo_PRISM 語意記憶平台輔助生成，版本號 v2.0.0。*
+*本論文草稿由 Evo_PRISM 語意記憶平台輔助生成，版本號 v2.1.0。*
 *更新時間：2026-05-22。*
+*v2.1.0 變更摘要：（1）摘要改寫為設計目標 / 預期成效語氣；（2）新增縮寫表；（3）§1.6 補三類失效 ↔ 三項貢獻明確映射；（4）§2.3 / §2.4 公式編號化、補超參數預設表、釐清 $0.88$ pre-filter 語意與 $r_{context}$ 定義、$HealthScore$ clip 至 $[0,1]$；（5）§3 重構為「設計 + 空白 Results placeholder」並新增 §3.0 共通方法論、§3.4 案例研究、§3.5 方法漂移、§3.6 既有測試套件；（6）§4 補設計取捨、Threats to Validity、Limitations、Future Work；（7）§5 Conclusion 移除尚未實證之數據主張；（8）參考文獻補 Cormack RRF 原始出處、修正 McCabe / HNSW 年份、補 GitNexus URL、標註待查條目。*

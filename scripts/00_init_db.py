@@ -81,6 +81,15 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
         con.execute("ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS tool_id UUID")
     except Exception as e:
         print(f"WARNING: could not ensure tool_id column: {e}")
+    # v22 migration: UserApproval — explicit user signal for HELIX Eq.(1) β term.
+    # NULL = not yet rated; 0 = negative/neutral; 1 = user confirmed correct result.
+    try:
+        con.execute(
+            "ALTER TABLE analysis_history "
+            "ADD COLUMN IF NOT EXISTS user_approval INTEGER DEFAULT NULL"
+        )
+    except Exception as e:
+        print(f"WARNING: could not ensure user_approval column: {e}")
     print("Table: analysis_history — OK")
 
     # tools — versioned tool registry (content-hash based)

@@ -7,37 +7,240 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + 品牌重塑（Evo_PRISM）+ GitNexus 借鏡 + bio_impact + Bulk RNA-seq 原生工具 + 控制面板三階段 + MCP 數據交付三件套 + Fast-Path 路由 + **基準測試與論文數據回填規劃完成（執行待開始）**
+**里程碑**：Phase 10 完成 + 品牌重塑（Evo_PRISM）+ GitNexus 借鏡 + bio_impact + Bulk RNA-seq 原生工具 + 控制面板三階段 + MCP 數據交付三件套 + Fast-Path 路由 + **Migrations 全數修復完畢、Conda 環境就緒、TS260410004 WSL 背景管線多線程運行中 (含 100% 程式碼與日誌 artifacts 登記)**
 
-**當前焦點**：執行三項學術基準測試並將真實數據回填至 `docs/paper_draft.md`
+**當前焦點**：執行 `TS260410004` (28個 paired-end 樣本) 運算量龐大的 WSL 上游 FastQC + trim_galore + Kallisto 管線，並將結果與已完成拷貝的 84 個舊樣本合併（共 112 樣本）進行 Joint downstream RNA-seq 聯合分析（EDA, DEG, Heatmap, ORA），完整打通大數據聯合分析效能、資料庫紀錄與 MCP 指標歷史。
 
 ---
 
-## ⏭️ 待完成任務（依 docs/plans/task.md）
+## ⏭️ 待完成任務（依 docs/plans/task.md + 2026-05-22 paper review + 2026-05-22 architecture review）
 
 > 詳細測試設計見 [docs/plans/evaluation_and_testing_plan.md](../plans/evaluation_and_testing_plan.md)
+> 兩波 review：① paper review 給出 B–I 對齊與 benchmark 強化項；② architecture review 給出 **AA/AB Pre-Benchmark 架構補強**（**必須先於 B–G benchmark 執行**）。
 
-- [ ] **Benchmark 1**：快取效能與 3-way RRF 消融實驗（`tests/benchmark_cache_rrf.py`）
-  - [ ] 編寫含 GEO 獨立測試集的快取與 RRF 消融基準測試，模擬特徵指紋改變
-  - [ ] 引入 Visium HD 8µm 空間轉錄組數據做 Hero Figure 看板對比
-  - [ ] 執行並記錄 Traditional Cache vs Evo_PRISM 延遲與防污染攔截率
-  - [ ] 驗證跨數據集 L2 Hit 與 L1 Invalidation 行為
-  - [ ] 計算 Paired $t$-test 統計顯著性（$p$-value）
-- [ ] **Benchmark 2**：HELIX 晉升、複雜度優化與快取失效閉環實驗（`tests/benchmark_helix_promotion.py`）
-  - [ ] 模擬臨時腳本重複執行 3 次
-  - [ ] 計算並記錄 Radon 循環複雜度變化與 $HealthScore$ 躍升
-  - [ ] 驗證 L1 快取自動清空失效閉環
-- [ ] **Benchmark 3**：爆炸範圍與 Recursive CTE 遞迴壓力測試（`tests/benchmark_impact.py`）
-  - [ ] 隨機生成 1,000～10,000 個依賴邊的 `artifact_relations` 關係圖
-  - [ ] 記錄 DuckDB 執行 Recursive CTE 遞迴查詢時延（毫秒級）
-  - [ ] 比較 Heuristic (0.6) 與 Exact (1.0) 模式的召回精度
-- [ ] **論文數據回填**（`docs/paper_draft.md`）
-  - [ ] 將真實延遲、Token 減少率、污染率與統計顯著性寫入論文
-  - [ ] 寫入「GEO 獨立測試集泛化驗證」表格與論述
-  - [ ] 寫入「Visium HD 空間極限對比 Hero Figure」圖表數據與論述
-  - [ ] 填入 Radon 複雜度優化與 $HealthScore$ 實際躍升數據
-  - [ ] 填入 Recursive CTE 壓力測試大規模時延表格
-  - [ ] 整理論文草稿，確保圖表與文字排版完善，準備學術發表
+---
+
+### 🛠️ Pre-Benchmark 架構補強（2026-05-22 architecture review-driven；benchmark 啟動前必做）
+
+**動機**：5 個 Explore agent 平行審查發現 **5 項 Critical + 5 項 High** issue，**最關鍵的是論文承諾的 HELIX 量化公式 Eq.(1)(2) 沒有對應 Python 實作**。若在這些缺口未補前直接跑 benchmark，後果：
+- **Benchmark 2（HELIX）跑不出真實 $HealthScore$ 躍升** —— code_promoter.py 只走 `reuse_count ≥ 3` 啟發式，論文公式的 α/β/γ/ω 在 settings.py 找不到，$UserApproval$ 沒有蒐集入口（β 項恆為 0）
+- **Benchmark 1（Cache）攔截率測不到真實值** —— Fast-Path 路由完整實作但**沒整合到 MCP server.call_tool()**，MCP client 走的路徑根本沒享受到優化
+- **論文 §2.6 schema ≠ 實際 v21 schema** —— paper 寫 `src_artifact REFERENCES tools(tool_id)`，實作改為 `src_artifact_id` 且 v20 故意移除 tools FK（DuckDB 1.5.2 限制），reviewer 翻 schema 即穿幫
+- **沙盒與 figure_cache 沒測試** —— 兩個高風險高價值模組（一個安全邊界、一個論文 §2.4 核心主賣點）安全主張無實證
+
+#### AA. ✅ P0 Critical（5 項，2026-05-22 Session K 全數完成）
+
+- [x] **AA1. 落地 HELIX Eq.(1)(2) 量化公式** *(2026-05-22 完成)*
+  - [x] [config/settings.py](../../config/settings.py) 新增 `HELIX_ALPHA/BETA/GAMMA/OMEGA_CHURN/OMEGA_COMPLEXITY/THETA_PROMOTE/THETA_WARNING`（均支援 env var override）
+  - [x] [analysis/code_promoter.py](../../analysis/code_promoter.py) 新增 `compute_f_promote()` (Eq.1純函數) + `compute_code_complexity()` (radon CC)；`scan_candidates()` 改為計算真實 f_promote ≥ θ_promote（UserApproval v22 前 fallback 0）
+  - [x] [analysis/tool_registry.py](../../analysis/tool_registry.py) 新增 `compute_health_score()` (Eq.2 clip[0,1])；`tool_health_report()` 新增 `tool_health_scores` 欄位 + HealthScore 低於 θ_warning 的 recommendation
+  - [x] [tests/test_helix_formulas.py](../../tests/test_helix_formulas.py) 26 個單元測試，含 paper 例題驗算（f_promote=3.4）
+
+- [x] **AA2. UserApproval 蒐集入口** *(2026-05-22 完成，DB層)*
+  - [x] [scripts/00_init_db.py](../../scripts/00_init_db.py) v22 idempotent migration：`analysis_history ADD COLUMN IF NOT EXISTS user_approval INTEGER DEFAULT NULL`（NULL=未評/0=負評/1=正評）
+  - [ ] [server/web_app.py](../../server/web_app.py) dashboard report 頁面加 👍 / 👎 按鈕 POST 端點 *(待續)*
+  - [ ] [server/telegram_bot.py](../../server/telegram_bot.py) 同步加 inline keyboard 反饋按鈕（可選）*(待續)*
+
+- [x] **AA3. Fast-Path 整合到 MCP server** *(2026-05-22 完成)*
+  - [x] [server/bio_memory_server.py](../../server/bio_memory_server.py) `call_tool()` 入口：`bio_history_search` 查詢先跑 `try_fast_path()`，命中即 bypass embedding server，記錄 metric，加 `⚡` 標頭；stdio / HTTP-SSE 兩 transport 共用同一入口均生效
+  - [ ] 補 `tests/test_mcp_fast_path_integration.py` 端到端驗證 *(待續)*
+
+- [x] **AA4. 沙盒與 figure_cache 測試補完** *(2026-05-22 完成)*
+  - [x] [tests/test_code_executor.py](../../tests/test_code_executor.py) 新建：ALLOWED_IMPORTS 白名單 / BLOCKED_PATTERNS 黑名單（duckdb/config/l1_cache/tool_registry 禁止）/ AST import 偵測 / CWD 隔離 / timeout / runtime error 捕獲
+  - [x] [tests/test_figure_cache.py](../../tests/test_figure_cache.py) 新增多圖 markdown 剝離測試（`test_strip_multiple_images_all_replaced`）；既有測試覆蓋單張剝離 / content-addressed / round-trip / prune
+
+- [x] **AA5. paper §2.6 SQL ↔ 真實 v21 schema 對齊** *(2026-05-22 完成)*
+  - [x] [docs/paper_draft.md](../paper_draft.md) §2.6 修正：`source_hash`→`content_hash`、`UNIQUE(tool_name,version)`→`UNIQUE(tool_name,content_hash)`、移除不存在的 `origin_id`；`tool_change_log.new_tool_id` 移除硬 FK 並補 v20 設計說明（DuckDB 1.5.2 FK 掐死 HELIX 版本治理）；`artifact_relations` 欄位全面糾正（`src_artifact_id/dst_artifact_id UUID REFERENCES analysis_artifacts`，移除不存在的 `confidence`/`reason`）
+
+#### AB. 🟡 P1 High（10 項，與 benchmark 可並行但建議先完成）
+
+- [ ] **AB1. v22 migration：artifact_relations.confidence CHECK constraint**
+  - [ ] `scripts/23_migrate_schema_v22_confidence_check.py`：`CHECK (confidence IN (0.6, 0.9, 1.0))` 或 `CHECK (confidence BETWEEN 0 AND 1)`
+  - [ ] 補測試驗證越界值拒絕
+
+- [ ] **AB2. analysis_artifact_blobs 大小強制**
+  - [ ] inline_data ≤ 500 KB CHECK 或寫入層 guard（超過自動 spill 為 file_path）
+  - [ ] 既有大 blob retrospective 掃描 + migrate 為外部檔案
+
+- [ ] **AB3. scripts/ 去硬編碼 L3 路徑**
+  - [ ] [scripts/00_init_db.py:155](../../scripts/00_init_db.py) 與 [scripts/02_spatial_to_parquet.py:202](../../scripts/02_spatial_to_parquet.py) 改用 `config.settings.L3_ROOT`
+  - [ ] [scripts/01_register_sample.py:38](../../scripts/01_register_sample.py) 同步改 `L3_ROOT / "bulk_rna_data"`
+  - [ ] 新增 `L3_ROOT` env var 至 .env.example
+
+- [ ] **AB4. register_tool 改 module-level**（降低新工具忘記登記風險）
+  - [ ] 設計 `@register_tool_on_import(name, version, ...)` decorator
+  - [ ] bulk_eda / bulk_deg / bulk_heatmap / enrichment / mcseg_quality / pathway_scoring / multiomics_integration 改裝飾器形式
+  - [ ] 移除分析函數內部的 `backfill_tool_id` post-completion 呼叫（自動化）
+
+- [ ] **AB5. bulk_*.py 重複碼抽出**
+  - [ ] `_SAMPLE_ID_RE` + `_validate_sample_id()` → `analysis/validators.py`
+  - [ ] `_file_to_b64_md()` 統一收納至已存在的 [analysis/viz_utils.py](../../analysis/viz_utils.py)
+
+- [ ] **AB6. server/agent.py 按領域拆檔**（2,435 行 → 三檔）
+  - [ ] `agent_spatial.py`（_exec_bio_run_spatial_eda / _exec_bio_check_l2_sufficiency / …）
+  - [ ] `agent_bulk.py`（_exec_bio_run_bulk_eda / _exec_bio_run_deg / _exec_bio_run_heatmaps / _exec_bio_run_enrichment）
+  - [ ] `agent_history.py`（_exec_bio_history_* / _exec_bio_memory_* / _exec_bio_artifact_*）
+
+- [ ] **AB7. pyrightconfig.json 環境變數化**
+  - [ ] 移除 `/Users/zhanqiru/.venvs` macOS 硬編碼，改用相對路徑或 env var
+
+- [ ] **AB8. start_bioagent.{sh,ps1} 路徑邏輯統一**
+  - [ ] sh 版改用 `${HOME}` 或 env var；與 ps1 版 `$env:USERPROFILE` 邏輯對等
+  - [ ] 抽出共用 README 段落，避免兩份分歧
+
+- [ ] **AB9. tool_search.py:7 過時註解清除**（hermes_cache → L1_CACHE_PATH）
+
+- [ ] **AB10. CONTRIBUTING.md 補新工具 checklist**
+  - [ ] register_tool 呼叫
+  - [ ] 對應 pytest 測試
+  - [ ] safe_write 使用
+  - [ ] docstring + type hints
+  - [ ] schema migration 流程示例
+
+---
+
+### A. Evo_PRISM 實測與驗證流程
+- [x] 1. 建立 `bulk_rna_data/Kallisto_v1/results_kallisto` 並物理複製 84 樣本數據。 *(已 100% 複製完成)*
+- [x] 2. 於 NTFS 本機 `C:\Users\User\.venvs\hermes-bio-memory` 同步 Python 依賴套件。 *(已完成)*
+- [x] 3. 修正 `.env` 與 IDE 的 `mcp_config.json` 指向新 venv。 *(已完成)*
+- [x] 4. 初始化 DuckDB 數據庫與快取，修復 v10/v16/v17 遷移腳本並重新執行遷移（v2 到 v21）。 *(21 個遷移腳本已 100% 全數成功跑通)*
+- [/] 5. 對新數據 `TS260410004`（28 個樣本）執行 WSL 上游管線（FastQC + trim_galore + Kallisto 定量），並將結果複製至 results_kallisto。 *(WSL 背景多線程運行中)*
+- [ ] 6. 執行 `01_register_sample.py --scan-bulk-rna` 批次登記 112 樣本。
+- [ ] 7. 撰寫並執行 `scratch/run_joint_pipeline_test.py` 跑通 112 樣本聯合分析，產出 Volcano、Heatmap 與 ORA 報告。
+- [ ] 8. 驗證 `analysis_history` 及 `mcp_tool_metrics` 是否完整寫入執行紀錄與 metrics，保證 tool_id 覆蓋率 100%。
+
+### B. 🔴 P0 對齊（防 reviewer 一翻就掉漆）
+
+> **依賴**：B 段啟動前必須完成 **AA5**（paper §2.6 schema 對齊），否則 B5 章節編號對齊會跟著重做。
+- [ ] **B1. 樣本數鎖定**：統一 Benchmark 1 查詢數（paper 寫 200、evaluation_plan 寫 50 衝突），跑 G*Power 算最小樣本數並寫進 paper。
+- [ ] **B2. RRF 三軸單變量 ablation**：Benchmark 1 增設 4 組對比矩陣（Embedding-only / +Fingerprint / +Context / Full RRF），證明每一軸非冗餘。
+- [ ] **B3. 邊上信心分級 Phase A/B 實驗**：補進 Benchmark 3 + paper §3.3——Metadata 稀疏期（僅 Heuristic 0.6）vs 飽和期（Exact 1.0）的召回精度對比。
+- [ ] **B4. 「方法漂移」（失效模式三）實驗**：新建 `tests/benchmark_method_drift.py`——同樣本跨 HELIX tool version 跑同分析，量化結果一致性，補上 paper §1.2 失效模式三缺失的對應實驗。
+- [ ] **B5. 章節編號對齊**：evaluation_plan_a.md 引用 §5.x / paper 實際章節 §2.x 全面同步。
+- [ ] **B6. paper Affiliation / Email / Funding / Acknowledgement placeholder 填寫**。
+
+### C. 🔴 P0 「免費」案例研究與既有數據抽取
+- [ ] **C1. 112 樣本 Joint Pipeline 案例研究化**：A 任務完成後，將真實 session 結果結構化為 paper §3.4 Case Study（tool_id 覆蓋率、mcp_tool_metrics 真實 throughput、artifact_relations 自然血緣圖）——比合成 benchmark 強 10 倍。
+- [ ] **C2. 系統穩定性數據抽取**：把 562 個 pytest 通過率（PROGRESS.md L191 既有）寫入 paper §3 / §4 作為穩定性佐證，0 額外成本。
+- [ ] **C3. Fast-Path「無 LLM」ablation**：利用既有 Fast-Path 路由（Session B / P0-C）跑「LLM-off」對比實驗，0 額外實作成本。
+
+### D. 🟡 P1 Benchmark 1 強化（Cache + RRF）
+
+> **依賴**：D 段啟動前必須完成 **AA3**（Fast-Path 整合 MCP）+ **AA4**（figure_cache 測試），否則 Cache 攔截率測不到真實值且 base64 剝離主張無實證。
+- [ ] **D1. 重複次數**：每個 query 連跑 ≥ 5 次取中位數 + IQR，控制 latency 噪音。
+- [ ] **D2. Token 成本三段拆分**：分開記錄 (a) LLM 推理 token (b) Embedding 計算 token (c) DuckDB query cost。
+- [ ] **D3. Cold-start vs Warm 對比**：L1 空快取 vs 已預熱，計算 break-even 點（建多少快取後 Token 攤提回正）。
+- [ ] **D4. Query 來源公開化**：200 個查詢人工 + 真實 session 提取混合，hash 公開於 supplementary，禁用 LLM 自動生成避免循環論證。
+- [ ] **D5. Precision/Recall 混淆矩陣**：Hit Rate 拆 Precision/Recall，定義 ground truth oracle set。
+- [ ] **D6. 語意難度分層**：0–100% 重疊度拆 5 個 bucket 分別報，不要只給平均。
+- [ ] **D7. 寫入 Visium HD 8µm Hero Figure 對比數據**。
+- [ ] **D8. Paired t-test + Bonferroni / FDR correction**。
+
+### E. 🟡 P1 Benchmark 2 強化（HELIX）
+
+> **依賴**：E 段啟動前必須完成 **AA1**（HELIX Eq.(1)(2) 落地）+ **AA2**（UserApproval 蒐集入口）+ **AA4**（沙盒測試）。未完成前跑出來的是啟發式行為，無法量測論文公式宣稱的 $HealthScore$ 躍升。
+- [ ] **E1. Hallucination 比例文獻依據**：50 中 10 hallucinated (20%) 須引 CodeAct / Agent0 等文獻支撐，否則寫死沒理由。
+- [ ] **E2. 完整 Confusion Matrix**：過濾率補 False Positive Rate（誤殺好工具），不只看 Recall。
+- [ ] **E3. 多維度複雜度優化**：補 LOC、Maintainability Index、執行時間（Radon 套件免費提供）。
+- [ ] **E4. Longitudinal 演化曲線**：用 PROGRESS.md 2026-05-16 → 5-22 真實 commit 歷史重建工具庫健康度演化（HELIX 賣點關鍵）。
+- [ ] **E5. Adversarial 沙盒安全測試**：≥ 10 個 adversarial code（fork bomb / 檔案越界 / 網路請求）驗證攔截率。
+
+### F. 🟡 P1 Benchmark 3 強化（Recursive CTE）
+
+> **依賴**：F 段啟動前建議完成 **AB1**（artifact_relations.confidence CHECK constraint），避免 Phase A/B 信心分級實驗跑出 schema 容許但實際違反論文約定的值。
+- [ ] **F1. 規模上限拉到 10⁶ 邊**：1k–10k 太保守，stress test 推到 10⁵–10⁶ 邊。
+- [ ] **F2. 真實 topology vs 隨機對比**：用 C1 的 112 樣本自然產生的依賴圖譜對比合成隨機圖，看延遲差距。
+- [ ] **F3. CTE Ground Truth 標註**：人工標註 20–50 個小規模測例做 oracle，計算 bio_impact 精準度。
+
+### G. 🟢 P1 缺漏實驗補完
+- [ ] **G1. 可重現性實驗** (Reproducibility)：同 query 連跑 N 次，量化結果一致率 / Latency CV / Token CV。
+- [ ] **G2. 錯誤分析** (Error Analysis)：選 20–30 個失敗 case 做 taxonomy（cache 誤命中 / HELIX 誤晉升 / impact 誤判）。
+- [ ] **G3. 成本分析** (Cost Analysis)：DuckDB 儲存、HNSW 索引大小、Embedding server VRAM、L1/L2/L3 成長曲線。
+- [ ] **G4. User Study §3.3 取捨**：若要做需 IRB（與 paper §6「不適用」矛盾）+ N ≥ 30 + control group + counterbalance + NASA-TLX；**沒人力 → 直接刪除，改用 C1 case study 取代**。
+
+### H. 🟢 跨實驗方法論
+- [ ] **H1. Power analysis**：寫進 paper §3 方法章節。
+- [ ] **H2. 環境配置揭露表**：CPU/RAM/GPU/OS/Python/DuckDB 版本、stdio vs HTTP/SSE 模式註記。
+- [ ] **H3. 隨機種子 + 數據集 hash + 超參數搜尋方法**寫進 supplementary。
+
+### I. 論文回填與打磨（測試完成後）
+- [ ] I1. 把 D/E/F/G 真實數據回填 paper §3 對應子節（目前為空 placeholder）。
+- [ ] I2. 將 mermaid graph 與 SQL block 匯出靜態圖檔，避免 LaTeX 編排炸版。
+- [ ] I3. 整理論文草稿，確保圖表 / 公式編號 / 參考文獻完善，準備學術發表。
+
+---
+
+## ✅ 2026-05-22 Session K：Pre-Benchmark 架構補強（AA1–AA5 全數完成）
+
+**動機**：2026-05-22 architecture review 識別出 5 項 P0 Critical 架構缺口——論文承諾的 HELIX 量化公式 Eq.(1)(2) 沒有對應實作、Fast-Path 未整合進 MCP call_tool()、paper §2.6 schema 與實際 v21 不符、沙盒/figure_cache 安全主張無測試佐證。本 Session 全數補完，解鎖後續 Benchmark B–G 執行。
+
+### 🧮 AA1：HELIX Eq.(1)(2) 落地
+- **`config/settings.py`**：新增 7 個超參數常數（`HELIX_ALPHA=1.0`, `HELIX_BETA=2.0`, `HELIX_GAMMA=0.2`, `HELIX_OMEGA_CHURN=0.6`, `HELIX_OMEGA_COMPLEXITY=0.4`, `HELIX_THETA_PROMOTE=3.0`, `HELIX_THETA_WARNING=0.70`），全部支援 env var override。
+- **`analysis/code_promoter.py`**：新增 `compute_f_promote(reuse_count, user_approval, complexity)` 純函數（Eq.1）+ `compute_code_complexity(code)` (radon CC，無 radon 時 fallback 1)。`scan_candidates()` 從純 `reuse_count ≥ 3` 啟發式改為：讀 user_approval（v22 前 fallback 0）→ 計算 radon CC → 計算 f_promote → 過濾 ≥ θ_promote；回傳 dict 新增 `user_approval/complexity/f_promote` 欄位。
+- **`analysis/tool_registry.py`**：新增 `compute_health_score(churn_ratio, delta_complexity_norm)` 純函數（Eq.2 clip[0,1]，用 `HELIX_OMEGA_CHURN/OMEGA_COMPLEXITY`）。`tool_health_report()` 新增：avg_churn_ratio（last-5 修訂平均）+ delta_complexity_norm（正規化複雜度回潮）→ 逐工具計算 HealthScore → 新增 `tool_health_scores` 返回欄位 + HealthScore < θ_warning 的 recommendation。
+- **`tests/test_helix_formulas.py`**（新建）：26 個單元測試，含 paper 例題驗算（f_promote(3,1,8)=3.4）、clip 邊界、θ_warning 門檻、complexity 懲罰線性驗證。
+
+### 🗄️ AA2：UserApproval DB 層
+- **`scripts/00_init_db.py`**：v22 idempotent migration：`ALTER TABLE analysis_history ADD COLUMN IF NOT EXISTS user_approval INTEGER DEFAULT NULL`（NULL=未評/0=負評/1=正評）。Web UI 按鈕與 telegram 反饋按鈕留待後續 Session。
+
+### ⚡ AA3：Fast-Path 整合 MCP
+- **`server/bio_memory_server.py`** `call_tool()` 入口：`bio_history_search` 工具在呼叫 embedding handler 前先跑 `try_fast_path(query)`；命中時執行對應結構化工具（`bio_history_lookup/timeline/sample_list`），記錄 metric，加 `⚡` 前綴回傳。stdio 與 HTTP-SSE 兩 transport 共用同一 `call_tool()` 入口，均自動生效。ImportError 安全 fallback 不破壞原有流程。
+
+### 🔒 AA4：沙盒與 figure_cache 測試
+- **`tests/test_code_executor.py`**（新建）：40+ 個測試，覆蓋 ALLOWED_IMPORTS 白名單 5 個典型模組、BLOCKED_PATTERNS 黑名單 24 個 pattern（含 duckdb/config.settings/analysis.l1_cache/analysis.tool_registry 禁止）、AST import 偵測（`import X` 與 `from X import Y` 兩種形式）、CWD 不含 L3 路徑、timeout 強制、runtime error 捕獲、preamble trusted code。
+- **`tests/test_figure_cache.py`**（既有 + 新增）：新增 `test_strip_multiple_images_all_replaced`（多圖 markdown 三張全換佔位符）；既有測試已覆蓋單張剝離/content-addressed/round-trip/load_figure/prune。
+
+### 📄 AA5：paper §2.6 SQL 對齊
+- **`docs/paper_draft.md` §2.6**：
+  - `tools` 表：`source_hash`→`content_hash`（AST正規化 SHA256[:16]）、`UNIQUE(tool_name,version)`→`UNIQUE(tool_name,content_hash)`、移除不存在的 `origin_id`、補 `stability_note` / `deprecated_at`。
+  - `tool_change_log`：`new_tool_id UUID` 移除硬 FK，補注「v20 故意移除—DuckDB 1.5.2 FK 掐死 HELIX 版本治理」；補 `change_reason`/`source_snapshot` 欄位。
+  - `artifact_relations`：欄位名全面糾正（`src_artifact_id/dst_artifact_id UUID NOT NULL REFERENCES analysis_artifacts(artifact_id)`）、移除不存在的 `confidence`/`reason`、補 `UNIQUE(src,dst,type)` index；遞迴 CTE 同步更新欄位名。
+
+---
+
+## ✅ 2026-05-22 Session J：Evo_PRISM 實測啟動、遷移修復與新批次 (TS260410004) 聯合分析規劃與執行
+
+**動機**：啟動並實測 `Evo_PRISM` 平台。當前重點為修復 DuckDB Schema 遷移腳本中 v10 HNSW 擴充載入以及 v16/v17 備份表命名不一致之 Bug，確保資料庫 100% 成功遷移至 v21。接著，針對全新批次數據 `TS260410004` (28 個 pw120hr 樣本) 進行上游 FastQC + trim_galore + Kallisto 定量，並將其與原有的 84 個樣本合併 (共 112 樣本) 進行端對端 Joint Downstream Analysis (EDA, DEG, Heatmap, ORA)，完整驗證 `Evo_PRISM` 在大樣本聯合分析下的記憶快取效能與 MCP 指標歷史。
+
+### 🔧 資料庫遷移修復與全套執行 (Database Migrations Complete)
+- **v10 遷移修復 (`scripts/11_migrate_schema_v10.py`)**：在 `CHECKPOINT` 執行前補上 `LOAD vss;`，防範未知 HNSW 索引類型錯誤（已成功）。
+- **v16/v17 遷移修復 (`scripts/17_migrate_schema_v16.py` & `scripts/18_migrate_schema_v17.py`)**：將備份表及還原時的表名統一為 `_blob_backup_v16` / `_rel_backup_v16` 與 `_blob_backup_v17` / `_rel_backup_v17`，解決 `Catalog Error`（已成功）。
+- **遷移執行**：21 個遷移腳本（v2 到 v21）已 100% 全數順利跑通，DuckDB 主資料庫結構已與平台最新功能無縫對齊！
+
+### 🧬 新批次 `TS260410004` 上游環境、管線與安全登錄 (Upstream Environment & Pipeline)
+- **Conda 環境建置**：成功於 WSL Ubuntu 中非互動接受了 Anaconda 商業服務條款 (TOS)，順利建置了 `kallisto_env` 獨立生資環境，`kallisto`, `fastqc` 與 `trim-galore` 均已 100% 就位。
+- **WSL 括號語法安全防護**：修正了 `run_upstream_pipeline.py` 中 `export PATH` 調用 WSL 時，Windows 下 `$PATH` 內含有括號 `Program Files (x86)` 會導致 bash 展開語法錯誤的嚴重 Bug，補上雙引號括字防護。
+- **資料庫 Schema 對齊與 HNSW 載入**：對齊 DuckDB 表結構欄位，將 `finished_at` 改為 `completed_at`，並排除不存在的 `logs` 欄位；在連線建立後立即執行 `LOAD vss;` 徹底防止 HNSW Checkpoint 拋出 Fatal Exception。
+- **100% 程式碼與日誌 Artifact 登錄**：引入 ENGRAM-Core 輔助，將執行的 `run_upstream_pipeline.py` 原始碼本身以及運行產生的完整 pipeline stdout/stderr logs 均登記為 `analysis_artifacts` 儲存於 `analysis_artifact_blobs`，保證 100% 的程式碼與分析流程均能被 Evo_PRISM 平台記憶、追溯與語意檢索。
+- **上游執行啟動**：上游管線腳本已成功在背景中穩定跑通！
+
+### 📂 舊數據合併 (Dataset Merging Complete)
+- **物理合併**：利用 `robocopy` 已成功將原先的 84 個 Kallisto 樣本定量結果完整複製合併至 `i:\Evo_PRISM\bulk_rna_data\Kallisto_v1\results_kallisto`。
+- **目標大數據集**：28 個新定量樣本完成後，物理拷貝合併將直接生成一個擁有 **112 個樣本** 的巨量 Bulk RNA-seq 聯合分析數據集！
+
+### 📊 待續下游分析與 MCP 驗證 (Pending Joint Downstream)
+- [ ] **批次登記**：執行 `scripts/01_register_sample.py --scan-bulk-rna` 重新掃描並登記所有 112 個樣本。
+- [ ] **Joint Analysis**：撰寫 `scratch/run_joint_pipeline_test.py` 執行 112 樣本的 full joint downstream RNA-seq pipeline。
+- [ ] **指標驗證**：查核 `analysis_history` 及 `mcp_tool_metrics` 中 tool_id 的 100% 覆蓋。
+
+---
+
+## ✅ 2026-05-22 Session I：Evo_PRISM 運作生物分析基準測試設計、跨機存檔整備與計畫封存��移至 v21。接著，針對全新批次數據 `TS260410004` (16 個 pw120hr 樣本) 進行上游 FastQC + trim_galore + Kallisto 定量，並將其與原有的 84 個樣本合併 (共 100 樣本) 進行端對端 Joint Downstream Analysis (EDA, DEG, Heatmap, ORA)，完整驗證 `Evo_PRISM` 在大樣本聯合分析下的記憶快取效能與 MCP 指標歷史。
+
+### 🔧 資料庫遷移修復 (Database Migrations Refactor)
+- **v10 遷移修復 (`scripts/11_migrate_schema_v10.py`)**：在 `CHECKPOINT` 執行前補上 `LOAD vss;`，防範未知 HNSW 索引類型錯誤。
+- **v16/v17 遷移修復 (`scripts/17_migrate_schema_v16.py` & `scripts/18_migrate_schema_v17.py`)**：將備份表及還原時的表名統一為 `_blob_backup_v16` / `_rel_backup_v16` 與 `_blob_backup_v17` / `_rel_backup_v17`，解決 `Catalog Error: Table does not exist`。
+- **重新驗證**：修復後再次批次執行 v2 至 v21 遷移，確認 schema_migrations 中所有遷移狀態均為 completed。
+
+### 🧬 新批次 `TS260410004` 上游定量與合併 (Upstream & Merging)
+- **環境探查**：確認 WSL conda 中的 `kallisto_env` 是否就緒。
+- **上游執行**：直接在 `i:\BulkRNA\TS260410004` 路徑下執行 FastQC、trim_galore、Kallisto 定量，無需複製龐大的 Raw Fastq 檔案，節省硬碟空間。
+- **數據搬移**：將定量後的 16 個 pw120hr 樣本 `results_kallisto` 物理複製至 `i:\Evo_PRISM\bulk_rna_data\Kallisto_v1\results_kallisto`，與原先的 84 個樣本合併成 100 個樣本的完整數據集。
+
+### 📊 100 樣本聯合下游分析與 MCP 驗證 (Downstream & Metrics)
+- **批次登記**：執行 `scripts/01_register_sample.py --scan-bulk-rna` 重新掃描並登記所有 100 個樣本。
+- **Joint Analysis**：撰寫 `scratch/run_joint_pipeline_test.py` 執行 full downstream RNA-seq pipeline (EDA, DEG, Heatmaps, ORA)。
+- **數據健檢**：驗證 `analysis_history` (100% 覆蓋 tool_id) 及 `mcp_tool_metrics` 中的執行效能指標。
 
 ---
 

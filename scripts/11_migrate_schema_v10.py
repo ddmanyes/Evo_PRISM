@@ -52,6 +52,11 @@ _HISTORY = [
 def migrate(db_path: Path = DUCKDB_PATH) -> None:
     print(f"Connecting to: {db_path}")
     with duckdb.connect(str(db_path)) as con:
+        try:
+            con.execute("LOAD vss")
+        except Exception as e:
+            print(f"WARNING: VSS load failed ({e}) — continuing")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS schema_migrations (

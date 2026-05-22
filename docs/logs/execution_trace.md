@@ -2,6 +2,19 @@
 
 ---
 
+### [2026-05-22] 🤖 Code Review 紀錄 (v3.1)
+- **路由路徑**: Path A (Gemini 邏輯分析) | **評分**: 2/10
+- **命中特徵**: Architecture/Core (+2)
+- **Security Flag**: false
+- **規範檢查**: ⚠️ 潛在違規 — HELIX 7.1 `register_tool()` 未見呼叫（`scan_candidates` + `tool_health_report` 均修改）
+- **判定理由**: 涉及 HELIX Eq.(1)(2) 核心公式落地，修改 `analysis/code_promoter.py` 與 `analysis/tool_registry.py`；無安全敏感欄位，無 GPU 邏輯，score=2 低於 6，路由 Path A
+- **審查狀態**: ✅ 已完成
+- **高風險項**: (1) register_tool() 未呼叫 (2) churn_ratio query 無防護 exception (3) delta_cc_norm 在無歷史資料時超出 [0,1] 定義域
+---
+🔄 [🔄 點擊恢復至審查前狀態](command:antigravity.restore?{"hash":"0b4725f4291824b818f10003417368d48d3531a9"})
+
+---
+
 ## 2026-05-15 — Phase 1 執行記錄
 
 ### 1.0 venv 建置（APFS 繞道）

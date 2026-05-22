@@ -135,6 +135,18 @@ HELIX_SNAPSHOT_DECAY_DAYS_1 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_1", "180"
 # 超過此天數後 downsample to 0.25x
 HELIX_SNAPSHOT_DECAY_DAYS_2 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_2", "365"))
 
+# ── HELIX 量化公式超參數 (Eq.1 & Eq.2) ────────────────────────
+# Eq.(1)  f_promote(t) = α·ReuseCount + β·UserApproval − γ·Complexity ≥ θ_promote
+HELIX_ALPHA = float(os.getenv("HELIX_ALPHA", "1.0"))          # ReuseCount 權重
+HELIX_BETA = float(os.getenv("HELIX_BETA", "2.0"))            # UserApproval 權重
+HELIX_GAMMA = float(os.getenv("HELIX_GAMMA", "0.2"))          # Complexity 懲罰係數
+HELIX_THETA_PROMOTE = float(os.getenv("HELIX_THETA_PROMOTE", "3.0"))  # 晉升門檻
+
+# Eq.(2)  HealthScore(t) = clip[0,1](1.0 − ω_churn·ChurnRatio − ω_complexity·ΔComplexity)
+HELIX_OMEGA_CHURN = float(os.getenv("HELIX_OMEGA_CHURN", "0.6"))           # ChurnRatio 權重
+HELIX_OMEGA_COMPLEXITY = float(os.getenv("HELIX_OMEGA_COMPLEXITY", "0.4")) # ΔComplexity 權重
+HELIX_THETA_WARNING = float(os.getenv("HELIX_THETA_WARNING", "0.70"))      # 健康警示門檻
+
 
 # ── Artifact 路徑工具 ──────────────────────────────────────
 def resolve_artifact_path(rel_path: str) -> Path:

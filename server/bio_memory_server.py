@@ -1450,6 +1450,49 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
     if not requested_by:
         requested_by = "mcp_client"
 
+    # ── Fast-Path 攔截（AA3）──────────────────────────────────────────────────
+    # bio_history_search 接受自然語言查詢，遇到簡單意圖（最近N筆/時間軸/樣本列表）
+    # 可直接走 SQL 結構化工具，繞過 embedding server，降低 latency 並節省 token。
+    # 兩種 transport（stdio / HTTP-SSE）共用同一個 call_tool 入口，均生效。
+    if name == "bio_history_search" and isinstance(arguments, dict):
+        _query = arguments.get("query", "")
+        if _query:
+            try:
+                from server.fast_path import try_fast_path, render_header
+
+                _hit = try_fast_path(_query)
+                if _hit is not None:
+                    _fp_handler = _HANDLERS.get(_hit.tool_name)
+                    if _fp_handler is not None:
+                        t0_fp = time.monotonic()
+                        try:
+                            _fp_result = await _fp_handler(_hit.args)
+                        except Exception as _fp_exc:
+                            logger.warning(
+                                "fast_path MCP intent=%s tool=%s failed, fallback: %s",
+                                _hit.intent,
+                                _hit.tool_name,
+                                _fp_exc,
+                            )
+                        else:
+                            _record_metric(
+                                name,
+                                int((time.monotonic() - t0_fp) * 1000),
+                                "ok",
+                                requested_by=requested_by,
+                            )
+                            logger.info(
+                                "fast_path MCP hit intent=%s → %s (bypassed embedding)",
+                                _hit.intent,
+                                _hit.tool_name,
+                            )
+                            _fp_text = render_header(_hit) + (
+                                _fp_result if isinstance(_fp_result, str) else str(_fp_result)
+                            )
+                            return [types.TextContent(type="text", text=_fp_text)]
+            except ImportError:
+                pass  # fast_path module not available; continue normal dispatch
+
     handler = _HANDLERS.get(name)
     if handler is None:
         _record_metric(name, 0, "user_error", requested_by=requested_by)

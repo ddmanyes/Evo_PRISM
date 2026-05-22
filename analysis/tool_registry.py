@@ -28,9 +28,39 @@ from typing import Callable, Optional
 
 import duckdb
 
-from config.settings import HELIX_HOT_THRESHOLD
+from config.settings import (
+    HELIX_HOT_THRESHOLD,
+    HELIX_OMEGA_CHURN,
+    HELIX_OMEGA_COMPLEXITY,
+    HELIX_THETA_WARNING,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# HELIX Eq.(2) — HealthScore
+# ---------------------------------------------------------------------------
+
+
+def compute_health_score(churn_ratio: float, delta_complexity_norm: float) -> float:
+    """Eq.(2): HealthScore(t) = clip[0,1](1.0 − ω_churn·ChurnRatio − ω_complexity·ΔComplexity).
+
+    Parameters
+    ----------
+    churn_ratio:
+        Fraction of lines changed per revision, averaged over recent revisions.
+        Range [0, 1] — higher means more turbulent change history.
+    delta_complexity_norm:
+        Normalized complexity increase since last closed stabilization.
+        Computed as max(0, cc_now − cc_after_last) / max_cc_historical, range [0, 1].
+        Zero when complexity has not grown back (healthy) or no stabilization history.
+
+    Returns a score in [0.0, 1.0].  Values below HELIX_THETA_WARNING signal a
+    tool that needs attention (open a stabilization iteration).
+    """
+    raw = 1.0 - HELIX_OMEGA_CHURN * churn_ratio - HELIX_OMEGA_COMPLEXITY * delta_complexity_norm
+    return max(0.0, min(1.0, raw))
 
 
 # ---------------------------------------------------------------------------
@@ -1108,8 +1138,63 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         for r in regression_rows
     ]
 
+    # ── HELIX Eq.(2) HealthScore per active tool ──────────────────────────────
+    # ChurnRatio: average of last 5 churn_ratio values per tool from tool_change_log.
+    # ΔComplexity_norm: max(0, cc_now − cc_after_last_closed) / max_cc_ever, range [0,1].
+    churn_rows = con.execute(
+        """
+        WITH ranked AS (
+            SELECT tool_name, churn_ratio,
+                   ROW_NUMBER() OVER (PARTITION BY tool_name ORDER BY revision_number DESC) AS rn
+            FROM   tool_change_log
+            WHERE  churn_ratio IS NOT NULL
+        )
+        SELECT tool_name, AVG(churn_ratio) AS avg_churn
+        FROM   ranked
+        WHERE  rn <= 5
+        GROUP  BY tool_name
+        """
+    ).fetchall()
+    avg_churn_by_tool: dict[str, float] = {r[0]: float(r[1]) for r in churn_rows}
+
+    # Historical max complexity across all stabilization records (for normalization).
+    max_cc_row = con.execute(
+        "SELECT MAX(GREATEST(COALESCE(complexity_before, 1), COALESCE(complexity_after, 1))) "
+        "FROM tool_stabilization_log"
+    ).fetchone()
+    max_cc_historical: int = int(max_cc_row[0]) if max_cc_row and max_cc_row[0] else 1
+
+    tool_health_scores: list[dict] = []
+    unhealthy_tools: list[str] = []
+    for tool_row in con.execute(
+        "SELECT tool_name FROM tools WHERE status = 'active'"
+    ).fetchall():
+        tname = tool_row[0]
+        avg_churn = avg_churn_by_tool.get(tname, 0.0)
+        # ΔComplexity from regression_zones (already computed above).
+        reg = next((r for r in regression_zones if r["tool_name"] == tname), None)
+        delta_cc = reg["regression"] if reg else 0
+        delta_cc_norm = max(0.0, delta_cc / max_cc_historical)
+        score = compute_health_score(avg_churn, delta_cc_norm)
+        entry = {
+            "tool_name": tname,
+            "health_score": round(score, 4),
+            "avg_churn_ratio": round(avg_churn, 4),
+            "delta_complexity_norm": round(delta_cc_norm, 4),
+            "warning": score < HELIX_THETA_WARNING,
+        }
+        tool_health_scores.append(entry)
+        if score < HELIX_THETA_WARNING:
+            unhealthy_tools.append(tname)
+
     # Build recommendation text
     parts: list[str] = []
+    if unhealthy_tools:
+        names = ", ".join(unhealthy_tools)
+        parts.append(
+            f"HealthScore 低於警示門檻 {HELIX_THETA_WARNING}（{len(unhealthy_tools)} 個工具）："
+            f"{names}。建議開啟穩定化迭代或降低 churn。"
+        )
     if open_stabilizations:
         names = ", ".join(s["tool_name"] for s in open_stabilizations)
         parts.append(
@@ -1227,6 +1312,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
         "prune_candidates": prune_candidates,
         "regression_zones": regression_zones,
         "hot_lines_report": hot_lines_report,
+        "tool_health_scores": tool_health_scores,
         "helix_self_health": helix_self_health(con),
         "recommendation": " ".join(parts),
     }
