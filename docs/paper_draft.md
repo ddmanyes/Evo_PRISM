@@ -130,7 +130,7 @@ $$Score_{RRF}(q, a) = \frac{w_1}{r_{embedding}(q, a.query) + k} + \frac{w_2}{r_{
 *   $r_{context}$ 為執行期上下文相似度排名。
 
 **Figure Cache 剝離技術**：  
-科學分析（如火山圖、降維圖）的輸出通常為多模態圖片。我們在 MCP 傳輸邊界對 base64 圖片數據進行剝離，僅將文字摘要與元數據寫入 `analysis_artifacts` (ENGRAM 記憶庫)，圖片實體寫入圖表快取。Agent 在 0-token 快取命中時，可以直接透過 `bio_get_figure` 快速檢索並呈現圖片，徹底避免了在 LLM Context Window 中塞入巨大 base64 造成的 Token 膨脹與記憶體溢出。
+科學分析（如火山圖、降維圖）的輸出通常為多模態圖片。我們在 MCP 傳輸邊界對 base64 圖片數據進行剝離，僅將文字摘要與元數據寫入 `analysis_artifacts` (ENGRAM 記憶庫)，圖片實體寫入圖表快取。此種將高維多模態科學圖表壓縮並抽提為關鍵結構化文字與特徵的設計哲學，借鑑了 **DeepSeek-OCR [deepseekocr2025]** 的圖像特徵提取與文檔解析技術。Agent 在 0-token 快取命中時，可以直接透過 `bio_get_figure` 快速檢索並呈現圖片，徹底避免了在 LLM Context Window 中塞入巨大 base64 造成的 Token 膨脹與記憶體溢出。
 
 ### 2.4 前瞻性影響分析與爆炸範圍評估 (Proactive Impact Analysis)
 在科學計算平台中，底層分析工具的升級（如 `bulk_eda` 的算法修正）往往會對已存在的分析歷史產生連鎖反應，導致舊分析結果失真或不一致。為了解決這個問題，Evo_PRISM 借鑑了先進客戶端代碼智能引擎 GitNexus [gitnexus2026] 的「關係預計算與邊上信心分級 (Confidence-on-Edges)」設計哲學，設計了前瞻性的影響力圖譜（Proactive Impact Graph）與爆炸範圍（Blast Radius）評估工具 `bio_impact`。
