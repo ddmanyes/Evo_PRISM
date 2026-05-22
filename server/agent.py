@@ -1253,8 +1253,9 @@ def _exec_bio_check_l2_sufficiency(args: dict) -> str:
     l2_ready, l3_path, data_type = row
     if l2_ready:
         return f"l2_ready=true。樣本 {sample_id!r} 的 L2 Parquet 已就緒，可直接執行分析。"
+    _py = sys.executable
     cmd = (
-        f"~/.venvs/hermes-bio-memory/bin/python scripts/02_spatial_to_parquet.py --sample-id {sample_id}"
+        f"{_py} scripts/02_spatial_to_parquet.py --sample-id {sample_id}"
         if data_type in ("visium_hd", "visium")
         else f"# data_type={data_type!r}，請手動執行對應的 L2 轉換腳本。"
     )

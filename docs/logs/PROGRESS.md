@@ -7,10 +7,60 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ 控制面板 Phase 2（手動操作端點）+ 控制面板 Phase 3（動態程式碼畢業助手）+ 專案工具箱建置與 Playbook 架喚審查 + Fast-Path 路由與大模型跳過機制 + Bulk RNA-seq DEG/Volcano/Heatmap/ORA 原生 MCP tools（對齊 ddmanyes/bulk-rnaseq-pipeline） + GitNexus 借鏡評估 + bio_impact 影響分析（blast-radius + confidence tier） + tool_id 回填集中化（HELIX §7.3 覆蓋 100%） + **mcp_tool_metrics 實體表與 MCP Server 插樁監控（P1-D，覆蓋率 100%）** + **系統架構重整與文檔/大數據 Git 安全解耦（完成）** + **Evo_PRISM 品牌重塑與通用定位遷移（完成）**
-**平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
-**最後更新**：2026-05-22
-**commit**：(待提交)
+**里程碑**：Phase 10 完成 + 品牌重塑（Evo_PRISM）+ GitNexus 借鏡 + bio_impact + Bulk RNA-seq 原生工具 + 控制面板三階段 + MCP 數據交付三件套 + Fast-Path 路由 + **基準測試與論文數據回填規劃完成（執行待開始）**
+
+**當前焦點**：執行三項學術基準測試並將真實數據回填至 `docs/paper_draft.md`
+
+---
+
+## ⏭️ 待完成任務（依 docs/plans/task.md）
+
+> 詳細測試設計見 [docs/plans/evaluation_and_testing_plan.md](../plans/evaluation_and_testing_plan.md)
+
+- [ ] **Benchmark 1**：快取效能與 3-way RRF 消融實驗（`tests/benchmark_cache_rrf.py`）
+  - [ ] 編寫含 GEO 獨立測試集的快取與 RRF 消融基準測試，模擬特徵指紋改變
+  - [ ] 引入 Visium HD 8µm 空間轉錄組數據做 Hero Figure 看板對比
+  - [ ] 執行並記錄 Traditional Cache vs Evo_PRISM 延遲與防污染攔截率
+  - [ ] 驗證跨數據集 L2 Hit 與 L1 Invalidation 行為
+  - [ ] 計算 Paired $t$-test 統計顯著性（$p$-value）
+- [ ] **Benchmark 2**：HELIX 晉升、複雜度優化與快取失效閉環實驗（`tests/benchmark_helix_promotion.py`）
+  - [ ] 模擬臨時腳本重複執行 3 次
+  - [ ] 計算並記錄 Radon 循環複雜度變化與 $HealthScore$ 躍升
+  - [ ] 驗證 L1 快取自動清空失效閉環
+- [ ] **Benchmark 3**：爆炸範圍與 Recursive CTE 遞迴壓力測試（`tests/benchmark_impact.py`）
+  - [ ] 隨機生成 1,000～10,000 個依賴邊的 `artifact_relations` 關係圖
+  - [ ] 記錄 DuckDB 執行 Recursive CTE 遞迴查詢時延（毫秒級）
+  - [ ] 比較 Heuristic (0.6) 與 Exact (1.0) 模式的召回精度
+- [ ] **論文數據回填**（`docs/paper_draft.md`）
+  - [ ] 將真實延遲、Token 減少率、污染率與統計顯著性寫入論文
+  - [ ] 寫入「GEO 獨立測試集泛化驗證」表格與論述
+  - [ ] 寫入「Visium HD 空間極限對比 Hero Figure」圖表數據與論述
+  - [ ] 填入 Radon 複雜度優化與 $HealthScore$ 實際躍升數據
+  - [ ] 填入 Recursive CTE 壓力測試大規模時延表格
+  - [ ] 整理論文草稿，確保圖表與文字排版完善，準備學術發表
+
+---
+
+## ✅ 2026-05-22 Session I：Evo_PRISM 運作生物分析基準測試設計、跨機存檔整備與計畫封存
+
+**動機**：為了提供學術論文真實且無懈可擊的實驗數據支援，我們規劃並設計了三項系統基準測試（3-way RRF 快取污染消融、HELIX 晉升失效閉環、Recursive CTE 爆炸半徑壓力測試），並全面考量跨裝置轉移測試的可移植性，將所有的計畫與任務文件實體封存於專案目錄中，同時打通 GEO 與 Visium HD 等不同量級生資數據的實測通道。
+
+### 📄 計畫與任務之專案實體封存 (Portability & Porting Prep) — 已成功存檔！
+- **跨機防丟失設計**：考慮到腦區 (local appData) 在跨電腦間無法透過雲端硬碟/Git 同步，我們已主動將以下核心計畫與任務清單實體封存至專案中，確保跨設備轉移時能被新電腦上的 Agent 100% 攜帶與無縫讀取：
+  - [docs/plans/evaluation_and_testing_plan.md](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/plans/evaluation_and_testing_plan.md) (測試與學術驗證方案 - **已存檔**)
+  - [docs/plans/implementation_plan.md](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/plans/IMPLEMENTATION_PLAN.md) (實作計畫 - **已存檔**)
+  - [docs/plans/task.md](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/plans/task.md) (任務清單 - **已存檔**)
+  - 這保障了您隨時轉移至另一台電腦測試時，新環境的 Agent 能夠完美無損地繼承當前的上下文與 TODO 進度。
+
+### 🧬 生物資訊基準測試設計與對齊
+- **快取效能與 3-way RRF 測試** (`tests/benchmark_cache_rrf.py`)：
+  - 設計結合 GEO 獨立測試集，驗證 3-way RRF 面臨指紋改變時防範快取污染的極限能耐。
+  - 設計 Visium HD 8µm 空間細胞分析的「重算 vs 亞秒級命中」性能比對，做為論文中最亮眼的 Hero Figure 看板對比。
+- **HELIX 晉升與快取失效閉環測試** (`tests/benchmark_helix_promotion.py`)：
+  - 模擬臨時代碼重複執行 3 次，測量並記錄重構後 Radon 複雜度與 $HealthScore$ 的實際躍升。
+  - 驗證 `register_tool()` 自動調用 `invalidate_tool_cache` 以清空關聯快取的自癒閉環。
+- **爆炸半徑與 Recursive CTE 壓力測試** (`tests/benchmark_impact.py`)：
+  - 實體走訪 1,000 ~ 10,000 個依賴邊的關係圖，記錄 DuckDB 遞迴查詢的時延。
 
 ---
 

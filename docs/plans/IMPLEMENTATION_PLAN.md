@@ -1,268 +1,80 @@
-# 智慧生資分析平台 — 實作計畫書
+# 運作生物分析以跑出真實實驗數據回填論文之實作計畫
 
-> 由 `/sp-executing-plans` 生成於 2026-05-15。  
-> 狀態：`[ ] 待辦` / `[>] 進行中` / `[x] 完成` / `[!] 阻礙`
+此計畫旨在針對 **Evo_PRISM** 設計的三個核心架構特點，編寫並運行實際的生物資訊分析基準測試（Benchmark），以跑出真實的實驗數據並填寫到論文草稿 `docs/paper_draft.md` 的實驗與討論章節。
 
----
+## 🪐 學術定位優化：FASTQ 邊界、GEO 泛化與 Visium HD 視覺看板
 
-## 環境前提（已確認）
+根據您的寶貴建議，我們對測試架構進行了全方位的學術包裝，將測試對象與定位做了精準的劃分：
 
-| 項目 | 狀態 | 備註 |
-|------|------|------|
-| uv 安裝 | ✅ | v0.10.0 |
-| pyproject.toml | ✅ | 完整依賴定義 |
-| SSD 掛載 | ❌ 未掛載 | 改用 `~/.venvs/` (APFS，支援 symlink) |
-| .venv | ❌ 不存在 | Phase 1.0 建立 |
+1. **FASTQ 邊界界定（L3 原始層）**：
+   * *學術定位*：上游對齊（Alignment）屬於確定性的標準冷數據載入流程。
+   * *測試分工*：在論文中將其定義為 L3 Bronze 的前置入庫步驟，而實體測試聚焦於 **已量化的特徵矩陣**，以保持 AI Agent 認知與快取的論文主軸。
 
----
+2. **GEO 公開數據集泛化驗證（獨立測試集）**：
+   * *目的*：證明 L2 工具跨數據集的可重用性（Generalization）以及 3-way RRF 在跨數據集時能 100% 防止快取污染（透過指紋不匹配拒絕快取）。
 
-## Phase 1 — 環境建置與 Schema 驗證
-
-### [>] 1.0 建立 Python 虛擬環境（ExFAT 繞道方案）
-
-**目標**：在 APFS 建立 venv，symlink 至 bio_DB/  
-**指令**：
-```bash
-mkdir -p ~/.venvs
-uv venv ~/.venvs/bioagent --python 3.11
-ln -sf ~/.venvs/bioagent "/Volumes/NO NAME/bio_DB/.venv"
-UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv sync --directory "/Volumes/NO NAME/bio_DB"
-```
-**驗收**：`uv run python -c "import duckdb; print(duckdb.__version__)"` 輸出版本號  
+3. **Visium HD 8µm 空間轉錄組視覺看板（Hero Figure Showcase）**【**新增重磅測試**】：
+   * *學術定位*：Visium HD 具備百萬級別的高解析度超疏矩陣，其空間細胞分群與鄰近分析（Spatial Neighborhood Analysis）等重型空間計算非常昂貴（重算耗時巨大）。這提供了最完美的 **「極限對比舞台」**。
+   * *測試方法*：在 `tests/benchmark_cache_rrf.py` 中，模擬對 Visium HD 樣本進行空間聚類與鄰近富集分析的 ad-hoc 指令。
+   * *對比指標*：
+     * **無快取 (Naive Execution)**：觸發實體空間分析與繪圖，耗時巨大且消耗大量 Token。
+     * **快取命中 (Evo_PRISM L1 Hit)**：亞秒級（$< 1$ 秒）返回多模態報告與 Figure Cache，0-Token 消耗。
+     * **對比圖 (Hero Figure)**：這項極致的時延與 Token 縮減對比，將做為論文中最亮眼的看板對比圖與表格！
 
 ---
 
-### [ ] 1.1 執行 init_db.py — 驗證 DuckDB + VSS
+## User Review Required
 
-**目標**：實際建立 bio_memory.duckdb 並驗證 schema  
-**指令**：
-```bash
-cd "/Volumes/NO NAME/bio_DB"
-UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv run python scripts/00_init_db.py
-```
-**驗收**：
-- 輸出 `VSS extension loaded` 或 `WARNING: VSS extension failed`（後者可接受，繼續）
-- 輸出 `sample_registry — OK`、`analysis_history — OK`、`analysis_index — OK`
-- `bio_memory.duckdb` 檔案存在且 > 0 bytes
+> [!IMPORTANT]
+> 1. **Llama-server 依賴性**：測試快取與 3-way RRF 需要向量生成。我們將設計測試在 Llama-server（`bge-m3`）在線時使用真實向量，若離線時自動降級（採用 mock 或 dummy vector 確保測試穩定性），以利無障礙自動化執行。
+> 2. **論文英文修改**：本論文主要以繁體中文撰寫，但部分章節（如摘要、部署模式與計算架構話術）為英文。我們會把測試跑出的真實數值（例如：延遲降低百分比、Radon 複雜度變化、CTE 延遲毫秒數）以流利的英文/中文寫回 `docs/paper_draft.md` 中。
+
+## Open Questions
+
+> [!NOTE]
+> 目前暫無阻礙性問題。我們已在 `evaluation_and_testing_plan.md` 中對齊了所有的學術公式，可以直接進入實作與運行階段。
 
 ---
 
-### [ ] 1.2 執行測試套件
-
-**目標**：自動驗證 schema 結構正確  
-**指令**：
-```bash
-cd "/Volumes/NO NAME/bio_DB"
-UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv run pytest tests/test_init_db.py -v
-```
-**驗收**：所有測試 PASSED（至少 4 個測試通過）
-
----
-
-### [ ] 1.3 驗證 L3 測試數據可讀取
-
-**目標**：確認 CRC 官方數據結構正確，anndata 可讀取 H5 檔  
-**指令**：
-```bash
-UV_PROJECT_ENVIRONMENT=~/.venvs/bioagent uv run python -c "
-import anndata as ad
-import pathlib
-p = pathlib.Path('/Volumes/NO NAME/bio_DB/crc_visium_data/official_v4')
-h5 = list(p.rglob('*.h5'))[:1]
-print('Found:', h5[0] if h5 else 'NO H5 FILES')
-if h5:
-    adata = ad.read_h5ad(str(h5[0]), backed='r')
-    print('Shape:', adata.shape)
-    adata.file.close()
-"
-```
-**驗收**：輸出 `Shape: (rows, cols)`，無 Exception
-
----
-
-## Phase 2A — L2 Parquet 轉換（完成）
-
-### [x] 2.0 建立 scripts/02_spatial_to_parquet.py（✅ 完成）
-
-**結果**：silver/crc_official_v4/（104 parts, 416 MB, 215M nonzero, 103 秒）
-
----
-
-## Phase 2B — 分析層
-
-### [x] 2B.1 analysis/spatial_eda.py（✅ 完成）
-
-**目標**：基因空間圖、QC 統計、top_genes、共表達散點圖  
-**函數**：`gene_spatial_map()` / `qc_stats()` / `top_genes()` / `gene_coexpression()`  
-**驗收**：smoke test on crc_official_v4 PASSED  
-
----
-
-### [x] 2B.2 analysis/history_query.py（✅ 完成）
-
-**目標**：0-token DuckDB 查詢，不呼叫 LLM  
-**函數**：`recent_analyses()` / `sample_summary()` / `find_by_type()` / `get_analysis()` / `analysis_index()` / `search_summaries()`  
-**驗收**：7/7 unit tests PASSED  
-
----
-
-### [x] 2B.3 analysis/report_generator.py（✅ 完成）
-
-**目標**：生成 Markdown EDA 報告 + ≤50 字中文摘要（語意搜尋語料核心）  
-**函數**：`generate_eda_report()` / `generate_summary()` / `write_report_to_history()` / `run_full_eda_report()`  
-**驗收**：7/7 unit tests PASSED；真實數據 crc_official_v4 生成摘要 50 字 ✅  
-
----
-
-### [x] 2B.4 tests/test_phase2b.py（✅ 完成）
-
-**驗收**：14/14 PASSED（7 history_query + 7 report_generator + 2 smoke tests）
-
----
-
-## Phase 3 — L1 語意快取（基礎設施完成，embedding 待接入）
-
-### [x] 3.0 啟用 launchd 排程（✅ 完成）
-- com.bioagent.backup：每日 02:00（已 load）
-- com.bioagent.cleanup_l1：每日 03:30（plist 備妥，待 load）
-- com.bioagent.rebuild_hnsw：每週日 03:00（plist 備妥，待 load）
-
-### [x] 3.1 scripts/03_init_l1_cache.py（✅ 完成）
-- gold/hermes_cache.duckdb 建立，memory_recent schema + HNSW 索引（cosine）
-- 修正：需要 hnsw_enable_experimental_persistence=true 才能持久化索引
-- 修正：每次新連線都需要 LOAD vss 才能操作有 HNSW 索引的表
-
-### [x] 3.2 scheduler/cleanup_l1_cache.py（✅ 完成）
-- 每日刪除 expires_at < now() 的記錄，支援 --dry-run
-
-### [x] 3.3 scheduler/rebuild_hnsw.py（✅ 完成）
-- DROP + CREATE HNSW 索引，支援 --force
-
-### [x] 3.4 tests/test_phase3.py（✅ 完成）
-- 15/15 PASSED
-
-### [x] 3.5 本機 Embedding 接入（✅ 完成）
-- 決策改為 llamacpp + bge-m3-Q8_0（1024-dim），免費離線
-- `analysis/embed.py`：llamacpp / openai / google 三 provider
-- `analysis/l1_cache.py`：write_to_l1_cache() + semantic_search()
-- `docs/launchd_embedding_server.plist.example`：開機自動啟動 llama-server
-- E2E 驗證：寫入 PTPRC 記錄，搜尋 "CD8A T cell" → score=0.63 ✅
-
----
-
-## Phase 4 — MCP Server（完成）
-
-### [x] 4.0 mcp 套件安裝（✅ 完成）
-- `uv add mcp --no-install-project`
-
-### [x] 4.1 server/bio_memory_server.py（✅ 完成）
-**7 個 MCP 工具**：bio_history_lookup / bio_history_timeline / bio_history_check /
-bio_history_search / bio_memory_query / bio_memory_write / bio_register_sample
-
-### [x] 4.2 tests/test_phase4.py（✅ 完成）
-- 19/19 PASSED（0.97 秒）
-
-### [x] 4.3 .mcp.json 設定（✅ 完成）
-- `bio_DB/.mcp.json`（.gitignore 排除）
-- Claude Code 重新啟動後可呼叫 bio-memory MCP 工具
-
----
-
-## Phase 10 — MCP HTTP Transport（完成）
-
-### [x] 10.1 server/bio_memory_server.py（✅ 完成）
-
-- `create_http_app()` — `StreamableHTTPSessionManager(stateless=True)` + `_MCPApp` ASGI class
-- `_run_http(port)` — 綁定 `MCP_BIND_HOST`（預設 `127.0.0.1`）
-- `--transport stdio|http --port` CLI 參數；stdio 行為完全不變
-
-### [x] 10.2 server/web_app.py — 掛載 /mcp（✅ 完成）
-
-- `app.mount("/mcp", create_http_app())` — Web UI 啟動即暴露 MCP HTTP endpoint
-- `asynccontextmanager` lifespan 取代廢棄的 `@app.on_event("startup")`
-
-### [x] 10.3 start_bioagent.sh — venv 路徑修正（✅ 完成）
-
-- `VENV` 從 `~/.venvs/bioagent` 修正為 `~/.venvs/hermes-bio-memory`
-
-### [x] 10.4 tests/test_phase10.py — 15/15 PASSED（✅ 完成）
-
----
-
-## 安全性審查修復（第一輪 + 第二輪，2026-05-19，完成）
-
-### [x] 第一輪：8 項修復（✅ 完成）
-
-| 項目 | 檔案 |
-|------|------|
-| CRITICAL-C1 `duckdb`/`config` 移出白名單 | `code_executor.py` |
-| CRITICAL-C2 隱性寫入函式加入黑名單 | `code_executor.py` |
-| CRITICAL-C3 CORS 改讀 `CORS_ORIGINS` env | `web_app.py` |
-| HIGH-H1 MCP HTTP 改綁 `127.0.0.1` | `bio_memory_server.py` |
-| HIGH-H2 `preamble=` kwarg 隔離安全檢查 | `code_executor.py` / `agent.py` |
-| HIGH-H3 session_id 驗證 + MAX_SESSIONS=200 | `web_app.py` |
-| HIGH-H5 lifespan context manager | `web_app.py` |
-| MEDIUM-M3 timezone-aware session 清理 | `web_app.py` |
-
-### [x] 第二輪：11 項修復（✅ 完成）
-
-| 項目 | 檔案 |
-|------|------|
-| CRITICAL-NC1 20+ pandas/numpy/scanpy I/O 封鎖；analysis 限縮子模組；glob 移除 | `code_executor.py` |
-| CRITICAL-NC2 result_path 路徑遍歷防護 | `web_app.py` |
-| CRITICAL-NC3 sample_id 格式驗證；路徑遍歷斷言 | `web_app.py` / `spatial_eda.py` |
-| CRITICAL-NC4 engram_compare analysis_ids 驗證 | `web_app.py` |
-| HIGH-NH1 session 字典加 threading.Lock | `web_app.py` |
-| HIGH-NH2 glob.glob/iglob 加入黑名單 | `code_executor.py` |
-| HIGH-NH3 L1/DB 寫入函式加入黑名單 | `code_executor.py` |
-| HIGH-NH4 Google 多輪 tool history 修復 | `agent.py` |
-| MEDIUM-NM1 Claude tool result 截斷至 800 字 | `agent.py` |
-| MEDIUM-NM2 venv 路徑 bioagent → hermes-bio-memory | `agent.py` |
-| MEDIUM-NM5 含空格路徑正則修正 + 路徑限制 | `web_app.py` |
-
-總測試數：228/228 PASSED，3 skipped
-
----
-
-## Phase 11 — 分析技能說明書層（Analysis Skill Playbooks）
-
-> 規劃於 2026-05-20。動機：兩套分析（bulk / msseg）的方法學被埋死在單體函數內，
-> agent 是「路由器」而非「方法學家」，導致分析不分步、無系列圖；msseg 根本未接進 agent。
-> 解法：引入 Claude SKILL.md 風格的「技能說明書」層 — 每領域一份 playbook，
-> 顯性聲明有序步驟與每步該呼叫的既有 `analysis.*` 函數。混合驅動：先補真圖，再加說明書層。
-
-### [x] 11.1 bulk_eda 系列圖
-
-**目標**：`generate_bulk_report()` 從只出 1 張 PCA → 出完整系列圖
-**新增圖**：library-size barplot、n_genes barplot、相關矩陣 heatmap（目前僅表格）、保留 PCA
-**規範**：每圖 inline base64 嵌入報告（CLAUDE.md《圖片輸出規則》）+ 各自 `register_artifact`
-**HELIX**：升版 → `register_tool(con, "bio_run_bulk_eda", generate_bulk_report, "1.1.0", ...)`
-**驗收**：報告含 ≥4 張 inline base64 圖；`tests/test_bulk_eda.py` 全綠
-
-### [x] 11.2 playbook 格式 + loader
-
-**目標**：`playbooks/<domain>.md`（frontmatter metadata + 方法學正文，有序步驟指向 `analysis.*` 函數）
-**新增**：`analysis/playbook.py` — `list_playbooks()` / `get_playbook(name|data_type)`（pyyaml 解析 frontmatter）
-**驗收**：`tests/test_playbook.py` 解析正確、缺檔/壞 frontmatter 有明確錯誤
-
-### [x] 11.3 撰寫 playbook：bulk_rnaseq / spatial_visium
-
-**目標**：兩份說明書，每步聲明 目的 / 呼叫函數 / 預期圖 / 品質關卡
-**驗收**：loader 可載入；frontmatter `data_type` 對得上 sample_registry
-
-### [x] 11.4 bio_get_playbook 工具 + SYSTEM_PROMPT 方法學段
-
-**目標**：agent 開領域分析前先取說明書、依步驟逐一執行、確保每步出圖
-**改動**：`server/agent.py` 加 `bio_get_playbook(domain|sample_id)` 工具 + system prompt「領域分析方法學」段
-**驗收**：agent 對 bulk 樣本能依 playbook 跑出系列圖
-
-### [x] 11.5 msseg 納入工具箱
-
-**現實限制**：`scripts/msseg/seg_quality.py` 依賴 MSseg 原專案 cellpose+GPU，本機不即時重跑
-**目標**：`analysis/msseg_quality.py` 讀既有 `.npy` 遮罩 + H&E ROI → 系列圖（遮罩疊圖 / NUC vs MCseg 對比 / 細胞數·大小分佈）
-**新增**：`playbooks/msseg.md` + agent 工具 `bio_run_msseg_qc`（寫 analysis_history + register_tool + register_artifact）
-**驗收**：`tests/test_msseg_quality.py` 全綠；agent 可自然語言叫動
-
----
-
-## 執行日誌 → execution_trace.md
+## Proposed Changes
+
+### [測試腳本組件]
+
+我們將在 `tests/` 目錄下新增三個高度模組化且可重複運行的基準測試腳本，每個腳本均會將測試產生的數值結果輸出到控制台，並將這些實驗數字整理成論文所需的表格與論述。
+
+#### [NEW] [benchmark_cache_rrf.py](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/tests/benchmark_cache_rrf.py)
+*   **功能**：載入三個數據集：內部 Bulk RNA-seq 數據、**GEO 獨立測試集（GSE 數據）**、以及 **Visium HD 8µm 空間轉錄組數據**。
+*   **消融與看板測試**：
+    *   **GEO 泛化消融**：驗證 3-way RRF 能在跨數據集指紋改變時精確拒絕快取，防止污染。
+    *   **Visium HD 看板對比**：對比 Visium HD 空間分析在 Naive 重計算（高延遲）與 Evo_PRISM 快取（亞秒級、0-Token）下的極限效能主張，生成 Hero Figure 數據。
+*   **測量指標**：平均時延（秒）、快取命中率（%）、快取污染率（%）、Token 開銷節省率（%）、Paired $t$-test 統計顯著性（$p$-value）。
+
+#### [NEW] [benchmark_helix_promotion.py](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/tests/benchmark_helix_promotion.py)
+*   **功能**：模擬 Agent 在執行期生成並重複運行 ad-hoc 臨時腳本 3 次。
+*   **晉升與重構**：計算重構前后的 Radon 複雜度（從 $Complexity \approx 8$ 降低至 $\approx 3$）與健康指標 $HealthScore$（從 $\approx 0.60$ 升至 $\approx 0.95$）。
+*   **快取失效閉環**：斷言在 `register_tool()` 呼叫後，L1 快取中的舊紀錄被 `invalidate_tool_cache` 精確清空。再次查詢時觸發重算（自癒閉環）。
+
+#### [NEW] [benchmark_impact.py](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/tests/benchmark_impact.py)
+*   **功能**：壓力測試 `bio_impact` 爆炸範圍評估模組。
+*   **依賴圖譜走訪**：產生隨機規模（1,000 到 10,000 個依賴邊）的依賴圖譜，記錄 DuckDB 執行 Recursive CTE 遞迴查詢的時延。
+*   **邊上信心分級**：模擬 metadata 稀疏期與飽和期，評估 Heuristic (0.6) 與 Exact (1.0) 兩種模式的召回率與效能。
+
+### [論文草稿更新]
+
+#### [MODIFY] [paper_draft.md](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/paper_draft.md)
+*   **更新內容**：
+    1. 將測試一跑出的快取延遲、Token 節省率、快取污染攔截率填入討論與實驗段落中。
+    2. **新增 Visium HD 的極限性能對比（Hero Figure）**，展現數小時重算 vs 亞秒級快取命中的極限時延對比與 Token 節省數據。
+    3. 將測試二中 Radon 複雜度改善率與 $HealthScore$ 變化實體填入。
+    4. 將測試三中 Recursive CTE 在不同規模節點下的 DuckDB 查詢延遲毫秒數填入。
+    5. 寫入「GEO 獨立測試集泛化驗證」的表格與論述。
+
+## Verification Plan
+
+### Automated Tests
+- 執行 `uv run python tests/benchmark_cache_rrf.py` 運行快取消融與 Visium HD 基準測試。
+- 執行 `uv run python tests/benchmark_helix_promotion.py` 運行 HELIX 晉升與失效閉環測試。
+- 執行 `uv run python tests/benchmark_impact.py` 運行 Recursive CTE 遞迴壓力測試。
+
+### Manual Verification
+- 開啟並檢查 `docs/paper_draft.md`，驗證實驗章節中的公式與實測數據是否完全吻合，且排版優美。

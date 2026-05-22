@@ -28,15 +28,11 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Intended Audience :: Science/Research",
 ]
-
-[project.urls]
-Homepage = "https://github.com/ddmanyes/Evo_PRISM"
-"Bug Tracker" = "https://github.com/ddmanyes/Evo_PRISM/issues"
-
 dependencies = [
     # === 核心資料庫 ===
     "duckdb>=1.1.0",
@@ -66,6 +62,10 @@ dependencies = [
     "mistune>=3.2.1",
     "radon>=6.0.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ddmanyes/Evo_PRISM"
+"Bug Tracker" = "https://github.com/ddmanyes/Evo_PRISM/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -156,3 +156,6 @@ extend-exclude = [
 "server/web_app.py" = ["E402"]             # sys.path 注入 + load_dotenv 後才 import
 "analysis/artifact_registry.py" = ["E402"] # 同上：先載 vss 擴充再 import
 "tests/*" = ["E402"]                        # 測試常在中段重組 import（mock 邊界）
+
+[tool.hatch.build.targets.wheel]
+packages = ["analysis", "server", "config", "scheduler"]

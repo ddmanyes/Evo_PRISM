@@ -1,0 +1,24 @@
+# 運作生物分析與論文數據回填任務清單
+
+- [ ] 快取效能與 3-way RRF 消融實驗 (`tests/benchmark_cache_rrf.py`)
+    - [ ] 編寫快取與 3-way RRF 消融基準測試，模擬特徵指紋改變
+    - [ ] 引入 **GEO 獨立測試集（GSE 數據）** 作為泛化與防污染對比
+    - [ ] 引入 **Visium HD 8µm 空間轉錄組數據** 做為重型空間分析之看板對比案例 (Hero Figure Showcase)
+    - [ ] 執行並記錄 Traditional Cache vs Evo_PRISM 延遲與防快取污染拦截率
+    - [ ] 驗證跨數據集的工具（L2 Hit）與快取（L1 Invalidation）行為
+    - [ ] 計算 Paired $t$-test 統計顯著性 ($p$-value)
+- [ ] HELIX 晉升、複雜度優化與快取失效閉環實驗 (`tests/benchmark_helix_promotion.py`)
+    - [ ] 模擬臨時腳本重複執行 3 次
+    - [ ] 計算並記錄重構前後 Radon 循環複雜度變化與 $HealthScore$ 變化
+    - [ ] 驗證 L1 快取自動清空之失效閉環機制
+- [ ] 爆炸範圍與 Recursive CTE 遞迴壓力測試 (`tests/benchmark_impact.py`)
+    - [ ] 隨機生成 1,000 ~ 10,000 個依賴邊的 `artifact_relations` 關係圖
+    - [ ] 記錄 DuckDB 執行 Recursive CTE 遞迴查詢的時延（毫秒級）
+    - [ ] 比較 Heuristic (0.6) 與 Exact (1.0) 模式的召回精度
+- [ ] 數據回填與學術寫作優化 (`docs/paper_draft.md`)
+    - [ ] 將真實的實測延遲、Token 減少率、污染率與統計顯著性寫入論文
+    - [ ] 寫入「GEO 獨立測試集泛化驗證」的表格與論述
+    - [ ] 寫入「Visium HD 空間極限對比 (Hero Figure)」的圖表數據與論述
+    - [ ] 填入 Radon 複雜度優化與 $HealthScore$ 的實際躍升數據
+    - [ ] 填入 Recursive CTE 壓力測試下的大規模時延表格
+    - [ ] 整理論文草稿，確保圖表與文字排版完美，準備學術發表
