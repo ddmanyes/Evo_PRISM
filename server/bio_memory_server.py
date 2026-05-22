@@ -1671,15 +1671,32 @@ def create_http_app():
 
 
 def _startup_cleanup_stale_runs() -> None:
-    """MCP server 為長駐程序，啟動時清理 > 24h 仍為 running 的紀錄（CLAUDE.md §6）。"""
+    """MCP server 為長駐程序，啟動時清理 > 24h 仍為 running 的紀錄（CLAUDE.md §6），並自動註冊所有 Lazy Tools (AB4)。"""
     import duckdb
     from config.db_utils import cleanup_stale_runs
     from config.settings import DUCKDB_PATH
 
     with duckdb.connect(str(DUCKDB_PATH)) as con:
+        # 1. 清理過期運行紀錄
         n = cleanup_stale_runs(con)
         if n:
             logger.info("Startup cleanup: marked %d stale running rows", n)
+
+        # 2. 自動註冊 @register_tool_on_import 的 Lazy Tools (AB4)
+        try:
+            # 導入分析模組以激活裝飾器 lazy append
+            import analysis.bulk_eda  # noqa: F401
+            import analysis.bulk_deg  # noqa: F401
+            import analysis.bulk_heatmap  # noqa: F401
+            import analysis.enrichment  # noqa: F401
+            
+            from analysis.tool_registry import register_all_lazy_tools
+            
+            n_lazy = register_all_lazy_tools(con)
+            if n_lazy:
+                logger.info("Startup lazy registry: registered %d active tools in DuckDB", n_lazy)
+        except Exception as lazy_exc:
+            logger.warning("Startup lazy registry failed: %s", lazy_exc)
 
 
 # ── 啟動 ─────────────────────────────────────────────────────────────────────

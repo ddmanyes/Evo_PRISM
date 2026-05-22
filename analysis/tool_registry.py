@@ -1551,3 +1551,58 @@ def helix_self_health(con: duckdb.DuckDBPyConnection) -> dict:
         "orphan_iterations": orphan_count,
         "downsample_coverage_pct": coverage_pct,
     }
+
+
+# ---------------------------------------------------------------------------
+# Module-level Lazy Tool Registry (AB4)
+# ---------------------------------------------------------------------------
+
+_LAZY_REGISTRY: list[dict] = []
+
+
+def register_tool_on_import(
+    tool_name: str,
+    version: str,
+    description: str,
+) -> Callable:
+    """Decorator to lazily register a tool callable on import.
+
+    Saves the registry metadata to an internal list. When a database
+    connection is active later, call ``register_all_lazy_tools(con)`` to
+    persist them in the ``tools`` table (idempotent).
+    """
+    def decorator(fn: Callable) -> Callable:
+        _LAZY_REGISTRY.append({
+            "tool_name": tool_name,
+            "fn": fn,
+            "version": version,
+            "description": description
+        })
+        return fn
+    return decorator
+
+
+def register_all_lazy_tools(con: duckdb.DuckDBPyConnection) -> int:
+    """Register all lazily declared tools in the ``tools`` table (idempotent).
+
+    Returns the number of tools successfully registered.
+    """
+    registered_count = 0
+    for item in _LAZY_REGISTRY:
+        try:
+            register_tool(
+                con=con,
+                tool_name=item["tool_name"],
+                fn=item["fn"],
+                version=item["version"],
+                description=item["description"]
+            )
+            registered_count += 1
+        except Exception as exc:
+            logger.warning(
+                "register_all_lazy_tools: failed to register lazy tool %r — %s",
+                item["tool_name"],
+                exc
+            )
+    return registered_count
+
