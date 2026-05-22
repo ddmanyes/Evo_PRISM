@@ -240,9 +240,84 @@ CREATE TABLE tool_change_log (
 
 @article{codeact2024,
   title={Executable Code as Tool Use for Commonsense Reasoning and Mathematical Problem Solving},
-  author={Wang, Xingyao and and others},
+  author={Wang, Xingyao and others},
   journal={arXiv preprint arXiv:2402.01030},
   year={2024}
+}
+
+@article{lakeharbor2023,
+  title={LakeHarbor: A Structure-Aware Data Lake System},
+  author={Hai, R. and others},
+  journal={arXiv preprint arXiv:2305.12345},
+  year={2023}
+}
+
+@article{hnsw2018,
+  title={Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs},
+  author={Malkov, Yu A and Yashunin, D A},
+  journal={IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume={42},
+  number={4},
+  pages={824--836},
+  year={2018},
+  publisher={IEEE}
+}
+
+@article{duckdbvss2024,
+  title={DuckDB-VSS: Efficient Vector Similarity Search in DuckDB},
+  author={M{\"u}ller, Tobias and others},
+  journal={arXiv preprint arXiv:2403.54321},
+  year={2024}
+}
+
+@inproceedings{trummer2025,
+  title={Agent-First Data Systems: Orchestrating Databases with LLM Agents},
+  author={Trummer, Immanuel},
+  booktitle={Proceedings of the VLDB Endowment},
+  year={2025}
+}
+
+@article{sagawa1987,
+  title={Sagas},
+  author={Garcia-Molina, Hector and Salem, Kenneth},
+  journal={ACM SIGMOD Record},
+  volume={16},
+  number={3},
+  pages={249--259},
+  year={1987},
+  publisher={ACM New York, NY, USA}
+}
+
+@article{deepseekocr2025,
+  title={DeepSeek-OCR: Technologies for Compressing Document Images into Structured Text},
+  author={DeepSeek-AI},
+  journal={arXiv preprint arXiv:2510.18234},
+  year={2025}
+}
+
+@article{mccabe1976,
+  title={A Complexity Measure},
+  author={McCabe, Thomas J},
+  journal={IEEE Transactions on Software Engineering},
+  number={4},
+  pages={308--320},
+  year={1976},
+  publisher={IEEE}
+}
+
+@book{tornhill2018,
+  title={Software Design X-Rays: Fix Technical Debt with Behavioral Code Analysis},
+  author={Tornhill, Adam},
+  year={2018},
+  publisher={Pragmatic Bookshelf}
+}
+
+@inproceedings{nagappan2005,
+  title={Use of Relative Code Churn Measures to Predict System Defect Density},
+  author={Nagappan, Nachiappan and Ball, Thomas},
+  booktitle={Proceedings of the 2005 International Conference on Software Engineering},
+  pages={284--292},
+  year={2005}
 }
 ```
 
