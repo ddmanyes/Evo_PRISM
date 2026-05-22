@@ -99,12 +99,101 @@ cp .env.example .env
 
 ---
 
+## 新增分析工具 / Adding a New Analysis Tool
+
+Bio_PRISM 採用統一的四步擴充模式，每個新分析領域（例如 scRNA-seq、ATAC-seq）都遵循相同流程。
+
+*Bio_PRISM uses a four-step extension pattern. Every new analysis domain follows the same flow.*
+
+### 步驟一：撰寫 Playbook / Step 1 — Write the Playbook
+
+在 `playbooks/` 新增 `<domain>.md`，聲明標準分析流程：
+
+```markdown
+---
+name: scrna
+version: 1.0.0
+data_type: scrna
+when_to_use: 單細胞 RNA-seq 樣本的標準探索分析（clustering、marker gene、UMAP）。
+agent_tools: [bio_run_scrna_eda]
+---
+
+# scRNA-seq 標準分析說明書
+
+## 步驟
+
+### Step 1 — QC & Filtering
+...
+```
+
+`when_to_use` 決定 Agent 何時自動讀取此說明書；`agent_tools` 列出對應 MCP 工具名稱。
+
+### 步驟二：實作分析函數 / Step 2 — Implement Analysis Function
+
+在 `analysis/` 新增或擴充對應模組（例如 `analysis/scrna_eda.py`）：
+
+- 函數回傳 Markdown 字串，圖表以 **inline base64** 嵌入（見 CLAUDE.md §6 圖片輸出規則）
+- 分析完成後寫入 `analysis_history`（使用 `safe_write()`）
+- 不得硬編碼路徑，所有路徑從 `config/settings.py` 取得
+
+### 步驟三：接上 MCP 工具 / Step 3 — Wire Up the MCP Tool
+
+在 `server/bio_memory_server.py` 加入三處：
+
+```python
+# 1. 在 BIO_TOOLS 列表新增工具描述
+Tool(name="bio_run_scrna_eda", description="...", inputSchema={...})
+
+# 2. 在 _TOOL_HANDLERS 字典對應
+"bio_run_scrna_eda": _handle_bio_run_scrna_eda,
+
+# 3. 實作 handler 函數
+async def _handle_bio_run_scrna_eda(args: dict) -> list[TextContent]:
+    from analysis.scrna_eda import generate_scrna_report
+    result = generate_scrna_report(...)
+    return [TextContent(type="text", text=result)]
+```
+
+### 步驟四：用 HELIX 登記版本 / Step 4 — Register with HELIX
+
+```python
+from analysis.tool_registry import register_tool
+import duckdb
+from config.settings import DUCKDB_PATH
+
+with duckdb.connect(str(DUCKDB_PATH)) as con:
+    register_tool(
+        con,
+        tool_name="bio_run_scrna_eda",
+        fn=generate_scrna_report,
+        version="1.0.0",
+        module_path="analysis.scrna_eda",
+        function_name="generate_scrna_report",
+        change_reason="初始版本",
+    )
+```
+
+**這步不可略過**——HELIX 依賴 `register_tool()` 追蹤工具版本、偵測熱區、關聯歷史分析記錄（見 CLAUDE.md §7）。
+
+---
+
+### 現有工具可作為參考 / Existing Tools as Reference
+
+| 工具 | Playbook | 分析函數 |
+|------|----------|---------|
+| `bio_run_bulk_eda` | `playbooks/bulk_rnaseq.md` | `analysis/bulk_eda.py` |
+| `bio_run_deg` | `playbooks/bulk_rnaseq.md` | `analysis/bulk_eda.py` |
+| `bio_run_spatial_eda` | `playbooks/spatial_visium.md` | `analysis/spatial_eda.py` |
+
+---
+
 ## 哪些地方可以貢獻 / Good First Issues
 
-- 補充 `analysis/` 下低覆蓋模組的測試（`bulk_eda.py`、`pathway_scoring.py`、`multiomics_integration.py`）
-- 新增 gene_sets YAML 配置（新物種或新路徑）
-- 改善 Web UI（`server/static/`）
-- 文件翻譯或修正
+- **新增分析領域**：依上方四步流程實作 scRNA-seq、ATAC-seq、multiome 等 playbook + 工具
+- **新增 gene_sets YAML**：新物種或新路徑（OxPhos / TCA / Wnt 等），供 `bio_run_enrichment` 使用
+- **補充測試**：`bulk_eda.py`、`pathway_scoring.py`、`multiomics_integration.py` 覆蓋率偏低
+- **改善 Web UI**（`server/static/`）
+- **文件翻譯或修正**
 
 ---
 
