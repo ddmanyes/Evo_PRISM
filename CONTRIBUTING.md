@@ -1,4 +1,4 @@
-# Contributing to Bio_PRISM
+# Contributing to Evo_PRISM (Evo-PRISM)
 
 歡迎貢獻！以下說明如何在本地設置環境、如何提交 PR，以及需要遵守的規範。
 
@@ -10,8 +10,8 @@
 
 ```bash
 # 1. Fork & clone
-git clone https://github.com/ddmanyes/Bio_PRISM.git
-cd Bio_PRISM
+git clone https://github.com/ddmanyes/Evo_PRISM.git
+cd Evo_PRISM
 
 # 2. 建立 venv（若在 ExFAT / 雲端硬碟，需建在 APFS 本機）
 python3 -m venv ~/.venvs/hermes-bio-memory
@@ -101,8 +101,8 @@ cp .env.example .env
 
 ## 哪些地方可以貢獻 / Good First Issues
 
-- **新增分析領域**：依 README「[新增分析工具](README.md#新增分析工具--extending-with-new-tools)」四步流程實作 scRNA-seq、ATAC-seq、multiome 等 playbook + 工具
-- **新增 gene_sets YAML**：新物種或新路徑（OxPhos / TCA / Wnt 等），供 `bio_run_enrichment` 使用
+- **新增分析領域與工具**：依 README「[用 LLM 擴充工具箱](README.md#用-llm-擴充工具箱--extend-the-toolbox-with-llm)」的自進化四步流程，實作新的分析 playbook + 分析模組 + MCP 註冊
+- **新增配置與基因集**：新增垂直領域特定配置，如生資模組的 `gene_sets/*.yaml` 配置檔，供富集分析工具使用
 - **補充測試**：`bulk_eda.py`、`pathway_scoring.py`、`multiomics_integration.py` 覆蓋率偏低
 - **改善 Web UI**（`server/static/`）
 - **文件翻譯或修正**

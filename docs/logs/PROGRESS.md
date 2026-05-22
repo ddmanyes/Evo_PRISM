@@ -7,10 +7,27 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ 控制面板 Phase 2（手動操作端點）+ 控制面板 Phase 3（動態程式碼畢業助手）+ 專案工具箱建置與 Playbook 架喚審查 + Fast-Path 路由與大模型跳過機制 + Bulk RNA-seq DEG/Volcano/Heatmap/ORA 原生 MCP tools（對齊 ddmanyes/bulk-rnaseq-pipeline） + GitNexus 借鏡評估 + bio_impact 影響分析（blast-radius + confidence tier） + tool_id 回填集中化（HELIX §7.3 覆蓋 100%） + **mcp_tool_metrics 實體表與 MCP Server 插樁監控（P1-D，覆蓋率 100%）** + **系統架構重整與文檔/大數據 Git 安全解耦（完成）**
+**里程碑**：Phase 10 完成 + WAL crash 後穩定性整備 + MCP server 審查 + 穩定性 P0/P1/P2 全清（含 `_deferred_cleanup` 終結）+ MCP P0 工具覆蓋全清（9→14）+ MCP P1/P2/P3 部分清 + 安全性 M4 + SQL-7/9/10 文件對齊 + Repo housekeeping + bio_execute_code 完整歸檔 + MCP 三客戶端文件 + Gemma 推理鏈瓶頸定位 + MCP 數據交付三件套（base64 剝離 + Resources + bio_get_artifact）+ 控制面板 Phase 1（唯讀監控儀表板）+ 控制面板 Phase 2（手動操作端點）+ 控制面板 Phase 3（動態程式碼畢業助手）+ 專案工具箱建置與 Playbook 架喚審查 + Fast-Path 路由與大模型跳過機制 + Bulk RNA-seq DEG/Volcano/Heatmap/ORA 原生 MCP tools（對齊 ddmanyes/bulk-rnaseq-pipeline） + GitNexus 借鏡評估 + bio_impact 影響分析（blast-radius + confidence tier） + tool_id 回填集中化（HELIX §7.3 覆蓋 100%） + **mcp_tool_metrics 實體表與 MCP Server 插樁監控（P1-D，覆蓋率 100%）** + **系統架構重整與文檔/大數據 Git 安全解耦（完成）** + **Evo_PRISM 品牌重塑與通用定位遷移（完成）**
 **平台**：macOS（ExFAT 設計；目前實際在 Google Drive `/我的雲端硬碟/PJ_save/bio_DB`，已 symlink `~/bio_DB` 供 launchd 與 MCP 用）
 **最後更新**：2026-05-22
 **commit**：(待提交)
+
+---
+
+## ✅ 2026-05-22 Session H：Evo_PRISM 品牌重塑與通用定位遷移（Rebranding & Generalization）
+
+**動機**：將專案從單一領域的生物資訊工具 `Bio_PRISM` 升級為通用、自進化（Self-Evolving）的 LLM-Agent 執行期智慧與語意記憶平台 `Evo_PRISM`。此重構完成文檔與包裝說明的更新，將原有生資工具妥善包裝為「垂直領域旗艦展示模組」，同時保證底層指令與資料庫的高相容性。
+
+### 📄 核心文件重構與品牌升級
+- **README.md**：更新大標題與定義，全面重塑定位為通用的自進化 Agent 工具鏈與語意記憶系統。將生物資訊分析定義為首屈一指的垂直領域展示模組（Bioinformatics Showcase Module）。
+- **SETUP.md**：更新頂部品牌名稱，並新增「API 與實體命名相容性說明」，明確告知為維持底層系統與測試相容性，`hermes-bio-memory` venv、`bio_memory.duckdb` 資料庫及 `bio_*` 工具指令名稱皆原封不動沿用。
+- **CLAUDE.md**（專案憲法）：將「1. 專案定位」全面改寫，確立 Evo_PRISM 通用自進化平台的憲法地位。
+- **CONTRIBUTING.md**：更新標題與 clone 路徑，調整任務說明引導貢獻者透過「LLM 自進化四步流程」為 Evo_PRISM 貢獻新工具。
+- **pyproject.toml**：將項目打包名稱修改為 `evo-prism`，升級 description，並在關鍵字中加入 `"self-evolving-agent"`, `"evolutionary-computing"`, `"semantic-memory"`，同步更新專案 URL。
+
+### 🧪 測試與驗證
+- **相容性驗證**：在 `.venv`（即 `hermes-bio-memory`）環境下執行完整 pytest 測試套件，**562 個測試（559 passed, 3 skipped）全數通過**，證明在文檔重塑與相容性設計下，底層功能與指令完好無損，未引入任何 regression。
+- 撰寫品牌遷移 [walkthrough.md](file:///Users/zhanqiru/.gemini/antigravity-ide/brain/71daae6a-263f-4dd3-abfe-cf72457a7303/walkthrough.md) 與 [task.md](file:///Users/zhanqiru/.gemini/antigravity-ide/brain/71daae6a-263f-4dd3-abfe-cf72457a7303/task.md) 封存變更。
 
 ---
 

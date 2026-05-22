@@ -1,7 +1,7 @@
 [project]
-name = "bio-prism"
+name = "evo-prism"
 version = "0.1.0"
-description = "Natural language bioinformatics platform: spatial Tx, Bulk RNA & proteomics. MCP Agent + HELIX tool versioning + ENGRAM semantic memory."
+description = "Natural language general-purpose evolutionary agent platform: MCP Agent + HELIX tool versioning + ENGRAM semantic memory."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -9,15 +9,16 @@ authors = [
     {name = "Chan Chi Ru", email = "u9013039@gmail.com"},
 ]
 keywords = [
-    "bioinformatics",
-    "spatial-transcriptomics",
-    "bulk-rna-seq",
     "ai-agent",
     "mcp",
+    "self-evolving-agent",
+    "evolutionary-computing",
+    "semantic-memory",
     "duckdb",
     "natural-language-processing",
     "knowledge-management",
     "llm",
+    "bioinformatics",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -33,8 +34,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ddmanyes/Bio_PRISM"
-"Bug Tracker" = "https://github.com/ddmanyes/Bio_PRISM/issues"
+Homepage = "https://github.com/ddmanyes/Evo_PRISM"
+"Bug Tracker" = "https://github.com/ddmanyes/Evo_PRISM/issues"
 
 dependencies = [
     # === 核心資料庫 ===
