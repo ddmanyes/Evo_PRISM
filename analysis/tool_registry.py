@@ -1141,21 +1141,25 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
     # ── HELIX Eq.(2) HealthScore per active tool ──────────────────────────────
     # ChurnRatio: average of last 5 churn_ratio values per tool from tool_change_log.
     # ΔComplexity_norm: max(0, cc_now − cc_after_last_closed) / max_cc_ever, range [0,1].
-    churn_rows = con.execute(
-        """
-        WITH ranked AS (
-            SELECT tool_name, churn_ratio,
-                   ROW_NUMBER() OVER (PARTITION BY tool_name ORDER BY revision_number DESC) AS rn
-            FROM   tool_change_log
-            WHERE  churn_ratio IS NOT NULL
-        )
-        SELECT tool_name, AVG(churn_ratio) AS avg_churn
-        FROM   ranked
-        WHERE  rn <= 5
-        GROUP  BY tool_name
-        """
-    ).fetchall()
-    avg_churn_by_tool: dict[str, float] = {r[0]: float(r[1]) for r in churn_rows}
+    try:
+        churn_rows = con.execute(
+            """
+            WITH ranked AS (
+                SELECT tool_name, churn_ratio,
+                       ROW_NUMBER() OVER (PARTITION BY tool_name ORDER BY revision_number DESC) AS rn
+                FROM   tool_change_log
+                WHERE  churn_ratio IS NOT NULL
+            )
+            SELECT tool_name, AVG(churn_ratio) AS avg_churn
+            FROM   ranked
+            WHERE  rn <= 5
+            GROUP  BY tool_name
+            """
+        ).fetchall()
+        avg_churn_by_tool: dict[str, float] = {r[0]: float(r[1]) for r in churn_rows}
+    except Exception:
+        # churn_ratio 欄位在舊 schema（< migration v19）不存在，降級為空 dict
+        avg_churn_by_tool = {}
 
     # Historical max complexity across all stabilization records (for normalization).
     max_cc_row = con.execute(

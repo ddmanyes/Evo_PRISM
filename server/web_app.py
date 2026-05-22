@@ -8,6 +8,7 @@ BioAgent — Web UI (FastAPI)
     POST /api/chat                      → SSE 聊天（text/event-stream）
     GET  /api/history                   → 歷史查詢 JSON
     GET  /api/results/{id}/csv          → 下載 top_genes CSV
+    POST /api/analysis/{id}/feedback    → 記錄 👍/👎 user_approval（AA2）
     GET  /health                        → 健檢 JSON
 """
 
@@ -272,6 +273,10 @@ class ChatRequest(BaseModel):
     message: str
     backend: str = ""  # "local" | "claude" | ""（空字串讀 INFERENCE_BACKEND env）
     image_base64: str = ""  # data:image/png;base64,... 或純 base64
+
+
+class FeedbackRequest(BaseModel):
+    approval: int  # 1 = 👍 讚, -1 = 👎 倒讚
 
 
 # ── HTML 工具 ─────────────────────────────────────────────────────────────────
@@ -1181,6 +1186,39 @@ def _require_sample_id(sample_id: str) -> None:
 def _require_analysis_id(analysis_id: str) -> None:
     if not _ANALYSIS_ID_RE.match(analysis_id.lower()):
         raise HTTPException(status_code=422, detail="無效的 analysis_id 格式（需為 UUID）")
+
+
+@app.post("/api/analysis/{analysis_id}/feedback")
+async def analysis_feedback(analysis_id: str, body: FeedbackRequest):
+    """記錄使用者對分析結果的 👍/👎 回饋（AA2 user_approval）。
+
+    approval=1 → 讚；approval=-1 → 倒讚。
+    寫入 analysis_history.user_approval，供 HELIX Eq.(1) f_promote 計算使用。
+    """
+    import duckdb
+    from config.settings import DUCKDB_PATH
+    from config.db_utils import safe_write
+
+    _require_analysis_id(analysis_id)
+    if body.approval not in (1, -1):
+        raise HTTPException(status_code=422, detail="approval 必須為 1 或 -1")
+
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
+        row = con.execute(
+            "SELECT analysis_id FROM analysis_history WHERE analysis_id=?",
+            [analysis_id],
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="分析記錄不存在")
+
+        safe_write(
+            con,
+            "UPDATE analysis_history SET user_approval=? WHERE analysis_id=?",
+            [body.approval, analysis_id],
+        )
+
+    label = "👍" if body.approval == 1 else "👎"
+    return JSONResponse({"status": "ok", "analysis_id": analysis_id, "approval": body.approval, "label": label})
 
 
 @app.get("/engram", response_class=HTMLResponse)
