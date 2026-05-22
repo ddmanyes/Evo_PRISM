@@ -58,6 +58,16 @@ def test_strip_passthrough_when_no_image():
     assert fc.strip_base64_for_llm(text) == text
 
 
+def test_strip_multiple_images_all_replaced():
+    """多圖 markdown 剝離：每張圖都換成佔位符，圖數相符。"""
+    text = _report_with_img(3)
+    out = fc.strip_base64_for_llm(text)
+    assert "base64," not in out
+    assert out.count("bio_get_figure") == 3
+    assert out.count("id=") == 3
+    assert "摘要文字。" in out and "結論文字。" in out
+
+
 def test_strip_passthrough_non_string():
     assert fc.strip_base64_for_llm(None) is None  # type: ignore[arg-type]
 

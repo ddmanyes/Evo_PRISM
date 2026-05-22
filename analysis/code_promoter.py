@@ -1,17 +1,21 @@
 """
 Code Promotion 框架。
 
-當 bio_execute_code 生成的程式碼被重用 ≥ 3 次，自動觸發升格流程：
-    1. scan_candidates()    — 掃描 promotion_candidates VIEW，回傳候選清單
+晉升由 HELIX Eq.(1) f_promote 公式判定（而非純 reuse_count 啟發式）：
+    f_promote(t) = α·ReuseCount + β·UserApproval − γ·Complexity ≥ θ_promote
+
+流程：
+    1. scan_candidates()    — 掃描候選，計算 f_promote，過濾 ≥ θ_promote
     2. review_candidate()   — 呼叫 Claude 審查通用性（需 ANTHROPIC_API_KEY）
     3. write_draft()        — 將重構後的函數寫入 analysis/candidates/<name>.py
     4. approve_candidate()  — 管理員確認後搬移至 analysis/ 並寫入 tools/registry.json
     5. reject_candidate()   — 拒絕升格，刪除草稿
 
 analysis_history 追蹤欄位（parameters JSON）：
-    source      = "code_promotion"   — 標識此筆為重用記錄
-    origin_id   = <首次生成的 analysis_id>
-    reuse_count — 由 promotion_candidates VIEW 動態計算
+    source        = "code_promotion"   — 標識此筆為重用記錄
+    origin_id     = <首次生成的 analysis_id>
+    reuse_count   — 由 promotion_candidates VIEW 動態計算
+    user_approval — v22 migration 後可用（0/1；NULL=未評）
 
 tools/registry.json 欄位：
     name, module, function, description, version, status, parameters
@@ -31,7 +35,14 @@ import duckdb
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH
+from config.settings import (
+    BIO_DB_ROOT,
+    DUCKDB_PATH,
+    HELIX_ALPHA,
+    HELIX_BETA,
+    HELIX_GAMMA,
+    HELIX_THETA_PROMOTE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +51,58 @@ REGISTRY_PATH = BIO_DB_ROOT / "tools" / "registry.json"
 ANALYSIS_DIR = BIO_DB_ROOT / "analysis"
 
 
+# ── HELIX Eq.(1) 量化公式 ─────────────────────────────────────────────────────
+
+
+def compute_f_promote(reuse_count: int, user_approval: int, complexity: int) -> float:
+    """Eq.(1): f_promote(t) = α·ReuseCount + β·UserApproval − γ·Complexity.
+
+    Parameters
+    ----------
+    reuse_count:    number of times the generated code has been reused
+    user_approval:  explicit user signal (1 = approved, 0 = neutral/unknown)
+    complexity:     McCabe cyclomatic complexity of the candidate code
+
+    Returns the scalar promotion score; promotion triggers when ≥ HELIX_THETA_PROMOTE.
+    """
+    return HELIX_ALPHA * reuse_count + HELIX_BETA * user_approval - HELIX_GAMMA * complexity
+
+
+def compute_code_complexity(code: str) -> int:
+    """Return McCabe cyclomatic complexity of a code string via radon.
+
+    Returns 1 (minimum/safest default) when radon is unavailable or parsing fails.
+    Using 1 instead of 0 avoids over-rewarding trivially simple code.
+    """
+    try:
+        from radon.complexity import cc_visit
+
+        results = cc_visit(code)
+        if not results:
+            return 1
+        return max(r.complexity for r in results)
+    except Exception:
+        return 1
+
+
 # ── 掃描候選 ──────────────────────────────────────────────────────────────────
 
 
-def scan_candidates(min_reuse: int = 3) -> list[dict]:
-    """回傳 reuse_count ≥ min_reuse 的候選清單。
+def scan_candidates(min_reuse: int = 1) -> list[dict]:
+    """掃描 promotion_candidates，以 HELIX Eq.(1) 計算 f_promote，回傳 ≥ θ_promote 的清單。
+
+    Parameters
+    ----------
+    min_reuse:
+        SQL pre-filter：僅讀取 reuse_count ≥ this 的記錄，減少不必要的程式碼讀取。
+        預設 1（由 f_promote 公式擔任真正的門檻）。
 
     Returns
     -------
-    list of dicts with keys: origin_id, analysis_type, reuse_count, last_used.
+    list of dicts with keys:
+        origin_id, analysis_type, reuse_count, last_used,
+        user_approval, complexity, f_promote.
+    Only candidates whose f_promote ≥ HELIX_THETA_PROMOTE are included.
     """
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         try:
@@ -63,11 +117,51 @@ def scan_candidates(min_reuse: int = 3) -> list[dict]:
             raise RuntimeError(
                 "promotion_candidates VIEW 不存在，請確認 scripts/00_init_db.py 已執行最新版本。"
             )
-    candidates = [
-        {"origin_id": r[0], "analysis_type": r[1], "reuse_count": r[2], "last_used": str(r[3])}
-        for r in rows
-    ]
-    logger.info("升格候選：%d 筆（reuse >= %d）", len(candidates), min_reuse)
+
+        # Read user_approval if v22 migration has been applied; fall back to 0 otherwise.
+        origin_ids = [str(r[0]) for r in rows]
+        approval_map: dict[str, int] = {}
+        if origin_ids:
+            placeholders = ", ".join("?" * len(origin_ids))
+            try:
+                approval_rows = con.execute(
+                    f"SELECT analysis_id, COALESCE(user_approval, 0) "
+                    f"FROM analysis_history "
+                    f"WHERE analysis_id IN ({placeholders})",
+                    origin_ids,
+                ).fetchall()
+                approval_map = {str(r[0]): int(r[1]) for r in approval_rows}
+            except Exception:
+                # Column does not exist yet (pre-v22); treat all approvals as 0.
+                pass
+
+    candidates = []
+    for r in rows:
+        origin_id = str(r[0])
+        analysis_type, reuse_count, last_used = r[1], r[2], r[3]
+        user_approval = approval_map.get(origin_id, 0)
+        code = get_origin_code(origin_id)
+        complexity = compute_code_complexity(code) if code else 1
+        score = compute_f_promote(reuse_count, user_approval, complexity)
+        if score >= HELIX_THETA_PROMOTE:
+            candidates.append(
+                {
+                    "origin_id": origin_id,
+                    "analysis_type": analysis_type,
+                    "reuse_count": reuse_count,
+                    "last_used": str(last_used),
+                    "user_approval": user_approval,
+                    "complexity": complexity,
+                    "f_promote": round(score, 4),
+                }
+            )
+
+    logger.info(
+        "升格候選：%d 筆（f_promote >= %.1f，θ_promote=%.1f）",
+        len(candidates),
+        HELIX_THETA_PROMOTE,
+        HELIX_THETA_PROMOTE,
+    )
     return candidates
 
 

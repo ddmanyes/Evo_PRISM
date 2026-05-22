@@ -74,21 +74,21 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
 
             # Backup blob table (FK blocks RENAME).
             # Persistent table (not TEMP) so data survives session interruption on ExFAT.
-            con.execute("DROP TABLE IF EXISTS _blob_backup_v17_v17")
+            con.execute("DROP TABLE IF EXISTS _blob_backup_v17")
             con.execute(
                 """
-                CREATE TABLE _blob_backup_v17_v17 AS
+                CREATE TABLE _blob_backup_v17 AS
                 SELECT artifact_id, inline_data FROM analysis_artifact_blobs
                 """
             )
-            backed_up = con.execute("SELECT COUNT(*) FROM _blob_backup_v17_v17").fetchone()[0]
+            backed_up = con.execute("SELECT COUNT(*) FROM _blob_backup_v17").fetchone()[0]
             print(f"  Backed up {backed_up} blob rows")
 
             # Backup artifact_relations if it exists (persistent, same reason)
             rel_backup = _table_exists(con, "artifact_relations")
             if rel_backup:
-                con.execute("DROP TABLE IF EXISTS _rel_backup_v17_v17")
-                con.execute("CREATE TABLE _rel_backup_v17_v17 AS SELECT * FROM artifact_relations")
+                con.execute("DROP TABLE IF EXISTS _rel_backup_v17")
+                con.execute("CREATE TABLE _rel_backup_v17 AS SELECT * FROM artifact_relations")
 
             con.execute("DROP TABLE IF EXISTS artifact_relations")
             con.execute("DROP TABLE IF EXISTS analysis_artifact_blobs")

@@ -362,6 +362,24 @@ con.execute("UPDATE analysis_history SET tool_id = ? WHERE analysis_id = ?",
 
 HELIX 的所有寫入（`register_tool`、`open_stabilization`、`close_stabilization`、`mark_stable`、`auto_revert_stale_stabilizations`）內部已呼叫 `CHECKPOINT`，無需在外層再呼叫 `safe_write()`。
 
+### 7.6.1 HELIX 讀取查詢的 Migration Guard
+
+`tool_health_report()` 及其他讀取非基礎欄位的查詢（`churn_ratio`、`complexity_before`、`complexity_after` 等）**必須**加 `try/except` fallback，確保舊 schema 的 MCP server 不因新欄位缺失而整個崩潰。
+
+```python
+# ✅ 正確：有 migration guard
+try:
+    churn_rows = con.execute("SELECT tool_name, churn_ratio FROM tool_change_log ...").fetchall()
+    avg_churn_by_tool = {r[0]: float(r[1]) for r in churn_rows}
+except Exception:
+    avg_churn_by_tool = {}  # churn_ratio 欄位尚未 migrate，降級為 0
+
+# ❌ 錯誤：無防護，舊 schema 直接噴例外
+churn_rows = con.execute("SELECT tool_name, churn_ratio FROM tool_change_log ...").fetchall()
+```
+
+**適用範圍**：任何讀取 v19 以後 migration 新增欄位的查詢（對照 `scripts/00_init_db.py` 的 migration 版本）。`scan_candidates()` 的 `user_approval` 查詢已有此保護，作為範本參考。
+
 ### 7.7 mark_stable() — 穩定工具白名單
 
 對已確認穩定但 `revision_count` 偏高的工具，呼叫 `mark_stable()` 避免熱區報告噪音：
