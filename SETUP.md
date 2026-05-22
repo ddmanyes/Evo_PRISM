@@ -6,15 +6,17 @@
 
 ---
 
-## 前置需求
+## 前置需求 / Prerequisites
 
-| 項目 | 版本 / 說明 |
-| ---- | ----------- |
-| Python | 3.10 以上（建議 3.11+）|
-| [uv](https://github.com/astral-sh/uv) | 套件管理工具 |
-| llama.cpp | 已編譯的 `llama-server` 執行檔 |
-| bge-m3-Q8_0.gguf | 605 MB，本機 embedding 模型 |
-| Gemma 4 Vision 模型 | `gemma-4-26B-A4B-it-UD-IQ2_M.gguf` + `mmproj-F16.gguf` |
+Bio_PRISM 採用 **MCP-First（MCP 伺服器優先）** 的設計。若您主要是在 IDE（如 Antigravity）或 CLI（如 Claude Code）中透過雲端 LLM 客戶端來調用工具，**本機的 26B Gemma 模型為選配（Optional）**。
+
+| 項目 | 類型 | 版本 / 說明 |
+| ---- | ---- | ----------- |
+| Python | 核心 | 3.10 以上（建議 3.11+）|
+| [uv](https://github.com/astral-sh/uv) | 核心 | 套件管理工具 |
+| llama.cpp | 核心 | 已編譯的 `llama-server` 執行檔（用於本地跑輕量 embedding）|
+| bge-m3-Q8_0.gguf | 核心 | **605 MB 輕量模型**，本機 embedding 用於 L1 語意快取與檢索 |
+| Gemma 4 Vision 模型 | **選配** | `gemma-4-26B-A4B-it-UD-IQ2_M.gguf` + `mmproj-F16.gguf`（僅在完全離線/完全本機 Web UI 模式下需要）|
 
 ---
 
@@ -79,9 +81,12 @@ GOOGLE_MODEL=gemini-2.0-flash     # Google Gemini 模型版本
 # 1) 建立基本 Schema
 ~/.venvs/hermes-bio-memory/bin/python scripts/00_init_db.py
 
-# 2) 套用所有後續 migration（v9 → v19）
+# 2) 初始化 L1 快取
+~/.venvs/hermes-bio-memory/bin/python scripts/03_init_l1_cache.py
+
+# 3) 套用所有後續 migration（v2 → v20）
 #    包含 ENGRAM artifact 表、HELIX 工具版本表、BM25 FTS 索引、Star Schema views
-for script in scripts/[12][0-9]_migrate_schema_*.py; do
+for script in $(ls scripts/[0-9][0-9]_migrate_schema_*.py | sort -V); do
     ~/.venvs/hermes-bio-memory/bin/python "$script"
 done
 
@@ -94,15 +99,23 @@ done
 
 ---
 
-## 步驟五：確認模型路徑
+## 步驟五：確認模型與伺服器路徑
 
-開啟 `config/settings.py`，確認以下路徑與你的機器一致：
+開啟 `start_bioagent.sh`，確認開頭定義的 `llama.cpp` 與模型路徑與您的本機相符：
+
+```bash
+LLAMA_BIN="$HOME/llama.cpp/build/bin/llama-server"
+EMBED_MODEL="$HOME/llama.cpp/models/bge-m3-Q8_0.gguf"
+
+# 以下為選配（僅在 --local 完全本機模式下需要，純 MCP / 雲端模式可忽略不存在）
+VISION_MODEL="$HOME/gemma-4-26B-A4B-it-UD-IQ2_M.gguf"
+MMPROJ="/Users/zhanqiru/mmproj-F16.gguf"
+```
+
+如果您使用 L1 HNSW 語意快取，本機的 embedding 模型環境變數會在 `config/settings.py` 中被讀取，預設路徑為 `~/llama.cpp/models/bge-m3-Q8_0.gguf`：
 
 ```python
-LLAMA_SERVER_BIN   = "~/llama.cpp/build/bin/llama-server"
-EMBEDDING_MODEL    = "~/llama.cpp/models/bge-m3-Q8_0.gguf"
-MULTIMODAL_MODEL   = "~/gemma-4-26B-A4B-it-UD-IQ2_M.gguf"
-MULTIMODAL_MMPROJ  = "~/mmproj-F16.gguf"
+LLAMACPP_MODEL_PATH = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
 ```
 
 ---

@@ -116,8 +116,11 @@ cp .env.example .env
 # 4. 初始化資料庫 / Initialize database
 .venv/bin/python scripts/00_init_db.py
 
-# 5. 執行所有 Schema migration（v9 → v19）
-for script in scripts/[12][0-9]_migrate_schema_*.py; do
+# 5. 初始化 L1 快取 / Initialize L1 cache
+.venv/bin/python scripts/03_init_l1_cache.py
+
+# 6. 執行所有 Schema migration（v2 → v20）
+for script in $(ls scripts/[0-9][0-9]_migrate_schema_*.py | sort -V); do
     .venv/bin/python "$script"
 done
 ```
@@ -142,6 +145,37 @@ done
        ```bash
        .venv/bin/python server/bio_memory_server.py --transport http --port 8082
        ```
+
+#### 🧪 快速驗證：用內建 Demo 數據測試 DEG 分析 · *Quick Validation with Bundled Demo Data*
+
+Repo 內附 `tests/fixtures/bulk_rna/` 小型數據集（無需下載完整數據即可執行）：
+
+*The repo ships with `tests/fixtures/bulk_rna/` — no extra downloads needed:*
+
+```python
+# 直接在 Python 中呼叫 / Call directly from Python
+from analysis.bulk_eda import run_deg_analysis
+
+result = run_deg_analysis(
+    counts_path="tests/fixtures/bulk_rna/deseq2_counts_top1000.csv",
+    coldata_path="tests/fixtures/bulk_rna/deseq2_coldata.tsv",
+    condition_col="group",
+    ref_level="ctrl",
+)
+print(result["summary"])   # DEG 數量摘要
+```
+
+或透過 MCP 工具呼叫（Claude Code CLI 內）：
+
+*Or call via MCP tool (inside Claude Code CLI):*
+
+```
+bio_run_deg counts_path=tests/fixtures/bulk_rna/deseq2_counts_top1000.csv
+            coldata_path=tests/fixtures/bulk_rna/deseq2_coldata.tsv
+            condition_col=group ref_level=ctrl
+```
+
+---
 
 #### 🌐 模式 B：啟動 Web UI 互動介面
 如果您想使用網頁儀表板，可使用雲端 API (推薦) 或完全本機推理：
