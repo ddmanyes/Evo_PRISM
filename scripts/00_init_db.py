@@ -4,8 +4,12 @@ Creates: sample_registry, analysis_history, analysis_index view
 Verifies: DuckDB VSS extension (HNSW) loads correctly
 """
 
+import sys
 import duckdb
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.settings import L3_ROOT
 
 DB_PATH = Path(__file__).parent.parent / "bio_memory.duckdb"
 
@@ -161,7 +165,7 @@ def populate_registry(con: duckdb.DuckDBPyConnection):
             "10x_visium_hd",
             "human",
             "colon",
-            "/Volumes/NO NAME/bio_DB/crc_visium_data/official_v4",
+            str(L3_ROOT / "official_v4"),
             "Official 10x CRC demo dataset; test prototype for L2 pipeline",
         ),
         (
