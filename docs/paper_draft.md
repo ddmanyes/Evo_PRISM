@@ -28,9 +28,10 @@
 在生物資訊學與高維數據科學等計算密集型學科中，同一個樣本的分析往往伴隨著極高的冗餘計算。例如，在單細胞 RNA 測序（scRNA-seq）或空間轉錄組學（Spatial Transcriptomics）的日常實驗中，不同的研究人員經常因為資訊不對等，反覆在同一批數據上跑完全相同的質量控制（QC）或降維聚類分析。以 `SpaceRanger` 為例，單次分析通常需耗用數小時的運算時間。這不僅造成了昂貴的硬體算力浪費，更因為環境變數、軟體套件版本與微小參數的偏差，帶來了深層的**「科學可重複性危機 (Scientific Reproducibility Crisis)」與「版本漂移 (Version Drift)」**。
 
 ### 1.2 現有方法之局限
-為了解決 Agent 系統的效率與狀態管理問題，學術界與工業界提出了兩大類解決方案，但均存在結構性局限：
-1. **語意快取系統（如 GPTCache, RedisSemanticCache）**：此類方法主要是為了解決問答型 AI 系統的加速。它們採用簡單的 $Key \rightarrow Value$（輸入文字 $\rightarrow$ 輸出回答）對應。對於需要進行高難度數值計算、產出多個數據矩陣及火山圖等「運算型且多模態」的數據分析流，傳統快取無法捕捉運算上下文，更無法提供數據溯源。
-2. **自演化與技能獲取系統（如 SkillOS, Agent0, ToolCoder）**：這些前沿系統探討了讓 Agent 動態寫 Python 程式碼並存入庫中，使 Agent 隨著任務累積逐步演化出新的「技能 (Skills)」。然而，這些系統大都運行在無保護的執行環境中，**缺乏嚴格的軟體工程健康監測 (Monitor)、體檢評估 (Assessment) 與安全沙盒 (Sandbox) 隔離**。在 runtime 中，動態生成的代碼極易因為 LLM 的幻覺而引入壞邏輯、壞 API 甚至惡意指令。
+為了解決 Agent 系統的效率與狀態管理問題，學術界與工業界提出了數類解決方案，但均存在結構性局限：
+1. **語意快取系統（如 GPTCache, RedisSemanticCache）**：此類方法主要是為了解決問答型 AI 系統的加速。它們採用簡單的 $Key \rightarrow Value$（輸入文字 $\rightarrow$ 輸出回答）對應。對於需要進行高難度數值計算、產出多個數據矩陣及火山圖等「運算型且多模態」的數據分析流，傳統快取無法捕捉運算上下文，更無法提供數據溯源 [gptcache2023]。
+2. **自演化與技能獲取系統（如 SkillOS, Agent0, ToolCoder）**：這些前沿系統探討了讓 Agent 動態寫 Python 程式碼並存入庫中，使 Agent 隨著任務累積逐步演化出新的「技能 (Skills)」。然而，這些系統大都運行在無保護的執行環境中，**缺乏嚴格的軟體工程健康監測 (Monitor)、體檢評估 (Assessment) 與安全沙盒 (Sandbox) 隔離**。在 runtime 中，動態生成的代碼極易因為 LLM 的幻覺而引入壞邏輯、壞 API 甚至惡意指令 [skillos2026, agent02025]。
+3. **客戶端代碼智能與依賴解析引擎（如 GitNexus [gitnexus2026]）**：這類前沿開源專案探討了在索引時（index-time）預先計算代碼符號之間的依賴結構與 class/function 關係圖，並作為 Model Context Protocol (MCP) 服務向 Agent 提供精確、帶有置信度評分的靜態架構解析。然而，此類系統的關係圖譜局限於「純代碼語意空間」，無法涵蓋科學數據分析工作流中「計算工具版本（Tools） $\rightarrow$ 實驗樣本（Samples） $\rightarrow$ 多模態分析產物（Artifacts）」之複雜物理實體與科學實體之間的演化與溯源關係。
 
 ### 1.3 本文核心主張與貢獻
 為了攻克上述挑戰，我們設計並實現了 **Evo_PRISM**。本系統的主張是：「記住每一次分析的靈魂——相同分析零冗餘取回，關聯結果跨維度對照，歷史脈絡演化式推導」。本文的主要學術貢獻如下：
@@ -110,6 +111,18 @@ $$Score_{RRF}(q, a) = \frac{w_1}{r_{embedding}(q, a.query) + k} + \frac{w_2}{r_{
 
 **Figure Cache 剝離技術**：  
 科學分析（如火山圖、降維圖）的輸出通常為多模態圖片。我們在 MCP 傳輸邊界對 base64 圖片數據進行剝離，僅將文字摘要與元數據寫入 `analysis_artifacts` (ENGRAM 記憶庫)，圖片實體寫入圖表快取。Agent 在 0-token 快取命中時，可以直接透過 `bio_get_figure` 快速檢索並呈現圖片，徹底避免了在 LLM Context Window 中塞入巨大 base64 造成的 Token 膨脹與記憶體溢出。
+
+### 2.4 前瞻性影響分析與爆炸範圍評估 (Proactive Impact Analysis)
+在科學計算平台中，底層分析工具的升級（如 `bulk_eda` 的算法修正）往往會對已存在的分析歷史產生連鎖反應，導致舊分析結果失真或不一致。為了解決這個問題，Evo_PRISM 借鑑了先進客戶端代碼智能引擎 GitNexus [gitnexus2026] 的「關係預計算與邊上信心分級 (Confidence-on-Edges)」設計哲學，設計了前瞻性的影響力圖譜（Proactive Impact Graph）與爆炸範圍（Blast Radius）評估工具 `bio_impact`。
+
+當底層工具、產物或樣本發生變更時，系統會自動走訪工具帳本、分析歷史與數據產物之間的依賴圖譜：
+$$tools \xrightarrow{analysis\_history} analysis \xrightarrow{analysis\_artifacts} artifacts$$
+為了克服實際環境中工具標籤（`tool_id`）回填稀疏的問題，系統設計了「邊上信心分級機制」，對依賴強度進行量化評估：
+*   **Exact (Confidence = 1.0)**：分析歷史記錄中精確對應至目標工具之 `tool_id`（精確追蹤）。
+*   **Same-Analysis (Confidence = 0.9)**：屬於同一次分析流所產出的其他關聯產物。
+*   **Heuristic (Confidence = 0.6)**：分析類型與工具名稱之啟發式名稱對照（例如 `bulk_eda` $\rightarrow$ `bio_run_bulk_eda`）。
+
+這種基於信心分級的影響評估，使 Agent 能在執行破壞性代碼更新或工具淘汰前，精確評估「爆炸範圍」，並提供受影響樣本與產物的排序清單，實現了極高可靠性的版本治理與學術數據安全性。
 
 ---
 
@@ -196,12 +209,14 @@ CREATE TABLE tool_change_log (
 
 在論文的這一章節中，我們將系統性梳理與對比以下文獻：
 1.  **AI Agent Memory Systems**：
-    *   *MemGPT (Packer et al., CS 2023)* 提出了作業系統虛擬記憶體概念，但聚焦於對話分頁，無法對複雜的計算腳本與多模態圖片進行結構化快取。
-    *   *SkillOS (arXiv:2605.06614)* 探討了 SkillRepo 中技能的演化策展，但缺乏軟體工程的 Code Promotion 安全檢驗與 Medallion 資料湖架構。
+    *   *MemGPT (Packer et al., CS 2023)* 提出了作業系統虛擬記憶體概念，但聚焦於對話分頁，無法對複雜的計算腳本與多模態圖片進行結構化快取 [memgpt2023]。
+    *   *SkillOS (arXiv:2605.06614)* 探討了 SkillRepo 中技能的演化策展，但缺乏軟體工程的 Code Promotion 安全檢驗與 Medallion 資料湖架構 [skillos2026]。
 2.  **LLM Semantic Caching**：
-    *   *GPTCache (Bang et al., 2023)* 作為工業界代表，提供了單純的 KV 語意儲存加速，但面對科學大數據的「特徵指紋防重」與「多模態剝離」無能為力。
+    *   *GPTCache (Bang et al., 2023)* 作為工業界代表，提供了單純的 KV 語意儲存加速，但面對科學大數據的「特徵指紋防重」與「多模態剝離」無能為力 [gptcache2023]。
 3.  **Code & Tool Generation by Agents**：
-    *   *Agent0 (arXiv:2511.16043)* 與 *CodeAct (Wang et al., 2024)* 探索了將程式碼作為 Agent 交互的通用工具，Evo_PRISM 在其基礎上引入了 HELIX 穩定化閉環，將動態腳本提升為穩定、可追溯的企業級 MCP 服務。
+    *   *Agent0 (arXiv:2511.16043)* 與 *CodeAct (Wang et al., 2024)* 探索了將程式碼作為 Agent 交互的通用工具 [agent02025, codeact2024]。Evo_PRISM 在其基礎上引入了 HELIX 穩定化閉環，將動態腳本提升為穩定、可追溯的企業級 MCP 服務。
+4.  **Code Intelligence & Dependency Resolution**：
+    *   *GitNexus (Patwari, 2026)* 是一個代表性的 MCP-native 客戶端代碼智能引擎，通過預計算代碼調用圖與邊信心評估，極大地提升了 Agent 閱讀與重構代碼的能力 [gitnexus2026]。Evo_PRISM 吸收了其預計算與邊上信心分級的哲學，但將應用領域從「純代碼語義空間」拓寬至「科學體學數據與分析工具的版本治理空間」，解決了多步驟科學工作流的可重複性與版本漂移問題。
 
 ---
 
@@ -318,6 +333,15 @@ CREATE TABLE tool_change_log (
   booktitle={Proceedings of the 2005 International Conference on Software Engineering},
   pages={284--292},
   year={2005}
+}
+
+@misc{gitnexus2026,
+  author = {Patwari, Abhigyan},
+  title = {GitNexus: An MCP-Native Client-Side Code Intelligence Engine},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/abhigyanpatwari/GitNexus}},
+  year = {2026}
 }
 ```
 
