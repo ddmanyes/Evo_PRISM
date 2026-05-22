@@ -34,6 +34,7 @@ from config.db_utils import safe_write
 from config.settings import DUCKDB_PATH
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
+from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,11 @@ _REPORT_TEMPLATE = """# Bulk Heatmap 報告
 """
 
 
+@register_tool_on_import(
+    tool_name="bio_run_heatmaps",
+    version="1.0.0",
+    description="基於 DEG 顯著基因 Union 繪製全樣本表達量熱圖"
+)
 def run_bulk_heatmaps(
     sample_id: str,
     *,

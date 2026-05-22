@@ -35,6 +35,7 @@ from config.settings import BIO_DB_ROOT, DUCKDB_PATH
 from config.db_utils import safe_write
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.path_utils import results_dir
+from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,11 @@ _REPORT_TEMPLATE = """\
 """
 
 
+@register_tool_on_import(
+    tool_name="bio_run_bulk_eda",
+    version="1.0.0",
+    description="執行 98 樣本 Bulk RNA-seq 的 EDA 探索性數據分析並繪製圖表"
+)
 def generate_bulk_report(
     sample_id: str,
     counts_path: Optional[Path] = None,

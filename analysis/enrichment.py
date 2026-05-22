@@ -38,6 +38,7 @@ from config.db_utils import safe_write
 from config.settings import DUCKDB_PATH
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
+from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,11 @@ _REPORT_TEMPLATE = """# Bulk 富集分析報告（ORA）
 """
 
 
+@register_tool_on_import(
+    tool_name="bio_run_enrichment",
+    version="1.0.0",
+    description="對 DEG 基因進行 ORA 富集分析 (Enrichr)"
+)
 def run_ora(
     sample_id: str,
     *,

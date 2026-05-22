@@ -39,6 +39,7 @@ from config.db_utils import safe_write
 from config.settings import DUCKDB_PATH
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
+from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +201,11 @@ _REPORT_TEMPLATE = """# Bulk DEG 分析報告
 """
 
 
+@register_tool_on_import(
+    tool_name="bio_run_deg",
+    version="1.0.0",
+    description="對指定對照組別進行 bulk RNA-seq 差異表達分析 (DESeq2)"
+)
 def run_deg_analysis(
     sample_id: str,
     *,
