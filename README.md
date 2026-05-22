@@ -392,6 +392,85 @@ cd "$BIO_DB_ROOT"
 
 ---
 
+## 新增分析工具 / Extending with New Tools
+
+Bio_PRISM 的每個分析領域（Bulk RNA、Spatial、scRNA、Proteomics…）都遵循相同的**四步擴充模式**，讓你把任何新組學分析整合進 MCP 工具體系。
+
+*Every analysis domain follows the same four-step pattern to plug any new omics analysis into the MCP tool system.*
+
+### Step 1 — Playbook（`playbooks/<domain>.md`）
+
+聲明標準分析流程，Agent 讀取後逐步執行：
+
+*Declare the standard analysis workflow — the Agent reads and follows it step by step:*
+
+```markdown
+---
+name: scrna
+version: 1.0.0
+data_type: scrna
+when_to_use: 單細胞 RNA-seq 的標準探索分析（clustering、marker gene、UMAP）。
+agent_tools: [bio_run_scrna_eda]
+---
+# Step 1 — QC & Filtering ...
+# Step 2 — Clustering ...
+```
+
+### Step 2 — 分析函數（`analysis/<module>.py`）
+
+實作核心邏輯，圖表以 inline base64 嵌入回傳字串，結果寫入 `analysis_history`：
+
+*Implement the logic — embed figures as inline base64, write results to `analysis_history`:*
+
+```python
+def generate_scrna_report(h5ad_path: str, ...) -> str:
+    # 分析 → 產圖（inline base64）→ safe_write() 寫歷史
+    ...
+```
+
+### Step 3 — MCP 工具接線（`server/bio_memory_server.py`）
+
+三處加入：`BIO_TOOLS` 列表、`_TOOL_HANDLERS` 字典、handler 函數：
+
+*Three additions: tool descriptor, handler mapping, handler function:*
+
+```python
+# BIO_TOOLS
+Tool(name="bio_run_scrna_eda", description="...", inputSchema={...})
+
+# _TOOL_HANDLERS
+"bio_run_scrna_eda": _handle_bio_run_scrna_eda,
+
+# handler
+async def _handle_bio_run_scrna_eda(args: dict) -> list[TextContent]:
+    from analysis.scrna_eda import generate_scrna_report
+    return [TextContent(type="text", text=generate_scrna_report(...))]
+```
+
+### Step 4 — HELIX 版本登記
+
+```python
+from analysis.tool_registry import register_tool
+with duckdb.connect(str(DUCKDB_PATH)) as con:
+    register_tool(con, tool_name="bio_run_scrna_eda",
+                  fn=generate_scrna_report, version="1.0.0",
+                  module_path="analysis.scrna_eda",
+                  function_name="generate_scrna_report",
+                  change_reason="初始版本")
+```
+
+HELIX 依此追蹤版本、偵測熱區、關聯歷史分析記錄（見 [CLAUDE.md §7](CLAUDE.md)）。
+
+### 現有工具參考 / Reference Implementations
+
+| MCP 工具 | Playbook | 分析模組 |
+|---------|----------|---------|
+| `bio_run_bulk_eda` | `playbooks/bulk_rnaseq.md` | `analysis/bulk_eda.py` |
+| `bio_run_deg` | `playbooks/bulk_rnaseq.md` | `analysis/bulk_eda.py` |
+| `bio_run_spatial_eda` | `playbooks/spatial_visium.md` | `analysis/spatial_eda.py` |
+
+---
+
 ## 貢獻 / Contributing
 
 歡迎 PR 與 Issue！請先閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)。
