@@ -396,28 +396,46 @@ cd "$BIO_DB_ROOT"
 
 Bio_PRISM 最核心的設計理念：**讓 LLM 自己擴充自己**。
 
-`CLAUDE.md` 是整個平台的「憲法」，描述了四步擴充模式的完整規範。只要在 Claude Code（或任何支援 MCP 的 IDE）中輸入一句話，LLM 就能讀懂規範、自動完成所有檔案：
+`CLAUDE.md` 是整個平台的「憲法」，完整定義了每一條規範與擴充流程。LLM 讀懂它之後，只需要你的一句話就能自主完成所有修改：
 
-*The core design principle of Bio_PRISM: **the LLM extends itself**. `CLAUDE.md` is the project constitution that defines every convention. One sentence in Claude Code is enough — the LLM reads the spec and writes everything:*
+*The core design principle of Bio_PRISM: **the LLM extends itself**. `CLAUDE.md` is the project constitution. Once the LLM reads it, one sentence from you is enough to make it do all the work:*
+
+#### 情境一：新增全新分析領域 / Add a brand-new analysis domain
 
 ```
 幫我新增 scRNA-seq 分析工具，支援 clustering、marker gene 偵測、UMAP 視覺化
 ```
 
-LLM 會自動完成以下四步，不需要人工介入：
+LLM 自動產出：playbook → 分析函數 → MCP 接線 → HELIX 版本登記，全新工具立即可用。
 
-*The LLM autonomously executes all four steps — no manual intervention needed:*
+*LLM outputs: playbook → analysis function → MCP wiring → HELIX registration. New tool ready immediately.*
 
-| 步驟 | LLM 產出 | 說明 |
-|------|---------|------|
-| **1. Playbook** | `playbooks/scrna.md` | 聲明標準分析流程（QC → clustering → UMAP），Agent 執行分析時逐步遵循 |
-| **2. 分析函數** | `analysis/scrna_eda.py` | 實作核心邏輯，圖表 inline base64，結果寫入 `analysis_history` |
-| **3. MCP 接線** | `server/bio_memory_server.py` | 加入工具描述、handler mapping、handler 函數，立即對外暴露為 MCP tool |
-| **4. HELIX 登記** | 呼叫 `register_tool()` | 版本入帳，啟用版本追蹤、熱區偵測、歷史關聯 |
+#### 情境二：擴充既有工具的能力 / Extend an existing tool
 
-完成後，新工具立即可被任何 MCP 客戶端（Claude Code / Antigravity / Web UI）呼叫，且所有分析結果自動歸入 ENGRAM 永久記憶。
+```
+幫 bio_run_deg 加入互動式 volcano plot，並支援批次校正（ComBat）
+```
 
-*Once done, the new tool is immediately callable from any MCP client, and all results are automatically archived into ENGRAM.*
+LLM 自動修改既有函數、更新 playbook 步驟、bumping 版本號、重新呼叫 `register_tool()`，HELIX 自動記錄版本差異。
+
+*LLM modifies the existing function, updates the playbook, bumps the version, re-registers with HELIX. Version delta is automatically tracked.*
+
+---
+
+兩種情境 LLM 都會完成以下四步，不需要人工介入：
+
+*Both scenarios follow the same four steps — no manual intervention needed:*
+
+| 步驟 | 新增工具 | 擴充既有工具 |
+|------|---------|------------|
+| **1. Playbook** | 建立 `playbooks/<domain>.md` | 更新既有 playbook 步驟 |
+| **2. 分析函數** | 建立 `analysis/<module>.py` | 修改既有函數，新增參數或圖表 |
+| **3. MCP 接線** | 新增工具至 `bio_memory_server.py` | 更新工具的 `inputSchema` 描述 |
+| **4. HELIX 登記** | `register_tool()` 版本 1.0.0 | `register_tool()` bump 版本號 |
+
+完成後，工具立即可被任何 MCP 客戶端（Claude Code / Antigravity / Web UI）呼叫，所有分析結果自動歸入 ENGRAM 永久記憶。
+
+*Once done, the tool is immediately callable from any MCP client, and all results are automatically archived into ENGRAM.*
 
 ### 現有工具參考 / Reference Implementations
 
