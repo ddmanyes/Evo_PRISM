@@ -55,9 +55,9 @@ graph TD
     Q("使用者自然語言 / API 請求"):::entry --> Agent("Evo_PRISM LLM Agent 中樞"):::entry
     
     subgraph Gateway["自適應去重與路由閘道 (Deduplication & Routing)"]
-        r1{"\"L1: 3-way RRF 語意匹配?\""}
-        r2{"\"L2: 既存分析代碼/SQL?\""}
-        r3["\"L3: 啟動實體計算 Pipeline\""]
+        r1{"L1: 3-way RRF 語意匹配?"}
+        r2{"L2: 既存分析代碼/SQL?"}
+        r3["L3: 啟動實體計算 Pipeline"]
     end
     
     Agent --> r1
