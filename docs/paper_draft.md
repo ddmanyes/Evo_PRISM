@@ -48,24 +48,39 @@
 ```mermaid
 graph TD
     %% 定義配色
-    classDef entry fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef gateway fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
     classDef lake fill:#eceff1,stroke:#37474f,stroke-width:2px;
-    classDef core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef agent fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef hit fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     
-    Q("使用者自然語言 / API 請求"):::entry --> Agent("Evo_PRISM LLM Agent 中樞"):::entry
+    Q("使用者自然語言 / API 請求") --> GW["自適應去重與路由閘道 (Deduplication & Routing Gateway)"]:::gateway
     
-    subgraph Gateway["自適應去重與路由閘道 (Deduplication & Routing)"]
+    subgraph Gateway["自適應去重與路由閘道 (Deduplication & Routing Gateway)"]
         r1{"L1: 3-way RRF 語意匹配?"}
-        r2{"L2: 既存分析代碼/SQL?"}
-        r3["L3: 啟動實體計算 Pipeline"]
+        r2{"L2: 既存分析工具箱 (MCP / SQL)?"}
     end
     
-    Agent --> r1
-    r1 -->|Yes Cosine >= 0.88| L1_Hit("L1 Gold Cache 秒級傳回結果"):::core
+    GW --> r1
+    
+    %% L1 快取命中 (Fast-Path)
+    r1 -->|Yes Cosine >= 0.88| L1_Hit("L1 Gold Cache 秒級傳回結果 (0-Token)"):::hit
+    
+    %% L1 沒命中，走 L2
     r1 -->|No| r2
     
-    r2 -->|Yes| L2_Hit("L2 Silver SQL 快速響應"):::core
-    r2 -->|No| r3
+    %% L2 快取/工具箱命中 (Warm-Path)
+    r2 -->|Yes| L2_Hit("L2 Silver SQL / 既存工具快速響應"):::hit
+    
+    %% L2 沒命中，走 L3 實體計算，此時才動用 LLM Agent
+    r2 -->|No| Agent("Evo_PRISM LLM Agent 中樞 (大腦)"):::agent
+    
+    subgraph L3["L3 Bronze & LLM 代碼創造 (LLM-generated Code Sandbox)"]
+        adhoc("LLM 臨時代碼創造 (Ad-hoc Code)"):::agent
+        sandbox["安全沙盒隔離執行 (Sandbox)"]:::agent
+    end
+    
+    Agent -->|"動態創造分析代碼"| adhoc
+    adhoc -->|"實體運行"| sandbox
     
     subgraph Lakehouse["L1-L2-L3 數據湖儲存層 (Medallion Data Lake)"]
         L1["L1 Gold: hermes_cache.duckdb (memory_recent, TTL 7d)"]:::lake
@@ -73,9 +88,13 @@ graph TD
         L3["L3 Bronze: 原始唯讀數據 (SpaceRanger outs / FASTQ)"]:::lake
     end
     
-    r3 -->|"實體沙盒執行"| L3
-    L3 -->|"一次性結構化轉換"| L2
+    sandbox -->|"載入原始唯讀數據"| L3
+    L3 -->|"結構化轉換輸出"| L2
     L2 -->|"分析完成自動回寫"| L1
+    
+    %% HELIX 演化閉環
+    sandbox -->|"重用次數 >= 3 (HELIX 閉環)"| tools["L2 既存分析工具箱 (analysis/*.py)"]:::hit
+    tools -.->|"自動晉升為 MCP 標準工具"| r2
     
     L1_Hit -.-> L1
     L2_Hit -.-> L2
