@@ -29,7 +29,9 @@ EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "llamacpp")  # "llamacpp" |
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "bge-m3-Q8_0")
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 LLAMACPP_BASE_URL = os.getenv("LLAMACPP_BASE_URL", "http://localhost:8081/v1")
-LLAMACPP_MODEL_PATH = os.path.expanduser("~/llama.cpp/models/bge-m3-Q8_0.gguf")
+LLAMACPP_MODEL_PATH = os.path.expanduser(
+    os.getenv("LLAMACPP_MODEL_PATH", "~/llama.cpp/models/bge-m3-Q8_0.gguf")
+)
 
 # Matryoshka dual-layer index (9D): coarse index uses first MATRYOSHKA_DIM dims
 # bge-m3 supports Matryoshka — truncating to 256 dims retains ~95% recall

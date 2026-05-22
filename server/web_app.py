@@ -148,7 +148,8 @@ async def _lifespan(_app: FastAPI):
 app = FastAPI(title="BioAgent", version="1.0.0", lifespan=_lifespan)
 
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()] or [
-    "*"
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -705,6 +706,7 @@ async def api_graduation_candidates():
 @app.get("/api/dashboard/graduation/{analysis_id}")
 async def api_graduation_plan(analysis_id: str):
     """單筆畢業計畫：archive（code/meta/output）+ 生成的 analysis/ 骨架。唯讀。"""
+    _require_analysis_id(analysis_id)
     import duckdb
 
     from config.settings import DUCKDB_PATH
@@ -719,6 +721,7 @@ async def api_graduation_plan(analysis_id: str):
 
 @app.get("/results/{analysis_id}", response_class=HTMLResponse)
 async def report_page(analysis_id: str):
+    _require_analysis_id(analysis_id)
     import duckdb
     from config.settings import DUCKDB_PATH
 
@@ -917,8 +920,12 @@ async def api_history(sample_id: Optional[str] = None, limit: int = 50):
 
 @app.get("/api/results/{analysis_id}/csv")
 async def download_csv(analysis_id: str):
+    import glob as _glob
+
     import duckdb
     from config.settings import DUCKDB_PATH, L2_ROOT
+
+    _require_analysis_id(analysis_id)
 
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
         row = con.execute(
@@ -932,21 +939,29 @@ async def download_csv(analysis_id: str):
     sample_id = row[0]
     if not re.match(r"^[a-z0-9_-]+$", sample_id):
         raise HTTPException(status_code=422, detail="資料庫中 sample_id 格式不合法")
+    l2_resolved = L2_ROOT.resolve()
     expr_dir = (L2_ROOT / sample_id / "expression").resolve()
-    if not expr_dir.is_relative_to(L2_ROOT.resolve()):
+    if not expr_dir.is_relative_to(l2_resolved):
         raise HTTPException(status_code=403, detail="Access denied")
-    expr_glob = str(expr_dir / "*.parquet")
+
+    parquet_files = sorted(
+        f for f in _glob.glob(str(expr_dir / "*.parquet"))
+        if Path(f).resolve().is_relative_to(expr_dir)
+    )
+    if not parquet_files:
+        raise HTTPException(status_code=404, detail="找不到 expression parquet 檔案")
 
     try:
         with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
             df = con.execute(
-                f"""SELECT gene_name,
-                           SUM(count)::BIGINT AS total_umi,
-                           COUNT(*)::BIGINT   AS n_bins
-                    FROM read_parquet('{expr_glob}')
-                    GROUP BY gene_name
-                    ORDER BY total_umi DESC
-                    LIMIT 100"""
+                "SELECT gene_name,"
+                " SUM(count)::BIGINT AS total_umi,"
+                " COUNT(*)::BIGINT AS n_bins"
+                " FROM read_parquet(?)"
+                " GROUP BY gene_name"
+                " ORDER BY total_umi DESC"
+                " LIMIT 100",
+                [parquet_files],
             ).fetchdf()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"CSV 生成失敗：{e}")
@@ -962,6 +977,7 @@ async def download_csv(analysis_id: str):
 @app.get("/api/results/{analysis_id}/images")
 async def result_images(analysis_id: str):
     """回傳分析報告中的圖片清單（filename + data_uri）。"""
+    _require_analysis_id(analysis_id)
     import re
 
     import duckdb
@@ -1347,4 +1363,5 @@ async def engram_search(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("server.web_app:app", host="0.0.0.0", port=8000, reload=False, log_level="info")
+    _host = os.getenv("WEB_APP_HOST", "127.0.0.1")
+    uvicorn.run("server.web_app:app", host=_host, port=8000, reload=False, log_level="info")
