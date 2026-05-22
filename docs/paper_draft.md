@@ -152,7 +152,20 @@ graph TD
     L1 -->|回傳結果給使用者| Resp[回傳結果給使用者]:::hit
 ```
 
-### 5.1 三層數據湖分層設計 (Multi-tier Data Lake)
+### 5.1 部署模式與計算架構
+
+Evo_PRISM 的 MCP Server（`bio_memory_server.py`）是系統的統一對外入口，負責接收 Agent 的 tool call 請求、協調三層資料湖的讀寫，並執行實際的生物資訊計算管道。所有運算（DuckDB 查詢、空間分析、Bulk EDA）均在 MCP Server 所在的機器上執行，Claude Code 等前端 Agent 僅負責傳送指令與接收結果，不直接接觸原始數據或執行計算。
+
+MCP 協議支援兩種 transport 模式，使 Evo_PRISM 能夠無縫適應不同的部署場景，而不需修改任何上層 Agent 代碼：
+
+| 模式 | 適用場景 | 數據與計算位置 |
+|------|---------|--------------|
+| **stdio（本機模式）** | 研究人員個人工作站開發與測試 | 本機（如 macOS ExFAT 外接硬碟） |
+| **HTTP/SSE（遠端模式）** | 實驗室共享 HPC 伺服器多用戶部署 | 遠端 Linux 主機（如 `/mnt/space4/bio_lab_db/`） |
+
+遠端部署模式下，大型組學數據集（如 39 GB Visium HD 矩陣）始終保留在伺服器端，研究人員透過本機的 Claude Code 以自然語言發起分析請求，MCP Server 在伺服器端就地計算後僅回傳結果摘要與圖表，徹底消除了大型數據的傳輸開銷。這一架構設計使 Evo_PRISM 能夠從單人研究工作站線性擴展至多用戶實驗室共享平台，且對前端 Agent 完全透明。
+
+### 5.3 三層數據湖分層設計 (Multi-tier Data Lake)
 
 Evo_PRISM 採用不可變的 Medallion Architecture，並針對 LLM 執行期的行為模式進行深度適配，形成三個職責明確、物理隔離的儲存層。
 
@@ -162,7 +175,7 @@ Evo_PRISM 採用不可變的 Medallion Architecture，並針對 LLM 執行期的
 
 **L1 Gold（金層，語意快取）** 儲存高頻語意快取（`hermes_cache.duckdb`），記錄近期熱點查詢與對應分析報告的 1024 維 Embedding（`bge-m3` 模型），並配置 HNSW cosine 索引以支援亞秒級向量搜尋。L1 設有 7 天的 TTL 自動過期機制，且在底層工具發生 SemVer 版本更新時主動觸發快取失效（Cache Invalidation），確保快取命中的結果始終與當前工具版本保持一致。
 
-### 5.2 HELIX 工具自適應演化與 Code Promotion 機制
+### 5.4 HELIX 工具自適應演化與 Code Promotion 機制
 
 為了根治動態生成代碼在生產環境中的「生命週期無序膨脹與幻覺安全漏洞」，Evo_PRISM 首創了 **HELIX (Health-Evolving Loop with Iterative eXpiration)** 動態升格框架。
 
@@ -193,7 +206,7 @@ $$HealthScore(t) = 1.0 - \omega_{churn} \cdot ChurnRatio(t) - \omega_{complexity
 
 當 $HealthScore(t) < \theta_{warning}$（默認值 $0.70$）時，熱區偵測器會發出警告，並啟動 AI 醫生重構會診。若重構後健康度無法回升且重用頻率跌至零，則會觸發漸進式忘卻機制（忘卻代碼實體，僅保存視覺降採樣快照），實現長期記憶的智慧衰減。
 
-### 5.3 3-way RRF 語意檢索與多模態圖表快取 (Figure Cache)
+### 5.5 3-way RRF 語意檢索與多模態圖表快取 (Figure Cache)
 
 在 L1 攔截階段，系統提出 **3-way RRF (Reciprocal Rank Fusion) 語意匹配演算法**。傳統的語意快取僅依賴單一自然語言 Embedding 相似度，容易因細微上下文的擾動而誤導。我們將快取命中的評估公式設計為結合以下三個維度的融合排序：
 
@@ -207,7 +220,7 @@ $$Score_{RRF}(q, a) = \frac{w_1}{r_{embedding}(q, a.query) + k} + \frac{w_2}{r_{
 
 **Figure Cache 剝離技術**：科學分析（如火山圖、降維圖）的輸出通常為多模態圖片。我們在 MCP 傳輸邊界對 base64 圖片數據進行剝離，僅將文字摘要與元數據寫入 `analysis_artifacts` (ENGRAM 記憶庫)，圖片實體寫入圖表快取。此種將高維多模態科學圖表壓縮並抽提為關鍵結構化文字與特徵的設計哲學，借鑑了 **DeepSeek-OCR [deepseekocr2025]** 的圖像特徵提取與文檔解析技術。Agent 在 0-token 快取命中時，可以直接透過 `bio_get_figure` 快速檢索並呈現圖片，徹底避免了在 LLM Context Window 中塞入巨大 base64 造成的 Token 膨脹與記憶體溢出。
 
-### 5.4 前瞻性影響分析與爆炸範圍評估 (Proactive Impact Analysis)
+### 5.6 前瞻性影響分析與爆炸範圍評估 (Proactive Impact Analysis)
 
 在科學計算平台中，底層分析工具的升級（如 `bulk_eda` 的算法修正）往往會對已存在的分析歷史產生連鎖反應，導致舊分析結果失真或不一致。為了解決這個問題，Evo_PRISM 借鑑了先進客戶端代碼智能引擎 GitNexus [gitnexus2026] 的「關係預計算與邊上信心分級 (Confidence-on-Edges)」設計哲學，設計了前瞻性的影響力圖譜（Proactive Impact Graph）與爆炸範圍（Blast Radius）評估工具 `bio_impact`。
 
@@ -219,7 +232,7 @@ $$tools \xrightarrow{analysis\_history} analysis \xrightarrow{analysis\_artifact
 - **Same-Analysis (Confidence = 0.9)**：屬於同一次分析流所產出的其他關聯產物。
 - **Heuristic (Confidence = 0.6)**：分析類型與工具名稱之啟發式名稱對照（例如 `bulk_eda` $\rightarrow$ `bio_run_bulk_eda`）。
 
-### 5.5 資料庫 Schema 總覽
+### 5.7 資料庫 Schema 總覽
 
 Evo_PRISM 以 DuckDB 為核心記憶大腦。以下為實現上述機制的關鍵 Schema 定義（精簡版 SQL）：
 
