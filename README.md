@@ -392,74 +392,32 @@ cd "$BIO_DB_ROOT"
 
 ---
 
-## 新增分析工具 / Extending with New Tools
+## 用 LLM 擴充工具箱 / Extend the Toolbox with LLM
 
-Bio_PRISM 的每個分析領域（Bulk RNA、Spatial、scRNA、Proteomics…）都遵循相同的**四步擴充模式**，讓你把任何新組學分析整合進 MCP 工具體系。
+Bio_PRISM 最核心的設計理念：**讓 LLM 自己擴充自己**。
 
-*Every analysis domain follows the same four-step pattern to plug any new omics analysis into the MCP tool system.*
+`CLAUDE.md` 是整個平台的「憲法」，描述了四步擴充模式的完整規範。只要在 Claude Code（或任何支援 MCP 的 IDE）中輸入一句話，LLM 就能讀懂規範、自動完成所有檔案：
 
-### Step 1 — Playbook（`playbooks/<domain>.md`）
+*The core design principle of Bio_PRISM: **the LLM extends itself**. `CLAUDE.md` is the project constitution that defines every convention. One sentence in Claude Code is enough — the LLM reads the spec and writes everything:*
 
-聲明標準分析流程，Agent 讀取後逐步執行：
-
-*Declare the standard analysis workflow — the Agent reads and follows it step by step:*
-
-```markdown
----
-name: scrna
-version: 1.0.0
-data_type: scrna
-when_to_use: 單細胞 RNA-seq 的標準探索分析（clustering、marker gene、UMAP）。
-agent_tools: [bio_run_scrna_eda]
----
-# Step 1 — QC & Filtering ...
-# Step 2 — Clustering ...
+```
+幫我新增 scRNA-seq 分析工具，支援 clustering、marker gene 偵測、UMAP 視覺化
 ```
 
-### Step 2 — 分析函數（`analysis/<module>.py`）
+LLM 會自動完成以下四步，不需要人工介入：
 
-實作核心邏輯，圖表以 inline base64 嵌入回傳字串，結果寫入 `analysis_history`：
+*The LLM autonomously executes all four steps — no manual intervention needed:*
 
-*Implement the logic — embed figures as inline base64, write results to `analysis_history`:*
+| 步驟 | LLM 產出 | 說明 |
+|------|---------|------|
+| **1. Playbook** | `playbooks/scrna.md` | 聲明標準分析流程（QC → clustering → UMAP），Agent 執行分析時逐步遵循 |
+| **2. 分析函數** | `analysis/scrna_eda.py` | 實作核心邏輯，圖表 inline base64，結果寫入 `analysis_history` |
+| **3. MCP 接線** | `server/bio_memory_server.py` | 加入工具描述、handler mapping、handler 函數，立即對外暴露為 MCP tool |
+| **4. HELIX 登記** | 呼叫 `register_tool()` | 版本入帳，啟用版本追蹤、熱區偵測、歷史關聯 |
 
-```python
-def generate_scrna_report(h5ad_path: str, ...) -> str:
-    # 分析 → 產圖（inline base64）→ safe_write() 寫歷史
-    ...
-```
+完成後，新工具立即可被任何 MCP 客戶端（Claude Code / Antigravity / Web UI）呼叫，且所有分析結果自動歸入 ENGRAM 永久記憶。
 
-### Step 3 — MCP 工具接線（`server/bio_memory_server.py`）
-
-三處加入：`BIO_TOOLS` 列表、`_TOOL_HANDLERS` 字典、handler 函數：
-
-*Three additions: tool descriptor, handler mapping, handler function:*
-
-```python
-# BIO_TOOLS
-Tool(name="bio_run_scrna_eda", description="...", inputSchema={...})
-
-# _TOOL_HANDLERS
-"bio_run_scrna_eda": _handle_bio_run_scrna_eda,
-
-# handler
-async def _handle_bio_run_scrna_eda(args: dict) -> list[TextContent]:
-    from analysis.scrna_eda import generate_scrna_report
-    return [TextContent(type="text", text=generate_scrna_report(...))]
-```
-
-### Step 4 — HELIX 版本登記
-
-```python
-from analysis.tool_registry import register_tool
-with duckdb.connect(str(DUCKDB_PATH)) as con:
-    register_tool(con, tool_name="bio_run_scrna_eda",
-                  fn=generate_scrna_report, version="1.0.0",
-                  module_path="analysis.scrna_eda",
-                  function_name="generate_scrna_report",
-                  change_reason="初始版本")
-```
-
-HELIX 依此追蹤版本、偵測熱區、關聯歷史分析記錄（見 [CLAUDE.md §7](CLAUDE.md)）。
+*Once done, the new tool is immediately callable from any MCP client, and all results are automatically archived into ENGRAM.*
 
 ### 現有工具參考 / Reference Implementations
 
