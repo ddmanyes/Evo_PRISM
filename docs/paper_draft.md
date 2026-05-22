@@ -53,48 +53,48 @@ graph TD
     classDef agent fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
     classDef hit fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     
-    Q("使用者自然語言 / API 請求") --> GW["自適應去重與路由閘道 (Deduplication & Routing Gateway)"]:::gateway
+    Q[使用者自然語言與API請求] --> GW[自適應去重與路由閘道]:::gateway
     
-    subgraph Gateway["自適應去重與路由閘道 (Deduplication & Routing Gateway)"]
-        r1{"L1: 3-way RRF 語意匹配?"}
-        r2{"L2: 既存分析工具箱 (MCP / SQL)?"}
+    subgraph Gateway[自適應去重與路由閘道]
+        r1{L1級 3-way RRF 語意匹配}
+        r2{L2級 既存分析工具箱 MCP與SQL}
     end
     
     GW --> r1
     
     %% L1 快取命中 (Fast-Path)
-    r1 -->|Yes Cosine >= 0.88| L1_Hit("L1 Gold Cache 秒級傳回結果 (0-Token)"):::hit
+    r1 -->|Cosine大於等於0.88| L1_Hit[L1 Gold Cache 秒級傳回結果 0-Token]:::hit
     
     %% L1 沒命中，走 L2
-    r1 -->|No| r2
+    r1 -->|未命中| r2
     
     %% L2 快取/工具箱命中 (Warm-Path)
-    r2 -->|Yes| L2_Hit("L2 Silver SQL / 既存工具快速響應"):::hit
+    r2 -->|已存在既存工具| L2_Hit[L2 Silver SQL與既存工具快速響應]:::hit
     
     %% L2 沒命中，走 L3 實體計算，此時才動用 LLM Agent
-    r2 -->|No| Agent("Evo_PRISM LLM Agent 中樞 (大腦)"):::agent
+    r2 -->|無既存工具| Agent[Evo_PRISM LLM Agent 中樞大腦]:::agent
     
-    subgraph L3["L3 Bronze & LLM 代碼創造 (LLM-generated Code Sandbox)"]
-        adhoc("LLM 臨時代碼創造 (Ad-hoc Code)"):::agent
-        sandbox["安全沙盒隔離執行 (Sandbox)"]:::agent
+    subgraph L3[L3銅層與LLM代碼創造]
+        adhoc[LLM 臨時代碼創造]:::agent
+        sandbox[安全沙盒隔離執行]:::agent
     end
     
-    Agent -->|"動態創造分析代碼"| adhoc
-    adhoc -->|"實體運行"| sandbox
+    Agent -->|動態創造分析代碼| adhoc
+    adhoc -->|安全運行| sandbox
     
-    subgraph Lakehouse["L1-L2-L3 數據湖儲存層 (Medallion Data Lake)"]
-        L1["L1 Gold: hermes_cache.duckdb (memory_recent, TTL 7d)"]:::lake
-        L2["L2 Silver: bio_memory.duckdb (sample_registry / analysis_history)"]:::lake
-        L3["L3 Bronze: 原始唯讀數據 (SpaceRanger outs / FASTQ)"]:::lake
+    subgraph Lakehouse[L1 L2 L3 數據湖儲存層]
+        L1[L1 Gold 金層 快取記憶]:::lake
+        L2[L2 Silver 銀層 樣本註冊與分析歷史]:::lake
+        L3[L3 Bronze 銅層 原始唯讀數據]:::lake
     end
     
-    sandbox -->|"載入原始唯讀數據"| L3
-    L3 -->|"結構化轉換輸出"| L2
-    L2 -->|"分析完成自動回寫"| L1
+    sandbox -->|載入原始唯讀數據| L3
+    L3 -->|結構化轉換輸出| L2
+    L2 -->|分析完成自動回寫| L1
     
     %% HELIX 演化閉環
-    sandbox -->|"重用次數 >= 3 (HELIX 閉環)"| tools["L2 既存分析工具箱 (analysis/*.py)"]:::hit
-    tools -.->|"自動晉升為 MCP 標準工具"| r2
+    sandbox -->|重用次數大於等於3| tools[L2 既存分析工具箱]:::hit
+    tools -.->|自動晉升為 MCP 標準工具| r2
     
     L1_Hit -.-> L1
     L2_Hit -.-> L2
