@@ -53,9 +53,8 @@ backend_msseg/
 bulk_rna_data/
 references/genome/
 
-# References & images — Google Drive 備份即可，不進 git
+# References — Google Drive 備份即可，不進 git
 references/
-docs/images/
 reports/
 docs/academic_potential_analysis.md
 docs/architecture_audit_report.md
