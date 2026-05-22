@@ -43,6 +43,12 @@ crc_visium_data/
 results_ana/
 data_ana/
 
+# MCseg / MSseg 工具（獨立專案，暫不公開）
+scripts/msseg/
+msseg_docs/
+analysis_msseg/
+backend_msseg/
+
 # Bulk RNA — 數據不進 git（L2 結果與 QC 報告體積大，以路徑記錄即可）
 bulk_rna_data/
 references/genome/
