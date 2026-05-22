@@ -2,9 +2,9 @@
 
 **Bioinformatics Platform for Research Intelligence, Semantic Memory**
 
-實驗室 AI 生資分析平台：用自然語言查詢任何組學數據，分析結果永久記憶，不再重複運算。
+Bio_PRISM 是以 **LLM Agent + MCP** 為核心的實驗室生資知識管理平台。系統採三層架構（L3 原始數據 → L2 結構化特徵 → L1 語意快取），搭配 **HELIX**（工具版本健康追蹤）與 **ENGRAM**（分析產出永久記憶），讓任何實驗室成員透過自然語言查詢空間轉錄體、Bulk RNA、scRNA、蛋白質體等任意組學數據。每份分析結果永久歸檔、可語意搜尋，並強制關聯至產生它的程式版本，不再重複運算、不再遺失脈絡。
 
-*An AI-powered lab platform that lets anyone query omics data — spatial Tx, Bulk RNA, scRNA, proteomics, and beyond — in plain language via LLM + MCP. Every analysis is stored, versioned, and instantly searchable.*
+*Bio_PRISM is a lab knowledge management platform powered by **LLM Agent + MCP (Model Context Protocol)**. It connects language models to 15 bioinformatics tools through a three-layer data architecture (L3 raw → L2 structured features → L1 semantic cache), with **HELIX** for tool versioning and health tracking, and **ENGRAM** for permanent artifact memory. Any lab member can query spatial transcriptomics, bulk RNA-seq, scRNA-seq, proteomics, and more in plain language — every result is archived, semantically searchable, and traceable to the exact tool version that produced it.*
 
 [![CI](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml)
 [![Python ≥ 3.10](https://img.shields.io/badge/Python-%E2%89%A53.10-blue)](https://www.python.org/)
