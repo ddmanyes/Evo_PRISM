@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BIO_DB_ROOT
 from analysis.bulk_timeseries import mean_by_timepoint, parse_timepoint_cols, tpm_to_log2
 from analysis.pathway_scoring import score_pathways
+from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +225,11 @@ def lag_analysis(
 # ── 整合入口 ──────────────────────────────────────────────────────────────────
 
 
+@register_tool_on_import(
+    tool_name="bio_run_multiomics_integration",
+    version="1.0.0",
+    description="執行 RNA-Protein 多組學時序整合分析與相關性滯後分析"
+)
 def run_integration(
     rna_counts: pd.DataFrame,
     proteome_path: Optional[Path] = None,

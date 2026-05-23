@@ -42,7 +42,7 @@ from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
-_SAMPLE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
+from analysis.validators import validate_sample_id
 
 # 預設 library 集合（與參考 pipeline 對齊；可由呼叫端覆蓋）
 DEFAULT_LIBRARIES: tuple[str, ...] = (
@@ -52,11 +52,6 @@ DEFAULT_LIBRARIES: tuple[str, ...] = (
 )
 
 _LIBRARY_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
-
-
-def _validate_sample_id(sample_id: str) -> None:
-    if not _SAMPLE_ID_RE.match(sample_id):
-        raise ValueError(f"無效的 sample_id：{sample_id!r}")
 
 
 def _validate_library(name: str) -> None:
@@ -206,7 +201,7 @@ def run_ora(
     Returns:
         (analysis_id, report_path)
     """
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     if not libraries:
         raise ValueError("libraries 不可為空")
     for lib in libraries:
@@ -331,14 +326,6 @@ def run_ora(
                 WHERE analysis_id=?""",
             [str(report_path), completed_at, summary, analysis_id],
         )
-        # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
-        try:
-            from analysis.tool_registry import backfill_tool_id
-
-            backfill_tool_id(con, "bio_run_enrichment", analysis_id)
-        except Exception as _exc:
-            logger.warning("ora: backfill_tool_id 失敗（非致命）: %s", _exc)
-
         try:
             from analysis.artifact_registry import register_artifact
 

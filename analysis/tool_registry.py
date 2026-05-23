@@ -1570,6 +1570,9 @@ def register_tool_on_import(
     Saves the registry metadata to an internal list. When a database
     connection is active later, call ``register_all_lazy_tools(con)`` to
     persist them in the ``tools`` table (idempotent).
+
+    Also automatically wraps the function to backfill its active ``tool_id``
+    into the ``analysis_history`` table based on the returned ``analysis_id``.
     """
     def decorator(fn: Callable) -> Callable:
         _LAZY_REGISTRY.append({
@@ -1578,8 +1581,42 @@ def register_tool_on_import(
             "version": version,
             "description": description
         })
-        return fn
+
+        import functools
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            res = fn(*args, **kwargs)
+            analysis_id = None
+            if isinstance(res, tuple) and len(res) > 0 and isinstance(res[0], str):
+                analysis_id = res[0]
+            elif isinstance(res, str):
+                analysis_id = res
+
+            if analysis_id:
+                import duckdb
+                from config.settings import DUCKDB_PATH
+                # Search for passed connection
+                con = None
+                for arg in args:
+                    if isinstance(arg, duckdb.DuckDBPyConnection):
+                        con = arg
+                        break
+                if con:
+                    try:
+                        backfill_tool_id(con, tool_name, analysis_id)
+                    except Exception:
+                        pass
+                else:
+                    path = kwargs.get("db_path") or kwargs.get("cache_path") or DUCKDB_PATH
+                    try:
+                        with duckdb.connect(str(path)) as conn:
+                            backfill_tool_id(conn, tool_name, analysis_id)
+                    except Exception:
+                        pass
+            return res
+        return wrapper
     return decorator
+
 
 
 def register_all_lazy_tools(con: duckdb.DuckDBPyConnection) -> int:

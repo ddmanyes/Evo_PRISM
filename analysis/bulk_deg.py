@@ -43,13 +43,9 @@ from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
-_SAMPLE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
+from analysis.validators import validate_sample_id
+
 _GROUP_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
-
-
-def _validate_sample_id(sample_id: str) -> None:
-    if not _SAMPLE_ID_RE.match(sample_id):
-        raise ValueError(f"無效的 sample_id：{sample_id!r}")
 
 
 def _validate_group(name: str) -> None:
@@ -233,7 +229,7 @@ def run_deg_analysis(
     Returns:
         (analysis_id, report_path)
     """
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     if not comparisons:
         raise ValueError("comparisons 不可為空")
     for a, b in comparisons:
@@ -368,14 +364,6 @@ def run_deg_analysis(
                 WHERE analysis_id=?""",
             [str(report_path), completed_at, summary, analysis_id],
         )
-        # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
-        try:
-            from analysis.tool_registry import backfill_tool_id
-
-            backfill_tool_id(con, "bio_run_deg", analysis_id)
-        except Exception as _exc:
-            logger.warning("bulk_deg: backfill_tool_id 失敗（非致命）: %s", _exc)
-
         try:
             from analysis.artifact_registry import register_artifact
 
