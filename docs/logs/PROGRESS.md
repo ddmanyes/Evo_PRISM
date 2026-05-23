@@ -7,9 +7,9 @@
 
 ## 📍 當前里程碑
 
-**里程碑**：Phase 10 完成 + 品牌重塑（Evo_PRISM）+ GitNexus 借鏡 + bio_impact + Bulk RNA-seq 原生工具 + 控制面板三階段 + MCP 數據交付三件套 + Fast-Path 路由 + **98 樣本 Joint Downstream 聯合下游分析圓滿跑通、大數據 QC 與清洗完整就緒、Observability 效能指標與 tool_id 100% 寫入**
+**里程碑**：Phase 10 完成 + **Section B (P0 學術對齊) 四大基準測試 (Cache/RRF, HELIX, CTE, Method Drift) 與論文資料回填 (v2.3.0, 2026-05-23) 100% 圓滿達成，已提交 Git！**
 
-**當前焦點**：對已定量成功的 26 個新樣本與 72 個高品質舊樣本（共 98 個樣本，原 112 樣本經大數據 QC 精準清洗調整）物理合併，成功執行端對端 Joint Downstream RNA-seq 聯合下游分析管線（EDA, DEG, Heatmap, ORA），產出所有圖表與 Markdown 報告，且分析歷史與 metrics 指標中 `tool_id` 覆蓋率達完美的 100%，並完成全體樣本的批次資料庫登記！
+**當前焦點**：全面啟動並依序完成 **① 支線三 AB-Housekeeping 架構清理**、**② 支線一 Section C 98樣本真實案例研究與無LLM消融**、以及 **③ 支線二 Section D/E/F P1基準測試三合一深度強化**。完成此三大支線後，正式導入 Visium HD 空間組學大數據，作為最終壓軸 Showcase 與看板對比圖 (Hero Figure)！
 
 ---
 
