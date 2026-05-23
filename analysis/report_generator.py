@@ -97,12 +97,8 @@ _REPORT_TEMPLATE = """\
 
 # ── 內部工具 ──────────────────────────────────────────────────────────────────
 
-_SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")
-
-
-def _validate_sample_id(sample_id: str) -> None:
-    if not _SAMPLE_ID_RE.match(sample_id):
-        raise ValueError(f"Invalid sample_id {sample_id!r}: only a-z, 0-9, _ and - are allowed")
+from analysis.validators import validate_sample_id
+from analysis.tool_registry import register_tool_on_import
 
 
 def _l2_expr_glob(sample_id: str) -> str:
@@ -119,7 +115,7 @@ def _l2_obs_path(sample_id: str) -> str:
 
 def _collect_stats(sample_id: str, db_path: Path) -> dict:
     """從 L2 Parquet 收集統計數字（純 DuckDB，0-token）。"""
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     expr_glob = _l2_expr_glob(sample_id)
     obs_path = _l2_obs_path(sample_id)
 
@@ -361,17 +357,14 @@ def write_report_to_history(
                     WHERE analysis_id=?""",
                 [result_path, completed_at, summary, analysis_id],
             )
-            # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
-            try:
-                from analysis.tool_registry import backfill_tool_id
-
-                backfill_tool_id(con, "bio_run_spatial_eda", analysis_id)
-            except Exception as _exc:
-                logger.warning("report_generator: backfill_tool_id 失敗（非致命）: %s", _exc)
-
     return analysis_id, result_path
 
 
+@register_tool_on_import(
+    tool_name="bio_run_spatial_eda",
+    version="1.0.0",
+    description="執行空間轉錄體 EDA 探索性數據分析並繪製代表性基因空間圖表"
+)
 def run_full_eda_report(
     sample_id: str,
     *,

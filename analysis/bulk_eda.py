@@ -42,12 +42,7 @@ logger = logging.getLogger(__name__)
 BULK_RESULTS_DIR = BIO_DB_ROOT / "bulk_rna_data" / "Kallisto_v1" / "results_kallisto"
 REPORTS_DIR = BIO_DB_ROOT / "results" / "bulk_eda"
 
-_SAMPLE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
-
-
-def _validate_sample_id(sample_id: str) -> None:
-    if not _SAMPLE_ID_RE.match(sample_id):
-        raise ValueError(f"無效的 sample_id：{sample_id!r}（只允許英數字、底線、連字號）")
+from analysis.validators import validate_sample_id
 
 
 # ── 資料載入 ──────────────────────────────────────────────────────────────────
@@ -273,7 +268,7 @@ def generate_bulk_report(
 
     回傳 (analysis_id, report_path)。
     """
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
@@ -354,13 +349,6 @@ def generate_bulk_report(
                     WHERE analysis_id=?""",
                 [str(report_path), completed_at, summary, analysis_id],
             )
-            # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
-            try:
-                from analysis.tool_registry import backfill_tool_id
-
-                backfill_tool_id(con, "bio_run_bulk_eda", analysis_id)
-            except Exception as _exc:
-                logger.warning("bulk_eda: backfill_tool_id 失敗（非致命）: %s", _exc)
             try:
                 from analysis.artifact_registry import register_artifact
 

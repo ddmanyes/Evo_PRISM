@@ -35,15 +35,10 @@ from analysis.path_utils import results_dir as _results_dir
 
 logger = logging.getLogger(__name__)
 
-# ── 內部工具 ──────────────────────────────────────────────────────────────────
+from analysis.validators import validate_sample_id
+from analysis.tool_registry import register_tool_on_import
 
-_SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")
 _GENE_NAME_RE = re.compile(r"^[A-Za-z0-9_.+-]+$")
-
-
-def _validate_sample_id(sample_id: str) -> None:
-    if not _SAMPLE_ID_RE.match(sample_id):
-        raise ValueError(f"Invalid sample_id {sample_id!r}: only a-z, 0-9, _ and - are allowed")
 
 
 def _validate_gene_name(name: str) -> None:

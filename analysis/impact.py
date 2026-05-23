@@ -48,9 +48,10 @@ ANALYSIS_TYPE_TO_TOOL: dict[str, str] = {
     "mcseg_qc": "bio_run_mcseg_qc",
 }
 
+from analysis.validators import validate_sample_id
+
 _TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
 _ARTIFACT_ID_RE = re.compile(r"^[0-9a-fA-F\-]{8,36}$")
-_SAMPLE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 # confidence tier 常數（與 GitNexus 0.5–1.0 對齊）
 CONF_TOOL_ID_EXACT = 1.0
@@ -247,8 +248,7 @@ def artifact_impact(con: duckdb.DuckDBPyConnection, artifact_id: str) -> ImpactR
 
 def sample_impact(con: duckdb.DuckDBPyConnection, sample_id: str) -> ImpactReport:
     """某樣本的所有分析與產物（重跑 / 撤回樣本時的範圍）。"""
-    if not _SAMPLE_ID_RE.match(sample_id):
-        raise ValueError(f"無效的 sample_id：{sample_id!r}")
+    validate_sample_id(sample_id)
 
     report = ImpactReport(target_kind="sample", target=sample_id)
     report.affected_samples = [sample_id]

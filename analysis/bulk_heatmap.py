@@ -38,12 +38,7 @@ from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
-_SAMPLE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
-
-
-def _validate_sample_id(sample_id: str) -> None:
-    if not _SAMPLE_ID_RE.match(sample_id):
-        raise ValueError(f"無效的 sample_id：{sample_id!r}")
+from analysis.validators import validate_sample_id
 
 
 # ── 純畫圖（無 DB I/O，供測試與獨立使用）──────────────────────────────────
@@ -193,7 +188,7 @@ def run_bulk_heatmaps(
     con: Optional[duckdb.DuckDBPyConnection] = None,
 ) -> tuple[str, str]:
     """產出顯著基因 heatmap + top variable heatmap，寫入 analysis_history。"""
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     counts_path = Path(counts_path)
 
     analysis_id = str(uuid.uuid4())
@@ -272,14 +267,6 @@ def run_bulk_heatmaps(
                 WHERE analysis_id=?""",
             [str(report_path), completed_at, summary, analysis_id],
         )
-        # HELIX §7.3：任何呼叫路徑都回填 tool_id（best-effort）
-        try:
-            from analysis.tool_registry import backfill_tool_id
-
-            backfill_tool_id(con, "bio_run_heatmaps", analysis_id)
-        except Exception as _exc:
-            logger.warning("bulk_heatmap: backfill_tool_id 失敗（非致命）: %s", _exc)
-
         try:
             from analysis.artifact_registry import register_artifact
 

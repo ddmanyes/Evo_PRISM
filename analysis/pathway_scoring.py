@@ -22,6 +22,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import yaml
+from analysis.tool_registry import register_tool_on_import
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,11 @@ def ssgsea_score(
 # ── 整合入口 ──────────────────────────────────────────────────────────────────
 
 
+@register_tool_on_import(
+    tool_name="bio_run_pathway_scoring",
+    version="1.0.0",
+    description="執行 ssGSEA 或 Z-score 對基因表現矩陣進行路徑活性評分"
+)
 def score_pathways(
     expr: pd.DataFrame,
     gene_sets_path: Optional[Path] = None,
