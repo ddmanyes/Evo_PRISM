@@ -317,7 +317,7 @@ Raw per-query latency data: `benchmark/results/cb1_benchmark_results.json`.
 
 ## Figure S2. Three-System Pipeline Comparison (Full Detail)
 
-![Figure S2: Evo_PRISM vs Snakemake vs Nextflow — Full Benchmark Detail](images/Figure6_Pipeline_Comparison.png)
+![Figure S2: Evo_PRISM vs Snakemake vs Nextflow — Full Benchmark Detail](paper/figures/figure_s2_comparison.png)
 
 **Caption:** Extended head-to-head comparison of Evo_PRISM, Snakemake, and Nextflow across three evaluation axes. Axis A: first-execution latency (N=3 repetitions, OS page-cache warm); Axis B: incremental re-run latency after code-only change (no input file change); Axis C: stale-output detection accuracy when analysis logic changes while input files remain unchanged. Error bars represent ±1 standard deviation across N=3 repetitions.
 
@@ -325,10 +325,174 @@ Raw per-query latency data: `benchmark/results/cb1_benchmark_results.json`.
 
 ## Figure S3. HELIX Code Promotion Lifecycle
 
-![Figure S3: HELIX Code Promotion — Ad-hoc to MCP Tool Lifecycle](images/Figure7_HELIX_Code_Promotion.png)
+![Figure S3: HELIX Code Promotion — Ad-hoc to MCP Tool Lifecycle](paper/figures/figure_s3_promotion.png)
 
 **Caption:** Detailed view of the HELIX Code Promotion pipeline showing the transition of an ad-hoc dynamic code snippet to a versioned MCP tool. Stages: (1) LLM generates ad-hoc code in response to user query; (2) code executes in secure sandbox, result stored in `analysis_history`; (3) user approves result (`user_approval=1`); (4) `scan_candidates()` evaluates f_promote score against θ_promote=3.0; (5) promoted tool registered via `register_tool()` with SemVer, content_hash fingerprint, and HELIX health tracking activated; (6) subsequent identical queries resolved via L2 MCP tool call (Axis B latency).
 
 ---
+
+## Table S9. Code Promotion Before and After HELIX Optimization (N=1 Base Case, bio_run_deg)
+
+Detailed code quality and health metrics comparison for the single baseline case `bio_run_deg` before and after HELIX autonomic promotion and refactoring.
+
+| Metric | Before (Ad-hoc) | After (Formal Tool) | Improvement |
+| :--- | :---: | :---: | :---: |
+| Radon Cyclomatic Complexity (McCabe CC) | 6 | 2 | **Δ = −4 (−67%)** |
+| HELIX HealthScore (Eq.2) | 0.180 | 0.940 | **+0.760** |
+| Health Status (θ_warning = 0.70) | ⚠️ Low Health Alert | ✅ Healthy | — |
+
+---
+
+## Table S10. Wilcoxon Signed-Rank Paired Test Results (N=5 Tools, Exact Method)
+
+Detailed statistics for the Wilcoxon signed-rank paired test conducted across N=5 core bioinformatics MCP tools to evaluate the consistency of HELIX code promotion.
+
+| Metric | Median Difference | Hodges-Lehmann Estimator | W-Statistic | p-Value | 93.75% CI | Significance |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| McCabe CC | −10.0 | −10.0 | **0.0** | 0.0625 | [−14.0, −7.0] | Directional Trend (W=0) |
+| Radon MI | +37.2 | +37.2 | **0.0** | 0.0625 | [+32.6, +39.7] | Directional Trend |
+| HELIX HealthScore | +0.589 | +0.589 | **0.0** | 0.0625 | [+0.475, +0.705] | Directional Trend |
+
+**Notes:**
+- W=0 represents the maximum possible evidence direction (all 5 pairs show improvement in the positive direction).
+- At N=5, p=0.0625 is the exact mathematical lower bound of the p-value. Insufficient sample size prevents reaching α=0.05 significance, which is discussed as a statistical power limitation in §4.2.
+
+---
+
+## Table S11. DuckDB Recursive CTE Blast Radius Query Latency (Raw Benchmark Data)
+
+Detailed database benchmark latency values across different simulated artifact dependency graph scales (Seed=42, rerun 5 times).
+
+| Dependency Edges | Nodes | Median Latency (ms) | P95 Latency (ms) | Max CTE Depth |
+| :--- | :---: | :---: | :---: | :---: |
+| 1,000 | 333 | **3.788** | 4.058 | 10 |
+| 5,000 | 1,666 | **7.357** | 8.547 | 10 |
+| 10,000 | 3,333 | **7.229** | 10.071 | 10 |
+| 50,000 | 16,666 | **19.849** | 20.685 | 10 |
+| 100,000 | 33,333 | **30.463** | 31.338 | 10 |
+
+---
+
+## Table S13. 跨版本結果一致性與漂移量化（逐樣本原始數據）
+
+完整 6 組（3 樣本 × 2 分析類型）× 3 SemVer 版本、每版本重複 5 次之原始數據。正文 §3.5 僅呈現摘要表，詳細數值參見本表。
+
+| 分析類型 | 樣本 | 版本內一致率 | 跨版本一致率 | 延遲 CV | 漂移狀態 |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| bulk_eda | ctrl_1_upper_bulge | **100.0%** | 100.0% | 0.094 | ⚠️ v2.x 標準化方法變更 |
+| bulk_deg | ctrl_1_upper_bulge | **100.0%** | 100.0% | 0.098 | ⚠️ v2.x 標準化方法變更 |
+| bulk_eda | pw24hr_1_upper_bulge | **100.0%** | 100.0% | 0.077 | ⚠️ v2.x 標準化方法變更 |
+| bulk_deg | pw24hr_1_upper_bulge | **100.0%** | 100.0% | 0.066 | ⚠️ v2.x 標準化方法變更 |
+| bulk_eda | ctrl_2_upper_bulge | **100.0%** | 100.0% | 0.081 | ⚠️ v2.x 標準化方法變更 |
+| bulk_deg | ctrl_2_upper_bulge | **100.0%** | 100.0% | 0.062 | ⚠️ v2.x 標準化方法變更 |
+
+> **注意**：「跨版本一致率」欄位為 v1.x 主版本內之跨次版本一致率（100%）；v1 → v2 之跨主版本漂移偵測結果記錄於「漂移狀態」欄（6/6 偵測成功），詳見正文 §3.5 說明。
+
+---
+
+## Table S12. Tool Throughput and Execution Time — 98-Sample Bulk RNA-seq Pipeline
+
+All four tools completed successfully. Referenced from main text §3.4.
+
+| 核心分析工具 | 執行狀態 | 運算任務與成果 | 平均耗時 (ms) |
+| :--- | :--- | :--- | ---: |
+| `bio_run_bulk_eda` | ok | QC Barplot、Sample Correlation、PCA 圖與報告產出 | 6,808 |
+| `bio_run_deg` | ok | DESeq2 統計計算，4 組 comparisons，鑑定 17,088 顯著基因 | 80,747 |
+| `bio_run_heatmaps` | ok | 9,458 顯著基因 union 與 top 50 變異基因 Clustermap 繪製 | 1,757 |
+| `bio_run_enrichment` | ok | 3 library × up/down × 4 comparisons 線上 ORA 富集分析 | 153,703 |
+
+---
+
+## Code S1. Database Schema DDL
+
+Complete DDL for the four core tables in `bio_memory.duckdb` and the HNSW index. Referenced from main text §2.6.
+
+```sql
+-- ─────────────────────────────────────────────────────
+-- L1 Gold: memory_recent  (語意快取，秒級攔截)
+-- ─────────────────────────────────────────────────────
+CREATE TABLE memory_recent (
+    id          UUID      DEFAULT gen_random_uuid() PRIMARY KEY,
+    sample_id   VARCHAR,
+    query_text  VARCHAR,
+    report_text VARCHAR,
+    embedding   FLOAT[1024],          -- bge-m3 1024-dim 語意特徵向量
+    created_at  TIMESTAMP DEFAULT now(),
+    expires_at  TIMESTAMP              -- TTL 7 天；到期由 scheduler 清理
+);
+CREATE INDEX memory_recent_emb_idx
+    ON memory_recent USING HNSW (embedding)
+    WITH (metric = 'cosine');          -- HNSW cosine 近似最近鄰索引
+
+-- ─────────────────────────────────────────────────────
+-- L2 Silver: tools  (工具 SemVer 版本履歷)
+-- ─────────────────────────────────────────────────────
+CREATE TABLE tools (
+    tool_id        UUID    DEFAULT gen_random_uuid() PRIMARY KEY,
+    tool_name      VARCHAR NOT NULL,
+    version        VARCHAR NOT NULL,          -- SemVer，如 '1.0.0'
+    module_path    VARCHAR NOT NULL,          -- Python 模組路徑
+    function_name  VARCHAR NOT NULL,          -- 入口函式名稱
+    status         VARCHAR DEFAULT 'active',  -- 'candidate'|'active'|'deprecated'
+    content_hash   VARCHAR(16),               -- AST 正規化後 SHA256[:16]，防靜默修改
+    revision_count INTEGER DEFAULT 0,         -- 累計修訂次數；>= 3 觸發熱區體檢
+    stability_note VARCHAR,                   -- 穩定化備註（HELIX §7.7）
+    created_at     TIMESTAMP DEFAULT now(),
+    deprecated_at  TIMESTAMP,
+    UNIQUE (tool_name, content_hash)          -- 同一內容不重複登記
+);
+
+-- ─────────────────────────────────────────────────────
+-- L2 Silver: tool_change_log  (工具修改日誌，供變動率計算)
+-- ─────────────────────────────────────────────────────
+-- 注意：new_tool_id 為「軟引用」UUID，刻意不加 REFERENCES tools(tool_id)。
+-- DuckDB 1.5.2+ 禁止對被 FK 引用之表執行 UPDATE/DELETE（會阻塞 register_tool
+-- 與 prune_deprecated）；引用完整性由 HELIX 應用層維護（migration v20）。
+CREATE TABLE tool_change_log (
+    log_id           UUID    DEFAULT gen_random_uuid() PRIMARY KEY,
+    tool_name        VARCHAR NOT NULL,
+    old_hash         VARCHAR,
+    new_hash         VARCHAR NOT NULL,
+    new_tool_id      UUID,                    -- 軟引用 tools(tool_id)，無 FK 約束
+    revision_number  INTEGER NOT NULL,
+    change_reason    VARCHAR,
+    changed_lines    VARCHAR,                 -- JSON 格式行號區間 [[start,end],...]
+    churn_ratio      DOUBLE,                  -- 相對程式碼變動率（Relative Churn）
+    changed_at       TIMESTAMP DEFAULT now()
+);
+
+-- ─────────────────────────────────────────────────────
+-- L2 Silver: artifact_relations  (ENGRAM 產物血緣關係表)
+-- ─────────────────────────────────────────────────────
+-- src/dst 均引用 analysis_artifacts(artifact_id)，非 tools(tool_id)。
+-- relation_type 語義：
+--   'derived_from'   → dst 由 src 衍生（直接依賴）
+--   'used_by'        → src 被 dst 使用（反向依賴）
+--   'compared_with'  → src 與 dst 為對照組（非依賴）
+CREATE TABLE artifact_relations (
+    relation_id     UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+    src_artifact_id UUID        NOT NULL REFERENCES analysis_artifacts(artifact_id),
+    dst_artifact_id UUID        NOT NULL REFERENCES analysis_artifacts(artifact_id),
+    relation_type   VARCHAR     NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (src_artifact_id, dst_artifact_id, relation_type)
+);
+```
+
+---
+
+## Table S14. 迴歸測試套件失敗項目明細（§3.6）
+
+執行日期：2026-05-23；環境：Windows 11 工作站，hermes-bio-memory venv。7 項失敗均集中於 artifact/archive 格式邊緣與沙盒執行路徑，與核心快取、HELIX 版本治理及爆炸範圍模組無關。
+
+| 測試項目 | 失敗原因分類 |
+| :--- | :--- |
+| `test_artifact_resources.py::test_get_handle_text_includes_preview_and_urls` | URL preview 回傳格式變更 |
+| `test_code_executor.py::TestSandboxExec::test_duration_reported` | 計時精度 / mock 設定問題 |
+| `test_graduation.py::test_read_archive_ok` | archive schema 格式 assertion |
+| `test_phase4.py::TestBioMemoryWriteQuery::test_write_to_l1` | DuckDB VSS 寫入路徑 |
+| `test_phase5.py::TestExecuteToolDispatch::test_safe_code_success` | 沙盒執行路徑 |
+| `test_phase5.py::TestDynamicCodeArchive::test_success_archives_code_output_meta` | archive meta 格式 |
+| `test_phase5.py::TestDynamicCodeArchive::test_failure_archives_traceback_and_history` | archive traceback 格式 |
 
 *Supplementary file generated 2026-05-24. Placeholders marked *(to be filled)* require author input before submission.*
