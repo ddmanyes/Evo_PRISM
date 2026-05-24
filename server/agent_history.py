@@ -406,6 +406,26 @@ def _exec_bio_tool_health(args: dict) -> str:
             for name, n in report["prune_candidates"].items():
                 lines.append(f"  {name}: {n} 筆")
         lines.append(f"\n建議：{report['recommendation']}")
+
+        # PM5: stagnation detection (dry_run — detection only, no LLM trigger)
+        try:
+            from analysis.code_promoter import detect_stagnation
+            stagnation_events = detect_stagnation(dry_run=True)
+            stagnant = [e for e in stagnation_events if e["stagnant"]]
+            if stagnant:
+                lines.append(f"\n⚠️  停滯工具偵測（PM5 Stagnation Detector，{len(stagnant)} 個）：")
+                for e in stagnant:
+                    lines.append(
+                        f"  {e['tool_name']}  呼叫次數={e['total_calls']}  "
+                        f"overall={e['overall_rate']:.1%}  "
+                        f"recent={e['recent_rate']:.1%}  Δ={e['delta']:.3f}"
+                    )
+                lines.append(
+                    "  → 可呼叫 detect_stagnation(dry_run=False) 觸發 LLM 重構建議並自動開啟穩定化迭代。"
+                )
+        except Exception as _stag_exc:
+            logger.debug("Stagnation detection skipped in report: %s", _stag_exc)
+
         result = "\n".join(lines)
         # Append VLM snapshots so web_app image extractor picks them up
         if snapshot_imgs:

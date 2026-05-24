@@ -426,6 +426,49 @@ def backfill_tool_id(
 
 
 # ---------------------------------------------------------------------------
+# Version success-rate (PM4 — Revert-on-Regression Guard)
+# ---------------------------------------------------------------------------
+
+
+def compute_version_success_rate(
+    con: duckdb.DuckDBPyConnection,
+    tool_id: str,
+    min_runs: int = 3,
+) -> Optional[float]:
+    """Return the success rate of a specific tool version from analysis_history.
+
+    Computes: completed_count / (completed_count + failed_count).
+
+    Returns ``None`` when fewer than *min_runs* terminal (completed + failed) runs exist —
+    not enough data to make a reliable regression judgement.  Callers should treat ``None``
+    as "no verdict" and skip the revert check.
+
+    This is the data source for PM4 revert-on-regression in ``scan_candidates()``.
+    """
+    row = con.execute(
+        """
+        SELECT
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS ok,
+            SUM(CASE WHEN status = 'failed'    THEN 1 ELSE 0 END) AS fail
+        FROM analysis_history
+        WHERE tool_id = ?
+          AND status IN ('completed', 'failed')
+        """,
+        [tool_id],
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    ok, fail = (int(row[0] or 0), int(row[1] or 0))
+    total = ok + fail
+    if total < min_runs:
+        return None
+
+    return ok / total
+
+
+# ---------------------------------------------------------------------------
 # Drift detection
 # ---------------------------------------------------------------------------
 
@@ -1607,7 +1650,10 @@ def register_tool_on_import(
                     except Exception:
                         pass
                 else:
-                    path = kwargs.get("db_path") or kwargs.get("cache_path") or DUCKDB_PATH
+                    import sys
+                    mod = sys.modules.get(fn.__module__)
+                    mod_db_path = getattr(mod, "DUCKDB_PATH", None) if mod else None
+                    path = kwargs.get("db_path") or kwargs.get("cache_path") or mod_db_path or DUCKDB_PATH
                     try:
                         with duckdb.connect(str(path)) as conn:
                             backfill_tool_id(conn, tool_name, analysis_id)

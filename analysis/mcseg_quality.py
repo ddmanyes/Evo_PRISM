@@ -286,6 +286,8 @@ def generate_mcseg_qc_report(
                     WHERE analysis_id=?""",
                 [str(report_path), completed_at, summary, analysis_id],
             )
+            from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+            write_diagnosis(con, analysis_id, success_diagnosis())
             try:
                 from analysis.artifact_registry import register_artifact
 
@@ -305,7 +307,7 @@ def generate_mcseg_qc_report(
             except Exception as _exc:
                 logger.warning("mcseg_quality: register_artifact 失敗（非致命）: %s", _exc)
 
-    except Exception:
+    except Exception as _exc:
         logger.exception("mcseg_qc 分析失敗  analysis_id=%s", analysis_id)
         with duckdb.connect(str(DUCKDB_PATH)) as con:
             safe_write(
@@ -313,6 +315,8 @@ def generate_mcseg_qc_report(
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
                 [datetime.now(timezone.utc), analysis_id],
             )
+            from analysis.failure_diagnosis import classify_exception, write_diagnosis
+            write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 
     logger.info("mcseg_qc 完成  analysis_id=%s", analysis_id)

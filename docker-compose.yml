@@ -1,0 +1,82 @@
+# Evo_PRISM — Docker Compose (full local stack, exact paper setup)
+# ─────────────────────────────────────────────────────────────────────────────
+# Services:
+#   evo-prism   — main application (MCP Server + FastAPI Web UI)
+#   embedding   — llamacpp embedding sidecar (bge-m3-Q8_0, port 8081)
+#
+# First-time setup:
+#   1. Place bge-m3-Q8_0.gguf in ./models/  (605 MB; see REPRODUCE.md §2)
+#   2. Copy .env.example → .env and fill in ANTHROPIC_API_KEY
+#   3. docker compose up -d
+#   4. docker compose exec evo-prism python scripts/00_init_db.py   # one-time
+#
+# API-key embedding alternative (no model download needed):
+#   Set EMBEDDING_PROVIDER=openai, OPENAI_API_KEY=sk-... in .env
+#   Comment out the 'embedding' service and 'depends_on' below.
+# ─────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+services:
+  # ── llamacpp embedding sidecar ─────────────────────────────────────────────
+  # Serves bge-m3-Q8_0 at http://embedding:8081/v1  (OpenAI-compatible API)
+  # Required only when EMBEDDING_PROVIDER=llamacpp (default)
+  embedding:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    restart: unless-stopped
+    volumes:
+      - ./models:/models:ro
+    command: >
+      --model /models/bge-m3-Q8_0.gguf
+      --embedding
+      --port 8081
+      --ctx-size 8192
+      --host 0.0.0.0
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Evo_PRISM main application ─────────────────────────────────────────────
+  evo-prism:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      embedding:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      BIO_DB_ROOT: /data/bio_db
+      EMBEDDING_PROVIDER: llamacpp
+      LLAMACPP_BASE_URL: http://embedding:8081/v1
+      EMBEDDING_MODEL: bge-m3
+      EMBEDDING_DIM: "1024"
+    volumes:
+      - evo_data:/data/bio_db
+      - evo_gold:/data/gold
+      - evo_silver:/data/silver
+      - evo_results:/data/results
+    ports:
+      - "8000:8000"   # FastAPI Web UI
+      - "8080:8080"   # MCP HTTP/SSE transport
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  evo_data:
+    driver: local
+  evo_gold:
+    driver: local
+  evo_silver:
+    driver: local
+  evo_results:
+    driver: local

@@ -133,22 +133,22 @@ def run(coro):
 
 class TestListTools:
     def test_tool_count_default_hides_dangerous(self, monkeypatch):
-        """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（21 個）。"""
+        """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（24 個）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from server.bio_memory_server import list_tools
 
         tools = run(list_tools())
-        assert len(tools) == 21
+        assert len(tools) == 24
         names = {t.name for t in tools}
         assert "bio_execute_code" not in names
 
     def test_tool_count_with_dangerous_enabled(self, monkeypatch):
-        """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 22 個工具。"""
+        """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 25 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         from server.bio_memory_server import list_tools
 
         tools = run(list_tools())
-        assert len(tools) == 22
+        assert len(tools) == 25
         names = {t.name for t in tools}
         assert "bio_execute_code" in names
 
@@ -181,6 +181,9 @@ class TestListTools:
             "bio_read_report",
             "bio_get_figure",
             "bio_get_artifact",
+            "bio_run_mcseg_roi",
+            "bio_run_mcseg_fullslide",
+            "bio_compute_crc_metrics",
         }
         assert names == expected
 
@@ -623,10 +626,11 @@ class TestBioMemoryWriteQuery:
         l1_db = _make_l1_db(tmp_path)
         # analysis.l1_cache 在 import 時 from config.settings import L1_CACHE_PATH，
         # 必須同時 patch 模組層綁定（patch config.settings 不會回流）。
+        from config.settings import EMBEDDING_DIM
         with (
             patch("config.settings.L1_CACHE_PATH", l1_db),
             patch("analysis.l1_cache.L1_CACHE_PATH", l1_db),
-            patch("analysis.embed.embed_batch", return_value=[[0.9] * 1024]),
+            patch("analysis.embed.embed_batch", return_value=[[0.9] * EMBEDDING_DIM]),
         ):
             from server.bio_memory_server import _handle_bio_memory_write
 

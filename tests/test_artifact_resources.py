@@ -102,7 +102,7 @@ def test_get_handle_text_includes_preview_and_urls(con):
     h = ar.get_artifact_handle(con, "11111111-1111-1111-1111-111111111111", preview_lines=2)
     assert h["found"] is True
     assert h["label"] == "QC table"
-    assert h["local_path"].endswith("results/qc.csv")
+    assert h["local_path"].replace("\\", "/").endswith("results/qc.csv")
     assert h["web_url"].endswith("/api/engram/artifact/11111111-1111-1111-1111-111111111111/inline")
     assert "gene,count" in h["preview"]
     assert "EPCAM" not in h["preview"]  # 只取前 2 行

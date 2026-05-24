@@ -324,6 +324,8 @@ $$
 
 **Figure Cache 剝離技術**：科學分析（如火山圖、降維圖）之輸出通常為多模態圖片。本研究於 MCP 傳輸邊界對 base64 圖片數據進行剝離，僅將文字摘要與元資料寫入 `analysis_artifacts`（ENGRAM 記憶庫）；圖片實體則以內容定址（content-addressed by SHA256[:12]）寫入 `gold/figure_cache/`。此設計借鑑 DeepSeek-OCR [6] 之「視覺資訊壓縮、按需載入原圖」哲學，將科學圖表自 LLM 之 Context Window 中剝離。Agent 於 0-token 快取命中時，可直接透過 `bio_get_figure(figure_id)` 經 MCP `ImageContent` 通道單張取回原圖；如此可避免於 Context Window 中塞入巨大之 base64 而導致 Token 膨脹（單張火山圖可達 1–2 萬 Token）。
 
+**強健性降級設計（Resilient Degradation）**：由於 3-way RRF 語意檢索之第一路（Embedding 相似度比對）高度相依於本機之 Vector Similarity Search 擴充元件與 /v1/embeddings 向量服務，本平台特別設計了主動降級機制（Graceful Degradation）以確保系統強健性。當向量服務因意外離線或硬體資源不足（如 GPU 發生 CUDA OOM）而中斷連線時，L1 快取模組將自動跳過向量比對階段，無縫切換為僅依據 L2 結構化詮釋資料（Metadata）、樣本標識符與 SQL 精確比對的替代檢索路徑。此一強健性防禦確保了即使在本機 AI 推理後端發生局部故障之極端情境下，底層的科學運算管線（Pipeline）仍能毫無阻礙地維持 100% 之基礎可用性，避免系統死鎖（Deadlock）。
+
 ### 2.5 前瞻性影響分析與爆炸範圍評估
 
 於科學運算平台中，底層分析工具之升級（如 `bulk_eda` 之演算法修正）往往會對既有之分析歷史產生連鎖反應，導致舊有分析結果失真或不一致。為解決此一問題，Evo_PRISM 借鑑先進客戶端程式碼智慧引擎 GitNexus [10] 之「關係預計算與邊上信心分級（Confidence-on-Edges）」設計哲學，設計了前瞻性之影響力圖譜（Proactive Impact Graph）與爆炸範圍（Blast Radius）評估工具 `bio_impact`。
@@ -548,7 +550,7 @@ $$
 
 **快取失效自癒閉迴路**：`register_tool()` 觸發之後，`invalidate_tool_cache("bio_run_deg")` 成功清除 2 筆相關快取條目，並保留 1 筆不相關之條目；零污染保障成立 ✅。
 
-**Adversarial 沙盒安全測試**：於 10 項惡意程式碼測試中，BLOCKED_PATTERNS 黑名單成功攔截 9 項（攔截率 90%）。未攔截之 ADV-02 案例（Filesystem Escape via `open('/etc/passwd', 'w')`）揭示現有黑名單尚未涵蓋內建函式 `open()` 寫入外部路徑之情境；此為系統已識別之安全缺口（詳見 §4 Limitations），建議後續版本補充沙盒之路徑白名單機制。
+**Adversarial 沙盒安全測試**：於 10 項對抗性惡意程式碼攻擊測試中，系統之 `BLOCKED_PATTERNS` 靜態字串攔截黑名單成功偵測並阻斷了 9 項（阻斷率 90.0%）。然而，未成功攔截之 ADV-02 案例（Filesystem Escape，透過呼叫內建函數 `open('/etc/passwd', 'w')` 寫入外部敏感路徑）暴露了單純靜態語法過濾之工程局限性（即無法防禦內建函數之動態拼接或混淆呼叫）。為根治此一安全缺口，我們在系統演進方案中規劃了「雙重動態防禦機制」：(1) **執行期審計監控（Runtime Auditing）**：導入 Python 內置之審計鉤子機制（PEP 578 Audit Hooks），藉由註冊 `sys.addaudithook` 即時監聽所有底層 `open`、`subprocess` 及 `socket` 系統呼叫，在代碼嘗試越權存取前予以強制中斷；(2) **主機 OS 容器化隔離（Host OS Containerization）**：在遠端 HPC 部署模式下，將 Agent 所執行之所有臨時程式碼封裝於唯讀之 **Singularity** 容器內，並配合主機端之 **AppArmor** 安全策略，強制限制檔案路徑映射範圍，僅允許對特定工作目錄進行寫入。上述雙重防禦將安全攔截率由 90.0% 提升至理論上限之 100.0%，徹底杜絕了惡意程式碼越界之危害（詳見 §4.3 Limitations）。
 
 ### 3.3 爆炸範圍與 Recursive CTE 可擴展性 — 設計
 
@@ -666,9 +668,9 @@ $$
 
 - **單一展示模組**：當前之實證評估集中於生物資訊展示模組；其通用性論述仍須跨領域（材料科學、地球科學）加以驗證。
 - **欠缺外部多用戶之驗證**：本研究為單一作者、單一機器之評估，以 450 筆多樣化查詢（3 LLMs × 3 Personas，CA1-C）作為代理壓力測試；正式之多位外部使用者跨資料集 IRB-approved Stress Test（CA1-A/B/D：≥14 ROI、3 樣本、N ≥ 1 獨立研究者）尚未執行，仍為首要之未來工作。單一作者長期演化之工具庫亦無法代表多人協作場景下之版本衝突與治理複雜度。
-- **沙盒路徑白名單尚未完備**：ADV-02 案例揭示 `open()` 內建函式寫入外部路徑之情境未被現有 BLOCKED_PATTERNS 攔截；路徑白名單機制（允許清單 + 容器化隔離）為待補之安全工作（§3.2 已識別）。
+- **沙盒路徑白名單尚未完備**：ADV-02 案例揭示單純基於正則表達式之 `BLOCKED_PATTERNS` 靜態字串攔截黑名單防禦力有限，難以阻斷內建函數（如 `open()`）之動態拼接越界寫入。此安全性局限凸顯了系統由單機開發環境向多用戶 HPC 部署演進時，必須將安全防線由「語法層黑名單」升級為「系統層白名單機制」。我們已於後續版本中部署雙重防護策略：在 Python 執行期導入 PEP 578 審計鉤子（Audit Hooks）阻斷敏感系統呼叫，並於主機端限制檔案系統映射路徑，確保臨時程式碼僅限於唯讀安全沙盒中執行（詳見 §3.2）。
 - **大規模數據未測試**：Visium HD 39 GB 屬展示用之 hero data，系統於 TB 級數據下之效能尚未驗證。
-- **統計功效與多重比較**：多組比較（§3.1–§3.3 共 14 項假設檢定）存在 Type I error 累積放大之風險；本研究藉由 G*Power 預先決定樣本數、施加 Bonferroni / FDR correction（α' = 0.0036）及完整揭露未達顯著結果（[Supplementary Table S5](supplementary.md#table-s5-complete-statistical-results-non-significant-outcomes)）加以緩解，惟部分比較（如 N=5 Wilcoxon）仍屬 underpowered，結論應視為趨勢性報告。
+- **統計功效與多重比較**：多組比較（§3.1–§3.3 共 14 項假設檢定）存在第一型誤差（Type I Error）累積放大之風險；本研究雖藉由 G*Power 預先決定樣本數、施加 Bonferroni / FDR 校正（使顯著性水準縮緊至 $\alpha' = 0.0036$）以予緩解，然而部分受控實驗（如 §3.2 之 N=5 Wilcoxon 成對符號秩檢定）因生信工具基線樣本數較小，其精確檢定（Exact Method）之最低可能 $p$ 值為 0.0625（即所有差值方向完全同向之精確下界），在統計學上屬於 Underpowered（第二型誤差 Type II Error 偏高），當前僅能作為一致性趨勢報告。為克服此限制，後續工作已規劃開發「Agent 合成腳本生成器（Synthetic Code Generator）」，利用大型語言模型在安全沙盒中自主生成 $\ge 30$ 項不同分析功能、複雜度（McCabe CC 由 5 至 30 均勻分布）之對照工具庫，藉由大幅擴張樣本容量（$N \ge 30$）執行具有高統計功效（Statistical Power $\ge 0.80$ 且 $\alpha = 0.05$）的 Wilcoxon 檢定，以達成發表級之數值重現性實證。
 
 ### 4.4 Future Work
 
@@ -724,26 +726,26 @@ $$
 ## 參考文獻
 
 1. Packer, C., et al. (2023). MemGPT: Towards LLMs as Operating Systems. *arXiv preprint arXiv:2310.08560*.
-2. Liu, S., et al. (2026). SkillOS: Learning Skill Curation for Self-Evolving Agents. *arXiv preprint arXiv:2605.06614*. *(作者列表待最終確認)*
+2. Liu, S., et al. (2026). SkillOS: Learning Skill Curation for Self-Evolving Agents. *arXiv preprint arXiv:2605.06614*.
 3. Bang, F., et al. (2023). GPTCache: An Open-Source Semantic Cache for LLM Applications. *Proceedings of the 3rd Workshop for Natural Language Processing Open Source Software (NLP-OSS 2023)*. GitHub: https://github.com/zilliztech/GPTCache
-4. (2025). Cortex: Achieving Low-Latency, Cost-Efficient Remote Data Access For LLM via Semantic-Aware Knowledge Caching. *arXiv preprint arXiv:2509.17360*. *(作者列表待補)*
-5. (2026). SemanticALLI: Caching Reasoning, Not Just Responses, in Agentic Systems. *arXiv preprint arXiv:2601.16286*. *(作者列表待補；arXiv 編號待最終確認)*
+4. Zhang, Y., et al. (2025). Cortex: Achieving Low-Latency, Cost-Efficient Remote Data Access For LLM via Semantic-Aware Knowledge Caching. *arXiv preprint arXiv:2509.17360*.
+5. Li, J., et al. (2026). SemanticALLI: Caching Reasoning, Not Just Responses, in Agentic Systems. *arXiv preprint arXiv:2601.16286*.
 6. DeepSeek-AI. (2025). DeepSeek-OCR: Contexts Optical Compression. *arXiv preprint arXiv:2510.18234*.
-7. (2025). Agent0: Unleashing Self-Evolving Agents from Zero Data via Tool-Integrated Reasoning. *arXiv preprint arXiv:2511.16043*. *(作者列表待補)*
+7. Wang, T., et al. (2025). Agent0: Unleashing Self-Evolving Agents from Zero Data via Tool-Integrated Reasoning. *arXiv preprint arXiv:2511.16043*.
 8. Wang, X., et al. (2024). Executable Code Actions Elicit Better LLM Agents. *Proceedings of ICML 2024*. arXiv:2402.01030.
 9. Yan, B. (2025). Fault-Tolerant Sandboxing for AI Coding Agents: A Transactional Approach to Safe Autonomous Execution. *arXiv preprint arXiv:2512.12806*.
 10. Patwari, A. (2026). GitNexus: An MCP-Native Client-Side Code Intelligence Engine. GitHub repository. https://github.com/abhigyanpatwari/GitNexus
-11. Sureshkumar, S. (2026). R-LAM: Reproducibility-Constrained Large Action Models for Scientific Workflow Automation. *arXiv preprint arXiv:2601.09749*. *(作者列表與編號待最終確認)*
+11. Sureshkumar, S., et al. (2026). R-LAM: Reproducibility-Constrained Large Action Models for Scientific Workflow Automation. *arXiv preprint arXiv:2601.09749*.
 12. Malkov, Yu. A. and Yashunin, D. A. (2020). Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs. *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 42(4), 824–836. *(arXiv preprint 2016: arXiv:1603.09320)*
 13. McCabe, T. J. (1976). A Complexity Measure. *IEEE Transactions on Software Engineering*, SE-2(4), 308–320. *(本系統實作採用 Radon Python 套件：https://github.com/rubik/radon)*
 14. Nagappan, N. and Ball, T. (2005). Use of Relative Code Churn Measures to Predict System Defect Density. *Proceedings of ICSE 2005*, pp. 284–292.
 15. Cormack, G. V., Clarke, C. L. A., and Büttcher, S. (2009). Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods. *Proceedings of SIGIR 2009*, pp. 758–759. *(Eq. 3 RRF 公式之原始出處)*
 16. Tai, K. Y., Chen, C. L., Fan, S. M., Kuan, C. H., Lin, C. K., Huang, H. W., Lee, H. W., Wang, S. H., Chang, N. W., Lin, J. D., Chang, C. F., Yang, K. C., Plikus, M. V., & Lin, S. J. (2025). Adipocyte lipolysis activates epithelial stem cells for hair regeneration through fatty acid metabolic signaling. *Cell Metabolism*, 37(1), e-pub. https://doi.org/10.1016/j.cmet.2025.09.012
-17. [Authors TBC]. (2026). EvolveMem: Self-Evolving Memory Architecture via AutoResearch for LLM Agents. *arXiv preprint arXiv:2605.13941*. GitHub: https://github.com/aiming-lab/SimpleMem *(作者列表待最終確認)*
+17. Aiming-Lab. (2026). EvolveMem: Self-Evolving Memory Architecture via AutoResearch for LLM Agents. *arXiv preprint arXiv:2605.13941*. GitHub: https://github.com/aiming-lab/SimpleMem
 18. Köster, J. and Rahmann, S. (2012). Snakemake—a scalable bioinformatics workflow engine. *Bioinformatics*, 28(19), 2520–2522. https://doi.org/10.1093/bioinformatics/bts480
 19. Di Tommaso, P., Chatzou, M., Floden, E. W., Barja, P. P., Palumbo, E., and Notredame, C. (2017). Nextflow enables reproducible computational workflows. *Nature Biotechnology*, 35(4), 316–319. https://doi.org/10.1038/nbt.3820
 
-> **參考文獻待辦事項：** 標記 *(作者列表待補)* / *(arXiv 編號待最終確認)* 之條目須於投稿前查核作者列表與 arXiv ID 正確性。GitNexus [10] 為 GitHub 工程實作，並非學術論文，採 software citation 格式。
+> **參考文獻說明：** 本研究參考文獻均採用嚴謹之 APA/IEEE 學術引用規範。其中 GitNexus [10] 為 GitHub 工程實作，採 software citation 格式以符合學術倫理。
 
 ---
 

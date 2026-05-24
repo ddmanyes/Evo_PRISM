@@ -140,6 +140,9 @@ class TestMCPToolsList:
         "bio_tool_health",
         "bio_get_figure",
         "bio_get_artifact",
+        "bio_run_mcseg_roi",
+        "bio_run_mcseg_fullslide",
+        "bio_compute_crc_metrics",
     }
 
     def _payload(self, req_id: int) -> bytes:
@@ -167,7 +170,7 @@ class TestMCPToolsList:
         assert "bio_execute_code" not in names, "bio_execute_code 在預設 env 下應該被隱藏"
 
     def test_tool_count_is_14_when_dangerous_enabled(self, monkeypatch):
-        """env=true 時，新建 client 應看到 22 個工具。"""
+        """env=true 時，新建 client 應看到 25 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         # 重新建 app 確保 env 生效
         from starlette.testclient import TestClient
@@ -175,17 +178,17 @@ class TestMCPToolsList:
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(12), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 22
+        assert len(names) == 25
 
     def test_tool_count_is_13_by_default(self, monkeypatch):
-        """env 未設時，client 只看到 21 個（無 bio_execute_code）。"""
+        """env 未設時，client 只看到 24 個（無 bio_execute_code）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from starlette.testclient import TestClient
 
         with TestClient(_build_starlette_app(), raise_server_exceptions=False) as client:
             resp = client.post("/", content=self._payload(13), headers=_mcp_headers())
         names = re.findall(r'"name"\s*:\s*"(bio_[^"]+)"', resp.content.decode())
-        assert len(names) == 21
+        assert len(names) == 24
         assert "bio_execute_code" not in names
 
 
@@ -229,12 +232,12 @@ class TestWebAppMCPMount:
 class TestStartScript:
     def test_venv_path_is_hermes(self):
         script = Path(__file__).parent.parent / "start_bioagent.sh"
-        content = script.read_text()
+        content = script.read_text(encoding="utf-8")
         assert "hermes-bio-memory" in content
 
     def test_venv_path_not_old_bioagent(self):
         script = Path(__file__).parent.parent / "start_bioagent.sh"
-        content = script.read_text()
+        content = script.read_text(encoding="utf-8")
         assert ".venvs/bioagent/bin/python" not in content
 
 

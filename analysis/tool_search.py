@@ -4,7 +4,7 @@
 「發現」環節，避免 Agent 不知道 analysis/ 已有現成（且測過）的函數而從零重寫。
 
 設計：
-    - catalog 存於 gold/hermes_cache.duckdb 的 `tool_catalog` 表（與 memory_recent 同庫，
+    - catalog 存於 bio_memory.duckdb 的 `tool_catalog` 表（與 memory_recent 同庫，
       共用 DuckDB VSS / HNSW 基礎建設）。
     - 來源：沙盒允許 import 的 analysis.* 模組（code_executor.ALLOWED_IMPORTS）之公開函數，
       以及 register_tool() 註冊／畢業的 HELIX 工具（自動進 catalog）。

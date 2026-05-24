@@ -370,8 +370,32 @@ def register_artifact(
     inline_data: Optional[str] = None
 
     if path.exists():
-        size_kb = path.stat().st_size // 1024
-        inline_data = _read_inline(path)
+        try:
+            raw_bytes = path.read_bytes()
+            size_kb = len(raw_bytes) // 1024
+            
+            # Check if base64 encoded size exceeds DuckDB constraint (500KB / 512,000 bytes)
+            temp_inline = base64.b64encode(raw_bytes).decode()
+            if len(temp_inline) > 512000:
+                # Spill-to-disk guard
+                overflow_dir = BIO_DB_ROOT / "results" / "overflow"
+                overflow_dir.mkdir(parents=True, exist_ok=True)
+                
+                ext = path.suffix or ".txt"
+                filename = f"overflow_{artifact_id}{ext}"
+                overflow_path = overflow_dir / filename
+                overflow_path.write_bytes(raw_bytes)
+                
+                path = overflow_path
+                size_kb = int(overflow_path.stat().st_size / 1024)
+                inline_data = None
+                logger.info("register_artifact: Spilled oversized artifact %s to %s due to size limit", file_path, overflow_path)
+            else:
+                inline_data = temp_inline
+        except OSError as exc:
+            logger.warning("register_artifact: failed to read file bytes: %s", exc)
+            size_kb = path.stat().st_size // 1024
+            inline_data = None
     else:
         logger.warning("register_artifact: file not found: %s", path)
 

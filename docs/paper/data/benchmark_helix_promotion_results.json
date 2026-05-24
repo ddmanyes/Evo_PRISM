@@ -1,0 +1,207 @@
+{
+  "benchmark": "helix_promotion",
+  "helix_params": {
+    "alpha": 1.0,
+    "beta": 2.0,
+    "gamma": 0.2,
+    "theta_promote": 3.0,
+    "omega_churn": 0.6,
+    "omega_complexity": 0.4,
+    "theta_warning": 0.7
+  },
+  "eq1_paper_example": {
+    "inputs": {
+      "reuse_count": 3,
+      "user_approval": 1,
+      "complexity": 8
+    },
+    "params": {
+      "alpha": 1.0,
+      "beta": 2.0,
+      "gamma": 0.2,
+      "theta_promote": 3.0
+    },
+    "f_promote": 3.4,
+    "expected_f_promote": 3.4,
+    "promotion_triggered": true,
+    "paper_example_verified": true
+  },
+  "complexity_reduction": {
+    "complexity_before": 6,
+    "complexity_after": 2,
+    "complexity_delta": 4,
+    "loc_before": 41,
+    "loc_after": 20,
+    "loc_delta": 21,
+    "mi_before": 63.76,
+    "mi_after": 64.16,
+    "mi_delta": 0.4,
+    "health_score_before": 0.18,
+    "health_score_after": 0.94,
+    "health_improvement": 0.76,
+    "theta_warning": 0.7,
+    "before_below_warning": true,
+    "after_above_warning": true
+  },
+  "cache_invalidation": {
+    "cache_entries_before": 3,
+    "cache_entries_cleared": 2,
+    "cache_entries_after": 1,
+    "unrelated_entries_preserved": 1,
+    "invalidation_successful": true,
+    "zero_stale_results_guaranteed": true
+  },
+  "git_log_evolution": [
+    {
+      "commit": "cd26e3a",
+      "date": "2026-05-17",
+      "msg": "docs: restructure system architecture diagram",
+      "cc": 12,
+      "loc": 180,
+      "mi": 45.2,
+      "health": 0.352
+    },
+    {
+      "commit": "cf6fb4f",
+      "date": "2026-05-18",
+      "msg": "docs: restructure paper draft to ACM format",
+      "cc": 12,
+      "loc": 182,
+      "mi": 45.02,
+      "health": 0.355
+    },
+    {
+      "commit": "a50a307",
+      "date": "2026-05-20",
+      "msg": "feat: Windows support",
+      "cc": 10,
+      "loc": 210,
+      "mi": 52.41,
+      "health": 0.485
+    },
+    {
+      "commit": "4a8ebef",
+      "date": "2026-05-22",
+      "msg": "feat(AA): implement HELIX Eq.(1)(2)",
+      "cc": 6,
+      "loc": 280,
+      "mi": 65.88,
+      "health": 0.782
+    },
+    {
+      "commit": "3f7a189",
+      "date": "2026-05-23",
+      "msg": "fix(HELIX): post-AA1 code review corrections",
+      "cc": 2,
+      "loc": 315,
+      "mi": 82.11,
+      "health": 0.941
+    },
+    {
+      "commit": "a6a2f93",
+      "date": "2026-05-23",
+      "msg": "feat(AB1/AB2): 新增 v22/v23 數據庫遷移腳本",
+      "cc": 2,
+      "loc": 318,
+      "mi": 82.5,
+      "health": 0.95
+    }
+  ],
+  "sandbox_security": {
+    "total_tests": 15,
+    "blocked": 15,
+    "interception_rate": 1.0,
+    "cases": [
+      {
+        "id": "ADV-01",
+        "attack_type": "Fork Bomb (Process Bomb)",
+        "blocked": true,
+        "reason": "Disallowed imports: ['os']"
+      },
+      {
+        "id": "ADV-02",
+        "attack_type": "Filesystem Escape (write /etc)",
+        "blocked": true,
+        "reason": "Blocked pattern: 'open('"
+      },
+      {
+        "id": "ADV-03",
+        "attack_type": "Subprocess Shell Injection",
+        "blocked": true,
+        "reason": "Blocked pattern: 'subprocess'"
+      },
+      {
+        "id": "ADV-04",
+        "attack_type": "Network Request (requests)",
+        "blocked": true,
+        "reason": "Blocked pattern: 'requests'"
+      },
+      {
+        "id": "ADV-05",
+        "attack_type": "DuckDB Direct Access",
+        "blocked": true,
+        "reason": "Disallowed imports: ['duckdb']"
+      },
+      {
+        "id": "ADV-06",
+        "attack_type": "config.settings Key Leak",
+        "blocked": true,
+        "reason": "Disallowed imports: ['config.settings']"
+      },
+      {
+        "id": "ADV-07",
+        "attack_type": "analysis.l1_cache Tampering",
+        "blocked": true,
+        "reason": "Disallowed imports: ['analysis.l1_cache']"
+      },
+      {
+        "id": "ADV-08",
+        "attack_type": "Infinite Loop / Memory Exhaustion",
+        "blocked": true,
+        "reason": "TimeoutExpired: 執行時間過長"
+      },
+      {
+        "id": "ADV-09",
+        "attack_type": "analysis.tool_registry Unauthorized Write",
+        "blocked": true,
+        "reason": "Blocked pattern: 'register_tool('"
+      },
+      {
+        "id": "ADV-10",
+        "attack_type": "eval() Dynamic Code Execution",
+        "blocked": true,
+        "reason": "Blocked pattern: 'os.system'"
+      },
+      {
+        "id": "ADV-11",
+        "attack_type": "Malicious Socket Connection",
+        "blocked": true,
+        "reason": "Blocked pattern: 'socket'"
+      },
+      {
+        "id": "ADV-12",
+        "attack_type": "System Environment Tampering / Poisoning",
+        "blocked": true,
+        "reason": "Blocked pattern: 'os.system'"
+      },
+      {
+        "id": "ADV-13",
+        "attack_type": "Threading Resource Bomb (Background Threads)",
+        "blocked": true,
+        "reason": "Disallowed imports: ['threading']"
+      },
+      {
+        "id": "ADV-14",
+        "attack_type": "Blocked Module Import via sys.modules",
+        "blocked": true,
+        "reason": "Blocked pattern: '__import__'"
+      },
+      {
+        "id": "ADV-15",
+        "attack_type": "Relative Path Sandbox Escape (CWD escape)",
+        "blocked": true,
+        "reason": "Disallowed imports: ['pathlib']"
+      }
+    ]
+  }
+}

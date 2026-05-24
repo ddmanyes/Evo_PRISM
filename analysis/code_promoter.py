@@ -42,6 +42,10 @@ from config.settings import (
     HELIX_BETA,
     HELIX_GAMMA,
     HELIX_THETA_PROMOTE,
+    HELIX_REVERT_THRESHOLD,
+    HELIX_STAGNATION_MIN_CALLS,
+    HELIX_STAGNATION_EPS,
+    HELIX_STAGNATION_LOOK_BACK_DAYS,
 )
 
 logger = logging.getLogger(__name__)
@@ -163,6 +167,385 @@ def scan_candidates(min_reuse: int = 1) -> list[dict]:
         HELIX_THETA_PROMOTE,
     )
     return candidates
+
+
+def check_and_revert_regressions(
+    min_runs: int = 3,
+    tau: Optional[float] = None,
+) -> list[dict]:
+    """PM4 Revert-on-Regression Guard (EvolveMem-inspired).
+
+    Scans all active tool versions.  For each tool that has a previous
+    (now-deprecated) version with enough run data, compares success rates:
+
+        if new_rate < prev_rate - τ_rev  →  auto-demote the new version
+                                             (re-activate the previous one)
+
+    Parameters
+    ----------
+    min_runs:
+        Minimum terminal runs (completed + failed) required for a verdict.
+        Versions with fewer runs are skipped (insufficient evidence).
+    tau:
+        Regression threshold (default: ``HELIX_REVERT_THRESHOLD`` from settings).
+        A new version is demoted if its success rate falls more than *tau*
+        below the best success rate of previous versions.
+
+    Returns
+    -------
+    list of dicts describing each reversion action taken:
+        tool_name, new_tool_id, new_rate, prev_tool_id, prev_rate, delta
+    """
+    from analysis.tool_registry import compute_version_success_rate
+    from config.db_utils import safe_write
+
+    if tau is None:
+        tau = HELIX_REVERT_THRESHOLD
+
+    reverted: list[dict] = []
+
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
+        # All active tools
+        active_rows = con.execute(
+            "SELECT tool_id, tool_name FROM tools WHERE status = 'active'"
+        ).fetchall()
+
+        for active_id, tool_name in active_rows:
+            active_id = str(active_id)
+            new_rate = compute_version_success_rate(con, active_id, min_runs=min_runs)
+            if new_rate is None:
+                continue  # not enough data yet
+
+            # Previous deprecated versions of the same tool, newest first
+            prev_rows = con.execute(
+                """
+                SELECT tool_id, version, created_at
+                FROM   tools
+                WHERE  tool_name = ? AND status = 'deprecated'
+                ORDER  BY created_at DESC
+                """,
+                [tool_name],
+            ).fetchall()
+
+            best_prev_rate: Optional[float] = None
+            best_prev_id: Optional[str] = None
+            best_prev_ver: Optional[str] = None
+            for prev_id, prev_ver, _ in prev_rows:
+                rate = compute_version_success_rate(con, str(prev_id), min_runs=min_runs)
+                if rate is not None:
+                    if best_prev_rate is None or rate > best_prev_rate:
+                        best_prev_rate = rate
+                        best_prev_id = str(prev_id)
+                        best_prev_ver = prev_ver
+
+            if best_prev_rate is None:
+                continue  # no qualified previous version
+
+            delta = new_rate - best_prev_rate
+            if delta >= -tau:
+                continue  # no regression (or improvement)
+
+            # Regression detected — demote active version, log it
+            logger.warning(
+                "HELIX revert-on-regression: %s  new_rate=%.3f  prev_rate=%.3f  Δ=%.3f  τ=%.2f",
+                tool_name, new_rate, best_prev_rate, delta, tau,
+            )
+            try:
+                safe_write(
+                    con,
+                    "UPDATE tools SET status = 'deprecated', deprecated_at = ? WHERE tool_id = ?",
+                    [datetime.now(timezone.utc), active_id],
+                )
+                safe_write(
+                    con,
+                    "UPDATE tools SET status = 'active', deprecated_at = NULL WHERE tool_id = ?",
+                    [best_prev_id],
+                )
+                safe_write(
+                    con,
+                    """INSERT INTO tool_change_log
+                           (tool_name, old_hash, new_hash, revision_number,
+                            change_reason, changed_at)
+                       SELECT
+                           tool_name,
+                           (SELECT content_hash FROM tools WHERE tool_id = ?) AS old_hash,
+                           (SELECT content_hash FROM tools WHERE tool_id = ?) AS new_hash,
+                           COALESCE(
+                               (SELECT MAX(revision_number) FROM tool_change_log
+                                WHERE tool_name = ?), 0
+                           ) + 1,
+                           ?,
+                           ?
+                       FROM tools WHERE tool_id = ?
+                       LIMIT 1""",
+                    [
+                        active_id,
+                        best_prev_id,
+                        tool_name,
+                        (
+                            f"[AUTO-REVERT] regression: new={new_rate:.3f} "
+                            f"prev={best_prev_rate:.3f} Δ={delta:.3f} τ={tau:.2f}"
+                        ),
+                        datetime.now(timezone.utc),
+                        active_id,
+                    ],
+                )
+                reverted.append(
+                    {
+                        "tool_name": tool_name,
+                        "new_tool_id": active_id,
+                        "new_rate": round(new_rate, 4),
+                        "prev_tool_id": best_prev_id,
+                        "prev_version": best_prev_ver,
+                        "prev_rate": round(best_prev_rate, 4),
+                        "delta": round(delta, 4),
+                    }
+                )
+            except Exception as exc:
+                logger.error("HELIX revert failed for %s: %s", tool_name, exc)
+
+    if reverted:
+        logger.info("HELIX revert-on-regression: %d tool(s) reverted", len(reverted))
+    return reverted
+
+
+_STAGNATION_PROMPT = """\
+以下已登記工具已被呼叫 {call_count} 次，但近期 {look_back_days} 天成功率（{recent_rate:.1%}）\
+與全期成功率（{overall_rate:.1%}）相差 Δ={delta:.3f} < ε={eps}，研判進入停滯狀態。
+
+工具名稱：{tool_name}
+模組路徑：{module_path}
+
+<untrusted_code>
+{code}
+</untrusted_code>
+
+近期失敗記錄（最近 {n_failures} 筆）：
+{failure_logs}
+
+請分析停滯根因並提出重構建議。
+回答 JSON（只回 JSON，不加說明）：
+{{"stagnation_cause": "...", "refactor_suggestion": "...", "priority": "high|medium|low"}}
+"""
+
+
+def _get_tool_source(module_path: str, function_name: str) -> Optional[str]:
+    """Attempt to retrieve the source of *function_name* inside *module_path*."""
+    try:
+        import importlib
+        import inspect
+
+        mod = importlib.import_module(module_path)
+        fn = getattr(mod, function_name, None)
+        if fn is None:
+            return None
+        return inspect.getsource(fn)
+    except Exception:
+        # Try reading the file directly by converting dot-path to file path.
+        try:
+            rel = module_path.replace(".", "/") + ".py"
+            src_path = BIO_DB_ROOT / rel
+            if src_path.exists():
+                return src_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    return None
+
+
+def detect_stagnation(
+    min_calls: Optional[int] = None,
+    eps: Optional[float] = None,
+    look_back_days: Optional[int] = None,
+    dry_run: bool = False,
+) -> list[dict]:
+    """PM5 — Stagnation Detector → LLM Refactor Trigger (EvolveMem explore-on-stagnation).
+
+    For each active registered tool that has been called ≥ *min_calls* times,
+    compares the overall success rate to the success rate over the last
+    *look_back_days* days.  When |recent_rate − overall_rate| < *eps*,
+    the tool is deemed stagnant (performance not improving despite repeated use).
+
+    When *dry_run* is False, calls the backbone LLM with the tool source and
+    recent failure logs, then stores the refactor suggestion by opening a new
+    stabilization iteration in ``tool_stabilization_log`` (``action_taken`` =
+    LLM suggestion, ``diagnosis`` = "[STAGNATION]").
+
+    Parameters
+    ----------
+    min_calls:       Minimum total terminal calls required (default: HELIX_STAGNATION_MIN_CALLS)
+    eps:             Success-rate Δ below which stagnation is declared (default: HELIX_STAGNATION_EPS)
+    look_back_days:  Recent window in days (default: HELIX_STAGNATION_LOOK_BACK_DAYS)
+    dry_run:         If True, detect only — do not call LLM or write to DB.
+
+    Returns
+    -------
+    list[dict] with keys:
+        tool_name, total_calls, overall_rate, recent_rate, delta, stagnant,
+        llm_suggestion (str | None), log_id (str | None)
+    """
+    from datetime import timedelta
+    from analysis.tool_registry import open_stabilization, get_open_stabilizations
+    from config.settings import ANTHROPIC_API_KEY as api_key
+
+    if min_calls is None:
+        min_calls = HELIX_STAGNATION_MIN_CALLS
+    if eps is None:
+        eps = HELIX_STAGNATION_EPS
+    if look_back_days is None:
+        look_back_days = HELIX_STAGNATION_LOOK_BACK_DAYS
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=look_back_days)
+
+    events: list[dict] = []
+
+    with duckdb.connect(str(DUCKDB_PATH)) as con:
+        # Active tools joined with their analysis_history counts
+        rows = con.execute(
+            """
+            SELECT
+                t.tool_id,
+                t.tool_name,
+                t.module_path,
+                t.function_name,
+                SUM(CASE WHEN ah.status IN ('completed','failed') THEN 1 ELSE 0 END)
+                    AS total_calls,
+                SUM(CASE WHEN ah.status = 'completed' THEN 1 ELSE 0 END)
+                    AS total_ok,
+                SUM(CASE WHEN ah.status IN ('completed','failed')
+                         AND ah.completed_at >= ?   THEN 1 ELSE 0 END)
+                    AS recent_calls,
+                SUM(CASE WHEN ah.status = 'completed'
+                         AND ah.completed_at >= ?   THEN 1 ELSE 0 END)
+                    AS recent_ok
+            FROM tools t
+            LEFT JOIN analysis_history ah ON ah.tool_id = t.tool_id
+            WHERE t.status = 'active'
+            GROUP BY t.tool_id, t.tool_name, t.module_path, t.function_name
+            HAVING SUM(CASE WHEN ah.status IN ('completed','failed') THEN 1 ELSE 0 END) >= ?
+            """,
+            [cutoff, cutoff, min_calls],
+        ).fetchall()
+
+        already_open = {s["tool_name"] for s in get_open_stabilizations(con)}
+
+        for tool_id, tool_name, module_path, function_name, \
+                total_calls, total_ok, recent_calls, recent_ok in rows:
+            total_calls = int(total_calls or 0)
+            total_ok = int(total_ok or 0)
+            recent_calls = int(recent_calls or 0)
+            recent_ok = int(recent_ok or 0)
+
+            if total_calls == 0:
+                continue
+
+            overall_rate = total_ok / total_calls
+            recent_rate = (recent_ok / recent_calls) if recent_calls > 0 else overall_rate
+            delta = abs(recent_rate - overall_rate)
+            stagnant = delta < eps and overall_rate < 1.0
+
+            event: dict = {
+                "tool_name": tool_name,
+                "total_calls": total_calls,
+                "overall_rate": round(overall_rate, 4),
+                "recent_rate": round(recent_rate, 4),
+                "delta": round(delta, 4),
+                "stagnant": stagnant,
+                "llm_suggestion": None,
+                "log_id": None,
+            }
+
+            if not stagnant:
+                events.append(event)
+                continue
+
+            logger.warning(
+                "HELIX stagnation: %s  calls=%d  overall_rate=%.3f  recent_rate=%.3f  Δ=%.3f",
+                tool_name, total_calls, overall_rate, recent_rate, delta,
+            )
+
+            if dry_run or tool_name in already_open:
+                events.append(event)
+                continue
+
+            # ── LLM refactor trigger ──────────────────────────────────────
+            code = _get_tool_source(module_path or "", function_name or "") or "(source unavailable)"
+
+            failure_rows = con.execute(
+                """
+                SELECT failure_diagnosis, completed_at
+                FROM   analysis_history
+                WHERE  tool_id = ?
+                  AND  status  = 'failed'
+                ORDER  BY completed_at DESC
+                LIMIT  5
+                """,
+                [str(tool_id)],
+            ).fetchall()
+            failure_logs = "\n".join(
+                f"  [{str(r[1])[:16]}] {r[0] or '(no diagnosis)'}"
+                for r in failure_rows
+            ) or "  (無近期失敗記錄)"
+
+            prompt = _STAGNATION_PROMPT.format(
+                call_count=total_calls,
+                look_back_days=look_back_days,
+                recent_rate=recent_rate,
+                overall_rate=overall_rate,
+                delta=delta,
+                eps=eps,
+                tool_name=tool_name,
+                module_path=module_path or "unknown",
+                code=code[:4000],
+                n_failures=len(failure_rows),
+                failure_logs=failure_logs,
+            )
+
+            suggestion_text: Optional[str] = None
+            if api_key:
+                try:
+                    import anthropic
+
+                    client = anthropic.Anthropic(api_key=api_key)
+                    msg = client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=512,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    raw = msg.content[0].text.strip()  # type: ignore[union-attr]
+                    try:
+                        parsed = json.loads(raw)
+                        suggestion_text = json.dumps(parsed, ensure_ascii=False)
+                    except json.JSONDecodeError:
+                        suggestion_text = raw
+                except Exception as exc:
+                    logger.error("Stagnation LLM call failed for %s: %s", tool_name, exc)
+            else:
+                logger.warning(
+                    "ANTHROPIC_API_KEY not set — stagnation LLM trigger skipped for %s",
+                    tool_name,
+                )
+
+            # Write stagnation event to tool_stabilization_log
+            try:
+                log_id = open_stabilization(
+                    con,
+                    tool_name=tool_name,
+                    diagnosis=f"[STAGNATION] calls={total_calls}, Δ={delta:.3f} < ε={eps}",
+                    action_taken=suggestion_text or "[LLM trigger skipped — API key not set]",
+                )
+                event["log_id"] = log_id
+                already_open.add(tool_name)
+                logger.info("Stagnation iteration opened for %s: log_id=%s", tool_name, log_id)
+            except Exception as exc:
+                logger.error("Failed to open stagnation iteration for %s: %s", tool_name, exc)
+
+            event["llm_suggestion"] = suggestion_text
+            events.append(event)
+
+    stagnant_count = sum(1 for e in events if e["stagnant"])
+    if stagnant_count:
+        logger.info("HELIX stagnation: %d tool(s) detected", stagnant_count)
+    return events
 
 
 def get_origin_code(origin_id: str) -> Optional[str]:

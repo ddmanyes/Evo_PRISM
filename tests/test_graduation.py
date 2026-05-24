@@ -194,7 +194,7 @@ def test_read_archive_ok(con, monkeypatch):
     assert "archived ok" in arc["code"]
     assert arc["output"].strip() == "5"
     assert arc["meta"]["code_lines"] == 3
-    assert arc["archive_dir"] == "results/dynamic_code/2026-05-19_55555555"
+    assert arc["archive_dir"].replace("\\", "/") == "results/dynamic_code/2026-05-19_55555555"
 
 
 def test_read_archive_not_found(con):

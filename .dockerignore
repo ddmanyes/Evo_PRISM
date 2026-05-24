@@ -1,0 +1,52 @@
+# ── Large data directories (never ship raw data in image) ─────────────────────
+crc_visium_data/
+bulk_rna_data/
+visium_hd_results/
+results/
+data_ana/
+results_ana/
+analysis_msseg/
+backend_msseg/
+msseg_docs/
+scratch/
+
+# ── DuckDB databases (populated at runtime via volume) ────────────────────────
+*.duckdb
+*.duckdb.wal
+gold/
+silver/
+
+# ── Python virtual environments ───────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── IDE / OS / Git ────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.DS_Store
+._*
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# ── Secrets and local config ──────────────────────────────────────────────────
+.env
+*.key
+*.pem
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
