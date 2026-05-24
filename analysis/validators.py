@@ -11,6 +11,6 @@ def validate_sample_id(sample_id: str) -> None:
     """Validate sample_id format. Raises ValueError if invalid."""
     if not isinstance(sample_id, str) or not _SAMPLE_ID_RE.match(sample_id):
         raise ValueError(
-            f"Invalid sample_id format: {sample_id!r}. "
+            f"無效的 sample_id 格式 (Invalid sample_id format): {sample_id!r}. "
             "Must be non-empty and contain only alphanumeric characters, underscores, and hyphens."
         )

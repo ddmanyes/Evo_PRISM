@@ -1,0 +1,107 @@
+# Evo_PRISM — Singularity Definition File
+# ─────────────────────────────────────────────────────────────────────────────
+# Builds a Singularity/Apptainer container for HPC deployment.
+#
+# Build:
+#   singularity build evo-prism.sif Singularity.def        # requires root
+#   apptainer build evo-prism.sif Singularity.def          # Apptainer ≥1.0
+#
+# Run (HPC):
+#   singularity run --bind /scratch/bio_db:/data/bio_db \
+#                   --bind /scratch/models:/models \
+#                   evo-prism.sif server
+#
+# Run test suite on HPC:
+#   singularity run --bind /scratch/bio_db:/data/bio_db evo-prism.sif test
+#
+# Environment variables can be passed with --env or via a .env file:
+#   singularity run --env-file .env evo-prism.sif server
+# ─────────────────────────────────────────────────────────────────────────────
+
+Bootstrap: docker
+From: python:3.11-slim
+
+%labels
+    Author "Zhan Qiru"
+    Version "0.1.0"
+    Description "Evo_PRISM — Evolutionary Platform for Runtime Intelligence & Semantic Memory"
+    GitHub "https://github.com/ddmanyes/Evo_PRISM"
+    Paper "GigaScience (under review)"
+
+%environment
+    export PYTHONPATH=/app
+    export PYTHONUNBUFFERED=1
+    export BIO_DB_ROOT=${BIO_DB_ROOT:-/data/bio_db}
+    export MCSEG_RESULTS_ROOT=${MCSEG_RESULTS_ROOT:-/data/results/mcseg}
+    # Embedding provider: set to 'openai' or 'google' if no llamacpp server
+    export EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-llamacpp}
+    export LLAMACPP_BASE_URL=${LLAMACPP_BASE_URL:-http://localhost:8081/v1}
+    export EMBEDDING_MODEL=${EMBEDDING_MODEL:-bge-m3}
+    export EMBEDDING_DIM=${EMBEDDING_DIM:-1024}
+    export INFERENCE_BACKEND=${INFERENCE_BACKEND:-claude}
+
+%post
+    # System dependencies
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential git curl libhdf5-dev libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+    # Install uv for reproducible dependency resolution
+    pip install --no-cache-dir "uv>=0.4,<1"
+
+    # Copy and install Python dependencies from lockfile
+    mkdir -p /app
+    # Note: pyproject.toml and uv.lock are copied from %files
+    cd /app
+    uv export --no-dev --frozen --output-file /tmp/requirements.txt
+    pip install --no-cache-dir -r /tmp/requirements.txt
+
+    # Create data directories
+    mkdir -p /data/bio_db /data/gold /data/silver /data/results
+
+    # Make entrypoint executable
+    chmod +x /app/entrypoint.sh
+
+%files
+    # Copy entire source tree (minus .dockerignore exclusions)
+    # Run: singularity build from the Evo_PRISM root directory
+    . /app
+
+%runscript
+    exec /app/entrypoint.sh "$@"
+
+%test
+    # Verify Python environment is intact
+    python -c "import duckdb, anndata, scanpy, mcp, fastapi; print('Core imports OK')"
+    python -c "import numpy, scipy, pandas; print('Numeric stack OK')"
+    echo "Singularity image self-test passed."
+
+%startscript
+    exec /app/entrypoint.sh server
+
+%help
+    Evo_PRISM Singularity container for HPC deployment.
+
+    Usage:
+      singularity run evo-prism.sif server       # Start MCP + Web UI
+      singularity run evo-prism.sif test         # Run pytest suite
+      singularity run evo-prism.sif init-db      # Initialise DuckDB schema
+      singularity run evo-prism.sif shell        # Interactive shell
+
+    Required bind mounts:
+      --bind /path/to/bio_db:/data/bio_db        # DuckDB + processed data
+      --bind /path/to/models:/models             # GGUF model files (embedding)
+
+    Required environment variables:
+      ANTHROPIC_API_KEY   — for Claude inference backend
+      LLAMACPP_BASE_URL   — embedding server URL (default: http://localhost:8081/v1)
+                            OR set EMBEDDING_PROVIDER=openai + OPENAI_API_KEY
+
+    Example (SLURM):
+      srun --cpus-per-task=8 --mem=32G \
+        singularity run \
+          --bind $SCRATCH/bio_db:/data/bio_db \
+          --env ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+          --env EMBEDDING_PROVIDER=openai \
+          --env OPENAI_API_KEY=$OPENAI_API_KEY \
+          evo-prism.sif test

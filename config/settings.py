@@ -20,6 +20,7 @@ L1_ROOT = BIO_DB_ROOT / "gold"
 RESULTS_ROOT = BIO_DB_ROOT / "results_ana"
 DATA_ROOT = BIO_DB_ROOT / "data_ana"
 DYNAMIC_CODE_DIR = BIO_DB_ROOT / "results" / "dynamic_code"
+MCSEG_RESULTS_ROOT = Path(os.getenv("MCSEG_RESULTS_ROOT", BIO_DB_ROOT / "results" / "mcseg"))
 
 # ── DuckDB ─────────────────────────────────────────────────
 DUCKDB_PATH = Path(os.getenv("DUCKDB_PATH", BIO_DB_ROOT / "bio_memory.duckdb"))
@@ -131,6 +132,8 @@ TELEGRAM_ALLOWED_USER_IDS = [
 HELIX_HOT_THRESHOLD = int(os.getenv("HELIX_HOT_THRESHOLD", "3"))
 # 穩定化迭代超過此天數未關閉則視為失效（auto_revert 觸發閾值）
 HELIX_STALE_ITERATION_DAYS = int(os.getenv("HELIX_STALE_ITERATION_DAYS", "30"))
+# PM4 revert-on-regression: auto-demote if new_success_rate < prev_success_rate - τ
+HELIX_REVERT_THRESHOLD = float(os.getenv("HELIX_REVERT_THRESHOLD", "0.10"))
 # diagnosis_img 遺忘曲線：超過此天數後 downsample to 0.5x
 HELIX_SNAPSHOT_DECAY_DAYS_1 = int(os.getenv("HELIX_SNAPSHOT_DECAY_DAYS_1", "180"))
 # 超過此天數後 downsample to 0.25x
@@ -147,6 +150,11 @@ HELIX_THETA_PROMOTE = float(os.getenv("HELIX_THETA_PROMOTE", "3.0"))  # 晉升�
 HELIX_OMEGA_CHURN = float(os.getenv("HELIX_OMEGA_CHURN", "0.6"))           # ChurnRatio 權重
 HELIX_OMEGA_COMPLEXITY = float(os.getenv("HELIX_OMEGA_COMPLEXITY", "0.4")) # ΔComplexity 權重
 HELIX_THETA_WARNING = float(os.getenv("HELIX_THETA_WARNING", "0.70"))      # 健康警示門檻
+
+# PM5 stagnation detector: explore-on-stagnation (EvolveMem-inspired)
+HELIX_STAGNATION_MIN_CALLS = int(os.getenv("HELIX_STAGNATION_MIN_CALLS", "10"))
+HELIX_STAGNATION_EPS = float(os.getenv("HELIX_STAGNATION_EPS", "0.05"))
+HELIX_STAGNATION_LOOK_BACK_DAYS = int(os.getenv("HELIX_STAGNATION_LOOK_BACK_DAYS", "7"))
 
 
 # ── Artifact 路徑工具 ──────────────────────────────────────

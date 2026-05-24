@@ -11,8 +11,32 @@ VENV="$HOME/.venvs/hermes-bio-memory/bin/python"
 LLAMA_BIN="$HOME/llama.cpp/build/bin/llama-server"
 EMBED_MODEL="$HOME/llama.cpp/models/bge-m3-Q8_0.gguf"
 VISION_MODEL="$HOME/gemma-4-26B-A4B-it-UD-IQ2_M.gguf"
-MMPROJ="/Users/zhanqiru/mmproj-F16.gguf"
+MMPROJ="$HOME/mmproj-F16.gguf"
 LOG_DIR="$SCRIPT_DIR/logs"
+
+# Load .env overrides if present
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Ignore comments and empty lines
+        if [[ ! "$line" =~ ^[[:space:]]*# ]] && [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            var_name="${BASH_REMATCH[1]}"
+            var_val="${BASH_REMATCH[2]}"
+            # Trim quotes
+            var_val="${var_val%\"}"
+            var_val="${var_val#\"}"
+            var_val="${var_val%\'}"
+            var_val="${var_val#\'}"
+            export "$var_name"="$var_val"
+        fi
+    done < "$SCRIPT_DIR/.env"
+fi
+
+if [ -n "${LLAMACPP_BIN:-}" ];        then LLAMA_BIN="$LLAMACPP_BIN"; fi
+if [ -n "${LLAMACPP_MODEL_PATH:-}" ]; then EMBED_MODEL="$LLAMACPP_MODEL_PATH"; fi
+if [ -n "${VISION_MODEL_PATH:-}" ];   then VISION_MODEL="$VISION_MODEL_PATH"; fi
+if [ -n "${MMPROJ_PATH:-}" ];         then MMPROJ="$MMPROJ_PATH"; fi
+if [ -n "${VENV_PYTHON:-}" ];         then VENV="$VENV_PYTHON"; fi
+
 EMBED_PID=""
 VISION_PID=""
 WEB_PID=""

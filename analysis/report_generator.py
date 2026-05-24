@@ -357,6 +357,8 @@ def write_report_to_history(
                     WHERE analysis_id=?""",
                 [result_path, completed_at, summary, analysis_id],
             )
+            from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+            write_diagnosis(con, analysis_id, success_diagnosis())
     return analysis_id, result_path
 
 
@@ -411,7 +413,7 @@ def run_full_eda_report(
             save_file=save_file,
             requested_by=requested_by,
         )
-    except Exception:
+    except Exception as _exc:
         logger.exception("eda_report 分析失敗  analysis_id=%s", analysis_id)
         with duckdb.connect(str(db_path)) as con:
             safe_write(
@@ -419,6 +421,8 @@ def run_full_eda_report(
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
                 [datetime.now(timezone.utc), analysis_id],
             )
+            from analysis.failure_diagnosis import classify_exception, write_diagnosis
+            write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 
     try:

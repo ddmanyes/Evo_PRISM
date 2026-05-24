@@ -22,8 +22,11 @@ Phase 4 — BioAgent MCP Server
 分析執行（重量級，會寫 DB / 跑沙盒）：
     bio_run_spatial_eda       — 空間轉錄體 EDA（10–30 秒，需 l2_ready=true）
     bio_run_bulk_eda          — Bulk RNA EDA（10–60 秒）
+    bio_run_mcseg_roi         — Visium HD 單 ROI MCseg 分割＋RNA 計數＋Scanpy＋Xenium 匯出（GPU，30–90 分鐘）
+    bio_run_mcseg_fullslide   — Visium HD 全片 tiled MCseg 分割（GPU，數小時）
     bio_execute_code          — 沙盒執行 Python 程式碼（白名單 import，timeout=60s）
     bio_tool_health           — HELIX 工具庫健康報告與穩定化迭代管理
+    bio_failure_summary       — PM1 診斷彙整：failure_diagnosis 類型分佈統計（EvolveMem 啟發）
 
 啟動方式：
     # stdio（Claude Code CLI，.mcp.json 設定）
@@ -104,6 +107,11 @@ _RATE_LIMITED_TOOLS = frozenset(
         "bio_run_deg",
         "bio_run_enrichment",
         "bio_run_heatmaps",
+        # MCseg 分割：GPU 重量級
+        "bio_run_mcseg_roi",
+        "bio_run_mcseg_fullslide",
+        # MCseg 品質指標：CPU，需已有 mcseg_roi 結果
+        "bio_compute_crc_metrics",
         # 沙盒執行：CPU/I/O 重量級
         "bio_execute_code",
     }
@@ -828,6 +836,41 @@ def _build_all_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="bio_failure_summary",
+            description=(
+                "PM1 診斷彙整工具（EvolveMem Phase 13）。\n"
+                "聚合 analysis_history.failure_diagnosis 欄位，統計各失敗類型的數量分佈，\n"
+                "供 Agent 自我診斷並引導 HELIX 重構決策。\n"
+                "failure type: cache_miss_semantic | wrong_tool_version | insufficient_context | "
+                "L3_not_ready | hallucination | success\n"
+                "可選擇按 sample_id、analysis_type 或時間範圍過濾。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "限定特定樣本，留空則統計所有樣本。",
+                    },
+                    "analysis_type": {
+                        "type": "string",
+                        "description": "限定分析類型（如 bulk_eda / eda_report / bulk_deg），留空則全部。",
+                    },
+                    "since_days": {
+                        "type": "integer",
+                        "description": "只計算最近 N 天的記錄，預設 30。",
+                        "default": 30,
+                    },
+                    "top_n": {
+                        "type": "integer",
+                        "description": "回傳最頻繁失敗的前 N 個 detail 樣本，預設 5。",
+                        "default": 5,
+                    },
+                },
+                "required": [],
+            },
+        ),
+        types.Tool(
             name="bio_get_figure",
             description=(
                 "依 figure_id 取回單張圖片（MCP image content，供多模態模型視覺推理）。"
@@ -868,6 +911,201 @@ def _build_all_tools() -> list[types.Tool]:
                     },
                 },
                 "required": ["artifact_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_mcseg_roi",
+            description=(
+                "對 Visium HD 樣本執行單一 ROI 的完整 MCseg 分析管線：\n"
+                "  Stage 0 — BTF/TIFF H&E ROI 裁切（自動計算 virtual_fullres↔TIFF 座標縮放比）\n"
+                "  Stage 1 — 7-Pass Cellpose 集成分割（cyto3×4 + cpsam×3，tile=1024px，RTX 4090）\n"
+                "  Stage 2 — 2µm bin RNA 計數（mask→bin attribution）\n"
+                "  Stage 3 — Scanpy QC / normalization / HVG / UMAP / Leiden clustering\n"
+                "  Stage 4 — 基因 score 細胞類型標注\n"
+                "  Stage 5 — NED 邊界銳利度 + 空間 niche + permutation test\n"
+                "  Stage 6 — UMAP 圖、dotplot、Xenium Explorer bundle 匯出\n"
+                "  Stage 7 — H&E overlay 圖（細胞類型著色 + 邊界版）\n"
+                "結果寫入 analysis_history(mcseg_roi)。耗時約 30–90 分鐘（GPU）。\n"
+                "btf_image_path / binned_dir / output_base 省略時從 sample_registry 自動解析。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "樣本 ID，需已登記於 sample_registry。",
+                    },
+                    "roi_x": {
+                        "type": "integer",
+                        "description": "ROI 左上角 X 座標（virtual_fullres px）。",
+                    },
+                    "roi_y": {
+                        "type": "integer",
+                        "description": "ROI 左上角 Y 座標（virtual_fullres px）。",
+                    },
+                    "roi_width_px": {
+                        "type": "integer",
+                        "description": "ROI 寬度（virtual_fullres px，預設 1500）。",
+                        "default": 1500,
+                    },
+                    "roi_height_px": {
+                        "type": "integer",
+                        "description": "ROI 高度（virtual_fullres px，預設 1500）。",
+                        "default": 1500,
+                    },
+                    "roi_name": {
+                        "type": "string",
+                        "description": "ROI 識別名稱（用於輸出目錄），省略時自動生成。",
+                    },
+                    "use_cpsam": {
+                        "type": "boolean",
+                        "description": "是否啟用 cpsam（7-pass）；false 則 4-pass cyto3 only。預設 true。",
+                        "default": True,
+                    },
+                    "btf_image_path": {
+                        "type": "string",
+                        "description": "BTF/TIFF H&E 全圖路徑（省略則從 sample_registry.l3_path 解析）。",
+                    },
+                    "binned_dir": {
+                        "type": "string",
+                        "description": "Visium HD binned_outputs 目錄路徑（省略則從 sample_registry 解析）。",
+                    },
+                    "output_base": {
+                        "type": "string",
+                        "description": "輸出根目錄（省略則用 I:/Evo_PRISM/visium_hd_results/<sample_id>）。",
+                    },
+                    "requested_by": {
+                        "type": "string",
+                        "default": "mcp_client",
+                    },
+                },
+                "required": ["sample_id", "roi_x", "roi_y"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_mcseg_fullslide",
+            description=(
+                "對 Visium HD 樣本執行全片 tiled MCseg 分割（不含 Scanpy downstream）：\n"
+                "  Stage 0 — BTF/TIFF 全圖讀取\n"
+                "  Stage 1 — run_tiled_mcseg_v2（tile=1024px，overlap=128px，7-pass ensemble）\n"
+                "  Stage 2 — 全片 2µm bin RNA 計數\n"
+                "  輸出：segmentation_masks.npy / .tif、bin attribution h5ad、overlay PNG\n"
+                "結果寫入 analysis_history(mcseg_fullslide)。耗時數小時（GPU）。\n"
+                "⚠️ 全片細胞數可能超過 10 萬，downstream Scanpy 需另行分批執行。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "樣本 ID，需已登記於 sample_registry。",
+                    },
+                    "tile_size": {
+                        "type": "integer",
+                        "description": "分割 tile 大小（px），預設 1024。",
+                        "default": 1024,
+                    },
+                    "overlap": {
+                        "type": "integer",
+                        "description": "Tile 重疊像素，預設 128。",
+                        "default": 128,
+                    },
+                    "use_cpsam": {
+                        "type": "boolean",
+                        "description": "是否啟用 cpsam（7-pass）。預設 true。",
+                        "default": True,
+                    },
+                    "btf_image_path": {
+                        "type": "string",
+                        "description": "BTF/TIFF H&E 全圖路徑（省略則從 sample_registry 解析）。",
+                    },
+                    "binned_dir": {
+                        "type": "string",
+                        "description": "Visium HD binned_outputs 目錄路徑。",
+                    },
+                    "output_base": {
+                        "type": "string",
+                        "description": "輸出根目錄。",
+                    },
+                    "requested_by": {
+                        "type": "string",
+                        "default": "mcp_client",
+                    },
+                },
+                "required": ["sample_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_compute_crc_metrics",
+            description=(
+                "計算 MCseg 分割品質指標（CRC RNA metrics）：\n"
+                "  FTC  — Tissue Capture Fraction（in-tissue bins 落在遮罩內的比例）\n"
+                "  UMI Density — 中位 UMI/µm²（按細胞遮罩面積正規化）\n"
+                "  NED  — Neighbor Expression Divergence（Hellinger）邊界銳利度\n"
+                "  C1   — 譜系互斥共表達率（生物不可能基因對）\n"
+                "  ENACT Precision — 可選，需提供 gt_centroids_csv\n\n"
+                "輸入：bio_run_mcseg_roi 已執行完畢的 ROI 目錄\n"
+                "（segmentation_masks.npy + cellpose_cells.h5ad + crop_meta.json）。\n"
+                "結果寫入 analysis_history(crc_metrics) 並輸出 Markdown 報告。\n"
+                "耗時約 1–5 分鐘（CPU only，不需 GPU）。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {
+                        "type": "string",
+                        "description": "樣本 ID，需已登記於 sample_registry。",
+                    },
+                    "roi_name": {
+                        "type": "string",
+                        "description": "ROI 名稱，對應 bio_run_mcseg_roi 使用的 roi_name。",
+                    },
+                    "roi_dir": {
+                        "type": "string",
+                        "description": "ROI 輸出目錄的絕對路徑。省略則自動推算 MCSEG_RESULTS_ROOT/<sample_id>/roi/<roi_name>。",
+                    },
+                    "roi_x": {
+                        "type": "integer",
+                        "description": "ROI 左上角 X (virtual_fullres px)。省略則從 crop_meta.json 讀取。",
+                    },
+                    "roi_y": {
+                        "type": "integer",
+                        "description": "ROI 左上角 Y (virtual_fullres px)。",
+                    },
+                    "roi_w": {
+                        "type": "integer",
+                        "description": "ROI 寬度 (virtual_fullres px)，預設 1500。",
+                        "default": 1500,
+                    },
+                    "roi_h": {
+                        "type": "integer",
+                        "description": "ROI 高度 (virtual_fullres px)，預設 1500。",
+                        "default": 1500,
+                    },
+                    "tp_parquet_path": {
+                        "type": "string",
+                        "description": "tissue_positions.parquet 路徑。省略則從 sample_registry.l3_path 自動解析。",
+                    },
+                    "impossible_pairs": {
+                        "type": "array",
+                        "description": "譜系互斥基因對清單，格式 [[geneA, geneB], ...]。省略則使用 CRC 預設（EPCAM/CD3E 等 4 對）。",
+                        "items": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "enact_gt_csv": {
+                        "type": "string",
+                        "description": "ENACT 專家標注質心 CSV 路徑（x_centroid, y_centroid 欄位）。提供則額外計算 GT Precision。",
+                    },
+                    "n_hvgs": {
+                        "type": "integer",
+                        "description": "NED 計算用的 HVG 數目，預設 1000。",
+                        "default": 1000,
+                    },
+                    "requested_by": {
+                        "type": "string",
+                        "default": "mcp_client",
+                    },
+                },
+                "required": ["sample_id", "roi_name"],
             },
         ),
     ]
@@ -1314,6 +1552,24 @@ async def _handle_bio_run_heatmaps(args: dict) -> str:
     return await asyncio.to_thread(_exec_bio_run_heatmaps, args)
 
 
+async def _handle_bio_run_mcseg_roi(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_run_mcseg_roi
+
+    return await asyncio.to_thread(_exec_bio_run_mcseg_roi, args)
+
+
+async def _handle_bio_run_mcseg_fullslide(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_run_mcseg_fullslide
+
+    return await asyncio.to_thread(_exec_bio_run_mcseg_fullslide, args)
+
+
+async def _handle_bio_compute_crc_metrics(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_compute_crc_metrics
+
+    return await asyncio.to_thread(_exec_bio_compute_crc_metrics, args)
+
+
 async def _handle_bio_impact(args: dict) -> str:
     from server.agent import _exec_bio_impact
 
@@ -1337,6 +1593,100 @@ async def _handle_bio_tool_health(args: dict) -> str:
     from server.agent import _exec_bio_tool_health
 
     return await asyncio.to_thread(_exec_bio_tool_health, args)
+
+
+async def _handle_bio_failure_summary(args: dict) -> str:
+    """PM1: Aggregate failure_diagnosis from analysis_history (EvolveMem-inspired)."""
+    import json
+    import duckdb
+    from config.settings import DUCKDB_PATH
+
+    sample_id     = args.get("sample_id", "").strip() or None
+    analysis_type = args.get("analysis_type", "").strip() or None
+    since_days    = int(args.get("since_days", 30))
+    top_n         = int(args.get("top_n", 5))
+
+    def _sync() -> str:
+        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+            # Build WHERE clause
+            conditions = [
+                "failure_diagnosis IS NOT NULL",
+                f"started_at >= now() - INTERVAL '{since_days} days'",
+            ]
+            params: list = []
+            if sample_id:
+                conditions.append("sample_id = ?")
+                params.append(sample_id)
+            if analysis_type:
+                conditions.append("analysis_type = ?")
+                params.append(analysis_type)
+            where = " AND ".join(conditions)
+
+            # 1. Type distribution
+            type_rows = con.execute(
+                f"""
+                SELECT
+                    json_extract_string(failure_diagnosis, '$.type') AS diag_type,
+                    COUNT(*) AS cnt
+                FROM analysis_history
+                WHERE {where}
+                GROUP BY diag_type
+                ORDER BY cnt DESC
+                """,
+                params,
+            ).fetchall()
+
+            if not type_rows:
+                return (
+                    f"[bio_failure_summary] 最近 {since_days} 天內無帶有 failure_diagnosis 的記錄。\n"
+                    "提示：請先執行 scripts/25_migrate_schema_v24_failure_diagnosis.py 並待分析工具寫入診斷資料。"
+                )
+
+            total = sum(r[1] for r in type_rows)
+            success_cnt = next((r[1] for r in type_rows if r[0] == "success"), 0)
+            failure_cnt = total - success_cnt
+
+            lines = [
+                f"=== bio_failure_summary（最近 {since_days} 天）===",
+                f"總計 {total} 筆  |  成功 {success_cnt}  |  失敗 {failure_cnt}",
+                "",
+                "【類型分佈】",
+            ]
+            for diag_type, cnt in type_rows:
+                pct = cnt / total * 100
+                lines.append(f"  {diag_type:<30} {cnt:>5} 筆  ({pct:.1f}%)")
+
+            # 2. Top-N failure details (non-success only)
+            detail_rows = con.execute(
+                f"""
+                SELECT
+                    json_extract_string(failure_diagnosis, '$.type')   AS diag_type,
+                    json_extract_string(failure_diagnosis, '$.detail') AS detail,
+                    analysis_type,
+                    sample_id,
+                    started_at::DATE AS run_date
+                FROM analysis_history
+                WHERE {where}
+                  AND json_extract_string(failure_diagnosis, '$.type') != 'success'
+                ORDER BY started_at DESC
+                LIMIT ?
+                """,
+                params + [top_n],
+            ).fetchall()
+
+            if detail_rows:
+                lines += ["", f"【最近 {top_n} 筆失敗樣本】"]
+                for diag_type, detail, atype, sid, run_date in detail_rows:
+                    lines.append(
+                        f"  [{run_date}] {sid} / {atype} → {diag_type}: {(detail or '')[:120]}"
+                    )
+
+            return "\n".join(lines)
+
+    try:
+        return await asyncio.to_thread(_sync)
+    except Exception as exc:
+        return f"[ERROR] bio_failure_summary 失敗：{exc}"
 
 
 async def _handle_bio_find_tool(args: dict) -> str:
@@ -1432,10 +1782,14 @@ _HANDLERS = {
     "bio_run_deg": _handle_bio_run_deg,
     "bio_run_enrichment": _handle_bio_run_enrichment,
     "bio_run_heatmaps": _handle_bio_run_heatmaps,
+    "bio_run_mcseg_roi": _handle_bio_run_mcseg_roi,
+    "bio_run_mcseg_fullslide": _handle_bio_run_mcseg_fullslide,
+    "bio_compute_crc_metrics": _handle_bio_compute_crc_metrics,
     "bio_impact": _handle_bio_impact,
     "bio_execute_code": _handle_bio_execute_code,
     "bio_find_tool": _handle_bio_find_tool,
     "bio_tool_health": _handle_bio_tool_health,
+    "bio_failure_summary": _handle_bio_failure_summary,
     "bio_read_report": _handle_bio_read_report,
     "bio_get_figure": _handle_bio_get_figure,
     "bio_get_artifact": _handle_bio_get_artifact,

@@ -364,6 +364,8 @@ def run_deg_analysis(
                 WHERE analysis_id=?""",
             [str(report_path), completed_at, summary, analysis_id],
         )
+        from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+        write_diagnosis(con, analysis_id, success_diagnosis())
         try:
             from analysis.artifact_registry import register_artifact
 
@@ -375,14 +377,16 @@ def run_deg_analysis(
         except Exception as _exc:
             logger.warning("bulk_deg: register_artifact 失敗（非致命）: %s", _exc)
 
-    except Exception:
+    except Exception as _exc_outer:
         logger.exception("bulk_deg 分析失敗  analysis_id=%s", analysis_id)
+        from analysis.failure_diagnosis import classify_exception, write_diagnosis
         try:
             safe_write(
                 con,
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
                 [datetime.now(timezone.utc), analysis_id],
             )
+            write_diagnosis(con, analysis_id, classify_exception(_exc_outer))
         finally:
             if _own_con:
                 con.close()

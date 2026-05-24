@@ -94,6 +94,18 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
         )
     except Exception as e:
         print(f"WARNING: could not ensure user_approval column: {e}")
+    # v24 migration: FailureDiagnosis — per-run lightweight diagnostic log (PM1, Phase 13).
+    # JSON structure: {"type": "<category>", "detail": "...", "diagnosed_at": "<ISO8601>"}
+    # type values: cache_miss_semantic | wrong_tool_version | insufficient_context |
+    #              L3_not_ready | hallucination | success
+    # NULL = not yet diagnosed (pre-PM1 runs or runs where diagnosis was skipped).
+    try:
+        con.execute(
+            "ALTER TABLE analysis_history "
+            "ADD COLUMN IF NOT EXISTS failure_diagnosis TEXT DEFAULT NULL"
+        )
+    except Exception as e:
+        print(f"WARNING: could not ensure failure_diagnosis column: {e}")
     print("Table: analysis_history — OK")
 
     # tools — versioned tool registry (content-hash based)

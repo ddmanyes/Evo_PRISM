@@ -192,45 +192,111 @@ L1 金層（Gold）── 語意與高頻快取層（近期記憶）
 ```mermaid
 graph TD
 subgraph L3["L3 銅層 — 不可變原始數據（唯讀）"]
-raw["FASTQ / BAM / SpaceRanger outs / Perseus CSV"]
+raw["SpaceRanger outs / FASTQ / BAM\n（Visium HD / scRNA）"]
+bulk_raw["Kallisto results_kallisto/\n（Bulk RNA-seq，98+ 樣本）"]
+prot_raw["Perseus CSV\n（Proteomics 時序數據）"]
 end
 
 subgraph L2["L2 銀層 — 結構化特徵儲存 + 雙軌記憶系統"]
-parquet["silver/*.parquet — 中間數據（計數矩陣）"]
+parquet["silver/*.parquet — 空間中間矩陣"]
+bulk_dir["bulk_rna_data/ — Bulk abundance.tsv"]
+analysis_funcs["analysis/*.py\n（spatial_eda / bulk_eda / bulk_deg /\n enrichment / pathway_scoring / mcseg_wrapper）"]
 results["results/ — 分析產出（.png / .csv / .md）"]
-analysis_funcs["analysis/ — 分析工具函數（程式碼邏輯）"]
 subgraph db["bio_memory.duckdb — 記憶核心"]
-core["sample_registry + analysis_history"]
-helix["HELIX — tools / tool_change_log / tool_stabilization_log"]
-engram["ENGRAM — analysis_artifacts + blobs（HNSW）"]
+core["sample_registry + analysis_history\n（含 tool_id / user_approval / failure_diagnosis）"]
+helix["HELIX — tools / tool_change_log\n/ tool_stabilization_log"]
+engram["ENGRAM — analysis_artifacts\n+ artifact_relations（Blast Radius）"]
 end
 end
 
 subgraph L1["L1 金層 — 語意快取（近期記憶，TTL 7 天）"]
-cache["hermes_cache.duckdb
-memory_recent + HNSW 索引"]
+cache["hermes_cache.duckdb\nmemory_recent + HNSW 索引"]
+fast_path["fast_path.py\n（timeline / sample_list / recent_lookup\n前置攔截，< 80 chars 觸發）"]
 end
 
-raw -->|"scripts/ 一次性轉換"| parquet
+raw -->|"scripts/02 一次性轉換"| parquet
+bulk_raw -->|"直接讀取 abundance.tsv"| bulk_dir
+prot_raw -->|"直接讀取 CSV"| analysis_funcs
 parquet -->|"分析執行"| results
-analysis_funcs -->|"分析執行"| results
+bulk_dir -->|"分析執行"| results
+analysis_funcs -->|"執行"| results
 analysis_funcs -->|"register_tool()"| helix
 results -->|"register_artifact()"| engram
-results -->|"analysis_history 寫入"| core
+results -->|"analysis_history 寫入（status / tool_id）"| core
 core -->|"分析完成後寫入"| cache
+core -.->|"高頻結構查詢繞過 HNSW"| fast_path
+```
+
+*English version:*
+
+```mermaid
+graph TD
+subgraph L3["L3 Bronze — Immutable Raw Data (Read-Only)"]
+raw["SpaceRanger outs / FASTQ / BAM\n(Visium HD / scRNA)"]
+bulk_raw["Kallisto results_kallisto/\n(Bulk RNA-seq)"]
+prot_raw["Perseus CSV\n(Proteomics Time-series)"]
+end
+
+subgraph L2["L2 Silver — Structured Feature Store + Dual-Track Memory"]
+parquet["silver/*.parquet — Spatial Intermediate Matrices"]
+bulk_dir["bulk_rna_data/ — Bulk abundance.tsv"]
+analysis_funcs["analysis/*.py\n(spatial_eda / bulk_eda / bulk_deg /\n enrichment / pathway_scoring / mcseg_wrapper)"]
+results["results/ — Analysis Outputs (.png / .csv / .md)"]
+subgraph db["bio_memory.duckdb — Memory Core"]
+core2["sample_registry + analysis_history\n(tool_id / user_approval / failure_diagnosis)"]
+helix2["HELIX — tools / tool_change_log\n/ tool_stabilization_log"]
+engram2["ENGRAM — analysis_artifacts\n+ artifact_relations (Blast Radius)"]
+end
+end
+
+subgraph L1["L1 Gold — Semantic Cache (Recent Memory, TTL 7d)"]
+cache2["hermes_cache.duckdb\nmemory_recent + HNSW Index"]
+fast_path2["fast_path.py\n(timeline / sample_list / recent_lookup\npre-intercept, triggered < 80 chars)"]
+end
+
+raw -->|"scripts/02 one-time conversion"| parquet
+bulk_raw -->|"read abundance.tsv directly"| bulk_dir
+prot_raw -->|"read CSV directly"| analysis_funcs
+parquet -->|"analysis execution"| results
+bulk_dir -->|"analysis execution"| results
+analysis_funcs -->|"execute"| results
+analysis_funcs -->|"register_tool()"| helix2
+results -->|"register_artifact()"| engram2
+results -->|"write analysis_history (status / tool_id)"| core2
+core2 -->|"write on analysis complete"| cache2
+core2 -.->|"high-freq structural queries bypass HNSW"| fast_path2
 ```
 
 ```mermaid
 graph LR
-Q(["使用者查詢"]) -->|"1. cosine >= 0.88"| L1["L1 語意快取"]
-Q -->|"2. L1 未命中"| L2["L2 SQL / ENGRAM"]
-Q -->|"3. L2 無結果"| L3["L3 Pipeline"]
+Q(["使用者查詢"]) -->|"0. < 80 chars 結構查詢"| FP["fast_path.py\ntimeline / sample_list / recent_lookup\n前置攔截（無 HNSW 開銷）"]
+Q -->|"1. 一般查詢"| L1["L1 語意快取 (HNSW)"]
+L1 -->|"2. cosine < 0.88 未命中"| L2["L2 SQL / ENGRAM"]
+L2 -->|"3. 無結果"| L3["L3 Pipeline"]
 
+FP -->|"直接回傳（0-token）"| A(["結果"])
 L3 -->|"回寫 L2"| L2
 L2 -->|"回寫 L1"| L1
-L1 -->|"回傳"| A(["結果"])
+L1 -->|"回傳"| A
 L2 -->|"回傳"| A
 L3 -->|"回傳"| A
+```
+
+*English version:*
+
+```mermaid
+graph LR
+Q2(["User Query"]) -->|"0. < 80 chars structural query"| FP2["fast_path.py\ntimeline / sample_list / recent_lookup\npre-intercept (no HNSW overhead)"]
+Q2 -->|"1. general query"| L1e["L1 Semantic Cache (HNSW)"]
+L1e -->|"2. cosine < 0.88 miss"| L2e["L2 SQL / ENGRAM"]
+L2e -->|"3. no result"| L3e["L3 Pipeline"]
+
+FP2 -->|"return directly (0-token)"| Ae(["Result"])
+L3e -->|"write-back to L2"| L2e
+L2e -->|"write-back to L1"| L1e
+L1e -->|"return"| Ae
+L2e -->|"return"| Ae
+L3e -->|"return"| Ae
 ```
 
 ### HELIX 工具自主演進結構（HELIX Autonomic Evolution Structure）
@@ -241,18 +307,40 @@ L3 -->|"回傳"| A
 
 ```mermaid
 graph LR
-    A["1. 工具調用與變更<br/>(常態執行 / Ad-hoc)"] --> B["2. 自動健康監測<br/>(發現頻繁修改或異常)"]
-    B --> C["3. 精密健康體檢<br/>(分析複雜度與變動率)"]
+    A["1. 工具調用與變更<br/>(常態執行 / Ad-hoc)"] --> B["2. 自動健康監測<br/>(熱區 / 異常偵測)"]
+    B -->|"熱區觸發"| C["3. 精密健康體檢<br/>(複雜度 / 變動率評估)"]
+    B -->|"穩定低成效"| PM5["2.5 PM5 停滯偵測<br/>(detect_stagnation)"]
+    PM5 -->|"主動重構提案"| C
     C --> D["4. AI 醫生診療室<br/>(Agent 自動重構優化)"]
     D --> E["5. 雙軌記憶與忘卻<br/>(快照備檔與漸進衰減)"]
     E -->|閉環升級工具| A
 
-    %% 樣式微調
     style A fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
     style B fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    style PM5 fill:#fff8e1,stroke:#f9a825,stroke-width:2px;
     style C fill:#ede7f6,stroke:#5e35b1,stroke-width:2px;
     style D fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     style E fill:#eceff1,stroke:#37474f,stroke-width:2px;
+```
+
+*English version:*
+
+```mermaid
+graph LR
+    A2["1. Tool Invocation & Change<br/>(Regular Execution / Ad-hoc)"] --> B2["2. Automated Health Monitoring<br/>(Hotspot / Anomaly Detection)"]
+    B2 -->|"hotspot triggered"| C2["3. In-depth Health Assessment<br/>(Complexity / Churn Rate)"]
+    B2 -->|"stable but low-performing"| PM52["2.5 PM5 Stagnation Detector<br/>(detect_stagnation)"]
+    PM52 -->|"proactive refactor proposal"| C2
+    C2 --> D2["4. AI Doctor's Consultation<br/>(Agent Auto-refactor & Optimize)"]
+    D2 --> E2["5. Dual-track Memory & Forgetting<br/>(Snapshot Archive & Progressive Decay)"]
+    E2 -->|"closed-loop tool upgrade"| A2
+
+    style A2 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    style B2 fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    style PM52 fill:#fff8e1,stroke:#f9a825,stroke-width:2px;
+    style C2 fill:#ede7f6,stroke:#5e35b1,stroke-width:2px;
+    style D2 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    style E2 fill:#eceff1,stroke:#37474f,stroke-width:2px;
 ```
 
 #### 【L2 級】重構後的 HELIX 自主演進控制環（精準系統架構）
@@ -273,12 +361,13 @@ graph TB
         tools["分析工具箱 (analysis/*.py)<br/>Playbooks / MCP 標準工具"]:::entry
         adhoc["動態臨時代碼 (Ad-hoc)"]:::entry
         sandbox["安全沙盒直接執行<br/>(單次分析響應)"]:::entry
+        approval{"使用者反饋<br/>(user_approval)"}:::heal
 
         agent -->|"1. 呼叫標準工具"| tools
         agent -->|"2. 生成臨時代碼"| adhoc
         adhoc -->|"實體運行"| sandbox
-        
-        adhoc -->|"3. 重用頻繁 ➔ 啟動 Code Promotion<br/>(自動補建 Playbook / MCP)"| tools
+        sandbox -->|"寫入 analysis_history"| approval
+        approval -->|"通過 + 重用頻繁 ➔ Code Promotion"| tools
     end
 
     %% -------------------------------------------------------------------
@@ -286,17 +375,20 @@ graph TB
         tracker["tool_change_log<br/>(版本指紋追蹤)"]:::monitor
         metrics["mcp_tool_metrics<br/>(調用與效能指標)"]:::monitor
         hotspot{"熱區偵測器<br/>(Hotspot Detector)"}:::monitor
-        
+        stagnation["PM5 停滯偵測器<br/>(detect_stagnation)<br/>穩定但低成效工具"]:::monitor
+
         tools -->|"修改觸發 register_tool()"| tracker
         tools -->|"執行記錄 metrics"| metrics
-        tracker -->|"修訂 ≥ 3 次"| hotspot
+        tracker -->|"修訂 ≥ 閾值"| hotspot
         metrics -->|"效能異常 / 執行出錯"| hotspot
+        metrics -->|"穩定低成效"| stagnation
+        stagnation -->|"主動觸發深度體檢"| eval_hub
     end
 
     %% -------------------------------------------------------------------
     subgraph G2["2. 【精密體檢】多維度健康評估 (Assessment)"]
-        eval_hub["多維度評估中心 (Evaluation Hub)<br/>(Radon CC 複雜度 / Churn 變動率 / X-Ray 行級分析)"]:::eval
-        
+        eval_hub["多維度評估中心<br/>(f_promote · HealthScore 公式)<br/>CC 複雜度 / Churn 變動率 / X-Ray"]:::eval
+
         hotspot -->|"啟動深度體檢"| eval_hub
     end
 
@@ -304,7 +396,7 @@ graph TB
     subgraph G3["3. 【AI 診療】穩定化迭代閉環 (Stabilization)"]
         diag["診斷日誌 & 行動計畫<br/>(Diagnostic Log / Action Plan)"]:::heal
         opt["AI Agent 優化改寫<br/>(Optimized Code)"]:::heal
-        
+
         eval_hub -->|"數據彙整與門檻判定"| diag
         diag -->|"擬定計畫並重構"| opt
         opt -->|"【步驟 1】覆蓋並升級版本"| tools
@@ -312,16 +404,84 @@ graph TB
 
     %% -------------------------------------------------------------------
     subgraph G4["4. 【記憶忘卻】雙軌記憶與漸進衰減 (Memory & Decay)"]
-        vlm_mem["VLM 視覺記憶庫<br/>(640x640 PNG 快照)"]:::memory
-        forget["艾賓浩斯忘卻曲線<br/>(漸進式降採樣 320p ➔ 160p)"]:::memory
+        vlm_mem["VLM 視覺記憶庫<br/>(PNG 快照)"]:::memory
+        forget["艾賓浩斯忘卻曲線<br/>(漸進式降採樣)"]:::memory
         db_table[("bio_memory.duckdb<br/>穩定化交易日誌")]:::database
-        
+
         opt -->|"【步驟 2】保存視覺快照"| vlm_mem
         opt -->|"【步驟 3】交易日誌落盤"| db_table
-        vlm_mem -->|"時間推移 (180d / 365d)"| forget
-        
+        vlm_mem -->|"時間推移"| forget
+
         forget -.->|"歷史演進脈絡<br/>(後續 VLM 讀回診斷)"| diag
         db_table -->|"溯源鏈 (Provenance)"| engram["ENGRAM 產出標記"]:::database
+    end
+```
+
+*English version:*
+
+```mermaid
+graph TB
+    classDef entry fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef monitor fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef eval fill:#ede7f6,stroke:#5e35b1,stroke-width:2px;
+    classDef heal fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef memory fill:#eceff1,stroke:#37474f,stroke-width:2px;
+    classDef database fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+
+    subgraph EG0["0. Skill Registry & Promotion"]
+        eagent(["Agent / LLM"]):::entry
+        etools["Analysis Toolbox (analysis/*.py)<br/>Playbooks / MCP Standard Tools"]:::entry
+        eadhoc["Dynamic Ad-hoc Code"]:::entry
+        esandbox["Secure Sandbox Execution<br/>(single-shot analysis response)"]:::entry
+        eapproval{"User Feedback<br/>(user_approval)"}:::heal
+
+        eagent -->|"1. invoke standard tool"| etools
+        eagent -->|"2. generate ad-hoc code"| eadhoc
+        eadhoc -->|"execute"| esandbox
+        esandbox -->|"store result, await approval"| eapproval
+        eapproval -->|"approved + frequent reuse → Code Promotion"| etools
+    end
+
+    subgraph EG1["1. Health Monitoring — Change & Anomaly Detection"]
+        etracker["tool_change_log<br/>(version fingerprint tracking)"]:::monitor
+        emetrics["mcp_tool_metrics<br/>(invocation & performance metrics)"]:::monitor
+        ehotspot{"Hotspot Detector"}:::monitor
+        estagnation["PM5 Stagnation Detector<br/>(detect_stagnation)<br/>stable but low-performing tools"]:::monitor
+
+        etools -->|"modification triggers register_tool()"| etracker
+        etools -->|"execution recorded in metrics"| emetrics
+        etracker -->|"revisions >= threshold"| ehotspot
+        emetrics -->|"performance anomaly / error"| ehotspot
+        emetrics -->|"stable low performance"| estagnation
+        estagnation -->|"proactively trigger deep assessment"| eeval_hub
+    end
+
+    subgraph EG2["2. Multi-dimensional Health Assessment"]
+        eeval_hub["Assessment Hub<br/>(f_promote · HealthScore formulas)<br/>CC Complexity / Churn Rate / X-Ray"]:::eval
+
+        ehotspot -->|"trigger deep assessment"| eeval_hub
+    end
+
+    subgraph EG3["3. AI-driven Stabilization Loop"]
+        ediag["Diagnostic Log & Action Plan"]:::heal
+        eopt["AI Agent Optimized Rewrite"]:::heal
+
+        eeval_hub -->|"aggregate data & threshold check"| ediag
+        ediag -->|"plan & refactor"| eopt
+        eopt -->|"Step 1: overwrite & version upgrade"| etools
+    end
+
+    subgraph EG4["4. Dual-track Memory & Progressive Forgetting"]
+        evlm_mem["VLM Visual Memory<br/>(PNG Snapshot)"]:::memory
+        eforget["Ebbinghaus Forgetting Curve<br/>(progressive downsampling)"]:::memory
+        edb_table[("bio_memory.duckdb<br/>Stabilization Transaction Log")]:::database
+
+        eopt -->|"Step 2: save visual snapshot"| evlm_mem
+        eopt -->|"Step 3: write transaction log"| edb_table
+        evlm_mem -->|"time elapsed"| eforget
+
+        eforget -.->|"historical evolution context<br/>(VLM reads back for diagnosis)"| ediag
+        edb_table -->|"provenance chain"| eengram["ENGRAM Artifact Marker"]:::database
     end
 ```
 
@@ -373,6 +533,24 @@ agent -->|"呼叫"| mcp
 mcp -->|"執行"| fn
 fn -->|"每次修改後"| reg
 reg -->|"版本追蹤"| helix[("HELIX\ntools 帳本")]
+```
+
+*English version:*
+
+```mermaid
+graph LR
+subgraph eskill["A Single Analysis Skill (Skill Toolbox)"]
+epb["playbooks/*.md\nPlaybook"]
+efn["analysis/*.py\nAnalysis Function"]
+emcp["bio_memory_server.py\nMCP Tool Wrapper"]
+ereg["register_tool()\nHELIX Version Registration"]
+end
+
+eagent2(["Agent / LLM"]) -->|"read behavior spec"| epb
+eagent2 -->|"invoke"| emcp
+emcp -->|"execute"| efn
+efn -->|"on each modification"| ereg
+ereg -->|"version tracking"| ehelix[("HELIX\ntools ledger")]
 ```
 
 #### 新增分析領域的標準流程
@@ -449,7 +627,7 @@ erDiagram
         UUID tool_id PK
         VARCHAR tool_name
         VARCHAR version
-        VARCHAR source_hash
+        VARCHAR content_hash
         INTEGER revision_count
         VARCHAR status
         UUID origin_id FK
@@ -638,7 +816,7 @@ CREATE TABLE analysis_history (
 | 欄位               | 說明                                                       |
 | ------------------ | ---------------------------------------------------------- |
 | `tool_name`      | 邏輯工具名稱（如 `bio_run_bulk_eda`）                    |
-| `source_hash`    | SHA256[:16] of normalized source — 內容指紋，偵測靜默修改 |
+| `content_hash`   | SHA256[:16] of normalized source — 內容指紋，偵測靜默修改 |
 | `revision_count` | 累積修改次數，≥ 3 視為熱區                                |
 | `stability_note` | 診斷備註（為何頻繁修改、穩定化方向）                       |
 | `status`         | `active` \| `deprecated`                               |
@@ -653,14 +831,13 @@ CREATE TABLE tools (
     description    VARCHAR,
     parameters     JSON,
     status         VARCHAR DEFAULT 'active',  -- 'candidate'|'active'|'deprecated'
-    source_hash    VARCHAR(16),               -- SHA256[:16] of normalized source
+    content_hash   VARCHAR(16),               -- SHA256[:16] of normalized source
     revision_count INTEGER DEFAULT 0,         -- monotonically increasing per tool_name
     stability_note VARCHAR,                   -- 診斷備註
     origin_id      UUID,                      -- FK → analysis_history（Code Promotion 來源）
-    git_commit     VARCHAR,
     created_at     TIMESTAMP DEFAULT now(),
     deprecated_at  TIMESTAMP,
-    UNIQUE (tool_name, version)
+    UNIQUE (tool_name, content_hash)
 );
 ```
 
@@ -1567,6 +1744,8 @@ WHERE  aa.analysis_id IN (...)
 │   ├── code_executor.py            ← ✅ 沙盒執行（sandbox_exec + SecurityError）
 │   ├── telegram_bot.py             ← 骨架已建（待 Telegram Token 正式啟用）
 │   ├── bio_memory_server.py        ← MCP Server 骨架（Phase 9+）
+│   ├── fast_path.py                ← ✅ 結構查詢前置攔截（timeline/sample_list/recent_lookup，< 80 chars）
+│   ├── graduation.py               ← ✅ Code Promotion 畢業助手（生成 analysis/ 骨架供人工審查）
 │   └── static/
 │       ├── index.html              ← ✅ 聊天介面（圖片上傳/回傳/下載）
 │       ├── history.html            ← ✅ 分析歷史 + 縮圖預覽
@@ -1640,11 +1819,11 @@ WHERE  aa.analysis_id IN (...)
 
 在 macOS 環境下，為使排程任務能作為守護進程（Daemon）在系統啟動時自動背景加載，於 `docs/` 下提供了 5 個核心常駐服務範本（.plist.example）：
 
-- [launchd_backup.plist.example](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/launchd_backup.plist.example) (資料庫備份)
-- [launchd_cleanup_l1.plist.example](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/launchd_cleanup_l1.plist.example) (L1快取清理)
-- [launchd_rebuild_hnsw.plist.example](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/launchd_rebuild_hnsw.plist.example) (HNSW索引重建)
-- [launchd_scan_samples.plist.example](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/launchd_scan_samples.plist.example) (新樣本掃描)
-- [launchd_helix_expire.plist.example](file:///Users/zhanqiru/Library/CloudStorage/GoogleDrive-u9013039@gmail.com/我的雲端硬碟/PJ_save/bio_DB/docs/launchd_helix_expire.plist.example) (HELIX視覺快照降採樣)
+- [launchd_backup.plist.example](docs/launchd/launchd_backup.plist.example)（資料庫備份）
+- [launchd_cleanup_l1.plist.example](docs/launchd/launchd_cleanup_l1.plist.example)（L1 快取清理）
+- [launchd_rebuild_hnsw.plist.example](docs/launchd/launchd_rebuild_hnsw.plist.example)（HNSW 索引重建）
+- [launchd_scan_samples.plist.example](docs/launchd/launchd_scan_samples.plist.example)（新樣本掃描）
+- [launchd_helix_expire.plist.example](docs/launchd/launchd_helix_expire.plist.example)（HELIX 視覺快照降採樣）
 
 部署時將對應的範本複製至 `~/Library/LaunchAgents/` 目錄，並使用 `launchctl load` 加載即可啟用。
 
@@ -1835,12 +2014,13 @@ graph TB
         tools["分析工具箱 (analysis/*.py)<br/>Playbooks / MCP 標準工具"]:::entry
         adhoc["動態臨時代碼 (Ad-hoc)"]:::entry
         sandbox["安全沙盒直接執行<br/>(單次分析響應)"]:::entry
+        approval{"使用者反饋<br/>(user_approval)"}:::heal
 
         agent -->|"1. 呼叫標準工具"| tools
         agent -->|"2. 生成臨時代碼"| adhoc
         adhoc -->|"實體運行"| sandbox
-        
-        adhoc -->|"3. 重用頻繁 ➔ 啟動 Code Promotion<br/>(自動補建 Playbook / MCP)"| tools
+        sandbox -->|"寫入 analysis_history"| approval
+        approval -->|"通過 + 重用頻繁 ➔ Code Promotion"| tools
     end
 
     %% -------------------------------------------------------------------
@@ -1848,17 +2028,20 @@ graph TB
         tracker["tool_change_log<br/>(版本指紋追蹤)"]:::monitor
         metrics["mcp_tool_metrics<br/>(調用與效能指標)"]:::monitor
         hotspot{"熱區偵測器<br/>(Hotspot Detector)"}:::monitor
-        
+        stagnation["PM5 停滯偵測器<br/>(detect_stagnation)<br/>穩定但低成效工具"]:::monitor
+
         tools -->|"修改觸發 register_tool()"| tracker
         tools -->|"執行記錄 metrics"| metrics
-        tracker -->|"修訂 ≥ 3 次"| hotspot
+        tracker -->|"修訂 ≥ 閾值"| hotspot
         metrics -->|"效能異常 / 執行出錯"| hotspot
+        metrics -->|"穩定低成效"| stagnation
+        stagnation -->|"主動觸發深度體檢"| eval_hub
     end
 
     %% -------------------------------------------------------------------
     subgraph G2["2. 【精密體檢】多維度健康評估 (Assessment)"]
-        eval_hub["多維度評估中心 (Evaluation Hub)<br/>(Radon CC 複雜度 / Churn 變動率 / X-Ray 行級分析)"]:::eval
-        
+        eval_hub["多維度評估中心<br/>(f_promote · HealthScore 公式)<br/>CC 複雜度 / Churn 變動率 / X-Ray"]:::eval
+
         hotspot -->|"啟動深度體檢"| eval_hub
     end
 
@@ -1866,7 +2049,7 @@ graph TB
     subgraph G3["3. 【AI 診療】穩定化迭代閉環 (Stabilization)"]
         diag["診斷日誌 & 行動計畫<br/>(Diagnostic Log / Action Plan)"]:::heal
         opt["AI Agent 優化改寫<br/>(Optimized Code)"]:::heal
-        
+
         eval_hub -->|"數據彙整與門檻判定"| diag
         diag -->|"擬定計畫並重構"| opt
         opt -->|"【步驟 1】覆蓋並升級版本"| tools
@@ -1874,16 +2057,84 @@ graph TB
 
     %% -------------------------------------------------------------------
     subgraph G4["4. 【記憶忘卻】雙軌記憶與漸進衰減 (Memory & Decay)"]
-        vlm_mem["VLM 視覺記憶庫<br/>(640x640 PNG 快照)"]:::memory
-        forget["艾賓浩斯忘卻曲線<br/>(漸進式降採樣 320p ➔ 160p)"]:::memory
+        vlm_mem["VLM 視覺記憶庫<br/>(PNG 快照)"]:::memory
+        forget["艾賓浩斯忘卻曲線<br/>(漸進式降採樣)"]:::memory
         db_table[("bio_memory.duckdb<br/>穩定化交易日誌")]:::database
-        
+
         opt -->|"【步驟 2】保存視覺快照"| vlm_mem
         opt -->|"【步驟 3】交易日誌落盤"| db_table
-        vlm_mem -->|"時間推移 (180d / 365d)"| forget
-        
+        vlm_mem -->|"時間推移"| forget
+
         forget -.->|"歷史演進脈絡<br/>(後續 VLM 讀回診斷)"| diag
         db_table -->|"溯源鏈 (Provenance)"| engram["ENGRAM 產出標記"]:::database
+    end
+```
+
+*English version:*
+
+```mermaid
+graph TB
+    classDef entry fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef monitor fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef eval fill:#ede7f6,stroke:#5e35b1,stroke-width:2px;
+    classDef heal fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef memory fill:#eceff1,stroke:#37474f,stroke-width:2px;
+    classDef database fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+
+    subgraph AG0["0. Skill Registry & Promotion"]
+        aagent(["Agent / LLM"]):::entry
+        aatools["Analysis Toolbox (analysis/*.py)<br/>Playbooks / MCP Standard Tools"]:::entry
+        aaadhoc["Dynamic Ad-hoc Code"]:::entry
+        aasandbox["Secure Sandbox Execution<br/>(single-shot analysis response)"]:::entry
+        aaapproval{"User Feedback<br/>(user_approval)"}:::heal
+
+        aagent -->|"1. invoke standard tool"| aatools
+        aagent -->|"2. generate ad-hoc code"| aaadhoc
+        aaadhoc -->|"execute"| aasandbox
+        aasandbox -->|"write to analysis_history"| aaapproval
+        aaapproval -->|"approved + frequent reuse → Code Promotion"| aatools
+    end
+
+    subgraph AG1["1. Health Monitoring — Change & Anomaly Detection"]
+        aatracker["tool_change_log<br/>(version fingerprint tracking)"]:::monitor
+        aametrics["mcp_tool_metrics<br/>(invocation & performance metrics)"]:::monitor
+        aahotspot{"Hotspot Detector"}:::monitor
+        aastagnation["PM5 Stagnation Detector<br/>(detect_stagnation)<br/>stable but low-performing tools"]:::monitor
+
+        aatools -->|"modification triggers register_tool()"| aatracker
+        aatools -->|"execution recorded in metrics"| aametrics
+        aatracker -->|"revisions ≥ threshold"| aahotspot
+        aametrics -->|"performance anomaly / error"| aahotspot
+        aametrics -->|"stable low performance"| aastagnation
+        aastagnation -->|"proactively trigger deep assessment"| aaeval_hub
+    end
+
+    subgraph AG2["2. Multi-dimensional Health Assessment"]
+        aaeval_hub["Assessment Hub<br/>(f_promote · HealthScore formulas)<br/>CC Complexity / Churn Rate / X-Ray"]:::eval
+
+        aahotspot -->|"trigger deep assessment"| aaeval_hub
+    end
+
+    subgraph AG3["3. AI-driven Stabilization Loop"]
+        aadiag["Diagnostic Log & Action Plan"]:::heal
+        aaopt["AI Agent Optimized Rewrite"]:::heal
+
+        aaeval_hub -->|"aggregate data & threshold check"| aadiag
+        aadiag -->|"plan & refactor"| aaopt
+        aaopt -->|"Step 1: overwrite & version upgrade"| aatools
+    end
+
+    subgraph AG4["4. Dual-track Memory & Progressive Forgetting"]
+        aavlm_mem["VLM Visual Memory<br/>(PNG Snapshot)"]:::memory
+        aaforget["Ebbinghaus Forgetting Curve<br/>(progressive downsampling)"]:::memory
+        aadb_table[("bio_memory.duckdb<br/>Stabilization Transaction Log")]:::database
+
+        aaopt -->|"Step 2: save visual snapshot"| aavlm_mem
+        aaopt -->|"Step 3: write transaction log"| aadb_table
+        aavlm_mem -->|"time elapsed"| aaforget
+
+        aaforget -.->|"historical evolution context<br/>(VLM reads back for diagnosis)"| aadiag
+        aadb_table -->|"provenance chain"| aaengram["ENGRAM Artifact Marker"]:::database
     end
 ```
 
@@ -1993,32 +2244,62 @@ reg -->|"生成語意向量"| embed_fn
 end
 
 subgraph STORE["產出記憶庫（bio_memory.duckdb）"]
-mem["圖表 / 報告 / 數據<br/>元數據 + 語意向量 + 工具版本<br/>inline blob ≤ 500 KB 同步快取"]
+mem["analysis_artifacts<br/>元數據 + 語意向量 + 工具版本<br/>inline blob ≤ 500 KB 同步快取"]
 hnsw["HNSW 索引<br/>cosine metric 近鄰搜尋"]
+artifact_rel[("artifact_relations<br/>src/dst artifact_id<br/>Blast Radius 影響圖")]
 helix[("HELIX<br/>tools 版本帳本")]
 
-mem --- hnsw
-mem -->|"JOIN analysis_history.tool_id<br/>記錄產出由哪個工具版本產生"| helix
-end
-
-subgraph SEARCH["② 使用者查詢時（按需觸發）"]
-l1["Layer 1<br/>精確 subtype SQL"]
-l2["Layer 2<br/>HNSW cosine 語意搜尋"]
-rrf["RRF 融合排名<br/>score = Σ 1/(60+rank_i)"]
+mem -->|"建立向量索引"| hnsw
+mem -->|"登記產出依賴關係"| artifact_rel
+mem -->|"JOIN analysis_history.tool_id"| helix
+helix -.->|"版本更新 → 遞迴 CTE 追蹤失效產出"| artifact_rel
 end
 
 embed_fn -->|"寫入"| mem
 
-query(["使用者查詢"]) --> l1
-query --> l2
-l1 -->|"查詢"| mem
-l2 -->|"搜尋"| hnsw
-mem -->|"命中結果"| rrf
+query(["② 使用者查詢"]) --> l1 & l2
+l1["Layer 1：精確 subtype SQL"] -->|"查詢"| mem
+l2["Layer 2：HNSW cosine 語意搜尋"] -->|"搜尋"| hnsw
+mem -->|"命中結果"| rrf["RRF 融合排名<br/>score = Σ 1/(60+rank_i)，k=60"]
 hnsw -->|"近鄰結果"| rrf
 rrf -->|"回傳（含工具版本溯源）"| result(["Agent / Web UI 取回"])
+rrf -->|"寫入觀測"| sm["engram_search_metrics<br/>延遲 / 層別觀測"]
+```
 
-sm["engram_search_metrics<br/>延遲 / 層別觀測"]
-rrf -->|"寫入觀測"| sm
+*English version:*
+
+```mermaid
+graph TD
+subgraph EWRITE["① On Analysis Completion (auto-triggered)"]
+eanalysis["Bioinformatics Analysis<br/>Bulk RNA / Spatial / DEG…"]
+ereg["register_artifact()<br/>artifact_registry.py"]
+eembed_fn["embed.py<br/>bge-m3 1024-dim → semantic vector"]
+
+eanalysis -->|"auto-called on completion"| ereg
+ereg -->|"generate semantic vector"| eembed_fn
+end
+
+subgraph ESTORE["Artifact Memory Store (bio_memory.duckdb)"]
+emem["analysis_artifacts<br/>metadata + semantic vector + tool version<br/>inline blob <= 500 KB cached"]
+ehnsw["HNSW Index<br/>cosine nearest-neighbor search"]
+eartifact_rel[("artifact_relations<br/>src/dst artifact_id<br/>Blast Radius Impact Graph")]
+ehelix[("HELIX<br/>tools version ledger")]
+
+emem -->|"build vector index"| ehnsw
+emem -->|"register artifact dependency"| eartifact_rel
+emem -->|"JOIN analysis_history.tool_id"| ehelix
+ehelix -.->|"tool update: recursive CTE traces stale artifacts"| eartifact_rel
+end
+
+eembed_fn -->|"write"| emem
+
+equery(["② User Query"]) --> el1 & el2
+el1["Layer 1: Exact subtype SQL"] -->|"query"| emem
+el2["Layer 2: HNSW cosine search"] -->|"search"| ehnsw
+emem -->|"matched results"| errf["RRF Fusion Ranking<br/>score = sum(1/(60+rank_i)), k=60"]
+ehnsw -->|"nearest neighbors"| errf
+errf -->|"return with tool version provenance"| eresult(["Agent / Web UI"])
+errf -->|"write metrics"| esm["engram_search_metrics<br/>latency / layer observability"]
 ```
 
 #### 問題的本質：分析產出為何容易消失

@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "description": "CB1 benchmark query typology — 4 scenario categories mapped to Axes A/B/C",
+  "benchmark": "CB1: Evo_PRISM vs Snakemake vs Nextflow, 98 Kallisto bulk RNA-seq samples",
+  "reference": "Inspired by EvolveMem [arXiv:2605.13941] per-question failure logging and 5-category QA breakdown",
+  "type_definitions": {
+    "cache_miss": {
+      "description": "Cold-start: sample not in L1 cache, fresh QC+PCA computation required",
+      "benchmark_axis": "A",
+      "n_queries": 98,
+      "expected_cache_hit_rate": 0.0,
+      "example": "First-run of all 98 Kallisto samples with empty in-memory cache"
+    },
+    "cache_hit": {
+      "description": "Warm-cache: sample result served directly from in-memory L1 semantic cache",
+      "benchmark_axis": "B",
+      "n_queries": 95,
+      "expected_cache_hit_rate": 1.0,
+      "example": "Re-run of base 95 samples after initial cache population; zero recomputation"
+    },
+    "incremental": {
+      "description": "New sample added to existing cohort — only 3 new samples recomputed, 95 served from cache",
+      "benchmark_axis": "B",
+      "n_queries": 3,
+      "expected_cache_hit_rate": 0.0,
+      "example": "Adding the 3 withheld samples to a 95-sample base cohort"
+    },
+    "stale_detection": {
+      "description": "Code/parameter change detection via HELIX tool_id versioning — which outputs need rerun",
+      "benchmark_axis": "C",
+      "n_queries": 98,
+      "evo_prism_accuracy": 1.0,
+      "snakemake_accuracy": 0.0,
+      "nextflow_accuracy": 0.0,
+      "example": "QC threshold change detected via register_tool() new tool_id; HELIX flags 98/98 stale vs 0/98 for competitors"
+    }
+  },
+  "axis_mapping": {
+    "A": ["cache_miss"],
+    "B": ["cache_hit", "incremental"],
+    "C": ["stale_detection"]
+  },
+  "per_query_schema": {
+    "sample": "Sample directory name (str)",
+    "query_type": "One of: cache_miss | cache_hit | incremental | stale_detection",
+    "latency_ms": "Per-sample wall-clock latency in milliseconds (float)"
+  },
+  "note": "Sample IDs are resolved dynamically from bulk_rna_data/Kallisto_v1/results_kallisto/ at runtime. Base samples = SAMPLES_ALL[:-3] (95); incremental samples = SAMPLES_ALL[-3:] (3 withheld)."
+}

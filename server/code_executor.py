@@ -62,6 +62,7 @@ ALLOWED_IMPORTS = {
     "re",
     "math",
     "datetime",
+    "time",
     "collections",
     "itertools",
     "functools",
@@ -70,20 +71,31 @@ ALLOWED_IMPORTS = {
 }
 
 BLOCKED_PATTERNS = [
-    # 系統呼叫
+    # ── 系統呼叫 / RCE ───────────────────────────────────────────────────────
     "os.system",
     "os.popen",
     "os.execv",
     "os.execve",
+    "os.fork",       # fork bomb
+    "os.chdir",      # CWD escape
+    "os.environ",    # env-var path injection
     "subprocess",
     "multiprocessing",
     "__import__",
     "eval(",
     "exec(",
     "compile(",
-    # 檔案 I/O（直接與間接）
-    "open(",
-    # pandas/numpy/scanpy/anndata 的隱性檔案 I/O — 繞過 open() 封鎖
+    "pty.",          # terminal spawning
+    "ctypes.",       # C library / libc.system()
+    # ── 檔案 I/O — 直接寫法 ─────────────────────────────────────────────────
+    "open(",         # ADV-02 修復：任何 open() 均需 AST path check（見下方）
+    "io.open(",      # io 模組繞過
+    # ── pathlib 繞過（直接讀寫路徑而非透過 open）────────────────────────────
+    ".read_text(",
+    ".read_bytes(",
+    ".write_text(",
+    ".write_bytes(",
+    # ── pandas/numpy/scanpy/anndata 的隱性檔案 I/O ──────────────────────────
     "read_csv(",
     "read_parquet(",
     "read_excel(",
@@ -99,7 +111,7 @@ BLOCKED_PATTERNS = [
     "sc.read",
     "sc.read_h5ad(",
     "anndata.read",
-    # 寫入
+    # ── 寫入 ──────────────────────────────────────────────────────────────────
     "savefig(",
     "to_csv(",
     "to_parquet(",
@@ -116,29 +128,35 @@ BLOCKED_PATTERNS = [
     ".write(",
     "COPY ",
     "EXPORT ",
-    # 網路
+    # ── 網路 ──────────────────────────────────────────────────────────────────
     "socket",
     "urllib",
     "requests",
     "httpx",
-    # 路徑操作
+    # ── 危險的序列化 / 反序列化 ──────────────────────────────────────────────
+    "pickle.",
+    "marshal.",
+    # ── 路徑操作 ──────────────────────────────────────────────────────────────
     "shutil.rmtree",
     "shutil.move",
     "pathlib.Path.unlink",
     "pathlib.Path.rmdir",
     "glob.glob(",
     "glob.iglob(",
-    # L1/DB 寫入（防止從 analysis.* 呼叫寫入函數）
+    # ── L1/DB 寫入（防止從 analysis.* 呼叫寫入函數）──────────────────────────
     "write_to_l1_cache(",
     "safe_write(",
     "register_tool(",
-    # builtin 繞過
+    # ── builtin 繞過 ──────────────────────────────────────────────────────────
     "importlib",
     "getattr(",
     "__builtins__",
     "__class__",
     "__subclasses__",
     "vars(",
+    # ── 資源耗盡 / timeout 繞過 ──────────────────────────────────────────────
+    "signal.",       # signal handler 可中斷 timeout 機制
+    "resource.",     # setrlimit 繞過
 ]
 
 SANDBOX_CWD = str(BIO_DB_ROOT)
@@ -184,9 +202,60 @@ def _check_imports(code: str) -> list[str]:
     return violations
 
 
+def _check_open_paths(code: str) -> list[str]:
+    """
+    AST-level check: detect open() / io.open() calls with absolute or
+    path-traversal string literals.
+
+    Catches patterns that bypass the plain "open(" text scan:
+      - Path('/etc/passwd').open(...)  →  caught by BLOCKED_PATTERNS ".write_text(" etc.
+      - open('/etc/passwd', 'r')       →  caught here (absolute) AND by "open(" text scan
+      - open('../../../secret', 'r')   →  caught here (traversal) AND by "open(" text scan
+
+    Returns list of violation descriptions (empty ⇒ clean).
+    """
+    violations: list[str] = []
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []  # SyntaxError already caught by _check_imports
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        # Match: open(...) or io.open(...) or anything.open(...)
+        is_open_call = (
+            (isinstance(func, ast.Name) and func.id == "open")
+            or (isinstance(func, ast.Attribute) and func.attr == "open")
+        )
+        if not is_open_call:
+            continue
+        if not node.args:
+            continue
+        first_arg = node.args[0]
+        if not (isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str)):
+            continue
+        path_val: str = first_arg.value
+        if os.path.isabs(path_val):
+            violations.append(
+                f"Absolute path in open(): {path_val!r}"
+            )
+        elif ".." in path_val.replace("\\", "/").split("/"):
+            violations.append(
+                f"Path traversal in open(): {path_val!r}"
+            )
+    return violations
+
+
 def is_safe(code: str) -> tuple[bool, str]:
     """
     Returns (True, "") if safe, (False, reason) if blocked.
+
+    Layers:
+      1. BLOCKED_PATTERNS text scan  (fast, catches most RCE / IO patterns)
+      2. _check_imports() AST scan   (catches import-level violations)
+      3. _check_open_paths() AST scan (catches absolute / traversal paths in open())
     """
     for pattern in BLOCKED_PATTERNS:
         if pattern in code:
@@ -195,6 +264,10 @@ def is_safe(code: str) -> tuple[bool, str]:
     bad_imports = _check_imports(code)
     if bad_imports:
         return False, f"Disallowed imports: {bad_imports}"
+
+    path_violations = _check_open_paths(code)
+    if path_violations:
+        return False, f"Path whitelist violation: {path_violations[0]}"
 
     return True, ""
 
@@ -226,13 +299,26 @@ def sandbox_exec(code: str, timeout: int = 60, *, preamble: str = "") -> ExecRes
     if preamble:
         code = preamble + "\n" + code
 
-    # 最小化環境：不繼承 os.environ，避免洩漏 API 金鑰
-    _safe_env = {
-        "PATH": "/usr/bin:/bin",
-        "HOME": str(Path.home()),
-        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
-        "PYTHONPATH": SANDBOX_CWD,  # 讓 import analysis.* 可用
+    # 最小化環境：不繼承 os.environ，避免洩漏 API 金鑰。
+    # 安全性說明：主要防線是 BLOCKED_PATTERNS + import whitelist，而非 env 隔離。
+    # env 隔離的目的僅是避免 subprocess 看到 ANTHROPIC_API_KEY 等敏感金鑰。
+    _SENSITIVE_KEYS = {
+        "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY",
+        "AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID",
+        "GITHUB_TOKEN", "HUGGING_FACE_HUB_TOKEN",
     }
+    if os.name == "nt":
+        # Windows：繼承完整 PATH 以確保 DLL / venv 可用，只剔除金鑰變數
+        _safe_env = {k: v for k, v in os.environ.items() if k not in _SENSITIVE_KEYS}
+        _safe_env["PYTHONPATH"] = SANDBOX_CWD
+    else:
+        # Unix：最小化 env（DLL 由 LD_LIBRARY_PATH 決定，通常不需）
+        _safe_env = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(Path.home()),
+            "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+            "PYTHONPATH": SANDBOX_CWD,
+        }
 
     tmp_path: str | None = None
     t0 = time.time()
