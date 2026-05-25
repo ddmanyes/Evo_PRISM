@@ -1,161 +1,227 @@
 # Evo_PRISM (Evo-PRISM)
 
-**自進化執行期智慧與語意記憶平台 (Evolutionary Platform for Runtime Intelligence & Semantic Memory)**
+**Evolutionary Platform for Runtime Intelligence & Semantic Memory**
 
-Evo_PRISM 是一個通用、自進化（Self-Evolving）的 LLM-Agent 工具鏈與運行期智慧與語意記憶系統。系統基於 **LLM Agent + MCP** 設計，採用創新的三層架構（L3 原始數據 → L2 結構化特徵 → L1 語意快取），搭配 **HELIX**（工具健康進化與版本追蹤迴路）與 **ENGRAM**（分析產出與執行脈絡永久記憶），能讓任何人在無需寫程式的情況下透過自然語言與複雜的分析工具鏈和資料庫互動。每份分析結果永久歸檔、可語意搜尋，並強制關聯至產生它的軟體版本，實現無痛的自適應優化與代碼自動晉升（Promotion）。
+> **Language:** English · [中文版](README_zh.md)
 
-*Evo_PRISM is a general-purpose, self-evolving LLM-Agent toolset lifecycle runtime and permanent semantic memory system powered by **LLM Agent + MCP (Model Context Protocol)**. It adopts an innovative three-layer data architecture (L3 raw data → L2 structured features → L1 semantic cache), combined with **HELIX** for tool health tracking and **ENGRAM** for permanent artifact memory, enabling seamless plain-language interactions with complex tools without coding. Every analysis result is archived, semantically searchable, and strictly traceable to the exact version of the tool that produced it, driving autonomous tool promotion and optimization.*
+Evo_PRISM is a general-purpose, self-evolving LLM-Agent toolset lifecycle runtime and permanent semantic memory system powered by **LLM Agent + MCP (Model Context Protocol)**. It adopts an innovative three-layer data architecture (L3 raw data → L2 structured features → L1 semantic cache), combined with **HELIX** for tool health tracking and **ENGRAM** for permanent artifact memory, enabling seamless plain-language interactions with complex tools without coding. Every analysis result is archived, semantically searchable, and strictly traceable to the exact version of the tool that produced it, driving autonomous tool promotion and optimization.
 
-為了展示本平台在處理高難度資料溯源、超高複雜度分析工具管理以及大數據特徵提煉時的真實實戰威力，本專案提供了一個**首屈一指的垂直領域旗艦展示：生物資訊分析模組 (Bioinformatics Showcase Module)**。該模組完整接入了空間轉錄組 (Spatial Transcriptomics)、Bulk RNA-seq、scRNA-seq、蛋白質組學 (Proteomics) 等前沿生命科學數據的分析能力。
+To demonstrate the platform's capabilities in handling complex data provenance, high-complexity tool lifecycle management, and large-scale feature extraction, the project ships with a **flagship vertical showcase: the Bioinformatics Analysis Module**, which fully integrates Spatial Transcriptomics, Bulk RNA-seq, scRNA-seq, and Proteomics analysis capabilities.
 
-[![CI](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ddmanyes/Bio_PRISM/actions/workflows/ci.yml)
+[![CI](https://github.com/ddmanyes/Evo_PRISM/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ddmanyes/Evo_PRISM/actions/workflows/ci.yml)
 [![Python ≥ 3.10](https://img.shields.io/badge/Python-%E2%89%A53.10-blue)](https://www.python.org/)
-[![DuckDB](https://img.shields.io/badge/DuckDB-1.5-yellow)](https://duckdb.org/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-1.5.2-yellow)](https://duckdb.org/)
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-green)](https://modelcontextprotocol.io/)
+[![Docker](https://img.shields.io/badge/Docker-ddmann375000%2Fevo--prism%3A0.1.0-blue)](https://hub.docker.com/r/ddmann375000/evo-prism)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
 ---
 
-## 為什麼是 Evo_PRISM？ / Why Evo_PRISM?
+## Why Evo_PRISM?
 
-Evo_PRISM 克服了現代 LLM 應用與工具開發的核心痛點，使其在複雜任務分析（如生物資訊工作流）中具備自我進化的能力。
+Evo_PRISM addresses core pain points in modern LLM agent development and complex tool execution, enabling self-evolving intelligence for demanding analytical workflows.
 
-*Evo_PRISM addresses core challenges in LLM agent application development and tool execution, enabling self-evolving intelligence.*
-
-| 痛點 / Problem | Evo_PRISM 的解法 / Solution |
-|:---|:---|
-| 🔁 每次提問都要重複執行昂貴工具 / Re-running expensive analyses repeatedly | **L1 語意快取**：相似問題毫秒級自動回答，極大節省資源 · *Semantic cache answers similar queries in milliseconds* |
-| 📂 工具輸出結果散落各地、無法回溯 / Output artifacts scattered and unsearchable | **ENGRAM 永久記憶**：每次產出自動歸檔，支援 Hybrid 檢索與語意搜尋 · *Every artifact auto-archived with hybrid semantic search* |
-| 🐛 程式修改後不知道是哪版產出結果 / No traceability between results and code | **HELIX 版本追蹤**：工具版本與分析歷史強制關聯，拒絕版本漂移 · *Tool versions hard-linked to analysis history to avoid version drift* |
-| 🧑‍💻 非工程師無法直接調用複雜工具 / Non-coders locked out of tools | **自然語言 Agent**：支援 Web UI、MCP、Telegram，以純自然語言呼叫工具 · *Plain-language execution via Web UI, MCP, or Telegram* |
-| 🛠️ 靜態工具鏈無法自動適應新需求 / Static toolchains cannot adapt to new needs | **自進化 Code Promotion**：自動偵測熱點，重用代碼達三次即可自動升格為永久工具 · *Autonomous code promotion upgrades temporary code to permanent tools* |
+| Problem                                               | Solution                                                                                                           |
+| :---------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
+| 🔁 Re-running expensive analyses on every query       | **L1 Semantic Cache**: similar queries answered in milliseconds, saving resources dramatically               |
+| 📂 Output artifacts scattered and unsearchable        | **ENGRAM Permanent Memory**: every artifact auto-archived with hybrid 3-way semantic search                  |
+| 🐛 No traceability between results and code versions  | **HELIX Version Tracking**: tool versions hard-linked to analysis history, preventing version drift          |
+| 🧑‍💻 Non-coders locked out of complex tools         | **Plain-language Agent**: invoke tools via Web UI, MCP, or Telegram — no coding required                    |
+| 🛠️ Static toolchains that cannot adapt to new needs | **Self-evolving Code Promotion**: hot-spots auto-detected; code reused ≥3× is promoted to a permanent tool |
 
 ---
 
-## 系統架構 / Architecture
+## Architecture
 
-### 三層資料架構 / Three-Layer Data Architecture
+### Three-Layer Data Architecture
 
-![Evo_PRISM 三層架構](docs/images/三層架構.png)
+![Evo_PRISM Three-Layer Architecture](docs/images/三層架構_eng.png)
 
-| 層 / Layer | 名稱 / Name | 說明 / Description |
-|:---:|:---:|:---|
-| L3 | Bronze | 不可變原始數據 / Immutable raw data (FASTQ, SpaceRanger outs) |
-| L2 | Silver | DuckDB + Parquet 結構化特徵 / Structured features (30B → 416 MB) |
-| L1 | Gold | HNSW 語意快取，TTL 7 天 / Semantic cache, TTL 7 days |
+| Layer |  Name  | Description                                                     |
+| :---: | :----: | :-------------------------------------------------------------- |
+|  L3  | Bronze | Immutable raw data (FASTQ, SpaceRanger outs)                    |
+|  L2  | Silver | DuckDB + Parquet structured features (30B → 416 MB compressed) |
+|  L1  |  Gold  | HNSW semantic cache, TTL 7 days                                 |
 
-### HELIX — 工具健康進化迴路 / Tool Health-Evolving Loop
+### HELIX — Tool Health-Evolving Loop
 
-![HELIX 架構](docs/images/HELIX_架構圖.png)
+![HELIX Simple Flow](docs/images/helix簡單流程圖.png)
 
-**HELIX** 負責追蹤所有分析工具的版本、熱區偵測、複雜度量測與穩定化重構，確保 Agent 呼叫的永遠是健康版本。
+![HELIX Architecture Loop](docs/images/HELIX_架構圖_2.png)
 
-*HELIX tracks every analysis tool's version, detects hot-spots, measures complexity (Radon CC), and drives stabilization refactors — ensuring Agent always calls a healthy version.*
+**HELIX** tracks every analysis tool's version, detects hot-spots, measures cyclomatic complexity (Radon CC), and drives stabilization refactors — ensuring the Agent always calls a healthy, well-maintained version.
 
-### ENGRAM — 分析產出永久記憶 / Permanent Artifact Memory
+#### HELIX Memory System
 
-![ENGRAM 架構](docs/images/engram_架構圖1.png)
+HELIX uses a **dual-track memory system** so the agent can reconstruct a tool's full evolutionary history at any future diagnostic session.
 
-**ENGRAM** 將每次分析產出（CSV、Parquet、圖片、報告）永久歸檔，支援 Hybrid 3-way RRF 語意搜尋（Exact SQL + HNSW + BM25 FTS），並與 HELIX 工具帳本關聯防止版本漂移。
+**① HELIX-Vision — VLM Visual Memory**
 
-*ENGRAM permanently archives every analysis artifact and enables Hybrid 3-way RRF semantic search (Exact SQL + HNSW + BM25 FTS), linked to HELIX for version provenance.*
+After each stabilization iteration, a **640×640 PNG snapshot** is auto-rendered, encoding the full diagnostic context in four quadrants and stored as base64 in `tool_stabilization_log.diagnosis_img`:
 
-### Agent 決策流程 / Agent Decision Flow
+| Quadrant          | Content                                                 |
+| :---------------- | :------------------------------------------------------ |
+| Source Heatmap    | Per-line token count — visualizes complexity hot-spots |
+| Complexity Gauge  | Current Radon cyclomatic complexity (CC) measurement    |
+| Revision Timeline | Version fingerprint history from `tool_change_log`    |
+| Diagnostic Text   | AI assessment summary and action plan                   |
+
+Each snapshot costs **~100 VLM vision tokens** — approximately 10× compression vs equivalent plain text — enabling low-cost historical recall across sessions.
+
+**② Ebbinghaus Forgetting Curve**
+
+`scheduler/helix_expire_snapshots.py` (runs every Sunday at 04:00) progressively downsamples old snapshots to simulate biological memory decay — spatial layout survives while fine text fades over time:
 
 ```text
-提問 / Query
- ├─ Step 1  SQL 精確比對（0 token，< 1 秒）  ← 做過？直接回傳
- ├─ Step 2  HNSW 語意搜尋（cosine ≥ 0.88）   ← 問過類似？快取回傳
- ├─ Step 3A 標準分析工具（L2 Parquet 就緒）
- ├─ Step 3B Code Promotion 重用（曾生成過？）
- └─ Step 3C 全新程式碼生成（沙盒執行 + 失敗重試）
-               └─ 執行成功 → 存入歷史 → 下次可被 3B 查詢
-               └─ 重用 ≥ 3 次 → 升格為 3A 永久工具
+Days 0–180 after iteration closed :  640×640  ~100 VLM tokens  full resolution
+Days 180–365 after iteration closed:  320×320   ~25 VLM tokens  50% downsampled
+Days > 365 after iteration closed  :  160×160    ~6 VLM tokens  25% downsampled
+```
+
+This ensures recent diagnostics remain precise while historical memory retains spatial structure at minimal cost, enabling the Agent to rapidly reconstruct a tool's full evolutionary arc across sessions.
+
+### ENGRAM — Permanent Artifact Memory
+
+![ENGRAM Architecture](docs/images/engram_架構圖1_eng.png)
+
+**ENGRAM** permanently archives every analysis artifact (CSV, Parquet, images, reports) and enables Hybrid 3-way RRF semantic search (Exact SQL + HNSW + BM25 FTS), linked to HELIX for full version provenance.
+
+### Agent Decision Flow
+
+```text
+Query
+ ├─ Step 1  Exact SQL match (0 tokens, < 1 s)         ← Already done? Return directly
+ ├─ Step 2  HNSW semantic search (cosine ≥ 0.88)      ← Similar query cached? Return cache
+ ├─ Step 3A Standard analysis tool (L2 Parquet ready)
+ ├─ Step 3B Code Promotion reuse (generated before?)
+ └─ Step 3C Fresh code generation (sandbox + retry)
+               └─ Success → store in history → available for 3B next time
+               └─ Reused ≥ 3× → promoted to a permanent 3A tool
 ```
 
 ---
 
-## 快速開始 / Quick Start
+## Quick Start
 
-Evo_PRISM 採用 **MCP-First（以 MCP 伺服器為核心）** 的設計。如果您主要是在 IDE（如 Antigravity）或 CLI（如 Claude Code）中使用 AI 客戶端直接呼叫工具，**您完全不需要下載或運行 26B 的本機 Gemma 模型**，只需啟動極其輕量的本機 Embedding 伺服器即可！
+Choose your path first, then follow the steps:
 
-*Evo_PRISM is designed as an **MCP-First** platform. If you primarily use AI clients in IDEs (like Antigravity) or CLI (like Claude Code) to call tools, **you do not need the heavy 26B local Gemma model at all** — only a lightweight local embedding server is needed.*
-
-### 前置需求 / Prerequisites
-
-#### 1. 核心模式（推薦：MCP 優先 / 雲端 LLM 模式）· *Core Mode (Recommended)*
-*   macOS（開發測試）或 Linux（生產部署）
-*   Python ≥ 3.10 與 [uv](https://github.com/astral-sh/uv) 套件管理器
-*   [llama.cpp](https://github.com/ggml-org/llama.cpp) 已編譯（`~/llama.cpp/build/bin/llama-server`）
-*   **輕量模型**（放於 `~/`）：
-    *   `bge-m3-Q8_0.gguf` — Embedding 模型（僅 605 MB，用於 L1 語意快取與 ENGRAM 混合檢索）
-
-#### 2. 完全離線模式（選配：本機 Web UI 運作）· *Offline Mode (Optional)*
-如果您需要 100% 離線或在本地跑完全部推理流程，才需要額外下載：
-*   `gemma-4-26B-A4B-it-UD-IQ2_M.gguf` — 本機推理引擎（需 ~16 GB RAM）
-*   `mmproj-F16.gguf` — 視覺投影層 / Vision projector
+| I want to...                                               | Recommended path                                             | Difficulty |
+| :--------------------------------------------------------- | :----------------------------------------------------------- | :--------: |
+| Get up and running as fast as possible                     | 🐳[Docker Compose](#-path-1-docker-compose-recommended)         |   ★☆☆   |
+| Call analysis tools directly from Claude Code / IDE        | 💡[Manual Install + MCP](#-path-2-manual-install--mcp-ide--cli) |   ★★☆   |
+| Use the full web chat interface or fully offline inference | 🌐[Manual Install + Web UI](#-path-3-manual-install--web-ui)    |   ★★★   |
 
 ---
 
-### 安裝 / Installation
+### 🐳 Path 1: Docker Compose (Recommended)
+
+No Python setup needed — everything runs inside the container.
+
+**Prerequisites:**
+
+- [Docker Engine ≥ 24 + Docker Compose v2](https://docs.docker.com/get-docker/)
+- `bge-m3-Q8_0.gguf` (605 MB embedding model — download the Q8_0 quantized version from [HuggingFace BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3))
 
 ```bash
-# 設定專案根目錄
-export BIO_DB_ROOT="$(pwd)"
+# 1. Place the downloaded model into the project's models/ folder
+mkdir -p models
+# Move bge-m3-Q8_0.gguf into models/
 
-# 1. 建立 venv（若位於 ExFAT 或雲端同步資料夾，venv 必須建在 APFS 本機）
+# 2. Copy the environment config (no API key needed for MCP mode)
+cp .env.example .env
+
+# 3. Start all services (first run downloads the image, ~343 MB)
+docker compose up -d
+
+# 4. Initialize the database (one-time only)
+docker compose exec evo-prism python scripts/00_init_db.py
+```
+
+Done! MCP HTTP ready at **<http://localhost:8080>** · Web UI at <http://localhost:8000>
+
+> Or pull the pre-built image directly: `docker pull ddmann375000/evo-prism:0.1.0`
+>
+> HPC / Singularity cluster users: see [SETUP.md](SETUP.md#singularity).
+
+---
+
+### 💡 Path 2: Manual Install + MCP (IDE / CLI)
+
+> This path lets you call 17 bioinformatics tools directly in natural language from **Claude Code CLI** or **Antigravity IDE** — no browser needed.
+
+**Prerequisites:**
+
+- Python ≥ 3.10 (3.11 recommended)
+- [uv](https://github.com/astral-sh/uv) package manager (`pip install uv`)
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) compiled (for the local embedding service)
+- `bge-m3-Q8_0.gguf` (605 MB, placed at `~/llama.cpp/models/`)
+- Anthropic API Key
+
+**Installation:**
+
+```bash
+# Step 1: Create a virtual environment
+# Note: if the project lives on an ExFAT drive or Google Drive sync folder,
+# the Python venv must be on a local (APFS/ext4) filesystem — use a symlink to bridge back
 python3 -m venv ~/.venvs/hermes-bio-memory
-ln -s ~/.venvs/hermes-bio-memory "$BIO_DB_ROOT/.venv"
+ln -s ~/.venvs/hermes-bio-memory .venv
 
-# 2. 安裝依賴 / Install dependencies
-cd "$BIO_DB_ROOT"
+# Step 2: Install all Python packages
 uv sync --no-install-project
 
-# 3. 設定環境變數 / Configure environment
+# Step 3: Configure environment variables
 cp .env.example .env
-# 填入您的 API keys (若使用 Claude/Gemini 等雲端 LLM 後端)
+# Open .env and fill in: ANTHROPIC_API_KEY=sk-ant-...
 
-# 4. 初始化資料庫 / Initialize database
+# Step 4: Initialize the database (one-time only)
 .venv/bin/python scripts/00_init_db.py
 
-# 5. 初始化 L1 快取 / Initialize L1 cache
-.venv/bin/python scripts/03_init_l1_cache.py
-
-# 6. 執行所有 Schema migration（v2 → v20）
+# Step 5: Run all database schema migrations (one-time only)
 for script in $(ls scripts/[0-9][0-9]_migrate_schema_*.py | sort -V); do
     .venv/bin/python "$script"
 done
 ```
 
+**Start the Embedding Server (required):**
+
+```bash
+# The Embedding Server converts queries to vectors for semantic search
+# The & at the end runs it in the background so your terminal stays free
+~/llama.cpp/build/bin/llama-server \
+  -m ~/llama.cpp/models/bge-m3-Q8_0.gguf \
+  --embedding --port 8081 --ctx-size 8192 --n-gpu-layers 99 &
+
+# Verify it started successfully (expect: {"status":"ok"})
+curl http://localhost:8081/health
+```
+
+**Connect an MCP client:**
+
+- **Claude Code CLI**: a `.mcp.json` is already in the project root — run `claude` from this directory to auto-load all tools
+- **Antigravity IDE**: Settings → MCP Servers, add a new entry — see [MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md)
+- **External HTTP client**: `python server/bio_memory_server.py --transport http --port 8082`
+
 ---
 
-### 啟動與使用 / Launch & Execution
+### 🌐 Path 3: Manual Install + Web UI
 
-#### 💡 模式 A：MCP 優先模式（推薦 - 直接連接 IDE/CLI 客戶端）
-此模式不需要啟動主 Web 伺服器，直接透過 AI 客戶端連線。
+> Complete Path 2 first, then run:
 
-1. **啟動 Embedding Server**（提供 L1 語意快取支援，極輕量且必要）：
-   ```bash
-   ~/llama.cpp/build/bin/llama-server \
-     -m ~/llama.cpp/models/bge-m3-Q8_0.gguf \
-     --embedding --port 8081 --ctx-size 8192 --n-gpu-layers 99 &
-   ```
-2. **連線至您的 MCP 客戶端**：
-   *   **Claude Code CLI**：已在專案根目錄配置 `.mcp.json`，直接啟動 `claude` 即可自動載入工具。
-   *   **Antigravity IDE**：在 Settings 中設定本機 MCP 伺服器（詳見下文 MCP 整合說明）。
-   *   **啟動獨立 HTTP 傳輸**（若外部客戶端需要）：
-       ```bash
-       .venv/bin/python server/bio_memory_server.py --transport http --port 8082
-       ```
+```bash
+bash start_bioagent.sh --claude  # Claude API backend (recommended, requires ANTHROPIC_API_KEY)
+bash start_bioagent.sh --google  # Gemini API backend (requires GOOGLE_API_KEY)
+bash start_bioagent.sh --local   # Fully offline inference (requires Gemma 4 26B model, ~16 GB RAM)
+```
 
-#### 🧪 快速驗證：用內建 Demo 數據測試 DEG 分析 · *Quick Validation with Bundled Demo Data*
+Open your browser: **[http://localhost:8000](http://localhost:8000)**
 
-Repo 內附 `tests/fixtures/bulk_rna/` 小型數據集（無需下載完整數據即可執行）：
+---
 
-*The repo ships with `tests/fixtures/bulk_rna/` — no extra downloads needed:*
+### 🧪 Verify Your Installation
+
+The project ships with a built-in test dataset — no external downloads needed:
 
 ```python
-# 直接在 Python 中呼叫 / Call directly from Python
 from analysis.bulk_eda import run_deg_analysis
 
 result = run_deg_analysis(
@@ -164,12 +230,10 @@ result = run_deg_analysis(
     condition_col="group",
     ref_level="ctrl",
 )
-print(result["summary"])   # DEG 數量摘要
+print(result["summary"])   # prints differentially expressed gene count summary
 ```
 
-或透過 MCP 工具呼叫（Claude Code CLI 內）：
-
-*Or call via MCP tool (inside Claude Code CLI):*
+Or run it directly in Claude Code CLI:
 
 ```
 bio_run_deg counts_path=tests/fixtures/bulk_rna/deseq2_counts_top1000.csv
@@ -179,284 +243,154 @@ bio_run_deg counts_path=tests/fixtures/bulk_rna/deseq2_counts_top1000.csv
 
 ---
 
-#### 🌐 模式 B：啟動 Web UI 互動介面
-如果您想使用網頁儀表板，可使用雲端 API (推薦) 或完全本機推理：
+## Test Data
+
+`tests/fixtures/bulk_rna/` ships with ready-to-use Bulk RNA-seq demo data — no extra downloads needed. It includes `deseq2_counts_top1000.csv` (~400 KB, 1,000 genes × 84 samples), `deseq2_coldata.tsv` (sample metadata), and `gene_sets/hair_follicle.yaml` (example pathway gene sets), sufficient to demo `bio_run_deg`, `bio_run_enrichment`, and `bio_run_heatmaps`.
 
 ```bash
-bash start_bioagent.sh --claude  # 使用 Claude API（推薦，需 ANTHROPIC_API_KEY）
-bash start_bioagent.sh --google  # 使用 Gemini API（推薦，需 GOOGLE_API_KEY）
-bash start_bioagent.sh --local   # 完全本機運作（需 gemma-4-26B 模型與 ~16 GB RAM）
-```
-啟動後開啟瀏覽器：**<http://localhost:8000>**
-
----
-
-## 測試資料 / Test Data
-
-### 隨 repo 附帶（可直接使用）/ Included in Repo
-
-`tests/fixtures/bulk_rna/` 內含開箱即用的 Bulk RNA-seq 示範數據集，無需額外下載：
-
-*`tests/fixtures/bulk_rna/` ships with the repo — no extra downloads needed:*
-
-| 檔案 | 大小 | 說明 |
-|------|------|------|
-| `deseq2_counts_top1000.csv` | ~400KB | Count matrix（1000 個最高變異基因 × 84 樣本，DESeq2 格式）|
-| `deseq2_coldata.tsv` | 2KB | 樣本 metadata（group 欄位，DESeq2 必需）|
-| `gene_sets/hair_follicle.yaml` | < 1KB | 路徑基因集範例（OxPhos / TCA / FAO 等）|
-
-可直接用於 `bio_run_deg`、`bio_run_enrichment`、`bio_run_heatmaps` 工具 demo（範例見快速開始章節）。
-
-*Sufficient to demo `bio_run_deg`, `bio_run_enrichment`, and `bio_run_heatmaps` (see Quick Start above).*
-
-```bash
-# 跑所有自動化測試 / Run all automated tests
+# Run the full automated test suite
 .venv/bin/python -m pytest tests/ -v --tb=short
-# 562 tests collected
+# 631+ tests collected
 ```
 
 ---
 
-## LLM + MCP Server 整合 / LLM + MCP Integration
+## LLM + MCP Integration
 
-Evo_PRISM 以 **MCP（Model Context Protocol）** 作為 LLM 與工具箱之間的標準橋樑。任何支援 MCP 的 AI 客戶端（Claude Code、Antigravity IDE、Web UI）都能直接呼叫 15 個工具（在生物資訊旗艦模組中已預載 15 個生資工具），讓 LLM 自主決定何時查詢歷史、何時觸發分析、何時讀回報告——無需人工介入。
+Evo_PRISM uses **MCP (Model Context Protocol)** as the standard bridge between LLMs and tools. Any MCP-compatible client (Claude Code, Antigravity IDE, Web UI) can invoke 17 built-in tools directly (18 with sandbox enabled) — the LLM autonomously decides when to query history, trigger analysis, or retrieve reports, with no manual intervention required.
 
-*Evo_PRISM uses **MCP (Model Context Protocol)** as the standard bridge between LLMs and tools. Any MCP-compatible client (Claude Code, Antigravity IDE, Web UI) can invoke 15 built-in tools (preloaded with 15 bio tools in the flagship module) directly — the LLM autonomously decides when to query history, trigger analysis, or retrieve reports.*
-
-同時提供 **stdio** 與 **HTTP** 兩種 transport，供外部 AI 客戶端呼叫。
-
-*Supports both **stdio** and **HTTP** transport for external AI client integration.*
+Both **stdio** and **HTTP** transports are supported for external AI client integration.
 
 ```bash
-# HTTP 獨立啟動 / Standalone HTTP
+# Standalone HTTP server
 .venv/bin/python server/bio_memory_server.py --transport http --port 8082
 ```
 
-### 可用工具 / Available Tools（預設 15 個）
+### Available Tools (25 by default)
 
-| 工具 / Tool | 說明 / Description | Token |
-|:---|:---|:---:|
-| `bio_history_lookup` | 樣本分析歷史 / Sample analysis history | 0 |
-| `bio_history_timeline` | 最近 N 天時間軸 / Recent N-day timeline | 0 |
-| `bio_history_check` | 確認分析是否完成 / Check analysis completion | 0 |
-| `bio_history_search` | L1 HNSW 語意搜尋 / L1 semantic search | 少量 |
-| `bio_memory_query` | L1 快取完整報告 / L1 full report query | 少量 |
-| `bio_memory_write` | 寫入 L1 快取 / Write L1 cache | 少量 |
-| `bio_register_sample` | 登記新樣本 / Register new sample | 0 |
-| `bio_read_report` | 讀取分析報告原文 / Read analysis report | 0 |
-| `bio_artifact_search` | ENGRAM 3-way RRF 語意搜尋 | 少量 |
-| `bio_artifact_summary` | ENGRAM artifact 摘要 / Artifact summary | 0 |
-| `bio_check_l2_sufficiency` | 檢查 L2 就緒狀態 / Check L2 readiness | 0 |
-| `bio_run_spatial_eda` | 空間 EDA 分析 / Spatial EDA analysis | 高 |
-| `bio_run_bulk_eda` | Bulk RNA EDA 分析 | 高 |
-| `bio_tool_health` | HELIX 工具健檢 / HELIX health report | 0 |
-| `bio_impact` | 變更爆炸範圍評估 / Change blast radius | 0 |
-| `bio_execute_code` ⚠️ | 沙盒 Python 執行（需 `MCP_ENABLE_DANGEROUS_TOOLS=true`） | 高 |
+| Tool | Description |
+| :--- | :--- |
+| `bio_history_lookup` | Sample analysis history |
+| `bio_history_timeline` | Recent N-day timeline |
+| `bio_history_check` | Check whether an analysis has completed |
+| `bio_history_search` | L1 HNSW semantic search |
+| `bio_memory_query` | L1 cache full report retrieval |
+| `bio_memory_write` | Write to L1 cache |
+| `bio_register_sample` | Register a new sample |
+| `bio_read_report` | Read raw analysis report |
+| `bio_artifact_search` | ENGRAM 3-way RRF semantic search |
+| `bio_artifact_summary` | ENGRAM artifact summary |
+| `bio_get_artifact` | Retrieve analysis output file handle (path + download URL + preview) |
+| `bio_get_figure` | Retrieve a single figure by ID via MCP ImageContent (on-demand VLM loading) |
+| `bio_check_l2_sufficiency` | Check L2 readiness status |
+| `bio_find_tool` | Semantic search for reusable analysis functions (tool discovery before writing code) |
+| `bio_run_spatial_eda` | Spatial transcriptomics EDA analysis |
+| `bio_run_bulk_eda` | Bulk RNA-seq EDA analysis |
+| `bio_run_deg` | Differential expression analysis (DEG) + volcano plot |
+| `bio_run_enrichment` | ORA enrichment analysis + dot plot |
+| `bio_run_heatmaps` | Expression heatmap generation |
+| `bio_tool_health` | HELIX tool health report |
+| `bio_failure_summary` | Aggregate analysis failure diagnostics (HELIX PM1 self-diagnosis) |
+| `bio_impact` | Change blast-radius assessment |
+| `bio_run_mcseg_roi` † | Visium HD ROI multi-scale cell segmentation (GPU, 30–90 min) |
+| `bio_run_mcseg_fullslide` † | Full-slide tiled cell segmentation (GPU, hours) |
+| `bio_compute_crc_metrics` † | CRC Visium HD spatial metrics computation |
+| `bio_execute_code` ⚠️ | Sandboxed Python execution (requires `MCP_ENABLE_DANGEROUS_TOOLS=true`) |
 
-詳細設定見 [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) 與 [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md)。
+> † Requires the MCseg backend (`scripts/msseg/`) which is not included in this repository. These tools appear in the tool list but will return an import error if called without the backend installed.
 
-*For detailed configuration, see [MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) and [MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md).*
-
----
-
-## 推理後端 / Inference Backends
-
-| 後端 / Backend | 模型 / Model | 用途 / Use |
-|:---|:---|:---|
-| `--local`（預設） | Gemma 4 26B Vision IQ2_M | 離線、隱私、多模態圖片分析 |
-| `--claude` | claude-sonnet-4-6 | 更強推理，需 ANTHROPIC_API_KEY |
-| `--google` | gemini-2.0-flash | 需 GOOGLE_API_KEY |
-
----
-
-## 排程任務 / Scheduled Tasks
-
-| 腳本 | 時間 | 功能 |
-|:---|:---|:---|
-| `scheduler/backup_db.py` | 每日 02:00 | EXPORT DATABASE → `~/bio_db_backups/`（保留 7 天） |
-| `scheduler/cleanup_l1_cache.py` | 每日 03:30 | 清理 L1 TTL 到期快取 |
-| `scheduler/rebuild_hnsw.py` | 每週日 03:00 | 重建 HNSW + ENGRAM BM25 FTS 索引 |
-| `scheduler/scan_new_samples.py` | 每 30 分鐘 | 掃描並登記新樣本 |
-| `scheduler/helix_expire_snapshots.py` | 每週日 04:00 | HELIX 視覺快照遺忘曲線降採樣 |
-
-launchd 範本在 [docs/launchd/](docs/launchd/)。
+For detailed configuration, see [MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) and [MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md).
 
 ---
 
-## 專案結構 / Project Structure
+
+## Scheduled Tasks
+
+Six background schedulers handle database backup, L1/figure-cache TTL cleanup, HNSW index rebuilding, new-sample scanning, and HELIX snapshot downsampling. See [docs/guides/SCHEDULED_TASKS.md](docs/guides/SCHEDULED_TASKS.md) for the full task table and launchd installation instructions.
+
+---
+
+## Project Structure
 
 ```text
-bio_DB/                         ← Evo_PRISM 專案根目錄
+Evo_PRISM/                      ← Project root
 │
-├── 核心程式碼（git 追蹤）
-│   ├── config/                 ← 集中設定（路徑、safe_write、db_utils）
-│   ├── scripts/                ← 一次性 L3→L2 轉換 + Schema migration（v0–v19）
-│   ├── analysis/               ← 分析函式庫（HELIX / ENGRAM / EDA / 快取）
-│   │   ├── tool_registry.py    ← HELIX-Core（版本管理）
-│   │   ├── artifact_registry.py← ENGRAM-Core（永久記憶）
-│   │   └── tool_visualizer.py  ← HELIX-Vision（視覺快照）
+├── Core code (git-tracked)
+│   ├── config/                 ← Centralized settings (paths, safe_write, db_utils)
+│   ├── scripts/                ← One-shot L3→L2 conversion + schema migrations (v0–v19)
+│   ├── analysis/               ← Analysis library (HELIX / ENGRAM / EDA / cache)
+│   │   ├── tool_registry.py    ← HELIX-Core (version management)
+│   │   ├── artifact_registry.py← ENGRAM-Core (permanent memory)
+│   │   └── tool_visualizer.py  ← HELIX-Vision (visual snapshots)
 │   ├── server/                 ← FastAPI Web UI + Agent + MCP Server
-│   ├── scheduler/              ← 排程任務（備份/清理/重建/掃描）
-│   ├── tests/                  ← 測試套件（35 files, 562 tests）
-│   ├── gene_sets/              ← 路徑基因集 YAML
-│   └── start_bioagent.sh       ← 一鍵啟動腳本
+│   ├── scheduler/              ← Scheduled tasks (backup / cleanup / rebuild / scan)
+│   ├── tests/                  ← Test suite (49 files, 631+ tests)
+│   ├── gene_sets/              ← Pathway gene set YAML configs
+│   └── start_bioagent.sh       ← One-command startup script
 │
-├── 文件（git 追蹤）
+├── Documentation (git-tracked)
 │   └── docs/
-│       ├── images/             ← 架構圖（三層架構 / HELIX / ENGRAM）
-│       ├── guides/             ← 操作指南（MCP / L3 Ingest / Data Integration）
-│       ├── plans/              ← 設計計畫（plan_zh / plan / IMPLEMENTATION_PLAN）
-│       ├── launchd/            ← macOS launchd plist 範本
-│       └── logs/               ← 開發日誌（PROGRESS / execution_trace）
+│       ├── images/             ← Architecture diagrams (three-layer / HELIX / ENGRAM)
+│       ├── guides/             ← Operation guides (MCP / L3 Ingest / Data Integration)
+│       ├── launchd/            ← macOS launchd plist templates
+│       └── logs/               ← Development logs (PROGRESS / execution_trace)
 │
-└── 本地數據目錄（.gitignore 排除）
-    ├── bio_memory.duckdb       ← 主資料庫（*.duckdb）
-    ├── silver/                 ← L2 Parquet 特徵存儲
-    ├── gold/                   ← L1 語意快取 DuckDB
-    ├── crc_visium_data/        ← L3 原始數據（~39 GB）
-    ├── bulk_rna_data/          ← Bulk RNA 原始數據
-    └── proteome_data/          ← Proteomics 數據
+└── Local data directories (.gitignore excluded)
+    ├── bio_memory.duckdb       ← Primary database (*.duckdb)
+    ├── silver/                 ← L2 Parquet feature store
+    ├── gold/                   ← L1 semantic cache DuckDB
+    ├── crc_visium_data/        ← L3 raw data (~39 GB)
+    ├── bulk_rna_data/          ← Bulk RNA-seq raw data
+    └── proteome_data/          ← Proteomics data
 ```
 
 ---
 
-## 測試 / Testing
+## Testing
 
 ```bash
 cd "$BIO_DB_ROOT"
 .venv/bin/python -m pytest tests/ -v --tb=short
 ```
 
-預期 / Expected: **562 tests collected**（少數 sandbox `FileNotFoundError` 為環境依賴，非邏輯失敗）
+Expected: **631+ tests collected** across 49 test files, covering HELIX versioning, ENGRAM artifact search, MCP stdio/HTTP transport, sandbox security, Code Promotion, and the bioinformatics analysis pipeline. A small number of sandbox `FileNotFoundError` failures are environment-dependent and not logic failures.
 
-| 測試檔 | 數量 | 涵蓋範圍 |
-|:---|:---:|:---|
-| `test_tool_registry.py` | 56 | HELIX 版本管理、穩定化、churn |
-| `test_fast_path.py` | 46 | Agent 快速路徑（SQL / timeline / sample list）|
-| `test_artifact_registry.py` | 44 | ENGRAM 3-way RRF + Provenance |
-| `test_phase4.py` | 35 | MCP Server stdio 工具 |
-| `test_phase5.py` | 31 | Agent Loop + 沙盒執行 |
-| `test_phase10.py` | 31 | MCP HTTP transport |
-| `test_phase6.py` | 23 | Telegram Bot 指令與訊息分派 |
-| `test_dashboard_actions.py` | 19 | 控制面板操作層 |
-| `test_graduation.py` | 18 | Code Promotion 升格機制 |
-| `test_impact.py` | 16 | HELIX blast radius 評估 |
-| `test_artifact_resources.py` | 15 | MCP Resources artifact 交付 |
-| `test_phase3.py` | 15 | L1 快取 + HNSW |
-| `test_tool_visualizer.py` | 15 | HELIX 視覺快照 + 降採樣 |
-| `test_phase2b.py` | 14 | 歷史查詢 + 報告生成 |
-| `test_bulk_timeseries.py` | 13 | 時間序列均值 + log2 FC |
-| `test_figure_cache.py` | 13 | MCP 圖片快取 + base64 剝離 |
-| `test_report_reader.py` | 13 | 報告讀取 + 路徑沙盒 |
-| `test_star_schema.py` | 13 | Star Schema views（throughput / stability）|
-| `test_pathway_scoring.py` | 14 | ssGSEA / Z-score 路徑評分 |
-| `test_bulk_deg.py` | 11 | DEG + Volcano plot |
-| `test_validate_inference_backend.py` | 10 | 推理後端 fail-fast 驗證 |
-| `test_tool_search.py` | 10 | 工具語意搜尋 |
-| `test_enrichment.py` | 10 | ORA 富集分析 |
-| `test_mcseg_quality.py` | 10 | MCseg 品質評估 |
-| `test_playbook.py` | 10 | Playbook 工具展開 |
-| 其他 | 57 | report_page (9) / bulk_heatmap (8) / dashboard (8) / bulk_eda (7) / backfill_tool_id (6) / handle_message_fast_path (6) / unique_constraint (4) / init_db (4) / spatial_ingest (3) / google_backend_multi_round (2) |
+See [docs/guides/TESTING.md](docs/guides/TESTING.md) for the full per-file breakdown.
 
 ---
 
-## 文件索引 / Documentation
+## Documentation
 
-| 文件 | 說明 |
-|:---|:---|
-| [CLAUDE.md](CLAUDE.md) | 專案憲法（開發規範 + Schema + 路徑） |
-| [SETUP.md](SETUP.md) | 詳細環境安裝手冊 |
-| [docs/plans/plan_zh.md](docs/plans/plan_zh.md) | 完整系統設計（中文，18 章） |
-| [docs/plans/plan.md](docs/plans/plan.md) | 完整系統設計（英文） |
-| [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md) | 實作進度封存 |
-| [docs/guides/DATA_INTEGRATION_GUIDE.md](docs/guides/DATA_INTEGRATION_GUIDE.md) | 跨專案數據整合指南 |
-| [docs/guides/L3_DATA_INGEST_GUIDE.md](docs/guides/L3_DATA_INGEST_GUIDE.md) | 新增 L3 樣本操作指南 |
-| [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) | MCP stdio 設定（Claude Code / Antigravity） |
-| [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md) | MCP HTTP transport 說明 |
-| [docs/guides/STAR_SCHEMA.md](docs/guides/STAR_SCHEMA.md) | Star Schema views 設計與範例 |
-
----
-
-## 下一步 / Roadmap
-
-```text
-本機可做 / Local
-    ├── 端對端測試：填入 ANTHROPIC_API_KEY，驗證 Claude 後端切換
-    └── launchd 排程安裝（launchctl load × 5，plist 範本在 docs/launchd/）
-
-接著 / Next（需 Linux 伺服器）
-    ├── 路徑設定遷移（config/settings.py）
-    └── Docker 沙盒替換 code_executor.py（生產安全隔離）
-
-之後 / Later
-    └── 5 位實驗室成員實際使用驗證
-```
+| Document                                                                    | Description                                               |
+| :-------------------------------------------------------------------------- | :-------------------------------------------------------- |
+| [CLAUDE.md](CLAUDE.md)                                                         | Project constitution (development rules + schema + paths) |
+| [SETUP.md](SETUP.md)                                                           | Detailed environment setup guide                          |
+| [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md)                                 | Technical overview: architecture, HELIX/ENGRAM formulas, benchmark results |
+| [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md)                                 | Implementation progress archive                           |
+| [docs/guides/DATA_INTEGRATION_GUIDE.md](docs/guides/DATA_INTEGRATION_GUIDE.md) | Cross-project data integration guide                      |
+| [docs/guides/L3_DATA_INGEST_GUIDE.md](docs/guides/L3_DATA_INGEST_GUIDE.md)     | L3 sample ingestion guide                                 |
+| [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md)                 | MCP stdio configuration (Claude Code / Antigravity)       |
+| [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md)                 | MCP HTTP transport guide                                  |
+| [docs/guides/STAR_SCHEMA.md](docs/guides/STAR_SCHEMA.md)                       | Star Schema views — design and usage examples            |
+| [docs/guides/TESTING.md](docs/guides/TESTING.md)                               | Full test suite breakdown (49 files, 631+ tests)          |
+| [docs/guides/SCHEDULED_TASKS.md](docs/guides/SCHEDULED_TASKS.md)               | Scheduled task table + launchd setup                      |
 
 ---
 
-## 用 LLM 擴充工具箱 / Extend the Toolbox with LLM
+## Extending the Toolbox
 
-Evo_PRISM 最核心的設計理念：**讓 LLM 自己擴充自己 (Self-Evolution)**。
+The core design philosophy of Evo_PRISM: **the LLM extends itself (Self-Evolution)**. `CLAUDE.md` is the project constitution — once the LLM reads it, a single instruction is enough to autonomously add a new analysis domain or extend an existing tool: it outputs the playbook, analysis function, MCP wiring, and HELIX version registration without manual intervention. All results are immediately callable from any MCP client and archived into ENGRAM.
 
-`CLAUDE.md` 是整個平台的「憲法」，完整定義了每一條規範與擴充流程。LLM 讀懂它之後，只需要你的一句話就能自主完成所有修改，並實現工具的自主演化升格：
-
-*The core principle of Evo_PRISM: **the LLM extends itself (Self-Evolution)**. `CLAUDE.md` is the project constitution. Once the LLM reads it, one sentence from you is enough to make it do all the work:*
-
-#### 情境一：新增全新分析領域 / Add a brand-new analysis domain
-
-```
-幫我新增 scRNA-seq 分析工具，支援 clustering、marker gene 偵測、UMAP 視覺化
-```
-
-LLM 自動產出：playbook → 分析函數 → MCP 接線 → HELIX 版本登記，全新工具立即可用。
-
-*LLM outputs: playbook → analysis function → MCP wiring → HELIX registration. New tool ready immediately.*
-
-#### 情境二：擴充既有工具的能力 / Extend an existing tool
-
-```
-幫 bio_run_deg 加入互動式 volcano plot，並支援批次校正（ComBat）
-```
-
-LLM 自動修改既有函數、更新 playbook 步驟、bumping 版本號、重新呼叫 `register_tool()`，HELIX 自動記錄版本差異。
-
-*LLM modifies the existing function, updates the playbook, bumps the version, re-registers with HELIX. Version delta is automatically tracked.*
+For the full extension workflow, see [CLAUDE.md](CLAUDE.md).
 
 ---
 
-兩種情境 LLM 都會完成以下四步，不需要人工介入：
+## Contributing
 
-*Both scenarios follow the same four steps — no manual intervention needed:*
-
-| 步驟 | 新增工具 | 擴充既有工具 |
-|------|---------|------------|
-| **1. Playbook** | 建立 `playbooks/<domain>.md` | 更新既有 playbook 步驟 |
-| **2. 分析函數** | 建立 `analysis/<module>.py` | 修改既有函數，新增參數或圖表 |
-| **3. MCP 接線** | 新增工具至 `bio_memory_server.py` | 更新工具的 `inputSchema` 描述 |
-| **4. HELIX 登記** | `register_tool()` 版本 1.0.0 | `register_tool()` bump 版本號 |
-
-完成後，工具立即可被任何 MCP 客戶端（Claude Code / Antigravity / Web UI）呼叫，所有分析結果自動歸入 ENGRAM 永久記憶。
-
-*Once done, the tool is immediately callable from any MCP client, and all results are automatically archived into ENGRAM.*
-
-### 現有工具參考 / Reference Implementations
-
-| MCP 工具 | Playbook | 分析模組 |
-|---------|----------|---------|
-| `bio_run_bulk_eda` | `playbooks/bulk_rnaseq.md` | `analysis/bulk_eda.py` |
-| `bio_run_deg` | `playbooks/bulk_rnaseq.md` | `analysis/bulk_eda.py` |
-| `bio_run_spatial_eda` | `playbooks/spatial_visium.md` | `analysis/spatial_eda.py` |
+PRs and Issues welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ---
 
-## 貢獻 / Contributing
+## License
 
-歡迎 PR 與 Issue！請先閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-*PRs and Issues welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.*
-
----
-
-## 授權 / License
-
-MIT License — © 2026 詹麒儒 (Chan Chi Ru). See [LICENSE](LICENSE).
+MIT License — © 2026 Chan Chi Ru. See [LICENSE](LICENSE).

@@ -8,6 +8,9 @@
 > **API 與實體命名相容性說明**：
 > 雖然本平台已被重塑為通用的 `Evo_PRISM` 自進化平台，但為保持現有代碼、自動化測試以及生物資訊旗艦模組的百分之百相容性，本機底層的 Python 虛擬環境名稱 `hermes-bio-memory`、實體資料庫名稱 `bio_memory.duckdb` 與以 `bio_*` 為首的命令行指令將維持不變，請安心依照以下指南進行設置。
 
+> [!TIP]
+> **最快速的方式是 Docker Compose**（見下方 Option A）。若您需要手動安裝，或在 Windows 上開發，請見 [docs/guides/WINDOWS_SETUP.md](docs/guides/WINDOWS_SETUP.md)。
+
 ---
 
 ## 前置需求 / Prerequisites
@@ -21,6 +24,64 @@ Evo_PRISM 採用 **MCP-First（MCP 伺服器優先）** 的設計。若您主要
 | llama.cpp | 核心 | 已編譯的 `llama-server` 執行檔（用於本地跑輕量 embedding）|
 | bge-m3-Q8_0.gguf | 核心 | **605 MB 輕量模型**，本機 embedding 用於 L1 語意快取與檢索 |
 | Gemma 4 Vision 模型 | **選配** | `gemma-4-26B-A4B-it-UD-IQ2_M.gguf` + `mmproj-F16.gguf`（僅在完全離線/完全本機 Web UI 模式下需要）|
+
+---
+
+## Option A：Docker Compose（推薦新使用者）· *Recommended for New Users*
+
+預建映像已包含所有 Python 依賴，無需手動建立 venv。
+
+*The pre-built image bundles all Python dependencies — no manual venv setup needed.*
+
+### 前置
+- Docker Engine ≥ 24 + Docker Compose v2
+- `bge-m3-Q8_0.gguf`（605 MB）放入 `./models/`
+
+### 步驟
+
+```bash
+# 1. 設定環境變數
+cp .env.example .env
+# 填入至少 ANTHROPIC_API_KEY=sk-ant-...
+
+# 2. 啟動服務（首次會拉取映像 ~343 MB）
+docker compose up -d
+
+# 3. 初始化 DB（首次，一次性）
+docker compose exec evo-prism python scripts/00_init_db.py
+for s in $(docker compose exec evo-prism ls scripts/ | grep '^[0-9][0-9]_migrate' | sort -V); do
+    docker compose exec evo-prism python "scripts/$s"
+done
+
+# 4. 驗證
+docker compose exec evo-prism python config/db_utils.py
+# 預期：{'sample_count': 0, 'history_count': 0, 'stale_count': 0, 'l2_ready_count': 0}
+```
+
+| 服務 | Port | 說明 |
+|------|------|------|
+| Web UI | 8000 | FastAPI 對話介面 |
+| MCP HTTP | 8080 | 外部 AI 客戶端接入 |
+| Embedding | 8081 | bge-m3 sidecar（docker compose 內部）|
+
+或直接拉取預建映像：`docker pull ddmann375000/evo-prism:0.1.0`
+
+---
+
+## Option B：Singularity / Apptainer（HPC 叢集）
+
+```bash
+singularity pull evo-prism.sif docker://ddmann375000/evo-prism:0.1.0
+singularity run --bind /mnt/data:/data/bio_db evo-prism.sif server
+```
+
+`Singularity.def` 在專案根目錄，可自行 build。
+
+---
+
+## Option C：手動安裝（macOS / Linux）
+
+*以下步驟適用於需要直接存取 GPU、開發模式或特殊磁碟配置的情境。*
 
 ---
 
@@ -113,7 +174,7 @@ EMBED_MODEL="$HOME/llama.cpp/models/bge-m3-Q8_0.gguf"
 
 # 以下為選配（僅在 --local 完全本機模式下需要，純 MCP / 雲端模式可忽略不存在）
 VISION_MODEL="$HOME/gemma-4-26B-A4B-it-UD-IQ2_M.gguf"
-MMPROJ="/Users/zhanqiru/mmproj-F16.gguf"
+MMPROJ="$HOME/mmproj-F16.gguf"
 ```
 
 如果您使用 L1 HNSW 語意快取，本機的 embedding 模型環境變數會在 `config/settings.py` 中被讀取，預設路徑為 `~/llama.cpp/models/bge-m3-Q8_0.gguf`：
@@ -157,7 +218,7 @@ bash start_bioagent.sh
 
 ## 步驟八：設定 MCP Server（讓 Claude Code / Antigravity / Web UI 共用）
 
-MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 15 個工具（啟用沙盒後 16 個），跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
+MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 17 個工具（啟用沙盒後 18 個），跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
 
 ### 共通前置：建 symlink 避開含空格 / 中文路徑（macOS Google Drive 必做）
 
@@ -283,7 +344,9 @@ cp .mcp.json.example .mcp.json
 | 文件 | 說明 |
 | ---- | ---- |
 | [CLAUDE.md](CLAUDE.md) | 專案憲法（規範、架構、路徑） |
-| [docs/plans/plan_zh.md](docs/plans/plan_zh.md) | 完整系統設計 |
+| [docs/plans/plan_zh.md](docs/plans/plan_zh.md) | 完整系統設計（中文，18 章）|
 | [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md) | 當前進度與待辦事項 |
 | [docs/guides/STAR_SCHEMA.md](docs/guides/STAR_SCHEMA.md) | Star Schema views 設計與使用範例 |
-| [docs/PREFILTER_VERIFICATION.md](docs/PREFILTER_VERIFICATION.md) | ENGRAM metadata pre-filter pushdown 驗證 |
+| [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) | MCP stdio 設定（Claude Code / Antigravity）詳細說明 |
+| [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md) | MCP HTTP transport + curl 範例 |
+| [docs/guides/WINDOWS_SETUP.md](docs/guides/WINDOWS_SETUP.md) | Windows 專用安裝注意事項 |
