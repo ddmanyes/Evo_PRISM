@@ -696,6 +696,36 @@ python run_visium_hd_showcase.py --roi-name my_roi --roi-x 9000 --roi-y 9000
 
 ---
 
+## ✅ 2026-05-25 Session-AB：論文 v2.6.0 → v2.7.0 一致性修復、Phase 13 內聯補回與台式學者語感重寫
+
+**動機**：依使用者指示 review `docs/paper/paper_draft.md` 是否完整反映 PROGRESS.md L8–L145（Phase 13 PM1–PM6）之完成項目。比對發現 PM6 已落實，但 PM1-D / PM2-C / PM3-B 三項「論文側內聯內容」實際未進主文（僅見於 supplementary），且發現多項一致性瑕疵（測試項數三處不一致、tool_id 覆蓋率敘述衝突、LaTeX 渲染瑕疵、§3.2 子小節編號錯亂）。本 session 分兩階段修復：v2.6.0 先解一致性與內聯補回，v2.7.0 再進一步瘦身摘要並改寫 §1.6 為台式學者語感。
+
+### 📝 v2.6.0 — 一致性修復與 PM1-D / PM2-C / PM3-B 內聯補回
+- **tool_id 覆蓋率敘述衝突修復**：§3.3 line 643 改寫，明確將 Phase A 定位為「**模擬之早期部署狀態**（刻意遮罩 tool_id）」，與 §3.4 之「**100% 覆蓋率為當前實測狀態**」並無矛盾。
+- **測試項數統一**：§2.3.1 / §3.2 / §4.2.1 三處（原 562 / 562 / 631）全部統一為 **679**（與 §3.6 一致）。
+- **LaTeX 渲染瑕疵**：§2.5 `\xr\rightarrow` → `\xrightarrow`、`$\r\rightarrow$` → `$\rightarrow$`、§3.2.4 多行 `\rightarrow` 合併單行。
+- **PM1-D §3.1.3 補回**：新增「**CA3 污染根因分類**」段落 + 表 CA3-1（五分類框架：`wrong_tool_version` / `L3_not_ready` / `hallucination` / `insufficient_context` / `cache_miss_semantic`）+ effective valid-hit rate 公式 `21.0% × 79.5% = 16.7%`（公式編號 CA3-1）。
+- **PM2-C §3.1.4 補回**：新增「**CB1 查詢類型分類效能分解**」段落 + 表 CB1（cache_miss / cache_hit / incremental / stale_detection 四類逐類別 N / 延遲 / 命中率 / 快取層 / Axis）；數據取自 [cb1_benchmark_results.json](../../benchmark/results/cb1_benchmark_results.json) `per_category`。
+- **PM3-B §3.1.5 補回**：新增「**Cross-Domain Validation（Bulk → Spatial Zero-Shot Transfer）**」段落 + 表 CA1-A（Source/Target 指標欄；Target 留「待回填」佔位符，待 spatial EDA `N ≥ 20` 累積後執行 [run_cross_domain_transfer.py](../../benchmark/run_cross_domain_transfer.py) 回填）。
+- **§3.2 子小節層級調整**：`##### 3.` / `##### 4.` → `#### 3.2.3 縱向工具庫健康度自適應演化` / `#### 3.2.4 自強化飛輪縱向演化…`（與 §4.1 之 §3.2.4 引用一致）。
+
+### 📝 v2.7.0 — 摘要瘦身 + §1.6 台式學者語感重寫 + 表格轉散文
+- **摘要全段重寫**：自原 ~1120 字精簡至 ~590 字（背景縮 1/3、系統貢獻縮 1/2、實測效能縮 1/3）；保留所有核心數據（71.4→83.3、0.61→0.94、−80%、98.2%、100%、30.5ms、10 萬邊）。
+- **摘要結尾改採台式「沉穩學者版」收束**：「綜合上述實證結果，本研究主張……**宜建立於『程式碼血緣可追溯、工具能力可演化、語意記憶可累積』之記憶引擎之上**……冀此一設計原則能為自演化科學計算 Agent 之後續發展，提供具體可資借鑑之工程參考」——以三段排比與「冀…可資借鑑」之經典台式期刊收束格式，取代原西式 stake-out 句式。
+- **§1.6 line 87 語體調整**：「我們主張」 → 「**本研究主張**」（台式正式語體）。
+- **§1.6 line 97 核心主張重寫**：自原「Token 節省即為其自然推論；持續改善分析品質方為……真正應有之樣貌」（西式 marketing 句式）改為「**程式碼血緣之追溯，方屬科學運算平台之根本要務**；當記憶引擎下沉至儲存層之後，**Token 節省與分析能力之單調精煉，皆為架構設計所內生之系統性質**」（台式三段論排比），與摘要結尾呼應形成首尾一致之論述閉環。
+- **§1.6 兩張表格改散文**：
+  - G1/G2/G3 研究缺口表 → 「**其一／其二／其三**」三段論散文（保留引用 [3][4][5][7][9][10][11]）。
+  - C1/C2/C3 ↔ Table 9 映射表 → 單段並列敘述。
+  - 同時修正映射表指向錯誤：`§3.7` → `§3.8`（v2.5.0 已將 §3.7 改為空間大數據 Ingestion，表 9 實際在 §3.8）。
+
+### 📦 變更影響
+- 論文版本：v2.5.0 → **v2.7.0**（830 行 → 890 行；摘要瘦身 −530 字，§3.1 補回三段約 +1100 字，§1.6 表格轉散文淨變化 ≈ 0）。
+- Phase 13 PM1-D / PM2-C / PM3-B 之論文側成果至此完整落實於主文，不再僅限於 supplementary。
+- 摘要與 §1.6 完成首尾呼應之論述閉環，並全面採台式學者語感。
+
+---
+
 ## ✅ 2026-05-23 Session O：三大並行開發支線與基準測試強化圓滿達成
 
 **動機**：依據實作計畫，成功全面執行並圓滿完成三大開發支線的全部核心指標！包括 L1/L2 數據庫約束與 Spilling 自動落地、98樣本 Joint Pipeline 案例研究回填、三合一基準測試 (Cache repeats/IQR/paired t-test, HELIX git CC/LOC/MI evolution & 15-case sandbox, 百萬級隨機-真實 topology 對抗壓力測試) 深度強化、以及解決 Windows cp950 console 編碼崩潰。成功跑通全套 pytest 回歸測試以 100% 全綠通過，為平台穩定度提供最強大的學術說服力！
