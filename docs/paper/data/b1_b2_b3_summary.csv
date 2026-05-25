@@ -1,4 +1,0 @@
-condition,total_hits,effective_hits,hit_rate,eff_hit_rate,precision,recall,f1,median_lat_ms,median_log10_lat
-B1,41,21,0.205,0.105,0.5122,0.28,0.3621,80648.693,4.9066
-B2,31,16,0.155,0.08,0.5161,0.2133,0.3019,80466.05,4.9056
-B3,42,28,0.21,0.14,0.6667,0.3733,0.4786,80423.04,4.9054

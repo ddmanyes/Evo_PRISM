@@ -1,4 +1,0 @@
-comparison,wilcoxon_W,wilcoxon_p_raw,wilcoxon_p_bonf,wilcoxon_sig,mcnemar_n10,mcnemar_n01,mcnemar_p_raw,mcnemar_p_bonf,mcnemar_sig
-B1 vs B2,7175.0,0.000452,0.001355,True,11,6,0.332306,0.996918,False
-B1 vs B3,5017.0,0.0,0.0,True,1,8,0.039062,0.117188,False
-B2 vs B3,8161.0,0.021172,0.063516,False,2,14,0.004181,0.012543,True

@@ -98,6 +98,10 @@ proteome_data/
 docs/paper/
 gigascience_reviewer_pack/
 
+# 內部開發日誌（完整排除，非用戶所需）
+docs/logs/PROGRESS.md
+docs/logs/
+
 # 封存圖檔（舊版草圖）
 docs/images/archive/
 
@@ -118,4 +122,18 @@ benchmark/
 
 # scratch 臨時腳本
 scratch/
+
+# tests — 只保留 fixtures/ 測試數據，排除所有 .py 程式碼
+tests/*.py
+tests/_*
+tests/__pycache__/
+
+# docs/logs — 開發日誌不公開
+docs/logs/
+
+# docs/images — 只保留 README / TECHNICAL_OVERVIEW.md 有引用的架構圖
+# 保留：三層架構_eng.png, helix簡單流程圖.png, HELIX_架構圖_2.png, engram_架構圖1_eng.png, Figure8_Flywheel_Evolution.png
+docs/images/Figure5_RRF_Ablation.png
+docs/images/Figure6_Pipeline_Comparison.png
+docs/images/Figure7_HELIX_Code_Promotion.png
 
