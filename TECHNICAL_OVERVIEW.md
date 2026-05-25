@@ -377,18 +377,23 @@ ENGRAM 形成獨立於 HELIX 的第二條飛輪，兩者互補：
 ```
 更多分析完成
    ↓
-L1 HNSW 向量密度 ↑ → 相似查詢命中率 ↑（領域查詢分布被更多鄰居覆蓋）
+L2 analysis_artifacts 永久寫入語意向量（無 TTL，不消失）
+   → ENGRAM artifact 語意搜尋精確度 ↑（找相關過往分析越來越準）
    ↓
-L2 tool_id 覆蓋率 ↑ → Blast Radius 信心值從 0.6（啟發式）→ 1.0（精確）
+L2 analysis_history tool_id 覆蓋率 ↑（無 TTL，永久累積）
+   → Blast Radius 信心值 0.6（啟發式）→ 1.0（精確溯源）
    ↓
 系統對這個領域的分析記憶越來越準確
 ```
 
+> **L1 `memory_recent` 的角色不同**：有 7 天 TTL，功能是「熱點快速攔截」——7 天內重複問同樣問題直接回傳快取，是加速器而非累積飛輪的驅動力。
+
 | 累積來源 | 精確度提升方向 | TTL |
 |:---|:---|:---:|
-| **L1 HNSW embedding 密度** | 快取命中率 ↑，相似查詢更快找到語意鄰居 | 7 天（滾動窗口） |
-| **L2 analysis_history tool_id** | Blast Radius 信心 0.6 → 1.0（Phase A→B） | 永久累積 |
-| **tool_catalog（HELIX 飛輪）** | bio_find_tool 命中率 ↑，程式碼重用率 ↑ | 永久累積 |
+| **L2 `analysis_artifacts` 語意向量** | ENGRAM artifact 搜尋精確度 ↑（向量空間越來越密） | **無**（永久） |
+| **L2 `analysis_history` tool_id** | Blast Radius 信心 0.6 → 1.0（Phase A→B） | **無**（永久） |
+| **`tool_catalog`（HELIX 飛輪）** | bio_find_tool 命中率 ↑，程式碼重用率 ↑ | **無**（永久） |
+| L1 `memory_recent` | 熱點攔截加速（非累積） | 7 天 |
 
 兩條飛輪並行、缺一不可：**HELIX 飛輪**讓程式碼記憶庫越來越完整（越寫越少）；**ENGRAM 飛輪**讓分析結果記憶庫越來越精確（越查越準）。這是「**Evo**_PRISM」演化特性的完整圖景——系統在程式碼與分析兩個維度同時單調改善。
 
