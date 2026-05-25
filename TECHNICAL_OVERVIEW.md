@@ -8,11 +8,11 @@
 
 ## 摘要
 
-**背景：** AI Agent 編碼工具使研究人員得以透過自然語言於數分鐘內生成完整的生物資訊分析管線，但 LLM 生成的程式碼是臨時性的——Session 結束後消散，系統對「做過什麼、用什麼版本做的」完全沒有記憶。這一記憶缺失催生了三類失效（程式碼溯源真空、靜默方法論失效、方法漂移），且因推理成本攀升而持續放大：溯源真空迫使相似分析反覆重算，造成 Token 與算力的雙重浪費。
+**背景：** AI Agent 編寫之生資分析雖大幅降低技術門檻，卻引入三類系統性失效——**程式碼溯源真空、靜默方法論失效、方法漂移**——其共同根源在於 Agent 對執行歷史缺乏持久記憶，並因 LLM 推理成本攀升而持續放大 Token 與算力之雙重浪費。
 
-**核心機制 — HELIX：** Evo_PRISM 以 **HELIX**（Health-Evolving Loop with Iterative eXpiration）自演化程式碼記憶引擎為核心：HELIX 以達爾文式選擇壓力治理工具生命週期，自動晉升穩定臨時腳本為受版本治理的 MCP 工具；`bio_find_tool` 語意搜尋（**0 LLM token**）讓 Agent 寫碼前先找既有工具，形成**「晉升 → 記憶積累 → 重用 → 再晉升」飛輪**，程式碼記憶庫隨使用單調成長。三層 Medallion 語意資料湖（L1 工作記憶 / L2 情節記憶 / L3 語意長期記憶）與 3-way RRF 快取、Figure Cache、Blast Radius CTE 構成支撐基礎設施，同時消弭**傳遞 token**（98.2% 節省）與**生成 token**（bio_find_tool 命中時省數百至千餘 token）的雙重浪費。
+**系統貢獻：** 本文提出 **Evo_PRISM**，以兩大記憶引擎為核心：**HELIX** 以達爾文式選擇壓力治理工具生命週期，將反覆重用之臨時腳本自動晉升為受版本治理之 MCP 服務；**ENGRAM** 以 `analysis_artifacts` 為永久載體保存分析產物之語意向量。兩者共構「程式碼記憶 + 語意記憶」之雙飛輪，使系統能力隨每次互動單調成長。三層 Medallion 語意資料湖（L1/L2/L3）、3-way RRF 快取與 Figure Cache 構成支撐基礎設施，俾以消弭傳遞與生成 Token 之雙重浪費。
 
-**實測效能：** 快取命中延遲縮減 **33,764 倍**；Figure Cache **98.2%** Token 節省率；HELIX 使核心工具複雜度中位數降低 **80%**（HealthScore **+0.515**）；Blast Radius 10 萬條邊 **30.5 ms**；方法漂移偵測率 **100%**；迴歸測試通過率 **100.0%**（674 passed / 679 total）；自強化飛輪語意命中率隨工具庫累積自 **20.0% 單調躍升至 100.0%**，且 HNSW 檢索延遲恆低於 **2.0 ms**；空間組學大數據 Ingestion 通量達 **14.3 cells/s**，磁碟開銷僅約 **5.85 MB**。
+**實測效能：** 四項受控基準測試（N=20 信心評估、N=5 工具 Code Promotion 對照、Evo_PRISM 專案 7 個 Commit 健康度追蹤、98 樣本 Bulk RNA-seq 端對端案例）共同支撐核心主張。*ENGRAM 飛輪*：Blast Radius 精準率自 Phase A 之 71.4% 自主收斂至 Phase B 之 83.3%（召回率全程 100%，無人工介入）；*HELIX 飛輪*：工具庫平均 HealthScore 自衰退之 0.61 自動回升至 0.94，N=5 核心工具 McCabe 複雜度中位數同步下降 80%。於 Token 經濟層面，`bio_find_tool` 耗費 0 LLM token、Figure Cache 達成 98.2% 之傳遞 Token 節省率；於可信度層面，血緣覆蓋率與方法漂移偵測率均達 100%，Blast Radius CTE 於 10 萬條邊規模下查詢延遲僅 30.5 ms。空間組學大數據 Ingestion 通量達 14.3 cells/s，磁碟開銷僅約 5.85 MB。綜合上述實證結果，本研究主張：**科學 AI Agent 平台之可信度，宜建立於「程式碼血緣可追溯、工具能力可演化、語意記憶可累積」之記憶引擎之上**。
 
 ---
 
@@ -194,19 +194,21 @@ graph TB
 
 ![HELIX 架構](docs/images/HELIX_架構圖_2.png)
 
-### 4.1 自適應晉升評估函數 — Eq. (1)
+### 4.1 自適應晉升評估函數
 
 $$
-f_{promote}(t) = \alpha \cdot \text{ReuseCount}(t) + \beta \cdot \text{UserApproval}(t) - \gamma \cdot \text{Complexity}(t)
+f_{promote} = \text{重用次數} + 2 \times \text{使用者好評} - 0.2 \times \text{程式碼複雜度}
 $$
 
-當 $f_{promote}(t) \ge \theta_{promote}$ **且**沙盒迴歸測試通過率 = 100% 時，自動觸發 Code Promotion。其中 $\text{Complexity}(t)$ 採用 McCabe 循環複雜度（Cyclomatic Complexity）\[13\]，以 Radon 套件實作。
+當評估分數 $f_{promote} \ge 3.0$ 且沙盒迴歸測試通過率 = 100% 時，自動觸發 **Code Promotion（工具晉升）**。該公式在簡報時極易解讀：重用次數與使用者好評為正向驅動力，McCabe 循環複雜度為懲罰項。
 
-### 4.2 工具健康度指標 — Eq. (2)
+### 4.2 工具健康度指標
 
 $$
-HealthScore(t) = \text{clip}_{[0,1]}\Big(1.0 - \omega_{churn} \cdot ChurnRatio(t) - \omega_{complexity} \cdot \widetilde{\Delta Complexity}(t)\Big)
+HealthScore = 1.0 - 0.6 \times \text{程式碼變動率} - 0.4 \times \text{複雜度增量}
 $$
+
+數值限於 $[0, 1]$ 區間。該評估分數在簡報時非常直觀：以相對程式碼變動率（Relative Churn，權重 0.6）與複雜度增量（權重 0.4）作為懲罰項。當健康分數跌破警告閾值 $\theta_{warning} = 0.70$ 時，自動激活熱區重構迴路。
 
 其中 $ChurnRatio(t)$ 為相對程式碼變動率（Relative Code Churn）\[14\]，定義為近期修改行數與工具總行數之比；$\widetilde{\Delta Complexity}(t)$ 為複雜度增量 \[13\] 經 min-max 正規化後的比例。當 $HealthScore(t) < \theta_{warning}$ 時，熱區偵測器啟動重構迴路。程式碼品質回升後，HELIX 為每次穩定化迭代儲存一張 640×640 PNG 視覺快照；舊快照依艾賓浩斯遺忘曲線（Ebbinghaus Forgetting Curve）漸進降採樣（180 天後 640→320，365 天後 320→160），在節省儲存的同時保留歷史脈絡供 VLM 回溯診斷。
 
@@ -356,12 +358,12 @@ errf -->|"return with tool version provenance"| eresult(["Agent / Web UI"])
 
 ![ENGRAM 架構](docs/images/engram_架構圖1_eng.png)
 
-### 5.1 3-way RRF 語意快取 — Eq. (3)
+### 5.1 3-way RRF 語意快取
 
-Reciprocal Rank Fusion（RRF）\[15\] 多路排序融合演算法：
+快取比對融合 **自然語言 Embedding**、**輸入資料指紋**、**執行期上下文** 三路排序（RRF 權重分別為 $1.0 : 1.5 : 0.5$）：
 
 $$
-Score_{RRF}(q, a) = \frac{w_1}{r_{embedding}(q,\, a.query) + k} + \frac{w_2}{r_{fingerprint}(F_{in},\, a.input) + k} + \frac{w_3}{r_{context}(C,\, a.context) + k}
+RRF\_Score = \text{Embedding\_Rank} + 1.5 \times \text{Fingerprint\_Rank} + 0.5 \times \text{Context\_Rank}
 $$
 
 三個正交維度防止靜默快取錯誤：
