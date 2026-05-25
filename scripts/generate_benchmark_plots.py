@@ -263,11 +263,67 @@ def plot_helix_n5():
     plt.close()
     print(f"Generated: {plot_path}")
 
+def plot_flywheel_evolution():
+    """Generate Figure 8: Flywheel Evolution Curve (Hit Rate & Latency vs Catalog Size)"""
+    import shutil
+    json_path = RESULTS_DIR / "benchmark_flywheel_r10_results.json"
+    if not json_path.exists():
+        print(f"Error: {json_path} not found.")
+        return
+        
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        
+    results = data["results"]
+    sizes = [r["catalog_size"] for r in results]
+    hit_rates = [r["hit_rate"] * 100 for r in results]
+    latencies = [r["average_latency_ms"] for r in results]
+    p95_latencies = [r["p95_latency_ms"] for r in results]
+    
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+    fig.suptitle("Evo_PRISM Self-Reinforcing Flywheel Semantic Search Evolution (N=50 Queries)", y=0.98)
+    
+    # Panel A: Semantic Hit Rate Curve
+    axes[0].plot(sizes, hit_rates, marker="o", color=COLORS["success"], lw=2, markersize=6, label="Hit Rate (%)")
+    axes[0].set_title("A. Semantic Search Hit Rate vs. Catalog Size")
+    axes[0].set_xlabel("Tool Catalog Size (Number of Active Tools)")
+    axes[0].set_ylabel("Semantic Search Hit Rate (%)")
+    axes[0].set_ylim(-5, 105)
+    axes[0].set_xticks(sizes)
+    for i, txt in enumerate(hit_rates):
+        axes[0].annotate(f"{txt:.1f}%", (sizes[i], hit_rates[i]), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, fontweight="bold")
+    
+    # Panel B: HNSW Search Latency (flat line)
+    axes[1].plot(sizes, latencies, marker="s", color=COLORS["primary"], lw=2, label="Average Latency")
+    axes[1].plot(sizes, p95_latencies, marker="^", color=COLORS["danger"], lw=1.5, linestyle="--", label="P95 Latency")
+    axes[1].set_title("B. HNSW Search Latency vs. Catalog Size")
+    axes[1].set_xlabel("Tool Catalog Size (Number of Active Tools)")
+    axes[1].set_ylabel("Search Latency (ms)")
+    axes[1].set_ylim(0, 3.5)
+    axes[1].set_xticks(sizes)
+    axes[1].legend(loc="upper left")
+    for i, txt in enumerate(latencies):
+        axes[1].annotate(f"{txt:.2f}ms", (sizes[i], latencies[i]), textcoords="offset points", xytext=(0,-15), ha='center', fontsize=8)
+        
+    plt.tight_layout()
+    plot_path = IMAGES_DIR / "Figure8_Flywheel_Evolution.png"
+    plt.savefig(plot_path, dpi=300)
+    plt.close()
+    
+    # Also save to docs/paper/figures/ for paper draft relative linking
+    paper_fig_dir = ROOT / "docs" / "paper" / "figures"
+    paper_fig_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(str(plot_path), str(paper_fig_dir / "figure_r10_flywheel.png"))
+    
+    print(f"Generated: {plot_path}")
+    print(f"Copied to paper figures: {paper_fig_dir / 'figure_r10_flywheel.png'}")
+
 def main():
     print("Generating publication-quality benchmark figures...")
     plot_rrf_cache()
     plot_pipeline_comparison()
     plot_helix_n5()
+    plot_flywheel_evolution()
     print("All benchmark figures successfully generated!")
 
 if __name__ == "__main__":

@@ -144,10 +144,22 @@ class TestCheckAndRevertRegressions:
         from unittest.mock import MagicMock
         import analysis.code_promoter as cp
 
-        original_connect = duckdb.connect
+        class ConnectionWrapper:
+            def __init__(self, real_con):
+                self._real_con = real_con
+            def close(self):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
+            def __getattr__(self, name):
+                return getattr(self._real_con, name)
+
+        wrapped_con = ConnectionWrapper(con)
 
         def _fake_connect(path, **kw):
-            return con
+            return wrapped_con
 
         with patch.object(duckdb, "connect", side_effect=_fake_connect):
             return cp.check_and_revert_regressions(**kwargs)
