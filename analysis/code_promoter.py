@@ -242,7 +242,7 @@ def check_and_revert_regressions(
                 continue  # no qualified previous version
 
             delta = new_rate - best_prev_rate
-            if delta >= -tau:
+            if delta >= -tau - 1e-9:
                 continue  # no regression (or improvement)
 
             # Regression detected — demote active version, log it
