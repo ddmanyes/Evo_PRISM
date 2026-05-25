@@ -94,3 +94,28 @@ proteome_data/
 # 臨時備份檔案
 *.bak
 
+# 論文草稿與投稿材料（非專案本體）
+docs/paper/
+gigascience_reviewer_pack/
+
+# 封存圖檔（舊版草圖）
+docs/images/archive/
+
+# 內部規劃與開發紀錄（非用戶需要）
+docs/plans/
+docs/logs/execution_trace.md
+docs/references/
+SESSION_RESUME.md
+
+# Benchmark 過程產物（Nextflow / Snakemake）
+.nextflow/
+.nextflow_cache/
+.nextflow_work/
+.nextflow.log*
+.snakemake/
+work/
+benchmark/
+
+# scratch 臨時腳本
+scratch/
+

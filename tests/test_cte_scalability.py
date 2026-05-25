@@ -8,7 +8,11 @@ from __future__ import annotations
 import pytest
 import random
 import duckdb
-from tests.benchmark_impact import (
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "docs" / "paper" / "analysis"))
+
+from benchmark_impact import (
     run_scalability_benchmark,
     run_confidence_tier_benchmark,
     run_real_vs_synthetic_comparison,
