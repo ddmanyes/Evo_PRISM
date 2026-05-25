@@ -352,6 +352,122 @@ def _get_tool_source(module_path: str, function_name: str) -> Optional[str]:
     return None
 
 
+# ── detect_stagnation helpers ────────────────────────────────────────────────
+
+def _compute_stagnation_rates(
+    total_calls: int, total_ok: int, recent_calls: int, recent_ok: int, eps: float
+) -> tuple[float, float, float, bool]:
+    overall_rate = total_ok / total_calls
+    recent_rate = (recent_ok / recent_calls) if recent_calls > 0 else overall_rate
+    delta = abs(recent_rate - overall_rate)
+    stagnant = delta < eps and overall_rate < 1.0
+    return overall_rate, recent_rate, delta, stagnant
+
+
+def _call_stagnation_llm(
+    api_key: Optional[str],
+    tool_name: str,
+    module_path: Optional[str],
+    function_name: Optional[str],
+    total_calls: int,
+    look_back_days: int,
+    recent_rate: float,
+    overall_rate: float,
+    delta: float,
+    eps: float,
+    failure_rows: list,
+) -> Optional[str]:
+    code = _get_tool_source(module_path or "", function_name or "") or "(source unavailable)"
+    failure_logs = "\n".join(
+        f"  [{str(r[1])[:16]}] {r[0] or '(no diagnosis)'}" for r in failure_rows
+    ) or "  (無近期失敗記錄)"
+    prompt = _STAGNATION_PROMPT.format(
+        call_count=total_calls,
+        look_back_days=look_back_days,
+        recent_rate=recent_rate,
+        overall_rate=overall_rate,
+        delta=delta,
+        eps=eps,
+        tool_name=tool_name,
+        module_path=module_path or "unknown",
+        code=code[:4000],
+        n_failures=len(failure_rows),
+        failure_logs=failure_logs,
+    )
+    if not api_key:
+        logger.warning(
+            "ANTHROPIC_API_KEY not set — stagnation LLM trigger skipped for %s", tool_name
+        )
+        return None
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()  # type: ignore[union-attr]
+        try:
+            parsed = json.loads(raw)
+            return json.dumps(parsed, ensure_ascii=False)
+        except json.JSONDecodeError:
+            return raw
+    except Exception as exc:
+        logger.error("Stagnation LLM call failed for %s: %s", tool_name, exc)
+        return None
+
+
+def _open_stagnation_event(
+    con: duckdb.DuckDBPyConnection,
+    tool_id: str,
+    tool_name: str,
+    module_path: Optional[str],
+    function_name: Optional[str],
+    total_calls: int,
+    look_back_days: int,
+    recent_rate: float,
+    overall_rate: float,
+    delta: float,
+    eps: float,
+    dry_run: bool,
+    already_open: set,
+    api_key: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Returns (llm_suggestion, log_id). No-op when dry_run or already open."""
+    from analysis.tool_registry import open_stabilization
+    if dry_run or tool_name in already_open:
+        return None, None
+    failure_rows = con.execute(
+        """
+        SELECT failure_diagnosis, completed_at
+        FROM   analysis_history
+        WHERE  tool_id = ?
+          AND  status  = 'failed'
+        ORDER  BY completed_at DESC
+        LIMIT  5
+        """,
+        [tool_id],
+    ).fetchall()
+    suggestion_text = _call_stagnation_llm(
+        api_key, tool_name, module_path, function_name,
+        total_calls, look_back_days, recent_rate, overall_rate, delta, eps, failure_rows,
+    )
+    log_id: Optional[str] = None
+    try:
+        log_id = open_stabilization(
+            con,
+            tool_name=tool_name,
+            diagnosis=f"[STAGNATION] calls={total_calls}, Δ={delta:.3f} < ε={eps}",
+            action_taken=suggestion_text or "[LLM trigger skipped — API key not set]",
+        )
+        already_open.add(tool_name)
+        logger.info("Stagnation iteration opened for %s: log_id=%s", tool_name, log_id)
+    except Exception as exc:
+        logger.error("Failed to open stagnation iteration for %s: %s", tool_name, exc)
+    return suggestion_text, log_id
+
+
 def detect_stagnation(
     min_calls: Optional[int] = None,
     eps: Optional[float] = None,
@@ -384,7 +500,7 @@ def detect_stagnation(
         llm_suggestion (str | None), log_id (str | None)
     """
     from datetime import timedelta
-    from analysis.tool_registry import open_stabilization, get_open_stabilizations
+    from analysis.tool_registry import get_open_stabilizations
     from config.settings import ANTHROPIC_API_KEY as api_key
 
     if min_calls is None:
@@ -395,28 +511,19 @@ def detect_stagnation(
         look_back_days = HELIX_STAGNATION_LOOK_BACK_DAYS
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=look_back_days)
-
     events: list[dict] = []
 
     with duckdb.connect(str(DUCKDB_PATH)) as con:
-        # Active tools joined with their analysis_history counts
         rows = con.execute(
             """
             SELECT
-                t.tool_id,
-                t.tool_name,
-                t.module_path,
-                t.function_name,
-                SUM(CASE WHEN ah.status IN ('completed','failed') THEN 1 ELSE 0 END)
-                    AS total_calls,
-                SUM(CASE WHEN ah.status = 'completed' THEN 1 ELSE 0 END)
-                    AS total_ok,
+                t.tool_id, t.tool_name, t.module_path, t.function_name,
+                SUM(CASE WHEN ah.status IN ('completed','failed') THEN 1 ELSE 0 END) AS total_calls,
+                SUM(CASE WHEN ah.status = 'completed' THEN 1 ELSE 0 END) AS total_ok,
                 SUM(CASE WHEN ah.status IN ('completed','failed')
-                         AND ah.completed_at >= ?   THEN 1 ELSE 0 END)
-                    AS recent_calls,
+                         AND ah.completed_at >= ? THEN 1 ELSE 0 END) AS recent_calls,
                 SUM(CASE WHEN ah.status = 'completed'
-                         AND ah.completed_at >= ?   THEN 1 ELSE 0 END)
-                    AS recent_ok
+                         AND ah.completed_at >= ? THEN 1 ELSE 0 END) AS recent_ok
             FROM tools t
             LEFT JOIN analysis_history ah ON ah.tool_id = t.tool_id
             WHERE t.status = 'active'
@@ -438,10 +545,9 @@ def detect_stagnation(
             if total_calls == 0:
                 continue
 
-            overall_rate = total_ok / total_calls
-            recent_rate = (recent_ok / recent_calls) if recent_calls > 0 else overall_rate
-            delta = abs(recent_rate - overall_rate)
-            stagnant = delta < eps and overall_rate < 1.0
+            overall_rate, recent_rate, delta, stagnant = _compute_stagnation_rates(
+                total_calls, total_ok, recent_calls, recent_ok, eps
+            )
 
             event: dict = {
                 "tool_name": tool_name,
@@ -463,83 +569,13 @@ def detect_stagnation(
                 tool_name, total_calls, overall_rate, recent_rate, delta,
             )
 
-            if dry_run or tool_name in already_open:
-                events.append(event)
-                continue
-
-            # ── LLM refactor trigger ──────────────────────────────────────
-            code = _get_tool_source(module_path or "", function_name or "") or "(source unavailable)"
-
-            failure_rows = con.execute(
-                """
-                SELECT failure_diagnosis, completed_at
-                FROM   analysis_history
-                WHERE  tool_id = ?
-                  AND  status  = 'failed'
-                ORDER  BY completed_at DESC
-                LIMIT  5
-                """,
-                [str(tool_id)],
-            ).fetchall()
-            failure_logs = "\n".join(
-                f"  [{str(r[1])[:16]}] {r[0] or '(no diagnosis)'}"
-                for r in failure_rows
-            ) or "  (無近期失敗記錄)"
-
-            prompt = _STAGNATION_PROMPT.format(
-                call_count=total_calls,
-                look_back_days=look_back_days,
-                recent_rate=recent_rate,
-                overall_rate=overall_rate,
-                delta=delta,
-                eps=eps,
-                tool_name=tool_name,
-                module_path=module_path or "unknown",
-                code=code[:4000],
-                n_failures=len(failure_rows),
-                failure_logs=failure_logs,
+            suggestion_text, log_id = _open_stagnation_event(
+                con, tool_id, tool_name, module_path, function_name,
+                total_calls, look_back_days, recent_rate, overall_rate, delta, eps,
+                dry_run, already_open, api_key,
             )
-
-            suggestion_text: Optional[str] = None
-            if api_key:
-                try:
-                    import anthropic
-
-                    client = anthropic.Anthropic(api_key=api_key)
-                    msg = client.messages.create(
-                        model="claude-haiku-4-5-20251001",
-                        max_tokens=512,
-                        messages=[{"role": "user", "content": prompt}],
-                    )
-                    raw = msg.content[0].text.strip()  # type: ignore[union-attr]
-                    try:
-                        parsed = json.loads(raw)
-                        suggestion_text = json.dumps(parsed, ensure_ascii=False)
-                    except json.JSONDecodeError:
-                        suggestion_text = raw
-                except Exception as exc:
-                    logger.error("Stagnation LLM call failed for %s: %s", tool_name, exc)
-            else:
-                logger.warning(
-                    "ANTHROPIC_API_KEY not set — stagnation LLM trigger skipped for %s",
-                    tool_name,
-                )
-
-            # Write stagnation event to tool_stabilization_log
-            try:
-                log_id = open_stabilization(
-                    con,
-                    tool_name=tool_name,
-                    diagnosis=f"[STAGNATION] calls={total_calls}, Δ={delta:.3f} < ε={eps}",
-                    action_taken=suggestion_text or "[LLM trigger skipped — API key not set]",
-                )
-                event["log_id"] = log_id
-                already_open.add(tool_name)
-                logger.info("Stagnation iteration opened for %s: log_id=%s", tool_name, log_id)
-            except Exception as exc:
-                logger.error("Failed to open stagnation iteration for %s: %s", tool_name, exc)
-
             event["llm_suggestion"] = suggestion_text
+            event["log_id"] = log_id
             events.append(event)
 
     stagnant_count = sum(1 for e in events if e["stagnant"])
@@ -616,7 +652,7 @@ def review_candidate(origin_id: str, reuse_count: int) -> dict:
             }
         ],
     )
-    raw = msg.content[0].text.strip()
+    raw = msg.content[0].text.strip()  # type: ignore[union-attr]
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:

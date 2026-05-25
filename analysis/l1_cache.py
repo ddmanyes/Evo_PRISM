@@ -111,6 +111,33 @@ def write_to_l1_cache(
 # ── 搜尋 ──────────────────────────────────────────────────────────────────────
 
 
+def _has_analysis_type_col(con: duckdb.DuckDBPyConnection) -> bool:
+    try:
+        row = con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'memory_recent' AND column_name = 'analysis_type'"
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+def _build_semantic_filters(
+    sample_id: Optional[str],
+    analysis_type: Optional[str],
+    has_analysis_type_col: bool,
+) -> tuple[str, list]:
+    filters: list[str] = []
+    params: list = []
+    if sample_id:
+        filters.append("AND sample_id = ?")
+        params.append(sample_id)
+    if analysis_type and has_analysis_type_col:
+        filters.append("AND analysis_type = ?")
+        params.append(analysis_type)
+    return " ".join(filters), params
+
+
 def semantic_search(
     query: str,
     *,
@@ -140,67 +167,34 @@ def semantic_search(
         依 score 降冪排列。空列表表示 cache miss。
     """
     from analysis.embed import embed_text
+    from config.settings import EMBEDDING_DIM as _DIM
 
     path = cache_path or L1_CACHE_PATH
-
     if not path.exists():
         logger.warning("L1 cache not found: %s", path)
         return []
 
     query_vec = embed_text(query, provider=embedding_provider)
 
-    with duckdb.connect(str(path)) as con:  # VSS search needs write mode for index access
+    with duckdb.connect(str(path)) as con:
         _setup_vss(con)
-        row_count = con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0]
-        if row_count == 0:
+        if con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0] == 0:  # type: ignore[index]
             return []
 
-        # 確認 memory_recent 是否有 analysis_type 欄位（migration 可能尚未執行）
-        has_analysis_type_col = False
-        if analysis_type:
-            try:
-                col_row = con.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = 'memory_recent' AND column_name = 'analysis_type'"
-                ).fetchone()
-                has_analysis_type_col = col_row is not None
-            except Exception:
-                has_analysis_type_col = False
-
-        if analysis_type and not has_analysis_type_col:
+        has_col = _has_analysis_type_col(con) if analysis_type else False
+        if analysis_type and not has_col:
             logger.warning(
                 "semantic_search: analysis_type=%r filter requested but column does not "
                 "exist in memory_recent; ignoring filter (run migration to add column)",
                 analysis_type,
             )
 
-        # 組裝動態 WHERE 子句與參數列表
-        extra_filters: list[str] = []
-        extra_params: list = []
-
-        if sample_id:
-            extra_filters.append("AND sample_id = ?")
-            extra_params.append(sample_id)
-
-        if analysis_type and has_analysis_type_col:
-            extra_filters.append("AND analysis_type = ?")
-            extra_params.append(analysis_type)
-
-        filter_clause = " ".join(extra_filters)
+        filter_clause, extra_params = _build_semantic_filters(sample_id, analysis_type, has_col)
         params: list = [query_vec] + extra_params + [n]
 
-        # DuckDB VSS array_cosine_similarity：1 = identical, 0 = orthogonal
-        # HNSW ORDER BY + LIMIT 觸發近似最近鄰搜尋
-        from config.settings import EMBEDDING_DIM as _DIM
-
         sql = f"""
-            SELECT id,
-                   sample_id,
-                   query_text,
-                   summary,
-                   report_text,
-                   created_at,
-                   expires_at,
+            SELECT id, sample_id, query_text, summary, report_text,
+                   created_at, expires_at,
                    array_cosine_similarity(embedding, ?::FLOAT[{_DIM}]) AS score
             FROM   memory_recent
             WHERE  expires_at > now()
@@ -210,18 +204,9 @@ def semantic_search(
         """
         rows = con.execute(sql, params).fetchall()
 
-    result_cols = [
-        "id",
-        "sample_id",
-        "query_text",
-        "summary",
-        "report_text",
-        "created_at",
-        "expires_at",
-        "score",
-    ]
-    results = [dict(zip(result_cols, row)) for row in rows if row[-1] >= threshold]
-    return results
+    result_cols = ["id", "sample_id", "query_text", "summary", "report_text",
+                   "created_at", "expires_at", "score"]
+    return [dict(zip(result_cols, row)) for row in rows if row[-1] >= threshold]
 
 
 def invalidate_tool_cache(

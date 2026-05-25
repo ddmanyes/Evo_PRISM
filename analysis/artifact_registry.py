@@ -333,6 +333,46 @@ def _record_search_metric(
 # ---------------------------------------------------------------------------
 
 
+def _insert_artifact_row(
+    con: duckdb.DuckDBPyConnection,
+    artifact_id: str,
+    analysis_id: str,
+    artifact_type: str,
+    artifact_subtype: Optional[str],
+    label: str,
+    rel_path: str,
+    size_kb: Optional[int],
+    mime_type: str,
+    embedding,
+    now: datetime,
+    *,
+    use_matryoshka: bool = False,
+    use_provenance: bool = False,
+    embedding_256=None,
+    input_data_hash: Optional[str] = None,
+    code_hash: Optional[str] = None,
+    env_hash: Optional[str] = None,
+) -> None:
+    cols = [
+        "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
+        "label", "file_path", "file_size_kb", "mime_type", "embedding",
+    ]
+    vals: list = [
+        artifact_id, analysis_id, artifact_type, artifact_subtype,
+        label, rel_path, size_kb, mime_type, embedding,
+    ]
+    if use_matryoshka:
+        cols.append("embedding_256")
+        vals.append(embedding_256)
+    if use_provenance:
+        cols += ["input_data_hash", "code_hash", "env_hash"]
+        vals += [input_data_hash, code_hash, env_hash]
+    cols.append("created_at")
+    vals.append(now)
+    placeholders = ", ".join("?" * len(vals))
+    con.execute(f"INSERT INTO analysis_artifacts ({', '.join(cols)}) VALUES ({placeholders})", vals)
+
+
 def register_artifact(
     con: duckdb.DuckDBPyConnection,
     analysis_id: str,
@@ -436,104 +476,16 @@ def register_artifact(
 
     # INSERT into analysis_artifacts updates the HNSW index — VSS must be loaded first.
     _ensure_vss(con)
-
-    if use_provenance and use_matryoshka:
-        con.execute(
-            """
-            INSERT INTO analysis_artifacts
-                (artifact_id, analysis_id, artifact_type, artifact_subtype,
-                 label, file_path, file_size_kb, mime_type,
-                 embedding, embedding_256,
-                 input_data_hash, code_hash, env_hash, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                artifact_id,
-                analysis_id,
-                artifact_type,
-                artifact_subtype,
-                label,
-                rel_path,
-                size_kb,
-                mime_type,
-                embedding,
-                embedding_256,
-                input_data_hash,
-                code_hash,
-                env_hash,
-                now,
-            ],
-        )
-    elif use_provenance:
-        con.execute(
-            """
-            INSERT INTO analysis_artifacts
-                (artifact_id, analysis_id, artifact_type, artifact_subtype,
-                 label, file_path, file_size_kb, mime_type,
-                 embedding, input_data_hash, code_hash, env_hash, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                artifact_id,
-                analysis_id,
-                artifact_type,
-                artifact_subtype,
-                label,
-                rel_path,
-                size_kb,
-                mime_type,
-                embedding,
-                input_data_hash,
-                code_hash,
-                env_hash,
-                now,
-            ],
-        )
-    elif use_matryoshka:
-        con.execute(
-            """
-            INSERT INTO analysis_artifacts
-                (artifact_id, analysis_id, artifact_type, artifact_subtype,
-                 label, file_path, file_size_kb, mime_type,
-                 embedding, embedding_256, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                artifact_id,
-                analysis_id,
-                artifact_type,
-                artifact_subtype,
-                label,
-                rel_path,
-                size_kb,
-                mime_type,
-                embedding,
-                embedding_256,
-                now,
-            ],
-        )
-    else:
-        con.execute(
-            """
-            INSERT INTO analysis_artifacts
-                (artifact_id, analysis_id, artifact_type, artifact_subtype,
-                 label, file_path, file_size_kb, mime_type,
-                 embedding, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                artifact_id,
-                analysis_id,
-                artifact_type,
-                artifact_subtype,
-                label,
-                rel_path,
-                size_kb,
-                mime_type,
-                embedding,
-                now,
-            ],
-        )
+    _insert_artifact_row(
+        con, artifact_id, analysis_id, artifact_type, artifact_subtype,
+        label, rel_path, size_kb, mime_type, embedding, now,
+        use_matryoshka=use_matryoshka,
+        use_provenance=use_provenance,
+        embedding_256=embedding_256,
+        input_data_hash=input_data_hash,
+        code_hash=code_hash,
+        env_hash=env_hash,
+    )
 
     # Write blob to separate table if migration v14 has been applied
     if inline_data and _blob_table_exists(con):
@@ -755,6 +707,242 @@ def artifact_summary(
     }
 
 
+# ── search_artifacts helpers ─────────────────────────────────────────────────
+
+_ARTIFACT_COLS = [
+    "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
+    "label", "file_path", "file_size_kb", "mime_type", "created_at",
+]
+
+
+def _build_sample_filter(sample_id: Optional[str]) -> tuple[str, str, list]:
+    if sample_id:
+        return (
+            "JOIN analysis_history ah ON aa.analysis_id = ah.analysis_id",
+            "AND ah.sample_id = ?",
+            [sample_id],
+        )
+    return "", "", []
+
+
+def _layer1_exact_search(
+    con: duckdb.DuckDBPyConnection,
+    artifact_subtype: Optional[str],
+    sample_join: str,
+    sample_where: str,
+    sample_params: list,
+    n: int,
+) -> tuple[dict[str, int], dict[str, dict]]:
+    ranked: dict[str, int] = {}
+    rows_map: dict[str, dict] = {}
+    if not artifact_subtype:
+        return ranked, rows_map
+    rows = con.execute(
+        f"""
+        SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
+               aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
+               aa.file_size_kb, aa.mime_type, aa.created_at
+        FROM   analysis_artifacts aa
+        {sample_join}
+        WHERE  aa.artifact_subtype = ?
+               {sample_where}
+        ORDER  BY aa.created_at DESC
+        LIMIT  ?
+        """,
+        [artifact_subtype] + sample_params + [n * 2],
+    ).fetchall()
+    for rank, row in enumerate(rows, start=1):
+        aid = str(row[0])
+        ranked[aid] = rank
+        rows_map[aid] = dict(zip(_ARTIFACT_COLS, row))
+    return ranked, rows_map
+
+
+def _hnsw_rows_standard(
+    con: duckdb.DuckDBPyConnection,
+    embedding: list,
+    sample_join: str,
+    sample_where: str,
+    sample_params: list,
+    n: int,
+) -> list:
+    return con.execute(
+        f"""
+        SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
+               aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
+               aa.file_size_kb, aa.mime_type, aa.created_at
+        FROM   analysis_artifacts aa
+        {sample_join}
+        WHERE  aa.embedding IS NOT NULL
+               {sample_where}
+        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
+        LIMIT  ?
+        """,
+        sample_params + [embedding, n * 2],
+    ).fetchall()
+
+
+def _hnsw_rows_matryoshka(
+    con: duckdb.DuckDBPyConnection,
+    embedding: list,
+    sample_join: str,
+    sample_where: str,
+    sample_params: list,
+    n: int,
+) -> list:
+    coarse_rows = con.execute(
+        f"""
+        SELECT aa.artifact_id::VARCHAR
+        FROM   analysis_artifacts aa
+        {sample_join}
+        WHERE  aa.embedding_256 IS NOT NULL
+               {sample_where}
+        ORDER  BY array_cosine_distance(aa.embedding_256, ?::FLOAT[256])
+        LIMIT  ?
+        """,
+        sample_params + [embedding[:256], n * 10],
+    ).fetchall()
+    coarse_ids = [str(r[0]) for r in coarse_rows]
+    if not coarse_ids:
+        return []
+    id_placeholders = ", ".join("?" * len(coarse_ids))
+    return con.execute(
+        f"""
+        SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
+               aa.artifact_type, aa.artifact_subtype, aa.label,
+               aa.file_path, aa.file_size_kb, aa.mime_type, aa.created_at
+        FROM   analysis_artifacts aa
+        WHERE  aa.artifact_id::VARCHAR IN ({id_placeholders})
+          AND  aa.embedding IS NOT NULL
+        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
+        LIMIT  ?
+        """,
+        coarse_ids + [embedding, n * 2],
+    ).fetchall()
+
+
+def _layer2_hnsw_search(
+    con: duckdb.DuckDBPyConnection,
+    query: str,
+    sample_join: str,
+    sample_where: str,
+    sample_params: list,
+    n: int,
+) -> tuple[dict[str, int], dict[str, dict]]:
+    ranked: dict[str, int] = {}
+    rows_map: dict[str, dict] = {}
+    embedding = _get_embedding(query)
+    if embedding is None:
+        return ranked, rows_map
+    try:
+        con.execute("LOAD vss")
+    except Exception:
+        pass
+    from config.settings import MATRYOSHKA_ENABLED
+    use_matryoshka = MATRYOSHKA_ENABLED and _matryoshka_col_exists(con) and len(embedding) >= 256
+    try:
+        rows = (
+            _hnsw_rows_matryoshka(con, embedding, sample_join, sample_where, sample_params, n)
+            if use_matryoshka
+            else _hnsw_rows_standard(con, embedding, sample_join, sample_where, sample_params, n)
+        )
+        for rank, row in enumerate(rows, start=1):
+            aid = str(row[0])
+            ranked[aid] = rank
+            rows_map[aid] = dict(zip(_ARTIFACT_COLS, row))
+    except Exception as exc:
+        logger.warning("search_artifacts: HNSW search failed: %s", exc)
+    return ranked, rows_map
+
+
+def _layer3_fts_search(
+    con: duckdb.DuckDBPyConnection,
+    query: str,
+    sample_join: str,
+    sample_where: str,
+    sample_params: list,
+    n: int,
+) -> tuple[dict[str, int], dict[str, dict]]:
+    ranked: dict[str, int] = {}
+    rows_map: dict[str, dict] = {}
+    if not _fts_artifacts_available(con):
+        return ranked, rows_map
+    try:
+        fts_sql = f"""
+            SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
+                   aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
+                   aa.file_size_kb, aa.mime_type, aa.created_at,
+                   {_FTS_SCHEMA_ARTIFACTS}.match_bm25(aa.artifact_id, ?) AS bm25
+            FROM   analysis_artifacts aa
+            {sample_join}
+            WHERE  {_FTS_SCHEMA_ARTIFACTS}.match_bm25(aa.artifact_id, ?) IS NOT NULL
+                   {sample_where}
+            ORDER  BY bm25 DESC
+            LIMIT  ?
+        """
+        rows = con.execute(fts_sql, [query, query] + sample_params + [n * 2]).fetchall()
+        for rank, row in enumerate(rows, start=1):
+            aid = str(row[0])
+            ranked[aid] = rank
+            rows_map[aid] = dict(zip(_ARTIFACT_COLS, row[: len(_ARTIFACT_COLS)]))
+    except Exception as exc:
+        logger.warning("search_artifacts: FTS layer failed: %s", exc)
+    return ranked, rows_map
+
+
+def _rrf_fuse(
+    exact_ranked: dict[str, int],
+    hnsw_ranked: dict[str, int],
+    fts_ranked: dict[str, int],
+    threshold: float,
+    n: int,
+) -> list[tuple[float, str]]:
+    all_ids = set(exact_ranked) | set(hnsw_ranked) | set(fts_ranked)
+    scored = []
+    for aid in all_ids:
+        r_e = exact_ranked.get(aid)
+        r_h = hnsw_ranked.get(aid)
+        r_f = fts_ranked.get(aid)
+        rrf = (
+            (1 / (_RRF_K + r_e) if r_e else 0.0)
+            + (1 / (_RRF_K + r_h) if r_h else 0.0)
+            + (1 / (_RRF_K + r_f) if r_f else 0.0)
+        )
+        scored.append((rrf, aid))
+    scored.sort(reverse=True)
+    return [(s, aid) for s, aid in scored if s >= threshold][:n]
+
+
+def _build_artifact_results(
+    top: list[tuple[float, str]],
+    exact_rows_map: dict[str, dict],
+    hnsw_rows_map: dict[str, dict],
+    fts_rows_map: dict[str, dict],
+    exact_ranked: dict[str, int],
+    hnsw_ranked: dict[str, int],
+    fts_ranked: dict[str, int],
+) -> tuple[list[dict], str]:
+    contributed = []
+    if any(aid in exact_ranked for _, aid in top):
+        contributed.append("exact")
+    if any(aid in hnsw_ranked for _, aid in top):
+        contributed.append("hnsw")
+    if any(aid in fts_ranked for _, aid in top):
+        contributed.append("fts")
+    batch_layer = "rrf" if len(contributed) > 1 else (contributed[0] if contributed else "none")
+    results = []
+    for rrf_score, aid in top:
+        row_dict = exact_rows_map.get(aid) or hnsw_rows_map.get(aid) or fts_rows_map.get(aid, {})
+        row_dict["score"] = round(rrf_score, 6)
+        in_e = aid in exact_ranked
+        in_h = aid in hnsw_ranked
+        in_f = aid in fts_ranked
+        per_item = [t for t, f in (("exact", in_e), ("hnsw", in_h), ("fts", in_f)) if f]
+        row_dict["search_layer"] = "rrf" if len(per_item) > 1 else per_item[0]
+        results.append(row_dict)
+    return results, batch_layer
+
+
 def search_artifacts(
     con: duckdb.DuckDBPyConnection,
     query: str,
@@ -790,208 +978,28 @@ def search_artifacts(
         List of artifact dicts with 'score' (RRF) and 'search_layer' fields.
     """
     t_start = time.monotonic()
+    sample_join, sample_where, sample_params = _build_sample_filter(sample_id)
 
-    cols = [
-        "artifact_id",
-        "analysis_id",
-        "artifact_type",
-        "artifact_subtype",
-        "label",
-        "file_path",
-        "file_size_kb",
-        "mime_type",
-        "created_at",
-    ]
+    exact_ranked, exact_rows_map = _layer1_exact_search(
+        con, artifact_subtype, sample_join, sample_where, sample_params, n
+    )
+    hnsw_ranked, hnsw_rows_map = _layer2_hnsw_search(
+        con, query, sample_join, sample_where, sample_params, n
+    )
+    fts_ranked, fts_rows_map = _layer3_fts_search(
+        con, query, sample_join, sample_where, sample_params, n
+    )
 
-    sample_join = ""
-    sample_where = ""
-    sample_params: list = []
-    if sample_id:
-        sample_join = "JOIN analysis_history ah ON aa.analysis_id = ah.analysis_id"
-        sample_where = "AND ah.sample_id = ?"
-        sample_params = [sample_id]
-
-    # ── Layer 1: exact subtype match ────────────────────────────────────────
-    exact_ranked: dict[str, int] = {}  # artifact_id → rank (1-based)
-    exact_rows_map: dict[str, dict] = {}
-
-    if artifact_subtype:
-        exact_rows = con.execute(
-            f"""
-            SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
-                   aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
-                   aa.file_size_kb, aa.mime_type, aa.created_at
-            FROM   analysis_artifacts aa
-            {sample_join}
-            WHERE  aa.artifact_subtype = ?
-                   {sample_where}
-            ORDER  BY aa.created_at DESC
-            LIMIT  ?
-            """,
-            [artifact_subtype] + sample_params + [n * 2],
-        ).fetchall()
-        for rank, row in enumerate(exact_rows, start=1):
-            aid = str(row[0])
-            exact_ranked[aid] = rank
-            exact_rows_map[aid] = dict(zip(cols, row))
-
-    # ── Layer 2: HNSW vector search (with Matryoshka two-phase if enabled) ──
-    embedding = _get_embedding(query)
-    hnsw_ranked: dict[str, int] = {}
-    hnsw_rows_map: dict[str, dict] = {}
-
-    if embedding is not None:
-        try:
-            con.execute("LOAD vss")
-        except Exception:
-            pass
-
-        from config.settings import MATRYOSHKA_ENABLED
-
-        use_matryoshka_search = (
-            MATRYOSHKA_ENABLED and _matryoshka_col_exists(con) and len(embedding) >= 256
-        )
-
-        try:
-            if use_matryoshka_search:
-                # Phase 1: coarse scan with 256-dim sub-vector (fast)
-                embedding_256 = embedding[:256]
-                coarse_rows = con.execute(
-                    f"""
-                    SELECT aa.artifact_id::VARCHAR
-                    FROM   analysis_artifacts aa
-                    {sample_join}
-                    WHERE  aa.embedding_256 IS NOT NULL
-                           {sample_where}
-                    ORDER  BY array_cosine_distance(aa.embedding_256, ?::FLOAT[256])
-                    LIMIT  ?
-                    """,
-                    sample_params + [embedding_256, n * 10],
-                ).fetchall()
-                coarse_ids = [str(r[0]) for r in coarse_rows]
-
-                if coarse_ids:
-                    # Phase 2: re-rank top candidates with full 1024-dim embedding
-                    id_placeholders = ", ".join("?" * len(coarse_ids))
-                    hnsw_rows = con.execute(
-                        f"""
-                        SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
-                               aa.artifact_type, aa.artifact_subtype, aa.label,
-                               aa.file_path, aa.file_size_kb, aa.mime_type, aa.created_at
-                        FROM   analysis_artifacts aa
-                        WHERE  aa.artifact_id::VARCHAR IN ({id_placeholders})
-                          AND  aa.embedding IS NOT NULL
-                        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
-                        LIMIT  ?
-                        """,
-                        coarse_ids + [embedding, n * 2],
-                    ).fetchall()
-                else:
-                    hnsw_rows = []
-            else:
-                hnsw_rows = con.execute(
-                    f"""
-                    SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
-                           aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
-                           aa.file_size_kb, aa.mime_type, aa.created_at
-                    FROM   analysis_artifacts aa
-                    {sample_join}
-                    WHERE  aa.embedding IS NOT NULL
-                           {sample_where}
-                    ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
-                    LIMIT  ?
-                    """,
-                    sample_params + [embedding, n * 2],
-                ).fetchall()
-
-            for rank, row in enumerate(hnsw_rows, start=1):
-                aid = str(row[0])
-                hnsw_ranked[aid] = rank
-                hnsw_rows_map[aid] = dict(zip(cols, row))
-        except Exception as exc:
-            logger.warning("search_artifacts: HNSW search failed: %s", exc)
-
-    # ── Layer 3: DuckDB FTS BM25 (P0-B) ──────────────────────────────────────
-    # Activated automatically when migration v18 has run. The FTS schema lookup
-    # is cheap; on absence we silently fall back to 2-layer RRF.
-    fts_ranked: dict[str, int] = {}
-    fts_rows_map: dict[str, dict] = {}
-
-    if _fts_artifacts_available(con):
-        try:
-            # match_bm25 returns NULL when query has no token hits; filter those out.
-            # sample_id filter is applied via JOIN if provided.
-            fts_sql = f"""
-                SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR,
-                       aa.artifact_type, aa.artifact_subtype, aa.label, aa.file_path,
-                       aa.file_size_kb, aa.mime_type, aa.created_at,
-                       {_FTS_SCHEMA_ARTIFACTS}.match_bm25(aa.artifact_id, ?) AS bm25
-                FROM   analysis_artifacts aa
-                {sample_join}
-                WHERE  {_FTS_SCHEMA_ARTIFACTS}.match_bm25(aa.artifact_id, ?) IS NOT NULL
-                       {sample_where}
-                ORDER  BY bm25 DESC
-                LIMIT  ?
-            """
-            fts_rows = con.execute(
-                fts_sql,
-                [query, query] + sample_params + [n * 2],
-            ).fetchall()
-            for rank, row in enumerate(fts_rows, start=1):
-                aid = str(row[0])
-                fts_ranked[aid] = rank
-                fts_rows_map[aid] = dict(zip(cols, row[: len(cols)]))
-        except Exception as exc:
-            logger.warning("search_artifacts: FTS layer failed: %s", exc)
-
-    # ── RRF fusion (3-way) ───────────────────────────────────────────────────
-    all_ids = set(exact_ranked) | set(hnsw_ranked) | set(fts_ranked)
-    if not all_ids:
-        latency_ms = int((time.monotonic() - t_start) * 1000)
-        _record_search_metric(con, query, 0, latency_ms, "none", threshold, sample_id)
-        return []
-
-    scored: list[tuple[float, str]] = []
-    for aid in all_ids:
-        r_exact = exact_ranked.get(aid, None)
-        r_hnsw = hnsw_ranked.get(aid, None)
-        r_fts = fts_ranked.get(aid, None)
-        rrf = (
-            (1 / (_RRF_K + r_exact) if r_exact else 0.0)
-            + (1 / (_RRF_K + r_hnsw) if r_hnsw else 0.0)
-            + (1 / (_RRF_K + r_fts) if r_fts else 0.0)
-        )
-        scored.append((rrf, aid))
-
-    scored.sort(reverse=True)
-    top = [(s, aid) for s, aid in scored if s >= threshold][:n]
-
+    top = _rrf_fuse(exact_ranked, hnsw_ranked, fts_ranked, threshold, n)
     if not top:
         latency_ms = int((time.monotonic() - t_start) * 1000)
         _record_search_metric(con, query, 0, latency_ms, "none", threshold, sample_id)
         return []
 
-    # Determine dominant layer label for metric recording (multi-layer hits → "rrf")
-    contributed = []
-    if any(aid in exact_ranked for _, aid in top):
-        contributed.append("exact")
-    if any(aid in hnsw_ranked for _, aid in top):
-        contributed.append("hnsw")
-    if any(aid in fts_ranked for _, aid in top):
-        contributed.append("fts")
-    batch_layer = "rrf" if len(contributed) > 1 else (contributed[0] if contributed else "none")
-
-    results = []
-    for rrf_score, aid in top:
-        row_dict = exact_rows_map.get(aid) or hnsw_rows_map.get(aid) or fts_rows_map.get(aid, {})
-        row_dict["score"] = round(rrf_score, 6)
-        # Per-item layer attribution
-        in_e = aid in exact_ranked
-        in_h = aid in hnsw_ranked
-        in_f = aid in fts_ranked
-        per_item = [tag for tag, flag in (("exact", in_e), ("hnsw", in_h), ("fts", in_f)) if flag]
-        row_dict["search_layer"] = "rrf" if len(per_item) > 1 else per_item[0]
-        results.append(row_dict)
+    results, batch_layer = _build_artifact_results(
+        top, exact_rows_map, hnsw_rows_map, fts_rows_map,
+        exact_ranked, hnsw_ranked, fts_ranked,
+    )
 
     latency_ms = int((time.monotonic() - t_start) * 1000)
     _record_search_metric(con, query, len(results), latency_ms, batch_layer, threshold, sample_id)

@@ -634,6 +634,45 @@ def get_hot_tools(
 # Intra-tool hotspot (line-level churn)
 # ---------------------------------------------------------------------------
 
+_MAX_RANGE_LINES = 10_000
+
+
+def _count_line_hits(
+    rows: list, tool_name: str
+) -> tuple[dict[int, int], list[float]]:
+    line_hits: dict[int, int] = {}
+    churn_values: list[float] = []
+    for changed_lines_json, churn_ratio in rows:
+        try:
+            ranges: list[list[int]] = json.loads(changed_lines_json)
+        except (TypeError, ValueError):
+            continue
+        seen: set[int] = set()
+        for start, end in ranges:
+            if end < start:
+                continue
+            if end - start > _MAX_RANGE_LINES:
+                logger.warning("get_hot_lines: oversized range [%d, %d] in tool %r", start, end, tool_name)
+                continue
+            for lineno in range(start, end + 1):
+                if lineno not in seen:
+                    line_hits[lineno] = line_hits.get(lineno, 0) + 1
+                    seen.add(lineno)
+        if churn_ratio is not None:
+            churn_values.append(churn_ratio)
+    return line_hits, churn_values
+
+
+def _collapse_to_ranges(line_hits: dict[int, int], min_hits: int) -> list[list[int]]:
+    hot_line_nos = sorted(ln for ln, hits in line_hits.items() if hits >= min_hits)
+    ranges: list[list[int]] = []
+    for lineno in hot_line_nos:
+        if ranges and lineno == ranges[-1][1] + 1:
+            ranges[-1][1] = lineno
+        else:
+            ranges.append([lineno, lineno])
+    return ranges
+
 
 def get_hot_lines(
     con: duckdb.DuckDBPyConnection,
@@ -667,62 +706,19 @@ def get_hot_lines(
     ).fetchall()
 
     if not rows:
-        return {
-            "tool_name": tool_name,
-            "revisions_used": 0,
-            "hot_lines": [],
-            "avg_churn": None,
-            "suggestion": None,
-        }
+        return {"tool_name": tool_name, "revisions_used": 0,
+                "hot_lines": [], "avg_churn": None, "suggestion": None}
 
-    _MAX_RANGE_LINES = 10_000  # guard against malformed/oversized ranges
-
-    # Count per-line hit frequency across revisions
-    line_hits: dict[int, int] = {}
-    churn_values: list[float] = []
-
-    for changed_lines_json, churn_ratio in rows:
-        try:
-            ranges: list[list[int]] = json.loads(changed_lines_json)
-        except (TypeError, ValueError):
-            continue
-        seen_in_this_rev: set[int] = set()
-        for start, end in ranges:
-            if end < start:  # pure-deletion marker (start > end) → skip iteration
-                continue
-            if end - start > _MAX_RANGE_LINES:
-                logger.warning(
-                    "get_hot_lines: oversized range [%d, %d] in tool %r, skipping",
-                    start,
-                    end,
-                    tool_name,
-                )
-                continue
-            for lineno in range(start, end + 1):
-                if lineno not in seen_in_this_rev:
-                    line_hits[lineno] = line_hits.get(lineno, 0) + 1
-                    seen_in_this_rev.add(lineno)
-        if churn_ratio is not None:
-            churn_values.append(churn_ratio)
-
-    # Collapse individual hot lines back into contiguous ranges
-    hot_line_nos = sorted(ln for ln, hits in line_hits.items() if hits >= min_hits)
-    hot_ranges: list[list[int]] = []
-    for lineno in hot_line_nos:
-        if hot_ranges and lineno == hot_ranges[-1][1] + 1:
-            hot_ranges[-1][1] = lineno
-        else:
-            hot_ranges.append([lineno, lineno])
+    line_hits, churn_values = _count_line_hits(rows, tool_name)
+    hot_ranges = _collapse_to_ranges(line_hits, min_hits)
 
     avg_churn = round(sum(churn_values) / len(churn_values), 4) if churn_values else None
     suggestion = (
         f"Lines {', '.join(f'{s}-{e}' for s, e in hot_ranges)} "
         f"changed in {min_hits}+ of the last {len(rows)} revisions — "
         "consider extracting as configurable parameters."
-        if hot_ranges
-        else None
+        if hot_ranges else None
     )
-
     return {
         "tool_name": tool_name,
         "revisions_used": len(rows),
