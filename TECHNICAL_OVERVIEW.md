@@ -1,70 +1,70 @@
-# Evo_PRISM — Technical Overview
+# Evo_PRISM — 技術概覽
 
-**Evo_PRISM** (Evolutionary Platform for Runtime Intelligence & Semantic Memory) is a self-evolving AI-Agent platform built around the Model Context Protocol (MCP). It addresses three systematic failure modes that emerge when LLM agents drive scientific analysis pipelines, and proposes three technical contributions to solve them.
+**Evo_PRISM**（Evolutionary Platform for Runtime Intelligence & Semantic Memory，自演化執行期智慧與語意記憶平台）是一個以 MCP（Model Context Protocol）為核心的自演化 AI-Agent 平台。本文針對 LLM Agent 驅動科學分析管線時出現的三類系統性失效，提出三項對應的技術貢獻。
 
-> This document is a technical summary for the open-source community. It covers system design, key algorithms, and benchmark highlights. A full academic manuscript is in preparation.
-
----
-
-## Abstract
-
-**Background.** The proliferation of AI Agent coding tools (e.g., Claude Code, Cursor) has enabled researchers to generate complete bioinformatics analysis pipelines in minutes through natural language, lowering the technical barrier for complex omics data analysis. However, this paradigm shift introduces three classes of systemic failure unprecedented in traditional workflows: LLM-generated analysis code is transient in nature — if not explicitly version-committed, the provenance chain between code and result breaks immediately (**Failure 1: Code Provenance Vacuum**); LLM hallucinations may silently introduce methodological flaws that corrupt scientific conclusions without triggering any error (**Failure 2: Silent Methodological Failure**); and the absence of a unified analysis framework causes method inconsistencies across time and across analysts (**Failure 3: Methodological Drift**). These failures are further amplified by rising LLM inference costs — provenance vacuum forces re-computation of similar analyses, creating a cascading waste of tokens and compute.
-
-**System Contributions.** We present **Evo_PRISM**, which addresses all three failures through three technical designs: (1) *against Failure 1* — an L1–L2–L3 three-tier semantic data lake that enforces full `code version → analysis execution → multimodal artifact` lineage at the architecture level; (2) *against Failures 2 and 3* — the HELIX tool evolution framework, which monitors cyclomatic complexity and code churn to automatically promote stable ad-hoc scripts to SemVer-governed MCP services, and uses blast-radius assessment to identify the downstream impact of version drift on existing artifacts; (3) *reducing the compute amplification of all three failures* — 3-way RRF semantic caching and Figure Cache stripping achieve sub-millisecond, zero-token reuse of multimodal scientific outputs.
-
-**Evaluation.** We validate Evo_PRISM on a bioinformatics showcase module containing 39 GB of spatial transcriptomics data, combined with a 98-sample Bulk RNA-seq joint analysis. Four quantitative experiments are designed: 3-way RRF cache ablation, HELIX tool evolution and sandbox interception, Blast Radius Recursive CTE scalability, and methodological drift reproducibility — supplemented by a 631-test regression suite and system stability metrics.
-
-**Key Results.** On cache hit, median analysis latency is **2.4 ms** — a **33,764×** reduction versus L3 cold-start (80,430 ms). For 39 GB Visium HD spatial transcriptomics at 8 µm resolution, L1 cache hits achieve approximately **7,200,000×** speedup. Multimodal Figure Cache delivers **98.2%** context-window token savings (zero-token reuse). HELIX Code Promotion reduces median McCabe cyclomatic complexity by **80%** and raises HealthScore by **+0.515** across five core tools. The DuckDB Recursive CTE blast-radius query at 100,000 edges runs at a median of **30.5 ms**, and cross-version code consistency and retrospective stale-artifact detection both reach **100%**.
+> 本文件為面向開源社群的技術摘要，涵蓋系統設計、核心演算法與 Benchmark 要點。完整學術論文正在準備中。
 
 ---
 
-## Introduction
+## 摘要
 
-### The Paradigm Shift in Scientific Analysis
+**背景：** AI Agent 程式編寫工具（如 Claude Code、Cursor）的普及，使研究人員得以透過自然語言於數分鐘內生成完整的生物資訊分析管線，大幅降低複雜組學資料分析的技術門檻。然而，此一典範轉移引入了三類傳統工作流前所未見的系統性失效：LLM 所生成之分析程式碼往往屬臨時性質，若未主動進行版本提交，程式碼與結果之間的溯源鏈即告斷裂（**失效一：程式碼溯源真空**）；LLM 的幻覺特性可能導致方法論瑕疵難以察覺，進而污染科學結論（**失效二：靜默方法論失效**）；缺乏統一分析框架則造成跨時間、跨人員的方法不一致性（**失效三：方法漂移**）。上述失效因 LLM 推理成本持續攀升而被進一步放大——溯源真空迫使系統對相似分析反覆重算，造成 Token 與運算資源的雙重浪費。
 
-Bioinformatics analysis is undergoing a fundamental transformation. In traditional workflows, analysts with strong programming skills write Python or R scripts by hand, manually manage package dependencies, version environments, and output artifacts — maintaining a clear causal chain between code and result that is naturally version-controllable via Git. This model demands high technical expertise, but provides provenance by construction.
+**系統貢獻：** 本文提出 **Evo_PRISM**，藉由三項技術設計分別對應上述三類失效：（1）**對應失效一**——L1-L2-L3 三層語意資料湖，於架構層面強制記錄「程式碼版本 → 分析執行 → 多模態產物」之完整血緣；（2）**對應失效二與三**——HELIX 工具演化框架，藉由監測循環複雜度與程式碼變動率，自動將穩定之臨時腳本晉升為受版本治理之 MCP 服務，並以爆炸範圍評估識別版本漂移對既有產物之影響；（3）**降低三類失效對運算資源之放大效應**——3-way RRF 語意快取與 Figure Cache 剝離技術，實現運算型多模態科學產物之亞秒級零 Token 重用。
 
-With the rise of AI Agent coding tools, researchers can now generate complete analysis pipelines in minutes through natural language. Biologists with wet-lab backgrounds can independently perform complex multi-omics analyses that previously required dedicated bioinformatics support. This "natural language as analysis interface" paradigm dramatically lowers the technical barrier — but simultaneously introduces systemic failures that did not exist in traditional workflows.
+**評估設計：** 本研究以包含 39 GB 空間轉錄組數據之生物資訊展示模組，搭配 98 樣本 Bulk RNA-seq 聯合分析作為評估場景，規劃四組量化實驗：3-way RRF 快取與消融分析、HELIX 工具演化與沙盒攔截、爆炸範圍 Recursive CTE 可擴展性、方法漂移可重現性，並輔以 631 項迴歸測試套件與系統穩定性指標作為佐證。
 
-### Why Code Provenance is the Root Problem
-
-Existing systems that address memory, caching, or agent tool use share a fundamental blind spot: they treat **data outputs** as the atomic unit of memory, ignoring the code version and execution context that generated them. We argue that **code provenance is the true foundation of scientific reproducibility — data should support it, not replace it**.
-
-This gap creates a vicious cycle: provenance vacuum forces re-computation → re-computation burns tokens and compute → rising inference costs make the problem worse → analysts avoid committing code → provenance vacuum persists.
-
-Evo_PRISM breaks this cycle by embedding provenance tracking directly into the storage layer. Every analysis is linked to the exact tool version that produced it. Cache hits eliminate redundant computation. Code quality is monitored and enforced automatically. The result: **solving the provenance problem makes token savings a natural consequence, not a separate concern**.
-
-### Core Thesis
-
-> Integrating code lineage tracking and self-evolving health management into the data storage layer provides a robust and reproducible engineering paradigm for high-reliability AI Agent deployment in scientific computing domains such as bioinformatics.
+**實測效能：** 快取命中時，分析延遲中位數僅為 **2.4 ms**，相較於 L3 全量計算冷啟動（80,430 ms）縮減達 **33,764 倍**；多模態 Figure Cache 技術達成 **98.2%** 之上下文視窗 Token 節省率（零 Token 開銷重用）。HELIX Code Promotion 使五個核心工具之 McCabe 循環複雜度中位數下降 **80%**，HealthScore 提升 **+0.515**。DuckDB Recursive CTE 爆炸範圍查詢於 10 萬條邊規模下，中位延遲僅 **30.5 ms**；跨版本程式碼一致性與後溯陳舊偵測率均達 **100%**。
 
 ---
 
-## 1. Problem: Three Failure Modes in LLM-Driven Analysis
+## 前言
 
-| Failure Mode                                  | Description                                                                                                                 | Consequence                                                               |
-| :-------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
-| **F1 — Code Provenance Vacuum**        | Ad-hoc code generated per conversation is lost after the session ends; no link between result and the code that produced it | Cannot reproduce or audit past analyses                                   |
-| **F2 — Silent Methodological Failure** | LLM hallucinations silently introduce wrong normalization or stale APIs; outputs look plausible                             | Scientific conclusions corrupted without warning                          |
-| **F3 — Methodological Drift**          | Different sessions or analysts apply slightly different parameters to the same raw data                                     | Results diverge; impossible to attribute differences to biology vs method |
+### 科學分析的典範轉移
 
-These failures are amplified by LLM inference cost: without provenance, every similar query forces a full re-run — wasting tokens and compute.
+生物資訊學的分析典範正在經歷根本性的轉變。在傳統工作流程中，分析人員須具備紮實的程式設計能力，親手撰寫 Python 或 R 腳本，手動管理套件依賴、版本環境與輸出產物。這一模式雖對技術門檻要求甚高，卻天然具備可溯源性——分析結果與產生結果的程式碼之間存在清晰的因果鏈，可透過 Git 進行追蹤與重現。
+
+然而，隨著 AI Agent 程式編寫工具的普及，研究人員如今得以透過自然語言於數分鐘內生成完整之分析管線，使具濕實驗背景之生物學家亦能獨立完成複雜的組學數據分析。此「自然語言即分析介面」之典範在大幅降低技術門檻之同時，亦引入了傳統工作流前所未見之系統性失效。
+
+### 程式碼溯源才是根本問題
+
+現有的記憶、快取或 Agent 工具系統共同存在一個根本盲點：它們將**數據輸出**視為記憶的基本單元，忽略了產生數據的程式碼版本與執行脈絡。我們的核心主張是：**程式碼血緣（Code Provenance）方為科學可重複性之基石，數據應為其輔助而非主體。**
+
+這一缺口形成惡性循環：溯源真空 → 被迫重複運算 → Token 與算力消耗 → 推理成本上升加劇問題 → 分析人員更少進行版本提交 → 溯源真空持續。
+
+Evo_PRISM 透過將溯源追蹤直接內嵌於儲存層來打破這一循環。每次分析都強制關聯至產生它的精確工具版本；快取命中消除冗餘運算；程式碼品質被自動監測與強制執行。結果是：**解決溯源問題，Token 節省即為其自然推論，而非需要另行解決的獨立問題。**
+
+### 核心主張
+
+> 將程式碼血緣追蹤與自進化健康管理整合至資料儲存層，能為 AI Agent 於生物資訊學等科學計算領域之高可靠部署提供穩健且可複製之工程範式。
 
 ---
 
-## 2. Three Technical Contributions
+## 1. 問題：LLM 驅動分析的三類失效模式
 
-| Contribution                                            | Addresses          | What it does                                                                                                                                                                                                        |
-| :------------------------------------------------------ | :----------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **C1 — 3-way RRF Semantic Cache + Figure Cache** | F1 (amplification) | Fuses NL embedding, input fingerprint, and runtime context via Reciprocal Rank Fusion to deduplicate queries; strips base64 figures at the MCP boundary to achieve zero-token cache hits                            |
-| **C2 — HELIX Tool Evolution Framework**          | F2 + F3            | Tracks cyclomatic complexity and code churn; automatically promotes stable ad-hoc scripts to versioned MCP tools; detects methodological drift with retrospective stale-analysis marking                            |
-| **C3 — Medallion Lakehouse + Blast Radius CTE**  | F1 + F3            | L1–L2–L3 architecture enforces full `code version → analysis → artifact` lineage; `bio_impact` uses DuckDB Recursive CTE to traverse `artifact_relations` and assess downstream impact of any tool update |
+| 失效模式 | 描述 | 後果 |
+|:---|:---|:---|
+| **F1 — 程式碼溯源真空** | 每次對話生成的臨時程式碼在 Session 結束後消散，結果與產生它的程式碼之間無連結 | 無法重現或審計過往分析 |
+| **F2 — 靜默方法論失效** | LLM 幻覺靜默引入錯誤的正規化方法或過時的 API，輸出表面合理 | 科學結論在不觸發任何警示的情況下遭到污染 |
+| **F3 — 方法漂移** | 不同 Session 或不同分析人員對同一原始數據採用略有差異的參數 | 結果差異無法判斷是生物學信號還是方法不一致 |
+
+上述失效因 LLM 推理成本上升而被放大：缺乏溯源時，每次相似查詢都被迫完整重算，造成 Token 與算力的持續浪費。
 
 ---
 
-## 3. System Architecture
+## 2. 三項技術貢獻
 
-The routing gateway intercepts every user request and resolves it at the lowest-cost layer available:
+| 貢獻 | 對應失效 | 技術設計 |
+|:---|:---|:---|
+| **C1 — 3-way RRF 語意快取 + Figure Cache** | F1（放大效應） | 融合自然語言 Embedding、輸入特徵指紋、執行期上下文三路 RRF 去重；於 MCP 邊界剝離 base64 圖片，達成零 Token 快取命中 |
+| **C2 — HELIX 工具自演化框架** | F2 + F3 | 追蹤循環複雜度與程式碼變動率；自動將穩定臨時腳本晉升為受版本治理之 MCP 工具；以後溯陳舊標記偵測方法漂移 |
+| **C3 — Medallion 資料湖 + Blast Radius CTE** | F1 + F3 | L1–L2–L3 架構強制記錄「程式碼版本 → 分析 → 產物」完整血緣；`bio_impact` 以 DuckDB Recursive CTE 走訪 `artifact_relations`，評估任何工具更新的下游影響 |
+
+---
+
+## 3. 系統架構
+
+路由閘道攔截每個使用者請求，並在最低成本的層次解析它：
 
 ```mermaid
 graph TD
@@ -111,23 +111,23 @@ graph TD
     L1e --> Resp["Return Results to User"]:::hit
 ```
 
-![Three-layer Medallion Architecture](docs/images/三層架構_eng.png)
+![三層 Medallion 架構](docs/images/三層架構_eng.png)
 
-### Three-Layer Medallion Architecture
+### 三層 Medallion 架構
 
-| Layer               | Store                   | Contents                                                                                  |       Latency       |
-| :------------------ | :---------------------- | :---------------------------------------------------------------------------------------- | :------------------: |
-| **L1 Gold**   | `hermes_cache.duckdb` | 1024-dim bge-m3 embeddings + HNSW cosine index; TTL 7 days                                | **< 0.001 ms** |
-| **L2 Silver** | `bio_memory.duckdb`   | `analysis_history` (permanent, append-only); `sample_registry`; ENGRAM artifact index |  **~262 ms**  |
-| **L3 Bronze** | Raw files (read-only)   | Immutable genomics data (Visium HD, Kallisto output, Perseus CSV)                         | **~34,000 ms** |
+| 層次 | 儲存 | 內容 | 延遲 |
+|:---|:---|:---|:---:|
+| **L1 Gold** | `hermes_cache.duckdb` | bge-m3 1024 維 Embedding + HNSW cosine 索引；TTL 7 天 | **< 0.001 ms** |
+| **L2 Silver** | `bio_memory.duckdb` | `analysis_history`（永久、append-only）；`sample_registry`；ENGRAM artifact 索引 | **~262 ms** |
+| **L3 Bronze** | 原始檔案（唯讀） | 不可變基因組數據（Visium HD、Kallisto 輸出、Perseus CSV） | **~34,000 ms** |
 
-L1 miss → L2 lookup → L3 only if no prior result exists. In the 98-sample benchmark, **zero L3 re-runs were triggered** for previously completed analyses.
+L1 未命中 → L2 查詢 → 僅當無歷史結果時才觸發 L3。在 98 樣本 Benchmark 中，**已完成之分析零次觸發 L3 重算**。
 
 ---
 
 ## 4. HELIX — Health-Evolving Loop with Iterative eXpiration
 
-HELIX is the tool governance subsystem. It tracks every modification to an analysis tool and automates the lifecycle from ad-hoc script to production MCP tool.
+HELIX 是工具治理子系統，追蹤分析工具的每一次修改，並自動化從臨時腳本到生產 MCP 工具的完整生命週期。
 
 ```mermaid
 graph TB
@@ -184,77 +184,77 @@ graph TB
     end
 ```
 
-![HELIX Architecture](docs/images/HELIX_架構圖_2.png)
+![HELIX 架構](docs/images/HELIX_架構圖_2.png)
 
-### 4.1 Adaptive Promotion Function — Eq. (1)
+### 4.1 自適應晉升評估函數 — Eq. (1)
 
 $$
 f_{promote}(t) = \alpha \cdot \text{ReuseCount}(t) + \beta \cdot \text{UserApproval}(t) - \gamma \cdot \text{Complexity}(t)
 $$
 
-Promotion triggers when $f_{promote}(t) \ge \theta_{promote}$ **and** sandbox regression pass rate = 100%.
+當 $f_{promote}(t) \ge \theta_{promote}$ **且**沙盒迴歸測試通過率 = 100% 時，自動觸發 Code Promotion。其中 $\text{Complexity}(t)$ 採用 McCabe 循環複雜度（Cyclomatic Complexity）\[13\]，以 Radon 套件實作。
 
-### 4.2 Tool Health Score — Eq. (2)
+### 4.2 工具健康度指標 — Eq. (2)
 
 $$
 HealthScore(t) = \text{clip}_{[0,1]}\Big(1.0 - \omega_{churn} \cdot ChurnRatio(t) - \omega_{complexity} \cdot \widetilde{\Delta Complexity}(t)\Big)
 $$
 
-When $HealthScore(t) < \theta_{warning}$, the hotspot detector activates a refactoring loop. After code quality recovers, HELIX saves a 640×640 PNG visual snapshot per stabilization iteration; old snapshots are progressively downsampled following an Ebbinghaus forgetting curve (640→320 after 180 days, 320→160 after 365 days) to reduce storage while preserving historical context for VLM review.
+其中 $ChurnRatio(t)$ 為相對程式碼變動率（Relative Code Churn）\[14\]，定義為近期修改行數與工具總行數之比；$\widetilde{\Delta Complexity}(t)$ 為複雜度增量 \[13\] 經 min-max 正規化後的比例。當 $HealthScore(t) < \theta_{warning}$ 時，熱區偵測器啟動重構迴路。程式碼品質回升後，HELIX 為每次穩定化迭代儲存一張 640×640 PNG 視覺快照；舊快照依艾賓浩斯遺忘曲線（Ebbinghaus Forgetting Curve）漸進降採樣（180 天後 640→320，365 天後 320→160），在節省儲存的同時保留歷史脈絡供 VLM 回溯診斷。
 
-### 4.3 HELIX Hyperparameters
+### 4.3 HELIX 超參數預設值
 
-| Parameter         | Formula |       Default       | Description                                                |
-| :---------------- | :-----: | :-----------------: | :--------------------------------------------------------- |
-| α                | Eq.(1) |         1.0         | Reuse count weight                                         |
-| β                | Eq.(1) |         2.0         | User approval weight (strong signal)                       |
-| γ                | Eq.(1) |         0.2         | Complexity penalty (weak, avoids suppressing long scripts) |
-| θ_promote        | Eq.(1) |         3.0         | Promotion threshold (triggers at ReuseCount ≥ 3)          |
-| ω_churn          | Eq.(2) |         0.6         | Churn penalty weight                                       |
-| ω_complexity     | Eq.(2) |         0.4         | Complexity delta penalty weight                            |
-| θ_warning        | Eq.(2) |        0.70        | Health warning threshold                                   |
-| Hotspot threshold |   —   | revision_count ≥ 3 | Triggers deep health assessment                            |
+| 參數 | 公式 | 預設值 | 說明 |
+|:---|:---:|:---:|:---|
+| α | Eq.(1) | 1.0 | 重用次數權重 |
+| β | Eq.(1) | 2.0 | 使用者好評權重（強信號） |
+| γ | Eq.(1) | 0.2 | 複雜度懲罰（弱信號，避免抑制長腳本） |
+| θ_promote | Eq.(1) | 3.0 | 晉升閾值（對應 ReuseCount ≥ 3） |
+| ω_churn | Eq.(2) | 0.6 | Churn 懲罰權重 |
+| ω_complexity | Eq.(2) | 0.4 | 複雜度增量懲罰權重 |
+| θ_warning | Eq.(2) | 0.70 | 健康警告閾值 |
+| 熱區門檻 | — | revision_count ≥ 3 | 觸發深度健檢之累積修訂次數 |
 
-### 4.4 Code Promotion Results
+### 4.4 Code Promotion 實測結果
 
-**Table 3 — N=1 baseline (bio_run_deg)**
+**表 3 — N=1 基準算例（bio_run_deg）**
 
-| Metric                 |  Before (Ad-hoc)  | After (Formal Tool) | Improvement |
-| :--------------------- | :----------------: | :-----------------: | :---------: |
-| McCabe CC              |         6         |          2          |    −67%    |
-| HELIX HealthScore      |       0.180       |        0.940        |   +0.760   |
-| Health alert (θ=0.70) | ⚠ Below threshold |     ✓ Healthy     |     —     |
+| 指標 | 晉升前（Ad-hoc） | 晉升後（Formal Tool） | 改善 |
+|:---|:---:|:---:|:---:|
+| Radon 循環複雜度（McCabe CC） | 6 | 2 | −67% |
+| HELIX HealthScore | 0.180 | 0.940 | +0.760 |
+| 健康警示（θ=0.70） | ⚠ 低於警示 | ✓ 健康 | — |
 
-**Table 4 — N=5 core MCP tools (paired evaluation)**
+**表 4 — N=5 核心 MCP 工具成對評估**
 
-| MCP Tool                    | McCabe CC (before→after) |      MI (before→after)      |    HealthScore (before→after)    |
-| :-------------------------- | :-----------------------: | :---------------------------: | :-------------------------------: |
-| `bio_run_deg`             |      12 → 2 (−83%)      |      45.2 → 82.1 (+82%)      |          0.352 → 0.941          |
-| `bio_run_bulk_eda`        |      15 → 3 (−80%)      |      40.5 → 78.4 (+94%)      |          0.280 → 0.920          |
-| `bio_run_heatmaps`        |      8 → 1 (−88%)      |      52.0 → 89.2 (+72%)      |          0.490 → 0.965          |
-| `bio_run_enrichment`      |      18 → 4 (−78%)      |     35.1 → 74.8 (+113%)     |          0.190 → 0.895          |
-| `bio_run_pathway_scoring` |      10 → 2 (−80%)      |      48.7 → 81.3 (+67%)      |          0.420 → 0.935          |
-| **Median**            | **12 → 2 (−80%)** | **48.7 → 81.3 (+82%)** | **0.420 → 0.935 (+0.515)** |
+| MCP 工具 | McCabe CC（前→後） | MI（前→後） | HealthScore（前→後） |
+|:---|:---:|:---:|:---:|
+| `bio_run_deg` | 12 → 2（−83%） | 45.2 → 82.1（+82%） | 0.352 → 0.941 |
+| `bio_run_bulk_eda` | 15 → 3（−80%） | 40.5 → 78.4（+94%） | 0.280 → 0.920 |
+| `bio_run_heatmaps` | 8 → 1（−88%） | 52.0 → 89.2（+72%） | 0.490 → 0.965 |
+| `bio_run_enrichment` | 18 → 4（−78%） | 35.1 → 74.8（+113%） | 0.190 → 0.895 |
+| `bio_run_pathway_scoring` | 10 → 2（−80%） | 48.7 → 81.3（+67%） | 0.420 → 0.935 |
+| **中位數** | **12 → 2（−80%）** | **48.7 → 81.3（+82%）** | **0.420 → 0.935（+0.515）** |
 
-Wilcoxon Signed-Rank test (N=5, Exact): W=0.0 across all metrics — all 5 tools improved in the same direction. The minimum achievable p-value at N=5 is 0.0625, reflecting sample size rather than effect direction inconsistency.
+Wilcoxon Signed-Rank 成對檢定（N=5，Exact Method）：所有指標 W=0.0，五項工具改善方向完全一致。N=5 時精確檢定最低可能 p 值為 0.0625，反映樣本量不足而非效果方向不一致。
 
-![Code quality before and after Code Promotion](docs/paper/figures/helix_before_after.png)
+![晉升前後程式碼品質對比](docs/paper/figures/helix_before_after.png)
 
-*Figure: McCabe CC (lower is better) and Maintainability Index (higher is better) for 5 core bioinformatics MCP tools, before and after HELIX Code Promotion.*
+*圖：5 個核心生資 MCP 工具之 McCabe CC（越低越佳）與可維護性指數 MI（越高越佳）在 HELIX Code Promotion 前後的成對對比。*
 
-### 4.5 Longitudinal Health Evolution
+### 4.5 縱向健康度演化
 
-HELIX was tracked across 7 consecutive commits (2026-05-16 to 2026-05-23). Mean HealthScore dropped from 0.95 to 0.61 during active development (below θ_warning = 0.70), automatically triggering the refactoring loop, which recovered health to 0.94 — demonstrating the self-healing lifecycle in a real development environment.
+HELIX 追蹤 7 個連續 Commit 的演化軌跡（2026-05-16 至 2026-05-23）。開發期間平均 HealthScore 由 0.95 降至 0.61（低於 θ_warning = 0.70），自動觸發重構迴路，健康度隨後回升至 0.94——在真實開發環境中實證了自癒生命週期的閉迴路特性。
 
-![Tool HealthScore evolution across commits](docs/paper/figures/helix_health_evolution.png)
+![工具庫 HealthScore 縱向演化曲線](docs/paper/figures/helix_health_evolution.png)
 
-*Figure: Sawtooth self-healing curve — HealthScore drops as code churn accumulates, then recovers after HELIX-triggered refactoring.*
+*圖：鋸齒狀自癒曲線——隨程式碼變動技術債累積，HealthScore 下降後由 HELIX 觸發重構拉回高位。*
 
 ---
 
-## 5. ENGRAM — Semantic Memory Lakehouse
+## 5. ENGRAM — 語意記憶湖（Semantic Memory Lakehouse）
 
-ENGRAM is the artifact index: every completed analysis registers its outputs (figures, CSVs, reports) as artifacts with a semantic embedding vector and a link to the tool version that produced them.
+ENGRAM 是分析產物索引庫：每次分析完成後，其輸出（圖表、CSV、報告）被自動登記為 artifact，附上語意向量 Embedding 與產生它的工具版本連結。
 
 ```mermaid
 graph TD
@@ -289,115 +289,155 @@ ehnsw -->|"nearest neighbors"| errf
 errf -->|"return with tool version provenance"| eresult(["Agent / Web UI"])
 ```
 
-![ENGRAM Architecture](docs/images/engram_架構圖1_eng.png)
+![ENGRAM 架構](docs/images/engram_架構圖1_eng.png)
 
-### 5.1 3-way RRF Semantic Cache — Eq. (3)
+### 5.1 3-way RRF 語意快取 — Eq. (3)
+
+Reciprocal Rank Fusion（RRF）\[15\] 多路排序融合演算法：
 
 $$
 Score_{RRF}(q, a) = \frac{w_1}{r_{embedding}(q,\, a.query) + k} + \frac{w_2}{r_{fingerprint}(F_{in},\, a.input) + k} + \frac{w_3}{r_{context}(C,\, a.context) + k}
 $$
 
-Three orthogonal dimensions prevent silent cache errors:
+三個正交維度防止靜默快取錯誤：
 
-| Dimension               | What it checks                                                  | Default weight |
-| :---------------------- | :-------------------------------------------------------------- | :------------: |
-| **r_embedding**   | NL query similarity via bge-m3 HNSW (pre-filter ≥ 0.88 cosine) |   w₁ = 1.0   |
-| **r_fingerprint** | Input file identity (filename + size + SHA256[:16] + schema)    |   w₂ = 1.5   |
-| **r_context**     | Runtime context (sample_id + active tool_id set + env hash)     |   w₃ = 0.5   |
+| 維度 | 驗證內容 | 預設權重 |
+|:---|:---|:---:|
+| **r_embedding** | 以 bge-m3 HNSW \[12\] 比對自然語言查詢相似度（pre-filter ≥ 0.88 cosine） | w₁ = 1.0 |
+| **r_fingerprint** | 輸入檔案識別（檔名 + 大小 + SHA256[:16] + schema） | w₂ = 1.5 |
+| **r_context** | 執行期上下文（sample_id + 啟用工具 tool_id 集合 + 環境 hash） | w₃ = 0.5 |
 
-The fingerprint dimension (highest weight) ensures a query with changed input data never silently hits a stale cached result.
+平滑常數 $k=60$ 沿用 Cormack et al. \[15\] 的 IR 慣例。指紋維度（最高權重）確保輸入數據變更後的查詢絕不靜默命中舊快取。
 
-### 5.2 Figure Cache — Zero-Token Multimodal Reuse
+### 5.2 Figure Cache — 零 Token 多模態重用
 
-Scientific outputs (volcano plots, heatmaps, dimensionality reduction) are stripped of their base64 payload at the MCP boundary. The PNG is stored content-addressed in `gold/figure_cache/`; the LLM receives only a compact placeholder. On cache hit, the agent retrieves the original image on-demand via `bio_get_figure(figure_id)` through MCP's `ImageContent` channel.
+科學輸出（火山圖、熱圖、降維圖）在 MCP 傳輸邊界被剝離 base64 載荷。PNG 以內容定址（content-addressed）方式儲存於 `gold/figure_cache/`；LLM 只收到緊湊的佔位符。快取命中時，Agent 透過 `bio_get_figure(figure_id)` 經 MCP `ImageContent` 通道按需取回原圖。
 
-- A single multi-figure report can carry 200,000+ tokens of base64
-- Figure Cache reduces context-window token consumption by **98.2%** in the 98-sample benchmark
+- 單份多圖報告的 base64 可達 **20 萬個 token**
+- Figure Cache 在 98 樣本 Benchmark 中將 Context Window Token 消耗降低 **98.2%**
 
 ---
 
-## 6. Blast Radius — Retrospective Impact Assessment
+## 6. Blast Radius — 後溯式影響評估
 
-When a tool is updated, `bio_impact` walks the artifact dependency graph using a DuckDB Recursive CTE to identify all downstream artifacts that may be stale:
+當工具版本更新時，`bio_impact` 以 DuckDB Recursive CTE 走訪 artifact 依賴圖，識別所有可能陳舊的下游 artifact：
 
 ```
 tools → analysis_history → analysis_artifacts → artifact_relations
 ```
 
-Edge confidence levels encode how strong the dependency evidence is:
+邊上信心分級量化依賴強度：
 
-|     Confidence     | Source                                                         | Interpretation       |
-| :-----------------: | :------------------------------------------------------------- | :------------------- |
-|     1.0 (Exact)     | Precise `tool_id` match in `analysis_history`              | Definite dependency  |
-| 0.9 (Same-Analysis) | Other artifacts from the same analysis run                     | Very likely affected |
-|   0.6 (Heuristic)   | Name-based matching (e.g.`bulk_eda` → `bio_run_bulk_eda`) | Possible dependency  |
+| 信心值 | 來源 | 語意 |
+|:---:|:---|:---|
+| 1.0（Exact） | `analysis_history` 中精確對應的 `tool_id` | 確定依賴 |
+| 0.9（Same-Analysis） | 同一次分析流程的其他關聯 artifact | 極可能受影響 |
+| 0.6（Heuristic） | 分析類型與工具名稱的啟發式名稱對照 | 可能依賴 |
 
-**Table 6 — Dual-phase confidence evolution (20 hand-labelled test cases)**
+**表 6 — 雙階段信心演進（20 個手動標註測試案例）**
 
-| Metric          | Phase A (sparse metadata) | Phase B (saturated metadata) | Change |
-| :-------------- | :-----------------------: | :--------------------------: | :----: |
-| Mean confidence |      0.6 (Heuristic)      |         1.0 (Exact)         |   ↑   |
-| Recall          |      **1.000**      |       **1.000**       |   —   |
-| Precision       |           0.714           |       **0.833**       | +0.119 |
+| 指標 | Phase A（Metadata 稀疏期） | Phase B（Metadata 飽和期） | 改善 |
+|:---|:---:|:---:|:---:|
+| 平均信心值 | 0.6（Heuristic） | 1.0（Exact） | ↑ |
+| 召回率（Recall） | **1.000** | **1.000** | — |
+| 精準率（Precision） | 0.714 | **0.833** | +0.119 |
 
-The system maintains 100% Recall at all times (no affected artifact is missed). Precision improves as `tool_id` metadata accumulates — a graceful convergence from heuristic to exact provenance.
+系統在任何時刻都維持 100% 召回率（不遺漏任何受影響的 artifact）；隨 `tool_id` metadata 的累積，精準率從 71.4% 收斂至 83.3%——從啟發式到精確溯源的無縫信心收斂。
 
-![DuckDB Recursive CTE Blast Radius Scalability](docs/paper/figures/helix_cte_scalability.png)
+![DuckDB Recursive CTE 爆炸範圍查詢可擴展性](docs/paper/figures/helix_cte_scalability.png)
 
-*Figure: Blast Radius query latency vs. dependency graph size (log scale). At 100,000 edges the median latency is 30.5 ms — well below the 1,000 ms interactive threshold.*
-
----
-
-## 7. Key Results at a Glance
-
-| Metric                                        |              Value              |
-| :-------------------------------------------- | :-----------------------------: |
-| Cache speedup (L1 vs L3 cold start)           |       **33,764×**       |
-| Context-window token savings (Figure Cache)   |         **98.2%**         |
-| Methodological drift detection rate           |         **100%**         |
-| Code complexity reduction (median, N=5 tools) |    **−80% McCabe CC**    |
-| HealthScore improvement (median, N=5 tools)   |        **+0.515**        |
-| Blast Radius CTE latency at 100k edges        |        **30.5 ms**        |
-| Sandbox adversarial intercept rate (N=30)     |    **100%** (FPR = 0%)    |
-| Test suite coverage                           | **631+ tests / 49 files** |
+*圖：Blast Radius 查詢延遲與依賴圖規模（對數尺度）的關係。在 100,000 條邊時，中位延遲為 30.5 ms，遠低於互動式查詢 1,000 ms 的臨界閾值。*
 
 ---
 
-## 8. Technology Stack
+## 7. 結論
 
-| Component           | Technology                                             |
-| :------------------ | :----------------------------------------------------- |
-| Core database       | DuckDB 1.5.2                                           |
-| Embedding model     | bge-m3-Q8_0 (605 MB, 1024-dim FLOAT, HNSW cosine)      |
-| Vector index        | HNSW (cosine, via DuckDB VSS extension)                |
-| MCP transport       | stdio (local) + HTTP/SSE (remote HPC)                  |
-| Sandbox execution   | Python subprocess with import whitelist + 60 s timeout |
-| Complexity analysis | Radon CC (McCabe Cyclomatic Complexity)                |
-| Container           | Docker `evo-prism:0.1.0` (343 MB)                    |
-| Scheduler           | macOS launchd / Linux cron                             |
+本文提出 Evo_PRISM，一針對 AI Agent 驅動之科學分析場景所設計之自演化執行期智慧與語意記憶平台，並以受控基準測試驗證其對三類核心失效模式之解決能力。
+
+本研究之核心主張在於：**程式碼血緣追蹤應作為科學運算平台之一等公民，而非事後補救的附加機制。** 當工具版本、分析執行與多模態產物之溯源鏈被強制內嵌於儲存層，AI Agent 的科學可信度問題便從「難以察覺的隱性風險」轉化為「可量化、可管理的工程問題」。此設計哲學不依賴於特定的 LLM 後端或生物資訊領域，而是一套可移植的架構原則。
+
+對 AI Agent 科學計算社群而言，Evo_PRISM 展示了三層 Medallion 語意資料湖作為通用 Agent 記憶後端的可行性：
+
+- **語意快取**將冗餘運算成本從「隨規模指數放大」壓縮至亞毫秒級攔截
+- **HELIX 版本治理**將方法論錯誤的影響範圍從「被動發現」提升為「主動追蹤」
+- **Recursive CTE 血緣圖譜**在不引入外部圖資料庫的前提下，以毫秒級延遲支撐十萬邊規模的依賴遍歷
+
+這些結果共同表明：將程式碼健康診斷與數據溯源下沉至儲存層，是實現可擴展、高可靠性科學自演化 Agent 平台的關鍵路徑，並為後續跨領域（材料科學、氣候模擬、金融計量）之程式碼治理研究提供可複製的工程基礎。
 
 ---
 
-## 9. Repository Structure
+## 8. 關鍵實測結果一覽
+
+| 指標 | 數值 |
+|:---|:---:|
+| 快取加速比（L1 vs L3 冷啟動） | **33,764×** |
+| Context Window Token 節省率（Figure Cache） | **98.2%** |
+| 方法漂移偵測率 | **100%** |
+| 程式碼複雜度降低（中位數，N=5 工具） | **−80% McCabe CC** |
+| HealthScore 提升（中位數，N=5 工具） | **+0.515** |
+| Blast Radius CTE 延遲（10 萬條邊） | **30.5 ms** |
+| 沙盒對抗性攔截率（N=30） | **100%**（FPR = 0%） |
+| 測試套件覆蓋率 | **631+ tests / 49 files** |
+
+---
+
+## 9. 技術棧
+
+| 元件 | 技術 |
+|:---|:---|
+| 核心資料庫 | DuckDB 1.5.2 |
+| Embedding 模型 | bge-m3-Q8_0（605 MB，1024 維 FLOAT，HNSW cosine） |
+| 向量索引 | HNSW（cosine，via DuckDB VSS extension） |
+| MCP transport | stdio（本機）+ HTTP/SSE（遠端 HPC） |
+| 沙盒執行 | Python subprocess + import 白名單 + 60 秒逾時限制 |
+| 複雜度分析 | Radon CC（McCabe Cyclomatic Complexity） |
+| 容器 | Docker `evo-prism:0.1.0`（343 MB） |
+| 排程器 | macOS launchd / Linux cron |
+
+---
+
+## 10. 專案結構
 
 ```
 Evo_PRISM/
-├── analysis/           ← Core analysis functions (MCP tools)
-│   ├── tool_registry.py    HELIX-Core: version tracking & promotion
-│   ├── tool_visualizer.py  HELIX-Vision: PNG snapshots + forgetting curve
-│   ├── artifact_registry.py ENGRAM: artifact indexing + RRF search
-│   ├── l1_cache.py         L1 semantic cache (HNSW)
-│   └── figure_cache.py     Figure Cache: base64 strip + content-addressed storage
+├── analysis/           ← 核心分析函數（MCP 工具）
+│   ├── tool_registry.py    HELIX-Core：版本追蹤與晉升
+│   ├── tool_visualizer.py  HELIX-Vision：PNG 快照 + 遺忘曲線
+│   ├── artifact_registry.py ENGRAM：artifact 索引 + RRF 搜尋
+│   ├── l1_cache.py         L1 語意快取（HNSW）
+│   └── figure_cache.py     Figure Cache：base64 剝離 + 內容定址儲存
 ├── server/
-│   ├── bio_memory_server.py MCP Server (stdio + HTTP)
-│   └── agent.py            Agent loop + sandbox executor
-├── scheduler/          ← Background tasks (backup, HNSW rebuild, HELIX snapshots)
-├── scripts/            ← One-time data transformation (L3 → L2 Parquet)
-├── config/             ← Settings + safe_write() for DuckDB WAL safety
-├── tests/              ← 631+ pytest tests across 49 files
-└── docs/               ← Guides, architecture diagrams, launchd templates
+│   ├── bio_memory_server.py MCP Server（stdio + HTTP）
+│   └── agent.py            Agent 迴路 + 沙盒執行器
+├── scheduler/          ← 背景排程任務（備份、HNSW 重建、HELIX 快照）
+├── scripts/            ← 一次性數據轉換（L3 → L2 Parquet）
+├── config/             ← 集中設定 + safe_write()（DuckDB WAL 安全）
+├── tests/              ← 631+ pytest 測試，涵蓋 49 個測試檔
+└── docs/               ← 操作指南、架構圖、launchd 範本
 ```
 
 ---
 
-*For full deployment instructions, see [README.md](README.md). For the MCP tool catalogue, see [README.md §Available Tools](README.md#available-tools-17-by-default).*
+*完整部署說明見 [README_zh.md](README_zh.md)。MCP 工具目錄見 [README_zh.md §可用工具](README_zh.md#可用工具預設-25-個)。*
+
+---
+
+## 參考文獻
+
+\[1\] Packer, C., et al. (2023). MemGPT: Towards LLMs as Operating Systems. *arXiv preprint arXiv:2310.08560*.
+
+\[12\] Malkov, Yu. A. and Yashunin, D. A. (2020). Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs. *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 42(4), 824–836. arXiv:1603.09320.
+
+\[13\] McCabe, T. J. (1976). A Complexity Measure. *IEEE Transactions on Software Engineering*, SE-2(4), 308–320. *(本系統實作採用 Radon Python 套件：https://github.com/rubik/radon)*
+
+\[14\] Nagappan, N. and Ball, T. (2005). Use of Relative Code Churn Measures to Predict System Defect Density. *Proceedings of ICSE 2005*, pp. 284–292.
+
+\[15\] Cormack, G. V., Clarke, C. L. A., and Büttcher, S. (2009). Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods. *Proceedings of SIGIR 2009*, pp. 758–759.
+
+\[17\] Aiming-Lab. (2026). EvolveMem: Self-Evolving Memory Architecture via AutoResearch for LLM Agents. *arXiv preprint arXiv:2605.13941*. GitHub: https://github.com/aiming-lab/SimpleMem
+
+\[18\] Köster, J. and Rahmann, S. (2012). Snakemake—a scalable bioinformatics workflow engine. *Bioinformatics*, 28(19), 2520–2522. https://doi.org/10.1093/bioinformatics/bts480
+
+\[19\] Di Tommaso, P., Chatzou, M., Floden, E. W., Barja, P. P., Palumbo, E., and Notredame, C. (2017). Nextflow enables reproducible computational workflows. *Nature Biotechnology*, 35(4), 316–319. https://doi.org/10.1038/nbt.3820
+
+> 編號沿用完整論文參考文獻之原始序號（部分編號未出現於本概覽故跳過）。
