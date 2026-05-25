@@ -6,6 +6,40 @@
 
 ---
 
+## Abstract
+
+**Background.** The proliferation of AI Agent coding tools (e.g., Claude Code, Cursor) has enabled researchers to generate complete bioinformatics analysis pipelines in minutes through natural language, lowering the technical barrier for complex omics data analysis. However, this paradigm shift introduces three classes of systemic failure unprecedented in traditional workflows: LLM-generated analysis code is transient in nature — if not explicitly version-committed, the provenance chain between code and result breaks immediately (**Failure 1: Code Provenance Vacuum**); LLM hallucinations may silently introduce methodological flaws that corrupt scientific conclusions without triggering any error (**Failure 2: Silent Methodological Failure**); and the absence of a unified analysis framework causes method inconsistencies across time and across analysts (**Failure 3: Methodological Drift**). These failures are further amplified by rising LLM inference costs — provenance vacuum forces re-computation of similar analyses, creating a cascading waste of tokens and compute.
+
+**System Contributions.** We present **Evo_PRISM**, which addresses all three failures through three technical designs: (1) *against Failure 1* — an L1–L2–L3 three-tier semantic data lake that enforces full `code version → analysis execution → multimodal artifact` lineage at the architecture level; (2) *against Failures 2 and 3* — the HELIX tool evolution framework, which monitors cyclomatic complexity and code churn to automatically promote stable ad-hoc scripts to SemVer-governed MCP services, and uses blast-radius assessment to identify the downstream impact of version drift on existing artifacts; (3) *reducing the compute amplification of all three failures* — 3-way RRF semantic caching and Figure Cache stripping achieve sub-millisecond, zero-token reuse of multimodal scientific outputs.
+
+**Evaluation.** We validate Evo_PRISM on a bioinformatics showcase module containing 39 GB of spatial transcriptomics data, combined with a 98-sample Bulk RNA-seq joint analysis. Four quantitative experiments are designed: 3-way RRF cache ablation, HELIX tool evolution and sandbox interception, Blast Radius Recursive CTE scalability, and methodological drift reproducibility — supplemented by a 631-test regression suite and system stability metrics.
+
+**Key Results.** On cache hit, median analysis latency is **2.4 ms** — a **33,764×** reduction versus L3 cold-start (80,430 ms). For 39 GB Visium HD spatial transcriptomics at 8 µm resolution, L1 cache hits achieve approximately **7,200,000×** speedup. Multimodal Figure Cache delivers **98.2%** context-window token savings (zero-token reuse). HELIX Code Promotion reduces median McCabe cyclomatic complexity by **80%** and raises HealthScore by **+0.515** across five core tools. The DuckDB Recursive CTE blast-radius query at 100,000 edges runs at a median of **30.5 ms**, and cross-version code consistency and retrospective stale-artifact detection both reach **100%**.
+
+---
+
+## Introduction
+
+### The Paradigm Shift in Scientific Analysis
+
+Bioinformatics analysis is undergoing a fundamental transformation. In traditional workflows, analysts with strong programming skills write Python or R scripts by hand, manually manage package dependencies, version environments, and output artifacts — maintaining a clear causal chain between code and result that is naturally version-controllable via Git. This model demands high technical expertise, but provides provenance by construction.
+
+With the rise of AI Agent coding tools, researchers can now generate complete analysis pipelines in minutes through natural language. Biologists with wet-lab backgrounds can independently perform complex multi-omics analyses that previously required dedicated bioinformatics support. This "natural language as analysis interface" paradigm dramatically lowers the technical barrier — but simultaneously introduces systemic failures that did not exist in traditional workflows.
+
+### Why Code Provenance is the Root Problem
+
+Existing systems that address memory, caching, or agent tool use share a fundamental blind spot: they treat **data outputs** as the atomic unit of memory, ignoring the code version and execution context that generated them. We argue that **code provenance is the true foundation of scientific reproducibility — data should support it, not replace it**.
+
+This gap creates a vicious cycle: provenance vacuum forces re-computation → re-computation burns tokens and compute → rising inference costs make the problem worse → analysts avoid committing code → provenance vacuum persists.
+
+Evo_PRISM breaks this cycle by embedding provenance tracking directly into the storage layer. Every analysis is linked to the exact tool version that produced it. Cache hits eliminate redundant computation. Code quality is monitored and enforced automatically. The result: **solving the provenance problem makes token savings a natural consequence, not a separate concern**.
+
+### Core Thesis
+
+> Integrating code lineage tracking and self-evolving health management into the data storage layer provides a robust and reproducible engineering paradigm for high-reliability AI Agent deployment in scientific computing domains such as bioinformatics.
+
+---
+
 ## 1. Problem: Three Failure Modes in LLM-Driven Analysis
 
 | Failure Mode                                  | Description                                                                                                                 | Consequence                                                               |
