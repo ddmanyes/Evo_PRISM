@@ -8,15 +8,11 @@
 
 ## 摘要
 
-**背景：** AI Agent 程式編寫工具的普及，使研究人員得以透過自然語言於數分鐘內生成完整的生物資訊分析管線。然而，此一典範轉移帶來了一個根本問題：LLM 生成的分析程式碼是臨時性的，Session 結束後即消散——**系統對「做過什麼、用什麼版本做的」完全沒有記憶**。這一記憶缺失催生了三類失效（程式碼溯源真空、靜默方法論失效、方法漂移），並因 LLM 推理成本攀升而被持續放大：溯源真空迫使相似分析反覆重算，造成 Token 與算力的雙重浪費。
+**背景：** AI Agent 編碼工具使研究人員得以透過自然語言於數分鐘內生成完整的生物資訊分析管線，但 LLM 生成的程式碼是臨時性的——Session 結束後消散，系統對「做過什麼、用什麼版本做的」完全沒有記憶。這一記憶缺失催生了三類失效（程式碼溯源真空、靜默方法論失效、方法漂移），且因推理成本攀升而持續放大：溯源真空迫使相似分析反覆重算，造成 Token 與算力的雙重浪費。
 
-**核心機制 — HELIX：** Evo_PRISM 的解答核心是 **HELIX（Health-Evolving Loop with Iterative eXpiration）**，一個以達爾文式選擇壓力運作的**自演化程式碼記憶引擎**。高重用率與低複雜度是工具的生存優勢，反之則觸發重構或淘汰——穩定的臨時腳本自動晉升為受版本治理的 MCP 工具，品質下降的版本自動廢棄下架。`bio_find_tool` 語意搜尋（搜尋本身 **0 LLM token**）讓 Agent 在寫新程式碼之前先搜尋既有工具——catalog 命中時直接呼叫現有函數，**節省每次程式碼生成的數百至千餘 token**；形成**「晉升 → 記憶積累 → 重用 → 再晉升」的自強化飛輪**：Agent 從零撰碼的頻率單調遞減，程式碼記憶庫的廣度與健康度單調遞增。這是「**Evo**_PRISM」中 Evo 的工程實質——系統能力隨每次互動持續演化，而非停留在固定版本的靜態工具集。
+**核心機制 — HELIX：** Evo_PRISM 以 **HELIX**（Health-Evolving Loop with Iterative eXpiration）自演化程式碼記憶引擎為核心：HELIX 以達爾文式選擇壓力治理工具生命週期，自動晉升穩定臨時腳本為受版本治理的 MCP 工具；`bio_find_tool` 語意搜尋（**0 LLM token**）讓 Agent 寫碼前先找既有工具，形成**「晉升 → 記憶積累 → 重用 → 再晉升」飛輪**，程式碼記憶庫隨使用單調成長。三層 Medallion 語意資料湖（L1 工作記憶 / L2 情節記憶 / L3 語意長期記憶）與 3-way RRF 快取、Figure Cache、Blast Radius CTE 構成支撐基礎設施，同時消弭**傳遞 token**（98.2% 節省）與**生成 token**（bio_find_tool 命中時省數百至千餘 token）的雙重浪費。
 
-**Token 節省的兩個維度：** Evo_PRISM 同時解決兩類 token 浪費——（1）**傳遞 token**（3-way RRF + Figure Cache）：重複分析結果與多模態圖片不再傳送至 LLM，達成 98.2% 節省；（2）**生成 token**（HELIX + bio_find_tool）：程式碼記憶庫命中時 Agent 無需重新生成整段分析函數，搜尋本身 0 LLM token，按需返回 top-K 而非將整份目錄塞入 system prompt。兩者互補，覆蓋 Agent 工作流的完整 token 消耗路徑。
-
-**支撐基礎設施：** 三層 Medallion 資料湖為 HELIX 提供記憶的持久化基礎——L1 Gold（工作記憶）攔截熱點、L2 Silver（情節記憶）永久保存分析歷史帳本、L3 Bronze（語意長期記憶）存放不可變原始數據。Blast Radius Recursive CTE 提供前瞻性影響評估，使 HELIX 的每次版本更新都有完整的下游可見性。
-
-**實測效能：** 快取命中延遲縮減 **33,764 倍**（80,430 ms → 2.4 ms）；Figure Cache 達成 **98.2%** 傳遞 Token 節省率；`bio_find_tool` 搜尋本身 **0 LLM token**，catalog 命中時每次節省程式碼生成 token 數百至千餘；HELIX Code Promotion 使五個核心工具 McCabe 複雜度中位數降低 **80%**，HealthScore 提升 **+0.515**；Blast Radius 查詢於 10 萬條邊下延遲 **30.5 ms**；方法漂移偵測率 **100%**。
+**實測效能：** 快取命中延遲縮減 **33,764 倍**；Figure Cache **98.2%** Token 節省率；HELIX 使核心工具複雜度中位數降低 **80%**（HealthScore **+0.515**）；Blast Radius 10 萬條邊 **30.5 ms**；方法漂移偵測率 **100%**。
 
 ---
 
