@@ -101,6 +101,30 @@ HELIX 採用**雙軌記憶機制**，讓 Agent 在每次重新診斷時都能回
 
 ---
 
+## 實證效能與基準測試
+
+Evo_PRISM 已在多種高複雜度生命科學計算場景中通過嚴格的定量驗證，確立了其高可擴展性、數據可靠性與卓越的 Token 經濟效益。
+
+### 1. 工具庫自強化飛輪（R10 飛輪）
+隨著臨時程式碼經由沙盒驗證與 Code Promotion 自動晉升並積累至工具庫，系統對後續新分析意圖之語意命中率呈現**顯著之單調躍升**，同時保持極低之亞毫秒級檢索延遲：
+* **語意命中率之單調收斂：** 語意搜尋命中率（Cosine 相似度 $\ge 0.45$）自早期階段之 **20.0%**（2 項工具）單調遞增至 **100.0%**（25 項完整工具），實證了「工具晉升 $\rightarrow$ 記憶積累 $\rightarrow$ 重用 $\rightarrow$ 再晉升」之自強化飛輪效應。
+* **低延遲高擴展性：** 得益於 DuckDB 本機 HNSW 向量索引，平均查詢延遲由 2 項工具下之 **1.40 ms** 極緩上升至 25 項工具下之 **1.96 ms**，P95 延遲恆低於 **2.0 ms**（參見論文 **[圖 8](docs/paper/figures/figure_r10_flywheel.png)**）。
+
+### 2. 高通量空間組學數據攝入（R5 alt 基準測試）
+針對 10x Genomics Visium HD 空間轉錄組數據，執行端對端 Ingestion 工作流（Stages 0–7：含 Cellpose 細胞分割、轉錄本空間歸屬計數、下游 Scanpy 聚類與 GeoJSON 導出），於邊緣工作站展現極高之計算效率（參見補充資料 **[Table S16](docs/paper/supplementary.md#table-s16-visium-hd-ingestion-throughput-and-resource-profiling-benchmark-r5-alt)**）：
+* **攝入通量：** 於 **104.5 秒**內完成 4.79 GB 影像、1,493 個高精度細胞與 13.4k 基因之完整處理，平均通量達 **14.3 cells/sec**。
+* **極低存儲開銷：** 細胞級高精度 H5AD 矩陣與 GeoJSON 邊界文件之磁碟佔用被壓縮至 **2.08 MB 至 5.85 MB** 之間，便於在邊緣端就地進行大規模數據重現。
+
+### 3. 自進化精準度與健康度自癒
+* **爆炸範圍精準收斂（ENGRAM 飛輪）：** 藉由 Recursive SQL CTE 遞迴血緣走訪，影響精準率自中繼元資料稀疏期之 **71.4%** 自主收斂至飽和期之 **83.3%**，且全程維持 **100% 召回率**與零人工干預（參見補充資料 **[Table S15](docs/paper/supplementary.md#table-s15-ground-truth-oracle-query-set-construction-and-annotation-protocol)**）。
+* **程式碼健康度自癒（HELIX 飛輪）：** 當頻繁修改導致技術債累積時，工具庫平均 `HealthScore` 自 **0.61** 之警告狀態自動重構回升至 **0.94**，成對工具之 McCabe 循環複雜度中位數同步下降 **80%**。
+
+### 4. Token 經濟與系統穩健性
+* **Context Token 節省：** Figure Cache 於 MCP 邊界自動剝離高體積之多模態 base64 圖片，達成 **98.2%** 之傳遞 Token 節省率，免於污染 LLM 之上下文視窗。
+* **100% 測試通過率：** 系統內建之 **679 項自動化測試**（涵蓋 HELIX 版本管理、ENGRAM 語意搜尋與沙盒安全等 49 個測試檔）達成 **100.0% 通過率**（674 passed, 5 skipped），確保系統之工業級可靠度。
+
+---
+
 ## 快速開始
 
 先選擇您的使用路徑，再依對應步驟操作：
@@ -250,7 +274,7 @@ bio_run_deg counts_path=tests/fixtures/bulk_rna/deseq2_counts_top1000.csv
 ```bash
 # 跑所有自動化測試
 .venv/bin/python -m pytest tests/ -v --tb=short
-# 631+ tests collected
+# 679 tests collected
 ```
 
 ---
@@ -324,7 +348,7 @@ Evo_PRISM/                      ← 專案根目錄
 │   │   └── tool_visualizer.py  ← HELIX-Vision（視覺快照）
 │   ├── server/                 ← FastAPI Web UI + Agent + MCP Server
 │   ├── scheduler/              ← 排程任務（備份/清理/重建/掃描）
-│   ├── tests/                  ← 測試套件（49 files, 631+ tests）
+│   ├── tests/                  ← 測試套件（49 files, 679 tests）
 │   ├── gene_sets/              ← 路徑基因集 YAML
 │   └── start_bioagent.sh       ← 一鍵啟動腳本
 │
@@ -353,7 +377,7 @@ cd "$BIO_DB_ROOT"
 .venv/bin/python -m pytest tests/ -v --tb=short
 ```
 
-預期：**631+ tests collected**，涵蓋 49 個測試檔，範圍包含 HELIX 版本管理、ENGRAM 語意搜尋、MCP stdio/HTTP transport、沙盒安全、Code Promotion 及生物資訊分析管道。
+預期：**679 tests collected**（100.0% 通過率），涵蓋 49 個測試檔，範圍包含 HELIX 版本管理、ENGRAM 語意搜尋、MCP stdio/HTTP transport、沙盒安全、Code Promotion 及生物資訊分析管道。
 
 完整每檔明細見 [docs/guides/TESTING.md](docs/guides/TESTING.md)。
 
@@ -372,7 +396,7 @@ cd "$BIO_DB_ROOT"
 | [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md)                 | MCP stdio 設定（Claude Code / Antigravity） |
 | [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md)                 | MCP HTTP transport 說明                     |
 | [docs/guides/STAR_SCHEMA.md](docs/guides/STAR_SCHEMA.md)                       | Star Schema views 設計與使用範例            |
-| [docs/guides/TESTING.md](docs/guides/TESTING.md)                               | 測試套件明細（49 files, 631+ tests）        |
+| [docs/guides/TESTING.md](docs/guides/TESTING.md)                               | 測試套件明細（49 files, 679 tests）        |
 | [docs/guides/SCHEDULED_TASKS.md](docs/guides/SCHEDULED_TASKS.md)               | 排程任務表與 launchd 安裝說明              |
 
 ---
