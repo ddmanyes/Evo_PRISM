@@ -6,7 +6,7 @@
 
 *   **核心目標**：讓 Agent 透過自然語言調用工具、自動紀錄分析脈絡與輸出、並透過 HELIX 版本與健檢迴路實現工具自適應進化（Code Promotion），消除重複運算並建立永恆語意記憶。
 *   **旗艦展示**：以生物資訊分析模組 (Bioinformatics Showcase Module) 作為首屈一指的垂直領域旗艦展示，讓使用者可透過自然語言進行空間轉錄組、Bulk RNA 和 scRNA 等複雜組學數據的高難度交叉分析。
-*   **當前階段**：本機測試建置（macOS 專案根目錄），驗證 L1/L2/L3 三層架構、工具自演化升格與 3-way RRF 語意檢索，準備部署至 Linux 伺服器。
+*   **當前階段**：本機測試建置，驗證 L1/L2/L3 三層架構、工具自演化升格與 3-way RRF 語意檢索，準備部署至 Linux 伺服器。目前以 Windows（i:/Evo_PRISM/）為工作目錄；原始開發環境為 macOS（/Volumes/NO NAME/bio_DB/）。
 
 ---
 
@@ -14,7 +14,7 @@
 
 ```
 L3 Bronze ← 不可變原始數據（crc_visium_data/ + 未來伺服器數據）
-L2 Silver �bio_DB/
+L2 Silver ← bio_DB/
 ├── CLAUDE.md               ← 本文件（專案憲法）
 ├── README.md                ← 專案入門導引
 ├── SETUP.md                 ← 環境安裝手冊
@@ -92,6 +92,8 @@ L2 Silver �bio_DB/
 ---
 
 ## 4. 開發環境
+
+> **平台注意**：本節指令適用於 **macOS/Linux**（原始開發環境）。在 Windows 上執行時請透過 WSL，或確認指令已轉換為對應的 Windows 語法。
 
 ### ExFAT 限制與 venv 安排
 
