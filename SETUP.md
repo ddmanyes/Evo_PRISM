@@ -64,14 +64,14 @@ docker compose exec evo-prism python config/db_utils.py
 | MCP HTTP | 8080 | 外部 AI 客戶端接入 |
 | Embedding | 8081 | bge-m3 sidecar（docker compose 內部）|
 
-或直接拉取預建映像：`docker pull ddmann375000/evo-prism:0.1.0`
+或自行 build：`docker build -t evo-prism .`
 
 ---
 
 ## Option B：Singularity / Apptainer（HPC 叢集）
 
 ```bash
-singularity pull evo-prism.sif docker://ddmann375000/evo-prism:0.1.0
+singularity build evo-prism.sif Singularity.def
 singularity run --bind /mnt/data:/data/bio_db evo-prism.sif server
 ```
 
@@ -87,10 +87,10 @@ singularity run --bind /mnt/data:/data/bio_db evo-prism.sif server
 
 ## 步驟一：複製專案資料夾
 
-將完整的 `bio_DB/` 資料夾複製到目標機器，**必須包含以下數據目錄**：
+將完整的 `Evo_PRISM/` 資料夾複製到目標機器，**必須包含以下數據目錄**：
 
 ```
-bio_DB/
+Evo_PRISM/
 ├── silver/          ← L2 Parquet（CRC 空間轉錄體，416 MB）
 ├── gold/            ← L1 語意快取
 ├── bulk_rna_data/   ← Bulk RNA Kallisto 輸出
@@ -103,17 +103,18 @@ bio_DB/
 
 ## 步驟二：建立 Python 虛擬環境
 
-專案目錄位於 ExFAT 磁碟，**venv 必須建在 APFS**（家目錄），再以 symlink 接回：
+若專案目錄位於 ExFAT 磁碟，**venv 必須建在 APFS**（家目錄），再以 symlink 接回；一般 Linux/APFS 目錄可直接在專案內建 venv：
 
 ```bash
-# 建立 venv（只需執行一次）
-python3 -m venv ~/.venvs/hermes-bio-memory
+# ExFAT 磁碟（macOS）：建立 venv 於家目錄並 symlink 回來
+python3 -m venv ~/.venvs/evo-prism
+ln -s ~/.venvs/evo-prism "/path/to/Evo_PRISM/.venv"
 
-# 建立 symlink（路徑請換成你的實際路徑）
-ln -s ~/.venvs/hermes-bio-memory "/path/to/bio_DB/.venv"
+# 一般路徑（Linux / macOS APFS）：直接建在專案內
+cd /path/to/Evo_PRISM
+uv venv
 
 # 安裝依賴
-cd /path/to/bio_DB
 uv sync --no-install-project
 ```
 
@@ -293,7 +294,7 @@ cp .mcp.json.example .mcp.json
 }
 ```
 
-存檔後 **重啟 Antigravity**。Tool palette 應出現 15 個 `bio_*` 工具。
+存檔後 **重啟 Antigravity**。Tool palette 應出現 `bio_*` 工具列表（預設 25 個，啟用 dangerous tools 後 26 個）。
 
 ### 想啟用 `bio_execute_code` 沙盒（dangerous）
 
@@ -343,10 +344,8 @@ cp .mcp.json.example .mcp.json
 
 | 文件 | 說明 |
 | ---- | ---- |
-| [CLAUDE.md](CLAUDE.md) | 專案憲法（規範、架構、路徑） |
-| [docs/plans/plan_zh.md](docs/plans/plan_zh.md) | 完整系統設計（中文，18 章）|
-| [docs/logs/PROGRESS.md](docs/logs/PROGRESS.md) | 當前進度與待辦事項 |
+| [README.md](README.md) | 專案概覽與快速入門 |
 | [docs/guides/STAR_SCHEMA.md](docs/guides/STAR_SCHEMA.md) | Star Schema views 設計與使用範例 |
-| [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) | MCP stdio 設定（Claude Code / Antigravity）詳細說明 |
+| [docs/guides/MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) | MCP stdio 設定（Claude Code / IDE）詳細說明 |
 | [docs/guides/MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md) | MCP HTTP transport + curl 範例 |
 | [docs/guides/WINDOWS_SETUP.md](docs/guides/WINDOWS_SETUP.md) | Windows 專用安裝注意事項 |
