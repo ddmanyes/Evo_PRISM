@@ -190,7 +190,7 @@ def discover_roi_pairs(qc_dir: Path) -> list[tuple[str, Path, Path]]:
 @register_tool_on_import(
     tool_name="bio_run_mcseg_qc",
     version="1.0.0",
-    description="執行 MCseg 細胞分割的品質評估與 NUC 基準對比，生成品質報告"
+    description="執行 MCseg 細胞分割的品質評估與 NUC 基準對比，生成品質報告",
 )
 def generate_mcseg_qc_report(
     sample_id: str,
@@ -286,6 +286,7 @@ def generate_mcseg_qc_report(
                 [str(report_path), completed_at, summary, analysis_id],
             )
             from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
             write_diagnosis(con, analysis_id, success_diagnosis())
             try:
                 from analysis.artifact_registry import register_artifact
@@ -315,6 +316,7 @@ def generate_mcseg_qc_report(
                 [datetime.now(timezone.utc), analysis_id],
             )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
             write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 

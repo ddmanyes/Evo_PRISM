@@ -76,20 +76,20 @@ BLOCKED_PATTERNS = [
     "os.popen",
     "os.execv",
     "os.execve",
-    "os.fork",       # fork bomb
-    "os.chdir",      # CWD escape
-    "os.environ",    # env-var path injection
+    "os.fork",  # fork bomb
+    "os.chdir",  # CWD escape
+    "os.environ",  # env-var path injection
     "subprocess",
     "multiprocessing",
     "__import__",
     "eval(",
     "exec(",
     "compile(",
-    "pty.",          # terminal spawning
-    "ctypes.",       # C library / libc.system()
+    "pty.",  # terminal spawning
+    "ctypes.",  # C library / libc.system()
     # ── 檔案 I/O — 直接寫法 ─────────────────────────────────────────────────
-    "open(",         # ADV-02 修復：任何 open() 均需 AST path check（見下方）
-    "io.open(",      # io 模組繞過
+    "open(",  # ADV-02 修復：任何 open() 均需 AST path check（見下方）
+    "io.open(",  # io 模組繞過
     # ── pathlib 繞過（直接讀寫路徑而非透過 open）────────────────────────────
     ".read_text(",
     ".read_bytes(",
@@ -163,8 +163,8 @@ BLOCKED_PATTERNS = [
     "joblib",
     "vars(",
     # ── 資源耗盡 / timeout 繞過 ──────────────────────────────────────────────
-    "signal.",       # signal handler 可中斷 timeout 機制
-    "resource.",     # setrlimit 繞過
+    "signal.",  # signal handler 可中斷 timeout 機制
+    "resource.",  # setrlimit 繞過
 ]
 
 SANDBOX_CWD = str(BIO_DB_ROOT)
@@ -233,9 +233,8 @@ def _check_open_paths(code: str) -> list[str]:
             continue
         func = node.func
         # Match: open(...) or io.open(...) or anything.open(...)
-        is_open_call = (
-            (isinstance(func, ast.Name) and func.id == "open")
-            or (isinstance(func, ast.Attribute) and func.attr == "open")
+        is_open_call = (isinstance(func, ast.Name) and func.id == "open") or (
+            isinstance(func, ast.Attribute) and func.attr == "open"
         )
         if not is_open_call:
             continue
@@ -246,13 +245,9 @@ def _check_open_paths(code: str) -> list[str]:
             continue
         path_val: str = first_arg.value
         if os.path.isabs(path_val):
-            violations.append(
-                f"Absolute path in open(): {path_val!r}"
-            )
+            violations.append(f"Absolute path in open(): {path_val!r}")
         elif ".." in path_val.replace("\\", "/").split("/"):
-            violations.append(
-                f"Path traversal in open(): {path_val!r}"
-            )
+            violations.append(f"Path traversal in open(): {path_val!r}")
     return violations
 
 
@@ -314,9 +309,13 @@ def sandbox_exec(code: str, timeout: int = 60, *, preamble: str = "") -> ExecRes
     # 安全性說明：主要防線是 BLOCKED_PATTERNS + import whitelist，而非 env 隔離。
     # env 隔離的目的僅是避免 subprocess 看到 ANTHROPIC_API_KEY 等敏感金鑰。
     _SENSITIVE_KEYS = {
-        "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY",
-        "AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID",
-        "GITHUB_TOKEN", "HUGGING_FACE_HUB_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "GITHUB_TOKEN",
+        "HUGGING_FACE_HUB_TOKEN",
     }
     if os.name == "nt":
         # Windows：繼承完整 PATH 以確保 DLL / venv 可用，只剔除金鑰變數

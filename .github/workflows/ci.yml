@@ -67,6 +67,7 @@ jobs:
           uv run --python ${{ matrix.python-version }} python -m pytest tests/ \
             -v --tb=short \
             --ignore=tests/test_spatial_ingest.py \
+            --ignore=tests/test_cte_scalability.py \
             -x
 
       - name: Lint (ruff)

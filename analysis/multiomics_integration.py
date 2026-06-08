@@ -228,7 +228,7 @@ def lag_analysis(
 @register_tool_on_import(
     tool_name="bio_run_multiomics_integration",
     version="1.0.0",
-    description="執行 RNA-Protein 多組學時序整合分析與相關性滯後分析"
+    description="執行 RNA-Protein 多組學時序整合分析與相關性滯後分析",
 )
 def run_integration(
     rna_counts: pd.DataFrame,

@@ -165,7 +165,7 @@ def ssgsea_score(
 @register_tool_on_import(
     tool_name="bio_run_pathway_scoring",
     version="1.0.0",
-    description="執行 ssGSEA 或 Z-score 對基因表現矩陣進行路徑活性評分"
+    description="執行 ssGSEA 或 Z-score 對基因表現矩陣進行路徑活性評分",
 )
 def score_pathways(
     expr: pd.DataFrame,

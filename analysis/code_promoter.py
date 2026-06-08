@@ -248,7 +248,11 @@ def check_and_revert_regressions(
             # Regression detected — demote active version, log it
             logger.warning(
                 "HELIX revert-on-regression: %s  new_rate=%.3f  prev_rate=%.3f  Δ=%.3f  τ=%.2f",
-                tool_name, new_rate, best_prev_rate, delta, tau,
+                tool_name,
+                new_rate,
+                best_prev_rate,
+                delta,
+                tau,
             )
             try:
                 safe_write(
@@ -354,6 +358,7 @@ def _get_tool_source(module_path: str, function_name: str) -> Optional[str]:
 
 # ── detect_stagnation helpers ────────────────────────────────────────────────
 
+
 def _compute_stagnation_rates(
     total_calls: int, total_ok: int, recent_calls: int, recent_ok: int, eps: float
 ) -> tuple[float, float, float, bool]:
@@ -378,9 +383,10 @@ def _call_stagnation_llm(
     failure_rows: list,
 ) -> Optional[str]:
     code = _get_tool_source(module_path or "", function_name or "") or "(source unavailable)"
-    failure_logs = "\n".join(
-        f"  [{str(r[1])[:16]}] {r[0] or '(no diagnosis)'}" for r in failure_rows
-    ) or "  (無近期失敗記錄)"
+    failure_logs = (
+        "\n".join(f"  [{str(r[1])[:16]}] {r[0] or '(no diagnosis)'}" for r in failure_rows)
+        or "  (無近期失敗記錄)"
+    )
     prompt = _STAGNATION_PROMPT.format(
         call_count=total_calls,
         look_back_days=look_back_days,
@@ -401,6 +407,7 @@ def _call_stagnation_llm(
         return None
     try:
         import anthropic
+
         client = anthropic.Anthropic(api_key=api_key)
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -436,6 +443,7 @@ def _open_stagnation_event(
 ) -> tuple[Optional[str], Optional[str]]:
     """Returns (llm_suggestion, log_id). No-op when dry_run or already open."""
     from analysis.tool_registry import open_stabilization
+
     if dry_run or tool_name in already_open:
         return None, None
     failure_rows = con.execute(
@@ -450,8 +458,17 @@ def _open_stagnation_event(
         [tool_id],
     ).fetchall()
     suggestion_text = _call_stagnation_llm(
-        api_key, tool_name, module_path, function_name,
-        total_calls, look_back_days, recent_rate, overall_rate, delta, eps, failure_rows,
+        api_key,
+        tool_name,
+        module_path,
+        function_name,
+        total_calls,
+        look_back_days,
+        recent_rate,
+        overall_rate,
+        delta,
+        eps,
+        failure_rows,
     )
     log_id: Optional[str] = None
     try:
@@ -535,8 +552,16 @@ def detect_stagnation(
 
         already_open = {s["tool_name"] for s in get_open_stabilizations(con)}
 
-        for tool_id, tool_name, module_path, function_name, \
-                total_calls, total_ok, recent_calls, recent_ok in rows:
+        for (
+            tool_id,
+            tool_name,
+            module_path,
+            function_name,
+            total_calls,
+            total_ok,
+            recent_calls,
+            recent_ok,
+        ) in rows:
             total_calls = int(total_calls or 0)
             total_ok = int(total_ok or 0)
             recent_calls = int(recent_calls or 0)
@@ -566,13 +591,28 @@ def detect_stagnation(
 
             logger.warning(
                 "HELIX stagnation: %s  calls=%d  overall_rate=%.3f  recent_rate=%.3f  Δ=%.3f",
-                tool_name, total_calls, overall_rate, recent_rate, delta,
+                tool_name,
+                total_calls,
+                overall_rate,
+                recent_rate,
+                delta,
             )
 
             suggestion_text, log_id = _open_stagnation_event(
-                con, tool_id, tool_name, module_path, function_name,
-                total_calls, look_back_days, recent_rate, overall_rate, delta, eps,
-                dry_run, already_open, api_key,
+                con,
+                tool_id,
+                tool_name,
+                module_path,
+                function_name,
+                total_calls,
+                look_back_days,
+                recent_rate,
+                overall_rate,
+                delta,
+                eps,
+                dry_run,
+                already_open,
+                api_key,
             )
             event["llm_suggestion"] = suggestion_text
             event["log_id"] = log_id
@@ -731,7 +771,9 @@ def approve_candidate(suggested_name: str, description: str, version: str = "1.0
         raise FileExistsError(f"analysis/{suggested_name}.py 已存在，請先移除或重新命名。")
 
     draft_content = draft_path.read_text(encoding="utf-8")
-    logger.info(f"[code_promoter] promoting {suggested_name!r}, draft preview: {draft_content[:300]!r}")
+    logger.info(
+        f"[code_promoter] promoting {suggested_name!r}, draft preview: {draft_content[:300]!r}"
+    )
     shutil.move(str(draft_path), str(target_path))
     logger.info("搬移 %s → %s", draft_path.name, target_path)
 

@@ -408,6 +408,7 @@ def _exec_bio_tool_health(args: dict) -> str:
         # PM5: stagnation detection (dry_run — detection only, no LLM trigger)
         try:
             from analysis.code_promoter import detect_stagnation
+
             stagnation_events = detect_stagnation(dry_run=True)
             stagnant = [e for e in stagnation_events if e["stagnant"]]
             if stagnant:

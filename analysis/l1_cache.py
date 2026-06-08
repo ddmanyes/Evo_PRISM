@@ -204,8 +204,16 @@ def semantic_search(
         """
         rows = con.execute(sql, params).fetchall()
 
-    result_cols = ["id", "sample_id", "query_text", "summary", "report_text",
-                   "created_at", "expires_at", "score"]
+    result_cols = [
+        "id",
+        "sample_id",
+        "query_text",
+        "summary",
+        "report_text",
+        "created_at",
+        "expires_at",
+        "score",
+    ]
     return [dict(zip(result_cols, row)) for row in rows if row[-1] >= threshold]
 
 

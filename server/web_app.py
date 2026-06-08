@@ -950,7 +950,8 @@ async def download_csv(analysis_id: str):
         raise HTTPException(status_code=403, detail="Access denied")
 
     parquet_files = sorted(
-        f for f in _glob.glob(str(expr_dir / "*.parquet"))
+        f
+        for f in _glob.glob(str(expr_dir / "*.parquet"))
         if Path(f).resolve().is_relative_to(expr_dir)
     )
     if not parquet_files:
@@ -1218,7 +1219,9 @@ async def analysis_feedback(analysis_id: str, body: FeedbackRequest):
         )
 
     label = "👍" if body.approval == 1 else "👎"
-    return JSONResponse({"status": "ok", "analysis_id": analysis_id, "approval": body.approval, "label": label})
+    return JSONResponse(
+        {"status": "ok", "analysis_id": analysis_id, "approval": body.approval, "label": label}
+    )
 
 
 @app.get("/engram", response_class=HTMLResponse)

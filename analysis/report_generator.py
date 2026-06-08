@@ -363,6 +363,7 @@ def write_report_to_history(
                 [result_path, completed_at, summary, analysis_id],
             )
             from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
             write_diagnosis(con, analysis_id, success_diagnosis())
     return analysis_id, result_path
 
@@ -370,7 +371,7 @@ def write_report_to_history(
 @register_tool_on_import(
     tool_name="bio_run_spatial_eda",
     version="1.0.0",
-    description="執行空間轉錄體 EDA 探索性數據分析並繪製代表性基因空間圖表"
+    description="執行空間轉錄體 EDA 探索性數據分析並繪製代表性基因空間圖表",
 )
 def run_full_eda_report(
     sample_id: str,
@@ -427,6 +428,7 @@ def run_full_eda_report(
                 [datetime.now(timezone.utc), analysis_id],
             )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
             write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 

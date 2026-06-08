@@ -637,9 +637,7 @@ def get_hot_tools(
 _MAX_RANGE_LINES = 10_000
 
 
-def _count_line_hits(
-    rows: list, tool_name: str
-) -> tuple[dict[int, int], list[float]]:
+def _count_line_hits(rows: list, tool_name: str) -> tuple[dict[int, int], list[float]]:
     line_hits: dict[int, int] = {}
     churn_values: list[float] = []
     for changed_lines_json, churn_ratio in rows:
@@ -652,7 +650,9 @@ def _count_line_hits(
             if end < start:
                 continue
             if end - start > _MAX_RANGE_LINES:
-                logger.warning("get_hot_lines: oversized range [%d, %d] in tool %r", start, end, tool_name)
+                logger.warning(
+                    "get_hot_lines: oversized range [%d, %d] in tool %r", start, end, tool_name
+                )
                 continue
             for lineno in range(start, end + 1):
                 if lineno not in seen:
@@ -706,8 +706,13 @@ def get_hot_lines(
     ).fetchall()
 
     if not rows:
-        return {"tool_name": tool_name, "revisions_used": 0,
-                "hot_lines": [], "avg_churn": None, "suggestion": None}
+        return {
+            "tool_name": tool_name,
+            "revisions_used": 0,
+            "hot_lines": [],
+            "avg_churn": None,
+            "suggestion": None,
+        }
 
     line_hits, churn_values = _count_line_hits(rows, tool_name)
     hot_ranges = _collapse_to_ranges(line_hits, min_hits)
@@ -717,7 +722,8 @@ def get_hot_lines(
         f"Lines {', '.join(f'{s}-{e}' for s, e in hot_ranges)} "
         f"changed in {min_hits}+ of the last {len(rows)} revisions — "
         "consider extracting as configurable parameters."
-        if hot_ranges else None
+        if hot_ranges
+        else None
     )
     return {
         "tool_name": tool_name,
@@ -1209,9 +1215,7 @@ def tool_health_report(con: duckdb.DuckDBPyConnection) -> dict:
 
     tool_health_scores: list[dict] = []
     unhealthy_tools: list[str] = []
-    for tool_row in con.execute(
-        "SELECT tool_name FROM tools WHERE status = 'active'"
-    ).fetchall():
+    for tool_row in con.execute("SELECT tool_name FROM tools WHERE status = 'active'").fetchall():
         tname = tool_row[0]
         avg_churn = avg_churn_by_tool.get(tname, 0.0)
         # ΔComplexity from regression_zones (already computed above).
@@ -1613,15 +1617,14 @@ def register_tool_on_import(
     Also automatically wraps the function to backfill its active ``tool_id``
     into the ``analysis_history`` table based on the returned ``analysis_id``.
     """
+
     def decorator(fn: Callable) -> Callable:
-        _LAZY_REGISTRY.append({
-            "tool_name": tool_name,
-            "fn": fn,
-            "version": version,
-            "description": description
-        })
+        _LAZY_REGISTRY.append(
+            {"tool_name": tool_name, "fn": fn, "version": version, "description": description}
+        )
 
         import functools
+
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             res = fn(*args, **kwargs)
@@ -1636,6 +1639,7 @@ def register_tool_on_import(
             if analysis_id:
                 import duckdb
                 from config.settings import DUCKDB_PATH
+
                 # Search for passed connection
                 con = None
                 for arg in args:
@@ -1649,18 +1653,25 @@ def register_tool_on_import(
                         logger.warning(f"register_tool_on_import: backfill_tool_id failed: {e}")
                 else:
                     import sys
+
                     mod = sys.modules.get(fn.__module__)
                     mod_db_path = getattr(mod, "DUCKDB_PATH", None) if mod else None
-                    path = kwargs.get("db_path") or kwargs.get("cache_path") or mod_db_path or DUCKDB_PATH
+                    path = (
+                        kwargs.get("db_path")
+                        or kwargs.get("cache_path")
+                        or mod_db_path
+                        or DUCKDB_PATH
+                    )
                     try:
                         with duckdb.connect(str(path)) as conn:
                             backfill_tool_id(conn, tool_name, analysis_id)
                     except Exception as e:
                         logger.warning(f"register_tool_on_import: backfill_tool_id failed: {e}")
             return res
-        return wrapper
-    return decorator
 
+        return wrapper
+
+    return decorator
 
 
 def register_all_lazy_tools(con: duckdb.DuckDBPyConnection) -> int:
@@ -1676,14 +1687,13 @@ def register_all_lazy_tools(con: duckdb.DuckDBPyConnection) -> int:
                 tool_name=item["tool_name"],
                 fn=item["fn"],
                 version=item["version"],
-                description=item["description"]
+                description=item["description"],
             )
             registered_count += 1
         except Exception as exc:
             logger.warning(
                 "register_all_lazy_tools: failed to register lazy tool %r — %s",
                 item["tool_name"],
-                exc
+                exc,
             )
     return registered_count
-

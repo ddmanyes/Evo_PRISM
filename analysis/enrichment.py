@@ -178,7 +178,7 @@ _REPORT_TEMPLATE = """# Bulk 富集分析報告（ORA）
 @register_tool_on_import(
     tool_name="bio_run_enrichment",
     version="1.0.0",
-    description="對 DEG 基因進行 ORA 富集分析 (Enrichr)"
+    description="對 DEG 基因進行 ORA 富集分析 (Enrichr)",
 )
 def run_ora(
     sample_id: str,
@@ -327,6 +327,7 @@ def run_ora(
             [str(report_path), completed_at, summary, analysis_id],
         )
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
         write_diagnosis(con, analysis_id, success_diagnosis())
         try:
             from analysis.artifact_registry import register_artifact
@@ -342,6 +343,7 @@ def run_ora(
     except Exception as _exc_outer:
         logger.exception("bulk_enrichment 失敗  analysis_id=%s", analysis_id)
         from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
         try:
             safe_write(
                 con,

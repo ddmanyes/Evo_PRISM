@@ -200,7 +200,7 @@ _REPORT_TEMPLATE = """# Bulk DEG 分析報告
 @register_tool_on_import(
     tool_name="bio_run_deg",
     version="1.0.0",
-    description="對指定對照組別進行 bulk RNA-seq 差異表達分析 (DESeq2)"
+    description="對指定對照組別進行 bulk RNA-seq 差異表達分析 (DESeq2)",
 )
 def run_deg_analysis(
     sample_id: str,
@@ -366,6 +366,7 @@ def run_deg_analysis(
             [str(report_path), completed_at, summary, analysis_id],
         )
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
         write_diagnosis(con, analysis_id, success_diagnosis())
         try:
             from analysis.artifact_registry import register_artifact
@@ -381,6 +382,7 @@ def run_deg_analysis(
     except Exception as _exc_outer:
         logger.exception("bulk_deg 分析失敗  analysis_id=%s", analysis_id)
         from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
         try:
             safe_write(
                 con,

@@ -33,16 +33,17 @@ logger = logging.getLogger("evo_prism.spatial_metrics")
 # Source: MCseg paper §2.3 (co-expression impurity metric).
 CRC_IMPOSSIBLE_PAIRS: list[list[str]] = [
     ["EPCAM", "CD3E"],
-    ["MUC2",  "NKG7"],
+    ["MUC2", "NKG7"],
     ["ACTA2", "CD3E"],
     ["PECAM1", "EPCAM"],
 ]
 
-PIXEL_SIZE_UM = 0.2738   # µm / pixel (Visium HD 2µm bin grid)
-AREA_SCALE    = PIXEL_SIZE_UM ** 2   # µm² per pixel
+PIXEL_SIZE_UM = 0.2738  # µm / pixel (Visium HD 2µm bin grid)
+AREA_SCALE = PIXEL_SIZE_UM**2  # µm² per pixel
 
 
 # ── Metric helpers ────────────────────────────────────────────────────────
+
 
 def compute_ftc(
     mask: np.ndarray,
@@ -77,8 +78,10 @@ def compute_ftc(
 
     x0, y0, x1, y1 = roi_x, roi_y, roi_x + roi_w, roi_y + roi_h
     in_roi = (
-        (tp["pxl_col_in_fullres"] >= x0) & (tp["pxl_col_in_fullres"] < x1) &
-        (tp["pxl_row_in_fullres"] >= y0) & (tp["pxl_row_in_fullres"] < y1)
+        (tp["pxl_col_in_fullres"] >= x0)
+        & (tp["pxl_col_in_fullres"] < x1)
+        & (tp["pxl_row_in_fullres"] >= y0)
+        & (tp["pxl_row_in_fullres"] < y1)
     )
     tp_roi = tp[in_roi]
     if tp_roi.empty:
@@ -108,11 +111,14 @@ def compute_umi_density(mask: np.ndarray, adata) -> float:
         return float("nan")
 
     pixel_counts = np.bincount(mask.ravel(), minlength=max_id + 1)
-    areas_um2 = np.where(
-        cell_ids <= max_id,
-        pixel_counts[cell_ids.clip(0, max_id)],
-        0,
-    ).astype(float) * AREA_SCALE
+    areas_um2 = (
+        np.where(
+            cell_ids <= max_id,
+            pixel_counts[cell_ids.clip(0, max_id)],
+            0,
+        ).astype(float)
+        * AREA_SCALE
+    )
 
     valid = (areas_um2 > 0) & (umis > 0)
     if valid.sum() == 0:
@@ -151,6 +157,7 @@ def compute_ned(mask: np.ndarray, adata, n_hvgs: int = 1000) -> float:
 
     # Find adjacent cell pairs via mask dilation boundary detection
     from scipy.ndimage import grey_dilation
+
     struct = np.ones((3, 3), dtype=np.int32)
     dilated = grey_dilation(mask.astype(np.int32), footprint=struct)
     bnd = (mask > 0) & (dilated != mask)
@@ -212,6 +219,7 @@ def compute_c1_coexpr(
 
 # ── ENACT benchmark (optional) ───────────────────────────────────────────
 
+
 def compute_enact_precision(
     mask: np.ndarray,
     gt_centroids_csv: str | Path,
@@ -248,10 +256,7 @@ def compute_enact_precision(
         return {}
 
     x0, y0, x1, y1 = roi_x, roi_y, roi_x + roi_w, roi_y + roi_h
-    in_roi = (
-        (gt[x_col] >= x0) & (gt[x_col] < x1) &
-        (gt[y_col] >= y0) & (gt[y_col] < y1)
-    )
+    in_roi = (gt[x_col] >= x0) & (gt[x_col] < x1) & (gt[y_col] >= y0) & (gt[y_col] < y1)
     gt_roi = gt[in_roi]
     if gt_roi.empty:
         return {"gt_total": len(gt), "gt_in_roi": 0, "gt_matched": 0, "precision": float("nan")}
@@ -270,6 +275,7 @@ def compute_enact_precision(
 
 
 # ── Main report generator ─────────────────────────────────────────────────
+
 
 def generate_crc_metrics_report(
     sample_id: str,
@@ -297,12 +303,14 @@ def generate_crc_metrics_report(
     import scanpy as sc
 
     analysis_id = str(uuid.uuid4())
-    started_at  = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(timezone.utc).isoformat()
     params = {
         "sample_id": sample_id,
         "roi_name": roi_name,
-        "roi_x": roi_x, "roi_y": roi_y,
-        "roi_w": roi_w, "roi_h": roi_h,
+        "roi_x": roi_x,
+        "roi_y": roi_y,
+        "roi_w": roi_w,
+        "roi_h": roi_h,
         "n_hvgs": n_hvgs,
     }
 
@@ -322,17 +330,15 @@ def generate_crc_metrics_report(
         adata = sc.read_h5ad(str(adata_cells_path))
 
         # Compute metrics
-        ftc         = compute_ftc(mask, tp_parquet_path, roi_x, roi_y, roi_w, roi_h)
+        ftc = compute_ftc(mask, tp_parquet_path, roi_x, roi_y, roi_w, roi_h)
         umi_density = compute_umi_density(mask, adata)
-        ned         = compute_ned(mask, adata, n_hvgs=n_hvgs)
-        c1          = compute_c1_coexpr(adata, impossible_pairs)
-        n_cells     = adata.n_obs
+        ned = compute_ned(mask, adata, n_hvgs=n_hvgs)
+        c1 = compute_c1_coexpr(adata, impossible_pairs)
+        n_cells = adata.n_obs
 
         enact_info: dict = {}
         if enact_gt_csv is not None:
-            enact_info = compute_enact_precision(
-                mask, enact_gt_csv, roi_x, roi_y, roi_w, roi_h
-            )
+            enact_info = compute_enact_precision(mask, enact_gt_csv, roi_x, roi_y, roi_w, roi_h)
 
         # Build markdown report
         lines = [
@@ -398,12 +404,15 @@ def generate_crc_metrics_report(
             [str(report_path), completed_at, summary, analysis_id],
         )
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
         write_diagnosis(con, analysis_id, success_diagnosis())
 
         # Persist metric values as artifact JSON for programmatic reuse
         metrics_json = {
-            "ftc": ftc, "umi_density": umi_density,
-            "ned": ned, "c1_coexpr": c1,
+            "ftc": ftc,
+            "umi_density": umi_density,
+            "ned": ned,
+            "c1_coexpr": c1,
             "n_cells": n_cells,
         }
         if enact_info:
@@ -416,6 +425,7 @@ def generate_crc_metrics_report(
 
     except Exception as _exc:
         import traceback
+
         tb = traceback.format_exc()
         logger.exception("CRC metrics failed  analysis_id=%s", analysis_id)
         safe_write(
@@ -424,6 +434,7 @@ def generate_crc_metrics_report(
             [tb[-500:], analysis_id],
         )
         from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
         write_diagnosis(con, analysis_id, classify_exception(_exc))
         con.close()
         raise
@@ -433,6 +444,7 @@ def generate_crc_metrics_report(
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────
+
 
 def _get_cell_ids(adata) -> np.ndarray:
     """Return integer cell IDs from adata.obs['cell_id'] or obs_names."""

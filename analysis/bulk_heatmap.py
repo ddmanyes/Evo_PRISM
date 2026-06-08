@@ -173,7 +173,7 @@ _REPORT_TEMPLATE = """# Bulk Heatmap 報告
 @register_tool_on_import(
     tool_name="bio_run_heatmaps",
     version="1.0.0",
-    description="基於 DEG 顯著基因 Union 繪製全樣本表達量熱圖"
+    description="基於 DEG 顯著基因 Union 繪製全樣本表達量熱圖",
 )
 def run_bulk_heatmaps(
     sample_id: str,
@@ -267,6 +267,7 @@ def run_bulk_heatmaps(
             [str(report_path), completed_at, summary, analysis_id],
         )
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
         write_diagnosis(con, analysis_id, success_diagnosis())
         try:
             from analysis.artifact_registry import register_artifact
@@ -290,6 +291,7 @@ def run_bulk_heatmaps(
     except Exception as _exc_outer:
         logger.exception("bulk_heatmap 失敗  analysis_id=%s", analysis_id)
         from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
         try:
             safe_write(
                 con,

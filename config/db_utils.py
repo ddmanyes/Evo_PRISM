@@ -188,7 +188,9 @@ def db_health_check(con: duckdb.DuckDBPyConnection | None = None) -> dict:
         result = {}
         try:
             result["sample_count"] = c.execute("SELECT COUNT(*) FROM sample_registry").fetchone()[0]
-            result["history_count"] = c.execute("SELECT COUNT(*) FROM analysis_history").fetchone()[0]
+            result["history_count"] = c.execute("SELECT COUNT(*) FROM analysis_history").fetchone()[
+                0
+            ]
             result["stale_count"] = c.execute(
                 "SELECT COUNT(*) FROM analysis_history WHERE status = 'stale'"
             ).fetchone()[0]

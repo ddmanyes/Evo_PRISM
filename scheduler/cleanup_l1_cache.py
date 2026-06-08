@@ -105,7 +105,9 @@ def stats(cache_path: Path | None = None) -> dict:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s"
+    )
     dry_run = "--dry-run" in sys.argv
     s = stats()
     logger.info("cache stats: %s", s)

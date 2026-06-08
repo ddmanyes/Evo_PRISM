@@ -256,7 +256,7 @@ _REPORT_TEMPLATE = """\
 @register_tool_on_import(
     tool_name="bio_run_bulk_eda",
     version="1.0.0",
-    description="執行 98 樣本 Bulk RNA-seq 的 EDA 探索性數據分析並繪製圖表"
+    description="執行 98 樣本 Bulk RNA-seq 的 EDA 探索性數據分析並繪製圖表",
 )
 def generate_bulk_report(
     sample_id: str,
@@ -349,6 +349,7 @@ def generate_bulk_report(
             [str(report_path), completed_at, summary, analysis_id],
         )
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
         write_diagnosis(con, analysis_id, success_diagnosis())
         try:
             from analysis.artifact_registry import register_artifact
@@ -400,6 +401,7 @@ def generate_bulk_report(
                 [datetime.now(timezone.utc), analysis_id],
             )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
             write_diagnosis(con, analysis_id, classify_exception(_exc))
         except Exception:
             pass

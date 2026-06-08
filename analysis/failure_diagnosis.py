@@ -29,11 +29,28 @@ if TYPE_CHECKING:
     import duckdb
 
 # Rule keywords for each failure category
-_CACHE_KEYWORDS    = ("embedding", "hnsw", "vector", "cosine", "cache miss", "l1 cache", "similarity")
-_L3_KEYWORDS       = ("l3", "not ready", "l3_not_ready", "parquet not found", "h5ad",
-                      "file not found", "no such file", "filenotfounderror", "does not exist")
-_TOOL_KEYWORDS     = ("tool", "version", "deprecated", "module", "importerror",
-                      "has no attribute", "attributeerror", "no module named")
+_CACHE_KEYWORDS = ("embedding", "hnsw", "vector", "cosine", "cache miss", "l1 cache", "similarity")
+_L3_KEYWORDS = (
+    "l3",
+    "not ready",
+    "l3_not_ready",
+    "parquet not found",
+    "h5ad",
+    "file not found",
+    "no such file",
+    "filenotfounderror",
+    "does not exist",
+)
+_TOOL_KEYWORDS = (
+    "tool",
+    "version",
+    "deprecated",
+    "module",
+    "importerror",
+    "has no attribute",
+    "attributeerror",
+    "no module named",
+)
 _HALLUCINATION_KWS = ("hallucin", "confabul", "fabricat")
 
 

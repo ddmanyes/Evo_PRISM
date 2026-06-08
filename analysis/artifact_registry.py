@@ -354,12 +354,26 @@ def _insert_artifact_row(
     env_hash: Optional[str] = None,
 ) -> None:
     cols = [
-        "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
-        "label", "file_path", "file_size_kb", "mime_type", "embedding",
+        "artifact_id",
+        "analysis_id",
+        "artifact_type",
+        "artifact_subtype",
+        "label",
+        "file_path",
+        "file_size_kb",
+        "mime_type",
+        "embedding",
     ]
     vals: list = [
-        artifact_id, analysis_id, artifact_type, artifact_subtype,
-        label, rel_path, size_kb, mime_type, embedding,
+        artifact_id,
+        analysis_id,
+        artifact_type,
+        artifact_subtype,
+        label,
+        rel_path,
+        size_kb,
+        mime_type,
+        embedding,
     ]
     if use_matryoshka:
         cols.append("embedding_256")
@@ -413,23 +427,27 @@ def register_artifact(
         try:
             raw_bytes = path.read_bytes()
             size_kb = len(raw_bytes) // 1024
-            
+
             # Check if base64 encoded size exceeds DuckDB constraint (500KB / 512,000 bytes)
             temp_inline = base64.b64encode(raw_bytes).decode()
             if len(temp_inline) > 512000:
                 # Spill-to-disk guard
                 overflow_dir = BIO_DB_ROOT / "results" / "overflow"
                 overflow_dir.mkdir(parents=True, exist_ok=True)
-                
+
                 ext = path.suffix or ".txt"
                 filename = f"overflow_{artifact_id}{ext}"
                 overflow_path = overflow_dir / filename
                 overflow_path.write_bytes(raw_bytes)
-                
+
                 path = overflow_path
                 size_kb = int(overflow_path.stat().st_size / 1024)
                 inline_data = None
-                logger.info("register_artifact: Spilled oversized artifact %s to %s due to size limit", file_path, overflow_path)
+                logger.info(
+                    "register_artifact: Spilled oversized artifact %s to %s due to size limit",
+                    file_path,
+                    overflow_path,
+                )
             else:
                 inline_data = temp_inline
         except OSError as exc:
@@ -477,8 +495,17 @@ def register_artifact(
     # INSERT into analysis_artifacts updates the HNSW index — VSS must be loaded first.
     _ensure_vss(con)
     _insert_artifact_row(
-        con, artifact_id, analysis_id, artifact_type, artifact_subtype,
-        label, rel_path, size_kb, mime_type, embedding, now,
+        con,
+        artifact_id,
+        analysis_id,
+        artifact_type,
+        artifact_subtype,
+        label,
+        rel_path,
+        size_kb,
+        mime_type,
+        embedding,
+        now,
         use_matryoshka=use_matryoshka,
         use_provenance=use_provenance,
         embedding_256=embedding_256,
@@ -710,8 +737,15 @@ def artifact_summary(
 # ── search_artifacts helpers ─────────────────────────────────────────────────
 
 _ARTIFACT_COLS = [
-    "artifact_id", "analysis_id", "artifact_type", "artifact_subtype",
-    "label", "file_path", "file_size_kb", "mime_type", "created_at",
+    "artifact_id",
+    "analysis_id",
+    "artifact_type",
+    "artifact_subtype",
+    "label",
+    "file_path",
+    "file_size_kb",
+    "mime_type",
+    "created_at",
 ]
 
 
@@ -839,6 +873,7 @@ def _layer2_hnsw_search(
     except Exception:
         pass
     from config.settings import MATRYOSHKA_ENABLED
+
     use_matryoshka = MATRYOSHKA_ENABLED and _matryoshka_col_exists(con) and len(embedding) >= 256
     try:
         rows = (
@@ -997,8 +1032,13 @@ def search_artifacts(
         return []
 
     results, batch_layer = _build_artifact_results(
-        top, exact_rows_map, hnsw_rows_map, fts_rows_map,
-        exact_ranked, hnsw_ranked, fts_ranked,
+        top,
+        exact_rows_map,
+        hnsw_rows_map,
+        fts_rows_map,
+        exact_ranked,
+        hnsw_ranked,
+        fts_ranked,
     )
 
     latency_ms = int((time.monotonic() - t_start) * 1000)

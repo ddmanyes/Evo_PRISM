@@ -1600,10 +1600,10 @@ async def _handle_bio_failure_summary(args: dict) -> str:
     import duckdb
     from config.settings import DUCKDB_PATH
 
-    sample_id     = args.get("sample_id", "").strip() or None
+    sample_id = args.get("sample_id", "").strip() or None
     analysis_type = args.get("analysis_type", "").strip() or None
-    since_days    = int(args.get("since_days", 30))
-    top_n         = int(args.get("top_n", 5))
+    since_days = int(args.get("since_days", 30))
+    top_n = int(args.get("top_n", 5))
 
     def _sync() -> str:
         with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
@@ -2016,6 +2016,7 @@ def create_http_app():
                     await _send_auth_error(send, 401, "Unauthorized: missing Bearer token")
                     return
                 import hmac
+
                 if not hmac.compare_digest(presented, auth_token):
                     await _send_auth_error(send, 401, "Unauthorized: invalid token")
                     return
@@ -2043,9 +2044,9 @@ def _startup_cleanup_stale_runs() -> None:
             import analysis.bulk_deg  # noqa: F401
             import analysis.bulk_heatmap  # noqa: F401
             import analysis.enrichment  # noqa: F401
-            
+
             from analysis.tool_registry import register_all_lazy_tools
-            
+
             n_lazy = register_all_lazy_tools(con)
             if n_lazy:
                 logger.info("Startup lazy registry: registered %d active tools in DuckDB", n_lazy)
