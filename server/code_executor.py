@@ -160,7 +160,7 @@ BLOCKED_PATTERNS = [
     "gi_frame",
     "dill",
     "cloudpickle",
-    "joblib.dump",
+    "joblib",
     "vars(",
     # ── 資源耗盡 / timeout 繞過 ──────────────────────────────────────────────
     "signal.",       # signal handler 可中斷 timeout 機制

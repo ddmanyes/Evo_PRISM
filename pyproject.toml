@@ -98,7 +98,7 @@ embedding-local = [
 
 # === Agent 大腦 ===
 anthropic = [
-    "anthropic>=0.39.0",
+    "anthropic>=0.102.0",
 ]
 
 [build-system]

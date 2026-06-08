@@ -1611,9 +1611,9 @@ async def _handle_bio_failure_summary(args: dict) -> str:
             # Build WHERE clause
             conditions = [
                 "failure_diagnosis IS NOT NULL",
-                f"started_at >= now() - INTERVAL '{since_days} days'",
+                "started_at >= now() - (? * INTERVAL '1 day')",
             ]
-            params: list = []
+            params: list = [since_days]
             if sample_id:
                 conditions.append("sample_id = ?")
                 params.append(sample_id)
@@ -2016,7 +2016,8 @@ def create_http_app():
                 if not presented:
                     await _send_auth_error(send, 401, "Unauthorized: missing Bearer token")
                     return
-                if presented != auth_token:
+                import hmac
+                if not hmac.compare_digest(presented, auth_token):
                     await _send_auth_error(send, 401, "Unauthorized: invalid token")
                     return
             await session_manager.handle_request(scope, receive, send)

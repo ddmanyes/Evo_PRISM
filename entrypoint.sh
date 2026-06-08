@@ -15,6 +15,16 @@ if [ ! -f "${BIO_DB_ROOT}/bio_memory.duckdb" ]; then
     python scripts/00_init_db.py
 fi
 
+# ── Run migrations on every start (idempotent scripts) ───────────────────────
+scripts=$(ls scripts/[0-9][0-9]_migrate_schema_*.py 2>/dev/null | sort -V)
+if [ -n "$scripts" ]; then
+    echo "[entrypoint] Running migrations..."
+    while IFS= read -r script; do
+        echo "[entrypoint] Running: $script"
+        python "$script"
+    done <<< "$scripts"
+fi
+
 case "$MODE" in
   server)
     echo "[entrypoint] Starting Evo_PRISM MCP + Web UI..."

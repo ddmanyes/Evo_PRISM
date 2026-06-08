@@ -49,17 +49,17 @@ jobs:
         run: |
           set -e
           scripts=$(ls scripts/[0-9][0-9]_migrate_schema_*.py 2>/dev/null | sort -V)
-          [ -n "$scripts" ] || (echo "No migration scripts found"; exit 1)
-          for script in $scripts; do
+          [ -n "$scripts" ] || { echo "No migration scripts found"; exit 1; }
+          while IFS= read -r script; do
             echo "Running: $script"
             uv run --python ${{ matrix.python-version }} python "$script"
-          done
+          done <<< "$scripts"
 
       - name: Verify test files exist
         run: |
           count=$(find tests/ -name "test_*.py" | wc -l)
           echo "Found $count test files"
-          [ "$count" -gt 0 ] || (echo "ERROR: No test files found"; exit 1)
+          [ "$count" -gt 0 ] || { echo "ERROR: No test files found"; exit 1; }
 
       - name: Run tests
         run: |
