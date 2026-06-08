@@ -21,6 +21,14 @@ To demonstrate the platform's capabilities in handling complex data provenance, 
 
 Evo_PRISM addresses core pain points in modern LLM agent development and complex tool execution, enabling self-evolving intelligence for demanding analytical workflows.
 
+Modern LLM-driven analysis workflows suffer from three named failure modes that conventional tools cannot detect:
+
+- **Code Provenance Vacuum** — AI-generated scripts vanish after the session ends; results on disk have no traceable link to the code, parameters, or package versions that produced them.
+- **Silent Methodological Failure** — incorrect normalization, outdated statistical assumptions, or sparse-matrix numerical errors produce plausible-looking outputs with no runtime warning, contaminating downstream conclusions silently.
+- **Methodological Drift** — the same raw data analyzed at different times or by different researchers yields subtly different results due to inconsistent thresholds or tool versions, making reproducibility impossible to audit.
+
+Evo_PRISM addresses all three systematically:
+
 | Problem                                               | Solution                                                                                                           |
 | :---------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
 | 🔁 Re-running expensive analyses on every query       | **L1 Semantic Cache**: similar queries answered in milliseconds, saving resources dramatically               |
@@ -50,6 +58,8 @@ Evo_PRISM addresses core pain points in modern LLM agent development and complex
 ![HELIX Architecture Loop](docs/images/HELIX_架構圖_2.png)
 
 **HELIX** tracks every analysis tool's version, detects hot-spots, measures cyclomatic complexity (Radon CC), and drives stabilization refactors — ensuring the Agent always calls a healthy, well-maintained version.
+
+**Code Promotion is human-confirmed by design.** When a generated script meets the promotion threshold (reused ≥ 3×, `fpromote ≥ 3.0`), LLM review produces a draft — but a human administrator runs `approve_candidate()` before it enters the permanent `analysis/` directory. This intentional gate prevents the "LLM generates → LLM reviews → self-validates" closed loop that undermines trust in autonomous code evolution. The `UserApproval` signal (`+1` / `0` / `-1`) also lets operators veto high-frequency but methodologically flawed scripts before promotion.
 
 #### HELIX Memory System
 
@@ -86,17 +96,35 @@ This ensures recent diagnostics remain precise while historical memory retains s
 
 **ENGRAM** permanently archives every analysis artifact (CSV, Parquet, images, reports) and enables Hybrid 3-way RRF semantic search (Exact SQL + HNSW + BM25 FTS), linked to HELIX for full version provenance.
 
+### HELIX × ENGRAM Closed Loop — Blast Radius Analysis
+
+The two subsystems form a **closed feedback loop**:
+
+```text
+HELIX detects tool version change
+        ↓
+Blast Radius query traverses ENGRAM Lineage Graph
+        ↓
+System identifies which historical analysis results were produced
+by the old tool version and may now be stale
+        ↓
+Precision improves as ENGRAM accumulates richer lineage metadata (71.4% → 83.3%)
+```
+
+This is what conventional workflow managers (Snakemake, Nextflow, DVC) cannot do: they detect file-input staleness, but **not code-logic staleness**. When a tool's normalization method is corrected, Evo_PRISM can retroactively flag every result produced by the buggy version — without re-running anything. Use `bio_impact` to query the current blast radius of any tool change.
+
 ### Agent Decision Flow
 
 ```text
 Query
- ├─ Step 1  Exact SQL match (0 tokens, < 1 s)         ← Already done? Return directly
- ├─ Step 2  HNSW semantic search (cosine ≥ 0.88)      ← Similar query cached? Return cache
+ ├─ Step 1  Exact SQL match (0 tokens, < 1 s)              ← Already done? Return directly
+ ├─ Step 2  HNSW semantic search (cosine ≥ 0.88)           ← Similar query cached? Return cache
  ├─ Step 3A Standard analysis tool (L2 Parquet ready)
+ │           └─ bio_find_tool: 0-token semantic search → reuse existing function before writing new code
  ├─ Step 3B Code Promotion reuse (generated before?)
  └─ Step 3C Fresh code generation (sandbox + retry)
                └─ Success → store in history → available for 3B next time
-               └─ Reused ≥ 3× → promoted to a permanent 3A tool
+               └─ Reused ≥ 3× → promoted to a permanent 3A tool (human-confirmed)
 ```
 
 ---
@@ -171,7 +199,7 @@ Done! MCP HTTP ready at **<http://localhost:8080>** · Web UI at <http://localho
 
 ### 💡 Path 2: Manual Install + MCP (IDE / CLI)
 
-> This path lets you call 17 bioinformatics tools directly in natural language from **Claude Code CLI** or **Antigravity IDE** — no browser needed.
+> This path lets you call 25 analysis tools directly in natural language from **Claude Code CLI** or **Antigravity IDE** — no browser needed.
 
 **Prerequisites:**
 
