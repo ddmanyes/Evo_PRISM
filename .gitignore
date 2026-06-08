@@ -122,10 +122,8 @@ benchmark/
 # scratch 臨時腳本
 scratch/
 
-# tests — 排除私有模組與快取，保留測試程式碼
-tests/_*
-!tests/_visualizer_stubs.py
-tests/__pycache__/
+# tests — 本機測試，不上傳 GitHub
+tests/
 
 # docs/logs — 開發日誌不公開
 docs/logs/
