@@ -133,22 +133,22 @@ def run(coro):
 
 class TestListTools:
     def test_tool_count_default_hides_dangerous(self, monkeypatch):
-        """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（26 個）。"""
+        """預設 MCP_ENABLE_DANGEROUS_TOOLS 未設 → bio_execute_code 不出現（25 個）。"""
         monkeypatch.delenv("MCP_ENABLE_DANGEROUS_TOOLS", raising=False)
         from server.bio_memory_server import list_tools
 
         tools = run(list_tools())
-        assert len(tools) == 26
+        assert len(tools) == 25
         names = {t.name for t in tools}
         assert "bio_execute_code" not in names
 
     def test_tool_count_with_dangerous_enabled(self, monkeypatch):
-        """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 27 個工具。"""
+        """設定 MCP_ENABLE_DANGEROUS_TOOLS=true → 26 個工具。"""
         monkeypatch.setenv("MCP_ENABLE_DANGEROUS_TOOLS", "true")
         from server.bio_memory_server import list_tools
 
         tools = run(list_tools())
-        assert len(tools) == 27
+        assert len(tools) == 26
         names = {t.name for t in tools}
         assert "bio_execute_code" in names
 
@@ -185,7 +185,6 @@ class TestListTools:
             "bio_run_mcseg_fullslide",
             "bio_compute_crc_metrics",
             "bio_failure_summary",
-            "bio_record_feedback",
         }
         assert names == expected
 
