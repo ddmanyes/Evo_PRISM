@@ -43,7 +43,7 @@ Evo_PRISM 從架構層面系統性解決三者：
 
 ### 三層資料架構
 
-![Evo_PRISM 三層架構](docs/images/三層架構_eng.png)
+![Evo_PRISM 三層架構](docs/images/architecture_three_layer.png)
 
 | 層 |  名稱  | 說明                                         |
 | :-: | :----: | :------------------------------------------- |
@@ -53,9 +53,9 @@ Evo_PRISM 從架構層面系統性解決三者：
 
 ### HELIX — 工具健康進化迴路
 
-![HELIX 簡單流程圖](docs/images/helix簡單流程圖.png)
+![HELIX 簡單流程圖](docs/images/helix_flow_simple.png)
 
-![HELIX 架構迴路](docs/images/HELIX_架構圖_2.png)
+![HELIX 架構迴路](docs/images/helix_architecture_loop.png)
 
 **HELIX** 負責追蹤所有分析工具的版本、熱區偵測、複雜度量測（Radon CC）與穩定化重構，確保 Agent 呼叫的永遠是健康版本。
 
@@ -92,7 +92,7 @@ HELIX 採用**雙軌記憶機制**，讓 Agent 在每次重新診斷時都能回
 
 ### ENGRAM — 分析產出永久記憶
 
-![ENGRAM 架構](docs/images/engram_架構圖1_eng.png)
+![ENGRAM 架構](docs/images/engram_architecture.png)
 
 **ENGRAM** 將每次分析產出（CSV、Parquet、圖片、報告）永久歸檔，支援 Hybrid 3-way RRF 語意搜尋（Exact SQL + HNSW + BM25 FTS），並與 HELIX 工具帳本關聯防止版本漂移。
 
