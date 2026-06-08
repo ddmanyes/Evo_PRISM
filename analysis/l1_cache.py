@@ -32,20 +32,16 @@ logger = logging.getLogger(__name__)
 
 # ── 3-way RRF 常數（論文 §2.4.1）──────────────────────────────────────────────
 
-_RRF_K: int = 60          # 標準 RRF 平滑常數
-_W1: float = 0.5          # cosine similarity 權重
-_W2: float = 0.3          # input fingerprint 匹配權重
-_W3: float = 0.2          # context hash 匹配權重
+_RRF_K: int = 60  # 標準 RRF 平滑常數
+_W1: float = 0.5  # cosine similarity 權重
+_W2: float = 0.3  # input fingerprint 匹配權重
+_W3: float = 0.2  # context hash 匹配權重
 _MISMATCH_RANK: int = 9999  # 不匹配時的懲罰 rank
 
 
 def _rrf_score(rank_cosine: int, rank_fp: int, rank_ctx: int) -> float:
     """3-way Reciprocal Rank Fusion 分數。"""
-    return (
-        _W1 / (rank_cosine + _RRF_K)
-        + _W2 / (rank_fp + _RRF_K)
-        + _W3 / (rank_ctx + _RRF_K)
-    )
+    return _W1 / (rank_cosine + _RRF_K) + _W2 / (rank_fp + _RRF_K) + _W3 / (rank_ctx + _RRF_K)
 
 
 def _rrf_hit_threshold(*, has_fp: bool = False, has_ctx: bool = False) -> float:
@@ -165,9 +161,17 @@ def write_to_l1_cache(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                rec_id, sample_id, query_text, report_text, summary,
-                embedding, analysis_id, input_fingerprint, context_hash,
-                now, expires_at,
+                rec_id,
+                sample_id,
+                query_text,
+                report_text,
+                summary,
+                embedding,
+                analysis_id,
+                input_fingerprint,
+                context_hash,
+                now,
+                expires_at,
             ],
         )
         con.execute("CHECKPOINT")
@@ -294,8 +298,16 @@ def semantic_search(
             """
             rows = con.execute(sql, params).fetchall()
 
-    base_cols = ["id", "sample_id", "query_text", "summary", "report_text",
-                 "created_at", "expires_at", "score"]
+    base_cols = [
+        "id",
+        "sample_id",
+        "query_text",
+        "summary",
+        "report_text",
+        "created_at",
+        "expires_at",
+        "score",
+    ]
 
     if not use_rrf:
         return [dict(zip(base_cols, row)) for row in rows if row[-1] >= threshold]
@@ -314,7 +326,9 @@ def semantic_search(
         stored_fp: Optional[str] = rec.pop("_fp")
         stored_ctx: Optional[str] = rec.pop("_ctx")
 
-        rank_fp = 1 if (input_fingerprint is None or stored_fp == input_fingerprint) else _MISMATCH_RANK
+        rank_fp = (
+            1 if (input_fingerprint is None or stored_fp == input_fingerprint) else _MISMATCH_RANK
+        )
         rank_ctx = 1 if (context_hash is None or stored_ctx == context_hash) else _MISMATCH_RANK
 
         rrf = _rrf_score(rank_cosine, rank_fp, rank_ctx)
