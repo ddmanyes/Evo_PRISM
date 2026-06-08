@@ -66,15 +66,17 @@ def init_l1_cache(
     con.execute(
         f"""
         CREATE TABLE IF NOT EXISTS memory_recent (
-            id           UUID    PRIMARY KEY,
-            sample_id    VARCHAR NOT NULL,
-            query_text   VARCHAR NOT NULL,    -- 查詢語句或分析參數描述
-            report_text  VARCHAR NOT NULL,    -- 完整 Markdown 報告（或摘要展開版）
-            summary      VARCHAR NOT NULL,    -- ≤50 字摘要（由 report_generator 生成）
-            embedding    FLOAT[{EMBEDDING_DIM}],   -- Google gemini-embedding-001 向量
-            analysis_id  UUID,               -- FK → bio_memory.analysis_history.analysis_id
-            created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-            expires_at   TIMESTAMPTZ NOT NULL  -- TTL：created_at + 7 天
+            id                 UUID    PRIMARY KEY,
+            sample_id          VARCHAR NOT NULL,
+            query_text         VARCHAR NOT NULL,
+            report_text        VARCHAR NOT NULL,
+            summary            VARCHAR NOT NULL,
+            embedding          FLOAT[{EMBEDDING_DIM}],
+            analysis_id        UUID,
+            input_fingerprint  VARCHAR,   -- SHA-256[:16] of input data (3-way RRF)
+            context_hash       VARCHAR,   -- SHA-256[:17] of analysis context (3-way RRF)
+            created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at         TIMESTAMPTZ NOT NULL
         )
         """
     )
@@ -96,6 +98,21 @@ def init_l1_cache(
         print("HNSW index: idx_memory_hnsw — OK (cosine)")
     except Exception as e:
         print(f"WARNING: HNSW index creation failed (will retry after data load): {e}")
+
+    # Migration guard: add RRF columns to existing DBs
+    existing_cols = {
+        r[0]
+        for r in con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'memory_recent'"
+        ).fetchall()
+    }
+    for col, ddl in [
+        ("input_fingerprint", "ALTER TABLE memory_recent ADD COLUMN input_fingerprint VARCHAR"),
+        ("context_hash",      "ALTER TABLE memory_recent ADD COLUMN context_hash VARCHAR"),
+    ]:
+        if col not in existing_cols:
+            con.execute(ddl)
+            print(f"[migrate] Added column: {col}")
 
     con.execute("CHECKPOINT")
     shown_path = cache_path or L1_CACHE_PATH
