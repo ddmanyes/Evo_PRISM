@@ -81,7 +81,9 @@ singularity run --bind /mnt/data:/data/bio_db evo-prism.sif server
 
 ## Option C：手動安裝（macOS / Linux）
 
-*以下步驟適用於需要直接存取 GPU、開發模式或特殊磁碟配置的情境。*
+> **Windows 用戶**：請直接參閱 [docs/guides/WINDOWS_SETUP.md](docs/guides/WINDOWS_SETUP.md)，有完整的 PowerShell 步驟與路徑說明。
+
+*以下步驟適用於需要直接存取 GPU、開發模式或特殊磁碟配置的情境（macOS / Linux）。*
 
 ---
 

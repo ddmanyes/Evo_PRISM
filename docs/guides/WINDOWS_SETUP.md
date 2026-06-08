@@ -1,6 +1,6 @@
 # Evo_PRISM Windows 安裝指南
 
-本指南說明如何在 Windows 系統（外接硬碟，如 `D:\bio_DB\`）完整部署 Evo_PRISM。
+本指南說明如何在 Windows 系統（外接硬碟，如 `D:\Evo_PRISM\`）完整部署 Evo_PRISM。
 
 ---
 
@@ -44,10 +44,10 @@ irm https://astral.sh/uv/install.ps1 | iex
 
 ```powershell
 # 在家目錄建立 venv（避免外接硬碟 ExFAT 權限問題）
-uv venv "$env:USERPROFILE\.venvs\hermes-bio-memory" --python 3.11
+uv venv "$env:USERPROFILE\.venvs\evo-prism" --python 3.11
 
 # 切換到專案目錄（D 槽外接硬碟）
-cd D:\bio_DB
+cd D:\Evo_PRISM
 
 # 安裝所有依賴
 uv sync --no-install-project
@@ -88,7 +88,7 @@ Gemma 4 Vision 模型（約 16 GB）可跳過，改用 Claude API 或 Google Gem
 ## 步驟五：設定環境變數
 
 ```powershell
-cd D:\bio_DB
+cd D:\Evo_PRISM
 
 # 複製 Windows 設定範本
 Copy-Item .env.windows.example .env
@@ -97,7 +97,7 @@ Copy-Item .env.windows.example .env
 用記事本或 VS Code 開啟 `.env`，填入實際路徑：
 
 ```ini
-BIO_DB_ROOT=D:\bio_DB
+BIO_DB_ROOT=D:\Evo_PRISM
 LLAMACPP_BIN=C:\Users\你的使用者名稱\llama.cpp\llama-server.exe
 LLAMACPP_MODEL_PATH=C:\Users\你的使用者名稱\llama.cpp\models\bge-m3-Q8_0.gguf
 INFERENCE_BACKEND=claude
@@ -109,10 +109,15 @@ ANTHROPIC_API_KEY=你的金鑰
 ## 步驟六：初始化資料庫
 
 ```powershell
-cd D:\bio_DB
+cd D:\Evo_PRISM
 
 # 使用 venv 的 Python 初始化 Schema
-& "$env:USERPROFILE\.venvs\hermes-bio-memory\Scripts\python.exe" scripts\00_init_db.py
+& "$env:USERPROFILE\.venvs\evo-prism\Scripts\python.exe" scripts\00_init_db.py
+
+# 套用所有後續 migration
+Get-ChildItem scripts\[0-9][0-9]_migrate_schema_*.py | Sort-Object Name | ForEach-Object {
+    & "$env:USERPROFILE\.venvs\evo-prism\Scripts\python.exe" $_.FullName
+}
 ```
 
 預期輸出：`✅ Schema initialized successfully`
@@ -120,7 +125,7 @@ cd D:\bio_DB
 ### 健康檢查
 
 ```powershell
-& "$env:USERPROFILE\.venvs\hermes-bio-memory\Scripts\python.exe" config\db_utils.py
+& "$env:USERPROFILE\.venvs\evo-prism\Scripts\python.exe" config\db_utils.py
 ```
 
 ---
@@ -128,7 +133,7 @@ cd D:\bio_DB
 ## 步驟七：啟動所有服務
 
 ```powershell
-cd D:\bio_DB
+cd D:\Evo_PRISM
 
 # 互動式選擇後端（建議首次使用）
 .\start_bioagent.ps1
@@ -157,10 +162,10 @@ cd D:\bio_DB
 {
   "mcpServers": {
     "bio-memory": {
-      "command": "C:\\Users\\你的使用者名稱\\.venvs\\hermes-bio-memory\\Scripts\\python.exe",
-      "args": ["D:\\bio_DB\\server\\bio_memory_server.py"],
+      "command": "C:\\Users\\你的使用者名稱\\.venvs\\evo-prism\\Scripts\\python.exe",
+      "args": ["D:\\Evo_PRISM\\server\\bio_memory_server.py"],
       "env": {
-        "BIO_DB_ROOT": "D:\\bio_DB",
+        "BIO_DB_ROOT": "D:\\Evo_PRISM",
         "INFERENCE_BACKEND": "claude",
         "ANTHROPIC_API_KEY": "你的金鑰"
       }
@@ -170,25 +175,6 @@ cd D:\bio_DB
 ```
 
 > **路徑注意**：JSON 中反斜線需雙寫（`\\`）。
-
----
-
-## 執行基準測試
-
-```powershell
-cd D:\bio_DB
-
-# 確保 embedding server 已啟動（port 8081）
-# 先啟動 embedding only（不需要 Vision 模型）：
-Start-Process "$env:USERPROFILE\llama.cpp\llama-server.exe" `
-    -ArgumentList "-m `"$env:USERPROFILE\llama.cpp\models\bge-m3-Q8_0.gguf`" --embedding --port 8081 --ctx-size 8192 --n-gpu-layers 99" `
-    -NoNewWindow
-
-# 等待 embedding server 就緒後執行測試
-& "$env:USERPROFILE\.venvs\hermes-bio-memory\Scripts\python.exe" -m pytest tests\benchmark_cache_rrf.py -v
-& "$env:USERPROFILE\.venvs\hermes-bio-memory\Scripts\python.exe" -m pytest tests\benchmark_helix_promotion.py -v
-& "$env:USERPROFILE\.venvs\hermes-bio-memory\Scripts\python.exe" -m pytest tests\benchmark_impact.py -v
-```
 
 ---
 
@@ -222,17 +208,17 @@ New-NetFirewallRule -DisplayName "llama-embed" -Direction Inbound -Protocol TCP 
 
 ### DuckDB 路徑錯誤（含中文或空格）
 
-若外接硬碟路徑含中文或空格（如 `D:\我的資料\bio_DB`），在 `.env` 用引號包住：
+若外接硬碟路徑含中文或空格，在 `.env` 用引號包住：
 
 ```ini
-BIO_DB_ROOT="D:\我的資料\bio_DB"
+BIO_DB_ROOT="D:\我的資料\Evo_PRISM"
 ```
 
 或使用無空格的簡短路徑（建議）：
 
 ```powershell
 # 建立短路徑 subst（本次工作階段有效）
-subst B: "D:\複雜路徑\bio_DB"
+subst B: "D:\複雜路徑\Evo_PRISM"
 # 然後在 .env 使用 BIO_DB_ROOT=B:\
 ```
 
@@ -242,8 +228,8 @@ subst B: "D:\複雜路徑\bio_DB"
 
 | 事項 | macOS | Windows |
 |------|-------|---------|
-| 專案根目錄 | `/Volumes/NO NAME/bio_DB/` | `D:\bio_DB\` |
-| venv Python | `~/.venvs/hermes-bio-memory/bin/python` | `%USERPROFILE%\.venvs\hermes-bio-memory\Scripts\python.exe` |
+| 專案根目錄 | `/Volumes/KINGSTON/Evo_PRISM/` | `D:\Evo_PRISM\` |
+| venv Python | `~/.venvs/evo-prism/bin/python` | `%USERPROFILE%\.venvs\evo-prism\Scripts\python.exe` |
 | llama-server | `~/llama.cpp/build/bin/llama-server` | `%USERPROFILE%\llama.cpp\llama-server.exe` |
 | 啟動腳本 | `bash start_bioagent.sh` | `.\start_bioagent.ps1` |
 | 停止腳本 | `bash stop_bioagent.sh` | `.\stop_bioagent.ps1` |
@@ -263,9 +249,9 @@ macOS 的 `launchd` plist 在 Windows 上需改用**工作排程器（Task Sched
 
 ```powershell
 $action  = New-ScheduledTaskAction `
-    -Execute "$env:USERPROFILE\.venvs\hermes-bio-memory\Scripts\python.exe" `
-    -Argument "D:\bio_DB\scheduler\backup_db.py" `
-    -WorkingDirectory "D:\bio_DB"
+    -Execute "$env:USERPROFILE\.venvs\evo-prism\Scripts\python.exe" `
+    -Argument "D:\Evo_PRISM\scheduler\backup_db.py" `
+    -WorkingDirectory "D:\Evo_PRISM"
 
 $trigger = New-ScheduledTaskTrigger -Daily -At "02:00"
 
@@ -275,7 +261,3 @@ Register-ScheduledTask -TaskName "EvoPRISM_Backup" `
 ```
 
 其他排程任務（cleanup_l1_cache、rebuild_hnsw 等）依此類推。
-
----
-
-*更新時間：2026-05-22*
