@@ -16,14 +16,11 @@ generate_crc_metrics_report() — Full pipeline → analysis_history
 
 from __future__ import annotations
 
-import io
-import base64
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import duckdb
 import numpy as np
@@ -295,7 +292,7 @@ def generate_crc_metrics_report(
 
     Returns (analysis_id, report_path).
     """
-    from config.settings import DUCKDB_PATH, MCSEG_RESULTS_ROOT
+    from config.settings import DUCKDB_PATH
     from config.db_utils import safe_write
     import scanpy as sc
 

@@ -1597,7 +1597,6 @@ async def _handle_bio_tool_health(args: dict) -> str:
 
 async def _handle_bio_failure_summary(args: dict) -> str:
     """PM1: Aggregate failure_diagnosis from analysis_history (EvolveMem-inspired)."""
-    import json
     import duckdb
     from config.settings import DUCKDB_PATH
 

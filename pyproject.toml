@@ -155,6 +155,8 @@ extend-exclude = [
 "config/__init__.py" = ["F403"]            # 刻意 re-export settings（from .settings import *）
 "server/web_app.py" = ["E402"]             # sys.path 注入 + load_dotenv 後才 import
 "analysis/artifact_registry.py" = ["E402"] # 同上：先載 vss 擴充再 import
+"analysis/*.py" = ["E402"]                 # matplotlib.use("Agg") + sys.path.insert 後才 import local modules
+"server/agent.py" = ["E402"]               # 延遲 import submodule 在函數定義後（避免循環 import）
 "tests/*" = ["E402"]                        # 測試常在中段重組 import（mock 邊界）
 
 [tool.hatch.build.targets.wheel]

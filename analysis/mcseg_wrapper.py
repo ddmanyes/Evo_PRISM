@@ -1,5 +1,4 @@
 import sys
-import os
 from pathlib import Path
 import logging
 import numpy as np
@@ -18,7 +17,8 @@ def _compute_tiff_scale(btf_image_path: Path, binned_dir: Path) -> float:
     Derived from tissue_hires_image.png dimensions + scalefactors_json.json +
     raw TIFF dimensions.  Returns 1.0 if metadata is unavailable.
     """
-    import json, tifffile
+    import json
+    import tifffile
     from PIL import Image
 
     sf_path    = Path(binned_dir) / "spatial" / "scalefactors_json.json"
@@ -63,7 +63,8 @@ def crop_visium_hd_roi(btf_image_path: str | Path, binned_dir: str | Path, roi_d
     resulting mask back to virtual_fullres coordinates for consistent downstream use.
     """
     from backend.src.roi.extractor import load_visium_adata, subset_anndata_roi, roi_to_fullres_px, read_btf_crop
-    import json, tifffile
+    import json
+    import tifffile
 
     out_roi_dir = Path(out_roi_dir)
     out_roi_dir.mkdir(parents=True, exist_ok=True)
@@ -279,7 +280,7 @@ def export_to_xenium(adata_cells_path: str | Path, mask_path: str | Path, transc
     )
     
     exporter.export(adata_cells_path, out_xenium_dir)
-    logger.info(f"Successfully exported Xenium bundle!")
+    logger.info("Successfully exported Xenium bundle!")
     
     return out_xenium_dir
 

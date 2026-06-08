@@ -32,11 +32,10 @@ from config.settings import L2_ROOT, DUCKDB_PATH
 from config.db_utils import safe_write
 from analysis.viz_utils import fig_to_b64_md as _fig_to_b64_md
 from analysis.path_utils import results_dir as _results_dir
+from analysis.validators import validate_sample_id
 
 logger = logging.getLogger(__name__)
 
-from analysis.validators import validate_sample_id
-from analysis.tool_registry import register_tool_on_import
 
 _GENE_NAME_RE = re.compile(r"^[A-Za-z0-9_.+-]+$")
 
@@ -113,7 +112,7 @@ def gene_spatial_map(
     Returns:
         (fig, output_path) — matplotlib Figure 與儲存路徑（save=False 時路徑為空字串）
     """
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     _validate_gene_name(gene_name)
     db_path = db_path or DUCKDB_PATH
     expr_glob = _l2_expr_glob(sample_id)
@@ -185,7 +184,7 @@ def qc_stats(
         DataFrame with columns: barcode, array_row_8um, array_col_8um,
                                  n_genes, total_counts
     """
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     db_path = db_path or DUCKDB_PATH
     expr_glob = _l2_expr_glob(sample_id)
     obs_path = _l2_obs_path(sample_id)
@@ -255,7 +254,7 @@ def top_genes(
     Returns:
         DataFrame with columns: gene_name, total_counts, n_bins
     """
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     db_path = db_path or DUCKDB_PATH
     expr_glob = _l2_expr_glob(sample_id)
 
@@ -290,7 +289,7 @@ def gene_coexpression(
     Returns:
         (fig, output_path)
     """
-    _validate_sample_id(sample_id)
+    validate_sample_id(sample_id)
     _validate_gene_name(gene_a)
     _validate_gene_name(gene_b)
     db_path = db_path or DUCKDB_PATH

@@ -109,11 +109,10 @@ def _exec_bio_run_mcseg_roi(args: dict) -> str:
 
         from analysis.mcseg_wrapper import (
             crop_visium_hd_roi, run_mcseg_segmentation,
-            run_rna_counting, export_to_xenium, export_cell_metadata_json,
+            run_rna_counting,
         )
-        import numpy as np, scanpy as sc, pandas as pd
-        import scipy.sparse as sp, matplotlib; matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use("Agg")
 
         roi_cfg = {
             "name": roi_name, "x": roi_x, "y": roi_y,
@@ -218,10 +217,10 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
         return "無法解析 btf_image_path / binned_dir，請明確傳入。"
 
     try:
-        import os
         sys.path.insert(0, str(_Path("K:/plan_a/MSseg")))
         sys.path.insert(0, str(_Path("I:/Evo_PRISM")))
-        import matplotlib; matplotlib.use("Agg")
+        import matplotlib
+        matplotlib.use("Agg")
 
         from backend.src.segmentation.cellpose_runner import run_tiled_mcseg_v2  # type: ignore[import]
         import tifffile  # type: ignore[import]
@@ -249,7 +248,8 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
         n_cells = int(mask.max())
 
         # Register in analysis_history (CLAUDE.md: every analysis must be logged)
-        import duckdb as _duckdb, uuid as _uuid
+        import duckdb as _duckdb
+        import uuid as _uuid
         from datetime import datetime as _dt
         from config.settings import DUCKDB_PATH
         from config.db_utils import safe_write as _safe_write

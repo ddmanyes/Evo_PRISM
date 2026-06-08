@@ -1070,7 +1070,7 @@ requires-dist = [
     { name = "adjusttext", marker = "extra == 'bulk-analysis'" },
     { name = "anndata", specifier = ">=0.10.0" },
     { name = "anthropic", specifier = ">=0.102.0" },
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.39.0" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.102.0" },
     { name = "duckdb", specifier = ">=1.1.0" },
     { name = "fastapi", specifier = ">=0.136.1" },
     { name = "google-genai", marker = "extra == 'embedding-google'", specifier = ">=0.3.0" },
