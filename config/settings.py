@@ -125,7 +125,9 @@ DEFAULT_RESOLUTION = "008um"
 # ── Telegram（Phase 0）─────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_ALLOWED_USER_IDS = [
-    int(uid) for uid in os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",") if uid
+    int(uid.strip())
+    for uid in os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",")
+    if uid.strip() and not uid.strip().startswith("#")
 ]
 
 # ── HELIX 設定 ─────────────────────────────────────────────

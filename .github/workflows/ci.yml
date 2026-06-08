@@ -35,6 +35,7 @@ jobs:
           # Use empty keys for CI — tests mock external calls
           echo "ANTHROPIC_API_KEY=" >> .env
           echo "GOOGLE_API_KEY=" >> .env
+          echo "TELEGRAM_ALLOWED_USER_IDS=" >> .env
 
       - name: Initialize database
         run: uv run --python ${{ matrix.python-version }} python scripts/00_init_db.py
