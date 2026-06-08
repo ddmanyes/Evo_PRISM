@@ -43,7 +43,7 @@ Evo_PRISM addresses all three systematically:
 
 ### Three-Layer Data Architecture
 
-![Evo_PRISM Three-Layer Architecture](docs/images/architecture_three_layer.png)
+![Evo_PRISM Three-Layer Architecture](docs/images/figure_1_system_arch.png)
 
 | Layer |  Name  | Description                                                     |
 | :---: | :----: | :-------------------------------------------------------------- |
@@ -53,9 +53,8 @@ Evo_PRISM addresses all three systematically:
 
 ### HELIX — Tool Health-Evolving Loop
 
-![HELIX Simple Flow](docs/images/helix_flow_simple.png)
+![HELIX Simple Flow](docs/images/figure_2_system_arch.png)
 
-![HELIX Architecture Loop](docs/images/helix_architecture_loop.png)
 
 **HELIX** tracks every analysis tool's version, detects hot-spots, measures cyclomatic complexity (Radon CC), and drives stabilization refactors — ensuring the Agent always calls a healthy, well-maintained version.
 
@@ -92,7 +91,7 @@ This ensures recent diagnostics remain precise while historical memory retains s
 
 ### ENGRAM — Permanent Artifact Memory
 
-![ENGRAM Architecture](docs/images/engram_architecture.png)
+![ENGRAM Architecture](docs/images/figure_3_system_arch_1.png)
 
 **ENGRAM** permanently archives every analysis artifact (CSV, Parquet, images, reports) and enables Hybrid 3-way RRF semantic search (Exact SQL + HNSW + BM25 FTS), linked to HELIX for full version provenance.
 
