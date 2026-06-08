@@ -109,6 +109,9 @@ docs/plans/
 docs/logs/execution_trace.md
 docs/references/
 SESSION_RESUME.md
+CLAUDE.md
+PRESENTATION.md
+pyrightconfig.json
 
 # Benchmark 過程產物（Nextflow / Snakemake）
 .nextflow/
