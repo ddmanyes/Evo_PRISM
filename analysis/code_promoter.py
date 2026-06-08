@@ -730,6 +730,8 @@ def approve_candidate(suggested_name: str, description: str, version: str = "1.0
     if target_path.exists():
         raise FileExistsError(f"analysis/{suggested_name}.py 已存在，請先移除或重新命名。")
 
+    draft_content = draft_path.read_text(encoding="utf-8")
+    logger.info(f"[code_promoter] promoting {suggested_name!r}, draft preview: {draft_content[:300]!r}")
     shutil.move(str(draft_path), str(target_path))
     logger.info("搬移 %s → %s", draft_path.name, target_path)
 

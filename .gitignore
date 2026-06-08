@@ -62,7 +62,6 @@ docs/architecture_audit_report.md
 *.docx
 
 # uv lock file and venv symlink
-uv.lock
 .venv
 
 # 分析產出圖檔（路徑記錄於 analysis_history.result_path，圖檔本身不進 git）
@@ -123,8 +122,7 @@ benchmark/
 # scratch 臨時腳本
 scratch/
 
-# tests — 只保留 fixtures/ 測試數據，排除所有 .py 程式碼
-tests/*.py
+# tests — 排除私有模組與快取，保留測試程式碼
 tests/_*
 tests/__pycache__/
 

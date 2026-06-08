@@ -27,9 +27,7 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import DUCKDB_PATH
-
-BACKUP_ROOT = Path.home() / "bio_db_backups"
+from config.settings import DUCKDB_PATH, BACKUP_ROOT
 KEEP_DAYS = 7
 MIN_BACKUP_BYTES = 100 * 1024  # 100 KB 以下視為失敗（空目錄或僅 schema）
 STATUS_PATH = Path(__file__).parent.parent / "logs" / "backup_status.json"

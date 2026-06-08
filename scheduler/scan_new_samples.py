@@ -20,19 +20,23 @@ import duckdb
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DUCKDB_PATH
 
-_spec = importlib.util.spec_from_file_location(
-    "register_sample",
-    Path(__file__).parent.parent / "scripts" / "01_register_sample.py",
-)
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-scan_bulk_rna = _mod.scan_bulk_rna
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_spec = importlib.util.spec_from_file_location(
+    "register_sample",
+    Path(__file__).parent.parent / "scripts" / "01_register_sample.py",
+)
+_mod = importlib.util.module_from_spec(_spec)
+try:
+    _spec.loader.exec_module(_mod)
+except Exception as e:
+    logger.error(f"scan_new_samples: failed to load register_sample script: {e}")
+    raise
+scan_bulk_rna = _mod.scan_bulk_rna
 
 
 def main() -> None:

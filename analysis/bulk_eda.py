@@ -31,7 +31,7 @@ matplotlib.use("Agg")
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH
+from config.settings import BIO_DB_ROOT, DUCKDB_PATH, SUMMARY_MAX_CHARS
 from config.db_utils import safe_write
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.path_utils import results_dir
@@ -274,7 +274,8 @@ def generate_bulk_report(
     started_at = datetime.now(timezone.utc)
     params_json = json.dumps({"counts_path": str(counts_path or "auto")})
 
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
+    con = duckdb.connect(str(DUCKDB_PATH))
+    try:
         safe_write(
             con,
             """INSERT INTO analysis_history
@@ -284,7 +285,6 @@ def generate_bulk_report(
             [analysis_id, sample_id, params_json, requested_by, started_at],
         )
 
-    try:
         counts = load_counts(counts_path)
         qc = qc_stats(counts)
         top = top_genes(counts, n=20)
@@ -335,66 +335,66 @@ def generate_bulk_report(
         avg_total = qc["total_counts"].mean()
         avg_genes = int(qc["n_genes"].mean())
         n_samples = counts.shape[1]
-        summary = (
+        full_summary = (
             f"Bulk RNA {sample_id}：{n_samples} 樣本，"
             f"均 {avg_genes:,} 基因，均 total counts {avg_total:,.0f}。"
-        )[:50]
+        )
+        summary = full_summary[:SUMMARY_MAX_CHARS]
 
         completed_at = datetime.now(timezone.utc)
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
-            safe_write(
-                con,
-                """UPDATE analysis_history
-                      SET status='completed', result_path=?, completed_at=?, summary=?
-                    WHERE analysis_id=?""",
-                [str(report_path), completed_at, summary, analysis_id],
-            )
-            from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
-            write_diagnosis(con, analysis_id, success_diagnosis())
-            try:
-                from analysis.artifact_registry import register_artifact
+        safe_write(
+            con,
+            """UPDATE analysis_history
+                  SET status='completed', result_path=?, completed_at=?, summary=?
+                WHERE analysis_id=?""",
+            [str(report_path), completed_at, summary, analysis_id],
+        )
+        from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+        write_diagnosis(con, analysis_id, success_diagnosis())
+        try:
+            from analysis.artifact_registry import register_artifact
 
-                if qc_file and qc_file.exists():
-                    register_artifact(
-                        con,
-                        analysis_id,
-                        qc_file,
-                        "figure",
-                        "QC barplot（library size + 偵測基因數）",
-                        artifact_subtype="qc",
-                    )
-                if corr_file and corr_file.exists():
-                    register_artifact(
-                        con,
-                        analysis_id,
-                        corr_file,
-                        "figure",
-                        "樣本相關矩陣 heatmap",
-                        artifact_subtype="correlation",
-                    )
-                if pca_file and pca_file.exists():
-                    register_artifact(
-                        con,
-                        analysis_id,
-                        pca_file,
-                        "figure",
-                        "PCA 主成分分析圖",
-                        artifact_subtype="pca",
-                    )
+            if qc_file and qc_file.exists():
                 register_artifact(
                     con,
                     analysis_id,
-                    report_path,
-                    "report",
-                    "Bulk EDA 分析報告",
-                    artifact_subtype="eda_report",
+                    qc_file,
+                    "figure",
+                    "QC barplot（library size + 偵測基因數）",
+                    artifact_subtype="qc",
                 )
-            except Exception as _exc:
-                logger.warning("bulk_eda: register_artifact 失敗（非致命）: %s", _exc)
+            if corr_file and corr_file.exists():
+                register_artifact(
+                    con,
+                    analysis_id,
+                    corr_file,
+                    "figure",
+                    "樣本相關矩陣 heatmap",
+                    artifact_subtype="correlation",
+                )
+            if pca_file and pca_file.exists():
+                register_artifact(
+                    con,
+                    analysis_id,
+                    pca_file,
+                    "figure",
+                    "PCA 主成分分析圖",
+                    artifact_subtype="pca",
+                )
+            register_artifact(
+                con,
+                analysis_id,
+                report_path,
+                "report",
+                "Bulk EDA 分析報告",
+                artifact_subtype="eda_report",
+            )
+        except Exception as _exc:
+            logger.warning("bulk_eda: register_artifact 失敗（非致命）: %s", _exc)
 
     except Exception as _exc:
         logger.exception("bulk_eda 分析失敗  analysis_id=%s", analysis_id)
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
+        try:
             safe_write(
                 con,
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
@@ -402,7 +402,11 @@ def generate_bulk_report(
             )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
             write_diagnosis(con, analysis_id, classify_exception(_exc))
+        except Exception:
+            pass
         raise
+    finally:
+        con.close()
 
     logger.info("analysis_history 寫入完成  analysis_id=%s", analysis_id)
     return analysis_id, str(report_path)

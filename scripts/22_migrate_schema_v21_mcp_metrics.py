@@ -87,11 +87,20 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
         except Exception as exc:
             print(f"WARNING: VSS load failed ({exc}) — CHECKPOINT may fail")
 
-        # 1. 刪除並重建 mcp_tool_metrics 表
-        print("Recreating table: mcp_tool_metrics")
-        con.execute("DROP TABLE IF EXISTS mcp_tool_metrics CASCADE")
-        con.execute(_ddl_mcp_metrics_table())
-        con.execute(_ddl_mcp_metrics_index())
+        # 1. 建立或重建 mcp_tool_metrics 表（保護已有歷史資料）
+        print("Creating/verifying table: mcp_tool_metrics")
+        if _table_exists(con, "mcp_tool_metrics"):
+            row = con.execute("SELECT COUNT(*) FROM mcp_tool_metrics").fetchone()
+            count = row[0] if row else 0
+            if count > 0:
+                print(f"[v21] mcp_tool_metrics already has {count} rows — skipping DROP")
+            else:
+                con.execute("DROP TABLE IF EXISTS mcp_tool_metrics CASCADE")
+                con.execute(_ddl_mcp_metrics_table())
+                con.execute(_ddl_mcp_metrics_index())
+        else:
+            con.execute(_ddl_mcp_metrics_table())
+            con.execute(_ddl_mcp_metrics_index())
         if _table_exists(con, "mcp_tool_metrics"):
             print("Table: mcp_tool_metrics — OK")
         else:

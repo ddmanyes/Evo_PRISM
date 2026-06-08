@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,8 @@ import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import L1_CACHE_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def cleanup_expired(
@@ -44,7 +47,7 @@ def cleanup_expired(
     path = cache_path or L1_CACHE_PATH
 
     if not path.exists():
-        print(f"[cleanup_l1] Cache not found: {path}")
+        logger.warning("Cache not found: %s", path)
         return 0
 
     with duckdb.connect(str(path)) as con:
@@ -59,18 +62,19 @@ def cleanup_expired(
         ).fetchone()[0]
 
         if expired_count == 0:
-            print(f"[cleanup_l1] Nothing to clean ({datetime.now(timezone.utc).date()})")
+            logger.info("Nothing to clean (%s)", datetime.now(timezone.utc).date())
             return 0
 
         if dry_run:
-            print(f"[cleanup_l1] DRY-RUN: would delete {expired_count} expired records")
+            logger.info("DRY-RUN: would delete %d expired records", expired_count)
             return expired_count
 
         con.execute("DELETE FROM memory_recent WHERE expires_at < now()")
         con.execute("CHECKPOINT")
-        print(
-            f"[cleanup_l1] Deleted {expired_count} expired records "
-            f"({datetime.now(timezone.utc).date()})"
+        logger.info(
+            "Deleted %d expired records (%s)",
+            expired_count,
+            datetime.now(timezone.utc).date(),
         )
         return expired_count
 
@@ -101,7 +105,8 @@ def stats(cache_path: Path | None = None) -> dict:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
     dry_run = "--dry-run" in sys.argv
     s = stats()
-    print(f"[cleanup_l1] cache stats: {s}")
+    logger.info("cache stats: %s", s)
     cleanup_expired(dry_run=dry_run)

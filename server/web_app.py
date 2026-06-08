@@ -31,7 +31,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import sys
 
@@ -270,9 +270,9 @@ def _cleanup_old_sessions() -> None:
 
 class ChatRequest(BaseModel):
     session_id: str
-    message: str
+    message: str = Field(..., max_length=50_000)
     backend: str = ""  # "local" | "claude" | ""（空字串讀 INFERENCE_BACKEND env）
-    image_base64: str = ""  # data:image/png;base64,... 或純 base64
+    image_base64: str = Field("", max_length=20_000_000)  # data:image/png;base64,... 或純 base64
 
 
 class FeedbackRequest(BaseModel):

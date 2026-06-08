@@ -1987,7 +1987,6 @@ def create_http_app():
         app=server,
         stateless=True,
     )
-    auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip() or None
 
     @contextlib.asynccontextmanager
     async def _mcp_lifespan():
@@ -2011,6 +2010,7 @@ def create_http_app():
                     await send({"type": "lifespan.shutdown.complete"})
                     return
         else:
+            auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip() or None
             if auth_token is not None:
                 presented = _extract_bearer_token(scope)
                 if not presented:

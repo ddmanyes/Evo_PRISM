@@ -21,9 +21,7 @@ from pathlib import Path
 import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import DUCKDB_PATH
-
-BACKUP_ROOT = Path.home() / "bio_db_backups"
+from config.settings import DUCKDB_PATH, BACKUP_ROOT
 VERIFY_DB = Path("/tmp/bio_memory_verify.duckdb")
 STATUS_PATH = Path(__file__).parent.parent / "logs" / "restore_test_status.json"
 

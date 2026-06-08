@@ -36,6 +36,8 @@ def _check_port(port: int, timeout: float = 1.0) -> bool:
 
 
 def _rows_to_dicts(cur) -> list[dict]:
+    if not cur.description:
+        return []
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 

@@ -243,6 +243,7 @@ def run_integration(
     -------
     dict，keys: rna_mean, prot_mean, correlation, lag, pathway_rna, pathway_prot。
     """
+    # TODO H11: write to analysis_history after analysis completes
     out_dir = Path(output_dir) if output_dir else RESULTS_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 

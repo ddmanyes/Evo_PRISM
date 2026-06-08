@@ -25,6 +25,7 @@ MCSEG_RESULTS_ROOT = Path(os.getenv("MCSEG_RESULTS_ROOT", BIO_DB_ROOT / "results
 # ── DuckDB ─────────────────────────────────────────────────
 DUCKDB_PATH = Path(os.getenv("DUCKDB_PATH", BIO_DB_ROOT / "bio_memory.duckdb"))
 L1_CACHE_PATH = Path(os.getenv("L1_CACHE_PATH", L1_ROOT / "hermes_cache.duckdb"))
+BACKUP_ROOT = Path(os.getenv("BACKUP_ROOT", Path.home() / "bio_db_backups"))
 
 # ── Embedding ──────────────────────────────────────────────
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "llamacpp")  # "llamacpp" | "google" | "openai"
@@ -177,3 +178,5 @@ def resolve_artifact_path(rel_path: str) -> Path:
 # ── 開發設定 ───────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+
+SUMMARY_MAX_CHARS: int = 50

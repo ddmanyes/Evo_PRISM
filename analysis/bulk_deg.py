@@ -36,7 +36,7 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.db_utils import safe_write
-from config.settings import DUCKDB_PATH
+from config.settings import DUCKDB_PATH, SUMMARY_MAX_CHARS
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.tool_registry import register_tool_on_import
@@ -354,7 +354,8 @@ def run_deg_analysis(
         artifact_files.append((report_path, "report", "Bulk DEG 分析報告", "deg_report"))
 
         total_sig = int(summary_df[["n_sig_up", "n_sig_down"]].to_numpy().sum())
-        summary = (f"Bulk DEG {sample_id}：{len(comparisons)} 對照，共 {total_sig} 顯著基因。")[:80]
+        full_summary = f"Bulk DEG {sample_id}：{len(comparisons)} 對照，共 {total_sig} 顯著基因。"
+        summary = full_summary[:SUMMARY_MAX_CHARS]
 
         completed_at = datetime.now(timezone.utc)
         safe_write(

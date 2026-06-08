@@ -193,6 +193,7 @@ def score_pathways(
     -------
     Pathway × Sample 評分 DataFrame。
     """
+    # TODO H11: write to analysis_history after analysis completes
     gene_sets = load_gene_sets(gene_sets_path)
 
     if method == "zscore":

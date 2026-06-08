@@ -153,6 +153,14 @@ BLOCKED_PATTERNS = [
     "__builtins__",
     "__class__",
     "__subclasses__",
+    "__globals__",
+    "__locals__",
+    "f_globals",
+    "f_locals",
+    "gi_frame",
+    "dill",
+    "cloudpickle",
+    "joblib.dump",
     "vars(",
     # ── 資源耗盡 / timeout 繞過 ──────────────────────────────────────────────
     "signal.",       # signal handler 可中斷 timeout 機制
@@ -297,6 +305,9 @@ def sandbox_exec(code: str, timeout: int = 60, *, preamble: str = "") -> ExecRes
         raise SecurityError(reason)
 
     if preamble:
+        ok_pre, reason_pre = is_safe(preamble)
+        if not ok_pre:
+            raise SecurityError(f"preamble blocked: {reason_pre}")
         code = preamble + "\n" + code
 
     # 最小化環境：不繼承 os.environ，避免洩漏 API 金鑰。

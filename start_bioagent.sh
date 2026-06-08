@@ -104,7 +104,7 @@ if [ "$USE_LOCAL" -eq 1 ]; then
             --flash-attn on \
             -ctk q8_0 \
             -ctv q8_0 \
-            --threads "$(sysctl -n hw.physicalcpu 2>/dev/null || echo 4)" \
+            --threads "$(nproc 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)" \
             > "$LOG_DIR/llama_server.log" 2>&1 &
         VISION_PID=$!
         info "Gemma 4 PID=$VISION_PID  log -> $LOG_DIR/llama_server.log"

@@ -8,6 +8,7 @@ get_connection()    — 統一連線入口，確保單一寫入者
 
 import contextlib
 import duckdb
+import threading
 from pathlib import Path
 import sys
 
@@ -16,6 +17,7 @@ from config.settings import DUCKDB_PATH
 
 # 模組級單例連線（同程序內共用，避免多連線衝突）
 _con: duckdb.DuckDBPyConnection | None = None
+_con_lock = threading.Lock()
 
 
 def _bootstrap_vss(con: duckdb.DuckDBPyConnection, read_only: bool = False) -> None:
@@ -66,10 +68,11 @@ def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
         con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
         _bootstrap_vss(con, read_only=True)
         return con
-    if _con is None:
-        _con = duckdb.connect(str(DUCKDB_PATH))
-        _bootstrap_vss(_con)
-    return _con
+    with _con_lock:
+        if _con is None:
+            _con = duckdb.connect(str(DUCKDB_PATH))
+            _bootstrap_vss(_con)
+        return _con
 
 
 def safe_write(con: duckdb.DuckDBPyConnection, sql: str, params: list = None) -> None:
@@ -83,9 +86,6 @@ def safe_write(con: duckdb.DuckDBPyConnection, sql: str, params: list = None) ->
     縮小斷電損壞視窗：損壞頂多丟失「上次 CHECKPOINT 之後的寫入」。
     """
     con.execute(sql, params or [])
-    # CHECKPOINT 時 DuckDB 需要序列化所有 index，包含 HNSW（analysis_artifacts）。
-    # 若 VSS 未載入會拋 FatalException，因此在 CHECKPOINT 前確保已載入。
-    _bootstrap_vss(con)
     con.execute("CHECKPOINT")
 
 
@@ -186,17 +186,22 @@ def db_health_check(con: duckdb.DuckDBPyConnection | None = None) -> dict:
 
     def _run(c: duckdb.DuckDBPyConnection) -> dict:
         result = {}
-        result["sample_count"] = c.execute("SELECT COUNT(*) FROM sample_registry").fetchone()[0]
-        result["history_count"] = c.execute("SELECT COUNT(*) FROM analysis_history").fetchone()[0]
-        result["stale_count"] = c.execute(
-            "SELECT COUNT(*) FROM analysis_history WHERE status = 'stale'"
-        ).fetchone()[0]
-        result["running_count"] = c.execute(
-            "SELECT COUNT(*) FROM analysis_history WHERE status = 'running'"
-        ).fetchone()[0]
-        result["l2_ready_count"] = c.execute(
-            "SELECT COUNT(*) FROM sample_registry WHERE l2_ready = TRUE"
-        ).fetchone()[0]
+        try:
+            result["sample_count"] = c.execute("SELECT COUNT(*) FROM sample_registry").fetchone()[0]
+            result["history_count"] = c.execute("SELECT COUNT(*) FROM analysis_history").fetchone()[0]
+            result["stale_count"] = c.execute(
+                "SELECT COUNT(*) FROM analysis_history WHERE status = 'stale'"
+            ).fetchone()[0]
+            result["running_count"] = c.execute(
+                "SELECT COUNT(*) FROM analysis_history WHERE status = 'running'"
+            ).fetchone()[0]
+            result["l2_ready_count"] = c.execute(
+                "SELECT COUNT(*) FROM sample_registry WHERE l2_ready = TRUE"
+            ).fetchone()[0]
+        except Exception as e:
+            result["schema_error"] = str(e)
+            result["sample_count"] = -1
+            result["history_count"] = -1
         return result
 
     if con is not None:

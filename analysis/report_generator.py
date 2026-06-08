@@ -102,15 +102,21 @@ from analysis.tool_registry import register_tool_on_import
 
 
 def _l2_expr_glob(sample_id: str) -> str:
-    from config.settings import L2_ROOT
+    from config.settings import BIO_DB_ROOT, L2_ROOT
 
-    return str(L2_ROOT / sample_id / "expression" / "*.parquet")
+    resolved = (L2_ROOT / sample_id).resolve()
+    if not resolved.is_relative_to(BIO_DB_ROOT.resolve()):
+        raise ValueError(f"Path traversal detected: {sample_id!r}")
+    return str(resolved / "expression" / "*.parquet")
 
 
 def _l2_obs_path(sample_id: str) -> str:
-    from config.settings import L2_ROOT
+    from config.settings import BIO_DB_ROOT, L2_ROOT
 
-    return str(L2_ROOT / sample_id / "obs_metadata.parquet")
+    resolved = (L2_ROOT / sample_id).resolve()
+    if not resolved.is_relative_to(BIO_DB_ROOT.resolve()):
+        raise ValueError(f"Path traversal detected: {sample_id!r}")
+    return str(resolved / "obs_metadata.parquet")
 
 
 def _collect_stats(sample_id: str, db_path: Path) -> dict:

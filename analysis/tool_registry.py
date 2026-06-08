@@ -1521,11 +1521,11 @@ def auto_revert_stale_stabilizations(
     reverted: list[str] = []
     for log_id, tool_name, created_at in rows:
         con.execute(
-            """
+            f"""
             UPDATE tool_stabilization_log
             SET    outcome = 'reverted', closed_at = ?,
                    action_taken = COALESCE(action_taken || ' | ', '') ||
-                                  '[auto-reverted: exceeded 30-day open limit]'
+                                  '[auto-reverted: exceeded {days}-day open limit]'
             WHERE  log_id = ?
             """,
             [now, str(log_id)],
@@ -1628,6 +1628,8 @@ def register_tool_on_import(
             analysis_id = None
             if isinstance(res, tuple) and len(res) > 0 and isinstance(res[0], str):
                 analysis_id = res[0]
+            elif isinstance(res, dict) and "analysis_id" in res:
+                analysis_id = res["analysis_id"]
             elif isinstance(res, str):
                 analysis_id = res
 
@@ -1643,8 +1645,8 @@ def register_tool_on_import(
                 if con:
                     try:
                         backfill_tool_id(con, tool_name, analysis_id)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"register_tool_on_import: backfill_tool_id failed: {e}")
                 else:
                     import sys
                     mod = sys.modules.get(fn.__module__)
@@ -1653,8 +1655,8 @@ def register_tool_on_import(
                     try:
                         with duckdb.connect(str(path)) as conn:
                             backfill_tool_id(conn, tool_name, analysis_id)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"register_tool_on_import: backfill_tool_id failed: {e}")
             return res
         return wrapper
     return decorator
