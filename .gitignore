@@ -135,3 +135,15 @@ docs/images/Figure5_RRF_Ablation.png
 docs/images/Figure6_Pipeline_Comparison.png
 docs/images/Figure7_HELIX_Code_Promotion.png
 
+
+# MSseg 獨立專案目錄（整個目錄不公開）
+MSseg/
+
+# 工具二進位（bftools 等，體積大且非專案本體）
+tools/
+
+# 文件鏡像目錄
+docs/docs/
+
+# Windows 路徑產出物
+i:\\
