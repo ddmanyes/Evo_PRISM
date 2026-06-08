@@ -898,10 +898,11 @@ _google_client = None
 def _get_google_client():
     global _google_client
     if _google_client is None:
-        from google import genai
         from config.settings import GOOGLE_API_KEY, validate_inference_backend
 
         validate_inference_backend("google")  # 缺 key 立即 raise，不讓 SDK 收到空 key
+        from google import genai
+
         _google_client = genai.Client(api_key=GOOGLE_API_KEY)
     return _google_client
 
