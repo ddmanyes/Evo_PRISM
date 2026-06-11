@@ -172,6 +172,8 @@ def register_tool(
     fn: Callable,
     version: str,
     description: str,
+    *,
+    env_hash: str | None = None,
 ) -> str:
     """Register *fn* in the ``tools`` table and return its ``tool_id``.
 
@@ -190,6 +192,11 @@ def register_tool(
         fn:          The Python callable whose source will be hashed.
         version:     Semver string, e.g. ``"1.0.0"``.
         description: Human-readable description stored in the row.
+        env_hash:    SHA256[:16] of ``uv.lock`` at registration time — use
+                     ``config.settings.ENV_HASH``.  Records the package
+                     environment so analyses can be traced back to a specific
+                     dependency set.  Stored in ``tools.env_hash`` (v27+);
+                     silently omitted on pre-v27 schemas.
 
     Returns:
         UUID string of the active ``tool_id`` for this tool.
@@ -245,26 +252,35 @@ def register_tool(
 
     # --- insert new active row ---
     new_tool_id = str(uuid.uuid4())
-    con.execute(
-        """
-        INSERT INTO tools
-            (tool_id, tool_name, version, content_hash,
-             module_path, function_name, description, status,
-             created_at, revision_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
-        """,
-        [
-            new_tool_id,
-            tool_name,
-            version,
-            content_hash,
-            module_path,
-            function_name,
-            description,
-            now,
-            next_revision,
-        ],
-    )
+    _has_env_hash_col = con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'tools' AND column_name = 'env_hash' LIMIT 1"
+    ).fetchone() is not None
+    if _has_env_hash_col:
+        con.execute(
+            """
+            INSERT INTO tools
+                (tool_id, tool_name, version, content_hash,
+                 module_path, function_name, description, status,
+                 created_at, revision_count, env_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+            """,
+            [new_tool_id, tool_name, version, content_hash,
+             module_path, function_name, description, now, next_revision, env_hash],
+        )
+    else:
+        logger.warning("register_tool: env_hash column absent (run 00_init_db.py to migrate)")
+        con.execute(
+            """
+            INSERT INTO tools
+                (tool_id, tool_name, version, content_hash,
+                 module_path, function_name, description, status,
+                 created_at, revision_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            """,
+            [new_tool_id, tool_name, version, content_hash,
+             module_path, function_name, description, now, next_revision],
+        )
 
     # --- compute line-level churn vs previous snapshot ---
     new_source = _safe_getsource(fn)
@@ -1688,6 +1704,7 @@ def register_all_lazy_tools(con: duckdb.DuckDBPyConnection) -> int:
                 fn=item["fn"],
                 version=item["version"],
                 description=item["description"],
+                env_hash=item.get("env_hash"),
             )
             registered_count += 1
         except Exception as exc:

@@ -4,10 +4,22 @@ All file paths and constants are defined here — no hardcoding in scripts.
 """
 
 from pathlib import Path
+import hashlib
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _compute_env_hash() -> str | None:
+    """SHA256[:16] of uv.lock — records the package environment at import time."""
+    lock = Path(__file__).parent.parent / "uv.lock"
+    if not lock.exists():
+        return None
+    return hashlib.sha256(lock.read_bytes()).hexdigest()[:16]
+
+
+ENV_HASH: str | None = _compute_env_hash()
 
 # ── 根目錄 ────────────────────────────────────────────────
 BIO_DB_ROOT = Path(os.getenv("BIO_DB_ROOT", Path(__file__).parent.parent))

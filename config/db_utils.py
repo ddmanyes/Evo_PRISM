@@ -7,6 +7,8 @@ get_connection()    — 統一連線入口，確保單一寫入者
 """
 
 import contextlib
+import hashlib
+import json
 import duckdb
 import threading
 from pathlib import Path
@@ -75,6 +77,18 @@ def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
         return _con
 
 
+def param_hash(parameters: dict | None) -> str | None:
+    """Return MD5[:16] of canonically serialised *parameters*, or None if empty.
+
+    Use when writing to analysis_history.parameter_hash so that re-runs with
+    identical parameters can be distinguished from re-runs with different ones.
+    """
+    if not parameters:
+        return None
+    canon = json.dumps(parameters, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.md5(canon.encode()).hexdigest()[:16]
+
+
 def safe_write(con: duckdb.DuckDBPyConnection, sql: str, params: list = None) -> None:
     """
     執行寫入並立即 CHECKPOINT。
@@ -123,6 +137,61 @@ def cleanup_stale_runs(con: duckdb.DuckDBPyConnection, hours: int = 24) -> int:
         con.execute("CHECKPOINT")
         print(f"[db_utils] cleaned {cleaned} stale running record(s)")
     return cleaned
+
+
+def get_canonical_id(
+    con: duckdb.DuckDBPyConnection,
+    sample_id: str,
+    analysis_type: str,
+) -> "str | None":
+    """Return the analysis_id of the current canonical run, or None if none exists."""
+    row = con.execute(
+        """
+        SELECT analysis_id FROM analysis_history
+        WHERE sample_id = ? AND analysis_type = ?
+          AND list_contains(COALESCE(tags, []), 'canonical')
+        ORDER BY completed_at DESC
+        LIMIT 1
+        """,
+        [sample_id, analysis_type],
+    ).fetchone()
+    return str(row[0]) if row else None
+
+
+def mark_canonical(
+    con: duckdb.DuckDBPyConnection,
+    analysis_id: str,
+    sample_id: str,
+    analysis_type: str,
+) -> None:
+    """Mark analysis_id as canonical; demote previous canonical runs to superseded."""
+    # Demote existing canonical runs for same (sample_id, analysis_type)
+    con.execute(
+        """
+        UPDATE analysis_history
+        SET tags = list_append(
+            list_filter(COALESCE(tags, []), t -> t NOT IN ('canonical', 'superseded')),
+            'superseded'
+        )
+        WHERE sample_id = ? AND analysis_type = ?
+          AND list_contains(COALESCE(tags, []), 'canonical')
+          AND analysis_id != ?
+        """,
+        [sample_id, analysis_type, analysis_id],
+    )
+    # Promote new run to canonical
+    con.execute(
+        """
+        UPDATE analysis_history
+        SET tags = list_append(
+            list_filter(COALESCE(tags, []), t -> t NOT IN ('canonical', 'superseded')),
+            'canonical'
+        )
+        WHERE analysis_id = ?
+        """,
+        [analysis_id],
+    )
+    con.execute("CHECKPOINT")
 
 
 def wal_preflight_check(db_path: "Path | str | None" = None) -> dict:
