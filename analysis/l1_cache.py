@@ -30,27 +30,117 @@ from config.settings import L1_CACHE_PATH, L1_COSINE_THRESHOLD, L1_TTL_DAYS
 logger = logging.getLogger(__name__)
 
 
-# ── 3-way RRF 常數（論文 §2.4.1）──────────────────────────────────────────────
+# ── 4-way RRF 常數（論文 §2.4.1 + B5 BM25）──────────────────────────────────
+# 權重總和保持 1.0，確保 perfect score = 1/(_RRF_K+1) 不變（向後相容）。
+# BM25 解決基因別名漂移（PTPRC↔CD45、MS4A1↔CD20）；FTS 不可用時退化為 3-way。
 
-_RRF_K: int = 60  # 標準 RRF 平滑常數
-_W1: float = 0.5  # cosine similarity 權重
-_W2: float = 0.3  # input fingerprint 匹配權重
-_W3: float = 0.2  # context hash 匹配權重
+_RRF_K: int = 60       # 標準 RRF 平滑常數
+_W1: float = 0.4       # cosine similarity 權重（原 0.5）
+_W_BM25: float = 0.3   # BM25 全文搜尋權重（新增）
+_W2: float = 0.2       # input fingerprint 匹配權重（原 0.3）
+_W3: float = 0.1       # context hash 匹配權重（原 0.2）
 _MISMATCH_RANK: int = 9999  # 不匹配時的懲罰 rank
 
-
-def _rrf_score(rank_cosine: int, rank_fp: int, rank_ctx: int) -> float:
-    """3-way Reciprocal Rank Fusion 分數。"""
-    return _W1 / (rank_cosine + _RRF_K) + _W2 / (rank_fp + _RRF_K) + _W3 / (rank_ctx + _RRF_K)
+# FTS sidecar schema name（PRAGMA create_fts_index 建立）
+_FTS_SCHEMA_L1 = "fts_main_memory_recent"
 
 
-def _rrf_hit_threshold(*, has_fp: bool = False, has_ctx: bool = False) -> float:
+def _rrf_score(
+    rank_cosine: int,
+    rank_fp: int,
+    rank_ctx: int,
+    rank_bm25: int = 1,
+) -> float:
+    """4-way Reciprocal Rank Fusion 分數。
+
+    rank_bm25=1（預設）代表 FTS 不可用或視為完美命中，不影響排序。
+    FTS 可用時傳入實際 BM25 rank；未命中傳入 _MISMATCH_RANK。
+    """
+    return (
+        _W1 / (rank_cosine + _RRF_K)
+        + _W_BM25 / (rank_bm25 + _RRF_K)
+        + _W2 / (rank_fp + _RRF_K)
+        + _W3 / (rank_ctx + _RRF_K)
+    )
+
+
+def _rrf_hit_threshold(
+    *, has_fp: bool = False, has_ctx: bool = False, has_bm25: bool = False
+) -> float:
     """計算 RRF 命中門檻（完美分與最差失配分的中點）。"""
-    perfect = _rrf_score(1, 1, 1)
-    miss_fp = _rrf_score(1, _MISMATCH_RANK, 1)
-    miss_ctx = _rrf_score(1, 1, _MISMATCH_RANK)
-    worst_miss = min(miss_fp if has_fp else perfect, miss_ctx if has_ctx else perfect)
+    perfect = _rrf_score(1, 1, 1, 1)
+    worst_miss = perfect
+    if has_fp:
+        worst_miss = min(worst_miss, _rrf_score(1, _MISMATCH_RANK, 1, 1))
+    if has_ctx:
+        worst_miss = min(worst_miss, _rrf_score(1, 1, _MISMATCH_RANK, 1))
+    if has_bm25:
+        worst_miss = min(worst_miss, _rrf_score(1, 1, 1, _MISMATCH_RANK))
     return (perfect + worst_miss) / 2
+
+
+# ── FTS 工具 ──────────────────────────────────────────────────────────────────
+
+
+def _setup_fts(con: duckdb.DuckDBPyConnection) -> bool:
+    """Try to load FTS extension. Returns True on success."""
+    try:
+        con.execute("LOAD fts")
+        return True
+    except Exception:
+        return False
+
+
+def _fts_l1_available(con: duckdb.DuckDBPyConnection) -> bool:
+    """Return True if FTS index on memory_recent exists and FTS is loadable."""
+    try:
+        con.execute("LOAD fts")
+        row = con.execute(
+            "SELECT 1 FROM information_schema.schemata WHERE schema_name = ?",
+            [_FTS_SCHEMA_L1],
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+def rebuild_fts_index(cache_path: Optional[Path] = None) -> dict:
+    """Create or rebuild the BM25 FTS index on memory_recent.
+
+    Should be called by the daily cleanup scheduler after expired records are removed.
+    PRAGMA create_fts_index with overwrite=1 is idempotent (drops + recreates atomically).
+
+    Returns status dict with row_count and elapsed_sec.
+    """
+    import time as _time
+
+    path = cache_path or L1_CACHE_PATH
+    if not path.exists():
+        return {"status": "skipped", "reason": "cache file does not exist"}
+
+    try:
+        with duckdb.connect(str(path)) as con:
+            _setup_vss(con)
+            if not _setup_fts(con):
+                return {"status": "skipped", "reason": "FTS extension unavailable"}
+
+            row_count = con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0]
+            if row_count == 0:
+                return {"status": "skipped", "reason": "empty table", "row_count": 0}
+
+            logger.info("[rebuild_fts_index] Rebuilding FTS index (%d rows)...", row_count)
+            t0 = _time.time()
+            con.execute(
+                "PRAGMA create_fts_index("
+                "'memory_recent', 'id', 'query_text', 'report_text', overwrite=1)"
+            )
+            con.execute("CHECKPOINT")
+            elapsed = _time.time() - t0
+            logger.info("[rebuild_fts_index] Done in %.1fs", elapsed)
+            return {"status": "ok", "row_count": row_count, "elapsed_sec": round(elapsed, 2)}
+    except Exception as exc:
+        logger.warning("[rebuild_fts_index] Failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
 
 
 # ── 輸入指紋 / 上下文雜湊 ────────────────────────────────────────────────────
@@ -222,10 +312,11 @@ def semantic_search(
     cache_path: Optional[Path] = None,
     embedding_provider: Optional[str] = None,
 ) -> list[dict]:
-    """語意搜尋 L1 快取（HNSW cosine similarity，可選 3-way RRF）。
+    """語意搜尋 L1 快取（HNSW cosine similarity，可選 4-way RRF）。
 
-    若提供 input_fingerprint 或 context_hash，啟用 3-way RRF 模式：
-      - 三路指標均符合 → 命中，結果附帶 rrf_score
+    若提供 input_fingerprint 或 context_hash，啟用 RRF 模式：
+      - cosine + BM25（FTS 可用時）+ fingerprint + context_hash 四路融合
+      - FTS 不可用時自動退化為 3-way（cosine + fingerprint + context_hash）
       - 任一指標不符（數據或上下文已變更）→ cache miss
     否則退化為純 cosine 模式（向後相容）。
 
@@ -254,9 +345,11 @@ def semantic_search(
 
     query_vec = embed_text(query, provider=embedding_provider)
     use_rrf = input_fingerprint is not None or context_hash is not None
+    bm25_rank: dict[str, int] = {}  # populated in RRF branch when FTS is available
 
     with duckdb.connect(str(path)) as con:
         _setup_vss(con)
+        _setup_fts(con)
         if con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0] == 0:  # type: ignore[index]
             return []
 
@@ -284,6 +377,26 @@ def semantic_search(
                 LIMIT ?
             """
             rows = con.execute(sql, params).fetchall()
+
+            # ── BM25 第四路：FTS 可用時執行 ──────────────────────────────────
+            if _fts_l1_available(con):
+                try:
+                    bm25_sql = f"""
+                        SELECT id::VARCHAR,
+                               {_FTS_SCHEMA_L1}.match_bm25(id, ?) AS bm25_score
+                        FROM   memory_recent
+                        WHERE  expires_at > now()
+                               AND {_FTS_SCHEMA_L1}.match_bm25(id, ?) IS NOT NULL
+                               {filter_clause}
+                        ORDER  BY bm25_score DESC
+                        LIMIT  ?
+                    """
+                    bm25_rows = con.execute(
+                        bm25_sql, [query, query] + extra_params + [n * 4]
+                    ).fetchall()
+                    bm25_rank = {str(r[0]): rank for rank, r in enumerate(bm25_rows, start=1)}
+                except Exception as _bm25_exc:
+                    logger.warning("L1 BM25 search failed (degrading to 3-way): %s", _bm25_exc)
         else:
             params = [query_vec] + extra_params + [n]
             sql = f"""
@@ -312,10 +425,12 @@ def semantic_search(
     if not use_rrf:
         return [dict(zip(base_cols, row)) for row in rows if row[-1] >= threshold]
 
-    # ── 3-way RRF 模式 ──────────────────────────────────────────────────────
+    # ── 4-way RRF 模式（BM25 可用時）/ 3-way（FTS 不可用時降級）────────────────
+    has_bm25 = bool(bm25_rank)
     rrf_threshold = _rrf_hit_threshold(
         has_fp=input_fingerprint is not None,
         has_ctx=context_hash is not None,
+        has_bm25=has_bm25,
     )
     results: list[dict] = []
     for rank_cosine, row in enumerate(rows, start=1):
@@ -330,8 +445,10 @@ def semantic_search(
             1 if (input_fingerprint is None or stored_fp == input_fingerprint) else _MISMATCH_RANK
         )
         rank_ctx = 1 if (context_hash is None or stored_ctx == context_hash) else _MISMATCH_RANK
+        # rank_bm25=1 when FTS unavailable → BM25 component is neutral (no penalty)
+        rank_bm25 = bm25_rank.get(str(rec["id"]), _MISMATCH_RANK) if has_bm25 else 1
 
-        rrf = _rrf_score(rank_cosine, rank_fp, rank_ctx)
+        rrf = _rrf_score(rank_cosine, rank_fp, rank_ctx, rank_bm25)
         if rrf < rrf_threshold:
             continue
 

@@ -132,6 +132,18 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
         )
     except Exception as e:
         print(f"WARNING: could not ensure parameter_hash column: {e}")
+    # v28 migration: summary_metrics — structured analysis metrics as JSON.
+    # Enables SQL-level filtering without parsing the summary prefix string.
+    # bulk_eda:         {"n_samples", "avg_detected_genes", "avg_total_counts"}
+    # bulk_deg:         {"n_comparisons", "n_sig_total", "n_sig_up", "n_sig_down"}
+    # bulk_enrichment:  {"n_directions", "n_libraries", "n_sig_pathways"}
+    try:
+        con.execute(
+            "ALTER TABLE analysis_history "
+            "ADD COLUMN IF NOT EXISTS summary_metrics JSON DEFAULT NULL"
+        )
+    except Exception as e:
+        print(f"WARNING: could not ensure summary_metrics column: {e}")
     print("Table: analysis_history — OK")
 
     # tools — versioned tool registry (content-hash based)

@@ -111,4 +111,8 @@ if __name__ == "__main__":
     dry_run = "--dry-run" in sys.argv
     s = stats()
     logger.info("cache stats: %s", s)
-    cleanup_expired(dry_run=dry_run)
+    n_cleaned = cleanup_expired(dry_run=dry_run)
+    if not dry_run:
+        from analysis.l1_cache import rebuild_fts_index
+        result = rebuild_fts_index()
+        logger.info("FTS index rebuild: %s", result)

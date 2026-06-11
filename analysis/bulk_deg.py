@@ -376,14 +376,21 @@ def run_deg_analysis(
             f"Bulk DEG {sample_id}：{n_cmp} 對照，共 {total_sig} 顯著基因。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
+        summary_metrics = json.dumps({
+            "n_comparisons": n_cmp,
+            "n_sig_total": total_sig,
+            "n_sig_up": int(summary_df["n_sig_up"].sum()),
+            "n_sig_down": int(summary_df["n_sig_down"].sum()),
+        })
 
         completed_at = datetime.now(timezone.utc)
         safe_write(
             con,
             """UPDATE analysis_history
-                  SET status='completed', result_path=?, completed_at=?, summary=?
+                  SET status='completed', result_path=?, completed_at=?, summary=?,
+                      summary_metrics=?
                 WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, analysis_id],
+            [str(report_path), completed_at, summary, summary_metrics, analysis_id],
         )
         mark_canonical(con, analysis_id, sample_id, "bulk_deg")
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis

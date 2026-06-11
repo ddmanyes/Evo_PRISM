@@ -361,14 +361,20 @@ def generate_bulk_report(
             f"均 {avg_genes:,} 基因，avg_total={avg_total:,.0f}。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
+        summary_metrics = json.dumps({
+            "n_samples": n_samples,
+            "avg_detected_genes": avg_genes,
+            "avg_total_counts": int(avg_total),
+        })
 
         completed_at = datetime.now(timezone.utc)
         safe_write(
             con,
             """UPDATE analysis_history
-                  SET status='completed', result_path=?, completed_at=?, summary=?
+                  SET status='completed', result_path=?, completed_at=?, summary=?,
+                      summary_metrics=?
                 WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, analysis_id],
+            [str(report_path), completed_at, summary, summary_metrics, analysis_id],
         )
         mark_canonical(con, analysis_id, sample_id, "bulk_eda")
 

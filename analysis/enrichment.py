@@ -332,14 +332,21 @@ def run_ora(
             f"[libs={n_lib}|sig={total_sig}] "
             f"Bulk ORA {sample_id}：{n_lib} library × up/down，共 {total_sig} 顯著通路。"
         )[:80]
+        n_directions = int(summary_df["direction"].nunique())
+        summary_metrics = json.dumps({
+            "n_directions": n_directions,
+            "n_libraries": n_lib,
+            "n_sig_pathways": total_sig,
+        })
 
         completed_at = datetime.now(timezone.utc)
         safe_write(
             con,
             """UPDATE analysis_history
-                  SET status='completed', result_path=?, completed_at=?, summary=?
+                  SET status='completed', result_path=?, completed_at=?, summary=?,
+                      summary_metrics=?
                 WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, analysis_id],
+            [str(report_path), completed_at, summary, summary_metrics, analysis_id],
         )
         mark_canonical(con, analysis_id, sample_id, "bulk_enrichment")
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
