@@ -191,6 +191,7 @@ def run_ora(
     top_term: int = 10,
     requested_by: str = "agent",
     con: Optional[duckdb.DuckDBPyConnection] = None,
+    parent_analysis_id: Optional[str] = None,
 ) -> tuple[str, str]:
     """對一張 DEG 表跑 ORA（up / down × N 個 library），產出彙整報告。
 
@@ -213,29 +214,34 @@ def run_ora(
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps(
-        {
-            "deg_table_path": str(deg_table_path),
-            "libraries": list(libraries),
-            "organism": organism,
-            "fc_threshold": fc_threshold,
-            "pval_threshold": pval_threshold,
-            "top_term": top_term,
-        }
-    )
+    _params = {
+        "deg_table_path": str(deg_table_path),
+        "libraries": list(libraries),
+        "organism": organism,
+        "fc_threshold": fc_threshold,
+        "pval_threshold": pval_threshold,
+        "top_term": top_term,
+    }
+    params_json = json.dumps(_params)
+
+    from config.db_utils import get_canonical_id, mark_canonical, param_hash
 
     _own_con = con is None
     if con is None:
         con = duckdb.connect(str(DUCKDB_PATH))
 
     try:
+        if parent_analysis_id is None:
+            parent_analysis_id = get_canonical_id(con, sample_id, "bulk_enrichment")
+
         safe_write(
             con,
             """INSERT INTO analysis_history
                    (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at)
-               VALUES (?, ?, 'bulk_enrichment', ?, 'running', ?, ?)""",
-            [analysis_id, sample_id, params_json, requested_by, started_at],
+                    requested_by, started_at, parent_analysis_id, parameter_hash)
+               VALUES (?, ?, 'bulk_enrichment', ?, 'running', ?, ?, ?, ?)""",
+            [analysis_id, sample_id, params_json, requested_by, started_at,
+             parent_analysis_id, param_hash(_params)],
         )
 
         deg = pd.read_csv(deg_table_path, index_col=0)
@@ -314,8 +320,10 @@ def run_ora(
         artifact_files.append((report_path, "report", "Bulk 富集分析報告", "enrichment_report"))
 
         total_sig = int(summary_df["n_terms_sig"].sum())
+        n_lib = len(libraries)
         summary = (
-            f"Bulk ORA {sample_id}：{len(libraries)} library × up/down，共 {total_sig} 顯著通路。"
+            f"[libs={n_lib}|sig={total_sig}] "
+            f"Bulk ORA {sample_id}：{n_lib} library × up/down，共 {total_sig} 顯著通路。"
         )[:80]
 
         completed_at = datetime.now(timezone.utc)
@@ -326,6 +334,13 @@ def run_ora(
                 WHERE analysis_id=?""",
             [str(report_path), completed_at, summary, analysis_id],
         )
+        mark_canonical(con, analysis_id, sample_id, "bulk_enrichment")
+        try:
+            from scripts.export_registry import export_snapshot
+            export_snapshot()
+        except Exception as _exp_exc:
+            logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
+
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
 
         write_diagnosis(con, analysis_id, success_diagnosis())

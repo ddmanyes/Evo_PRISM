@@ -106,6 +106,32 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
         )
     except Exception as e:
         print(f"WARNING: could not ensure failure_diagnosis column: {e}")
+    # v25 migration: parent_analysis_id — lineage tracking for re-runs.
+    # Points to the canonical run this run supersedes. NULL for first runs.
+    try:
+        con.execute(
+            "ALTER TABLE analysis_history "
+            "ADD COLUMN IF NOT EXISTS parent_analysis_id UUID DEFAULT NULL"
+        )
+    except Exception as e:
+        print(f"WARNING: could not ensure parent_analysis_id column: {e}")
+    # v26 migration: alias — stores legacy sample_id for traceability after rename.
+    try:
+        con.execute(
+            "ALTER TABLE sample_registry "
+            "ADD COLUMN IF NOT EXISTS alias VARCHAR DEFAULT NULL"
+        )
+    except Exception as e:
+        print(f"WARNING: could not ensure alias column: {e}")
+    # v27 migration: parameter_hash — MD5[:16] of sorted parameters JSON.
+    # Enables precise cache lookups when same sample is re-run with different params.
+    try:
+        con.execute(
+            "ALTER TABLE analysis_history "
+            "ADD COLUMN IF NOT EXISTS parameter_hash VARCHAR(16) DEFAULT NULL"
+        )
+    except Exception as e:
+        print(f"WARNING: could not ensure parameter_hash column: {e}")
     print("Table: analysis_history — OK")
 
     # tools — versioned tool registry (content-hash based)
@@ -125,6 +151,15 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
             UNIQUE (tool_name, content_hash)
         )
     """)
+    # v27 migration: env_hash — SHA256[:16] of uv.lock at tool registration time.
+    # Records the exact package environment that produced this tool version.
+    try:
+        con.execute(
+            "ALTER TABLE tools "
+            "ADD COLUMN IF NOT EXISTS env_hash VARCHAR(16) DEFAULT NULL"
+        )
+    except Exception as e:
+        print(f"WARNING: could not ensure env_hash column: {e}")
     print("Table: tools — OK")
 
     # tool_dependencies — directed dependency graph between tools

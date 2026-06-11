@@ -262,26 +262,38 @@ def generate_bulk_report(
     sample_id: str,
     counts_path: Optional[Path] = None,
     requested_by: str = "agent",
+    parent_analysis_id: Optional[str] = None,
 ) -> tuple[str, str]:
     """執行完整 Bulk EDA 並將報告 + 摘要寫入 analysis_history。
 
+    成功完成後自動標記為 canonical，舊 canonical 降為 superseded。
+    parent_analysis_id 若未指定則自動查詢當前 canonical 作為父節點。
+
     回傳 (analysis_id, report_path)。
     """
+    from config.db_utils import get_canonical_id, mark_canonical, param_hash
+
     validate_sample_id(sample_id)
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({"counts_path": str(counts_path or "auto")})
+    _params = {"counts_path": str(counts_path or "auto")}
+    params_json = json.dumps(_params)
 
     con = duckdb.connect(str(DUCKDB_PATH))
     try:
+        # 自動偵測父節點
+        if parent_analysis_id is None:
+            parent_analysis_id = get_canonical_id(con, sample_id, "bulk_eda")
+
         safe_write(
             con,
             """INSERT INTO analysis_history
                    (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at)
-               VALUES (?, ?, 'bulk_eda', ?, 'running', ?, ?)""",
-            [analysis_id, sample_id, params_json, requested_by, started_at],
+                    requested_by, started_at, parent_analysis_id, parameter_hash)
+               VALUES (?, ?, 'bulk_eda', ?, 'running', ?, ?, ?, ?)""",
+            [analysis_id, sample_id, params_json, requested_by, started_at,
+             parent_analysis_id, param_hash(_params)],
         )
 
         counts = load_counts(counts_path)
@@ -334,9 +346,11 @@ def generate_bulk_report(
         avg_total = qc["total_counts"].mean()
         avg_genes = int(qc["n_genes"].mean())
         n_samples = counts.shape[1]
+        # 結構化摘要：前綴含關鍵數字供 SQL 過濾，後接自然語言供語意搜尋
         full_summary = (
+            f"[n={n_samples}|genes={avg_genes}] "
             f"Bulk RNA {sample_id}：{n_samples} 樣本，"
-            f"均 {avg_genes:,} 基因，均 total counts {avg_total:,.0f}。"
+            f"均 {avg_genes:,} 基因，avg_total={avg_total:,.0f}。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
 
@@ -348,6 +362,13 @@ def generate_bulk_report(
                 WHERE analysis_id=?""",
             [str(report_path), completed_at, summary, analysis_id],
         )
+        mark_canonical(con, analysis_id, sample_id, "bulk_eda")
+        try:
+            from scripts.export_registry import export_snapshot
+            export_snapshot()
+        except Exception as _exp_exc:
+            logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
+
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
 
         write_diagnosis(con, analysis_id, success_diagnosis())

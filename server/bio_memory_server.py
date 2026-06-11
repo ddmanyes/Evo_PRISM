@@ -18,6 +18,7 @@ Phase 4 — BioAgent MCP Server
     bio_memory_query          — L1 語意快取查詢（報告全文）
     bio_memory_write          — 寫入 L1 語意快取
     bio_register_sample       — 登記新樣本至 sample_registry
+    bio_lookup_sample         — 查詢樣本 ID（新/舊 alias 互查、模糊搜尋、依 project 列出）
 
 分析執行（重量級，會寫 DB / 跑沙盒）：
     bio_run_spatial_eda       — 空間轉錄體 EDA（10–30 秒，需 l2_ready=true）
@@ -217,17 +218,18 @@ async def list_tools() -> list[types.Tool]:
 
 @server.list_resources()
 async def list_resources() -> list[types.Resource]:
-    """列出已登記的分析 artifact 供客戶端取用（resources/list）。"""
+    """列出可用 resource：分析 artifact（artifact://）+ 樣本登記快照（registry://snapshot）。"""
     import duckdb
     from analysis.artifact_resources import list_artifact_resources
-    from config.settings import DUCKDB_PATH
+    from config.settings import DUCKDB_PATH, BIO_DB_ROOT
+    from pathlib import Path
 
     def _sync() -> list[dict]:
         with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
             return list_artifact_resources(con)
 
     items = await asyncio.to_thread(_sync)
-    return [
+    resources = [
         types.Resource(
             uri=it["uri"],
             name=it["name"],
@@ -238,23 +240,57 @@ async def list_resources() -> list[types.Resource]:
         for it in items
     ]
 
+    # registry://snapshot — 樣本清單 + 分析狀態 + alias 對照表靜態快照
+    snapshot_path = Path(BIO_DB_ROOT) / "docs" / "registry_snapshot.md"
+    if snapshot_path.exists():
+        resources.append(
+            types.Resource(
+                uri="registry://snapshot",
+                name="Registry Snapshot",
+                description=(
+                    "樣本登記快照（auto-generated）。含：① 樣本清單 ② 分析 canonical 狀態 "
+                    "③ pipeline gap 待辦 ④ 新舊 sample_id 對照表（alias）。"
+                    "查詢樣本清單或 ID 對照時優先使用此 resource，省去 DB 查詢。"
+                ),
+                mimeType="text/markdown",
+                size=snapshot_path.stat().st_size,
+            )
+        )
+    return resources
+
 
 @server.read_resource()
 async def read_resource(uri):  # uri: pydantic AnyUrl
-    """依 artifact:// URI 取回數據檔內容（resources/read）。"""
+    """依 URI 取回 resource 內容：artifact:// 或 registry://snapshot。"""
     from mcp.server.lowlevel.helper_types import ReadResourceContents
     import duckdb
     from analysis.artifact_resources import read_artifact_resource, ArtifactResourceError
-    from config.settings import DUCKDB_PATH
+    from config.settings import DUCKDB_PATH, BIO_DB_ROOT
+    from pathlib import Path
 
+    uri_str = str(uri)
+
+    # registry://snapshot
+    if uri_str == "registry://snapshot":
+        snapshot_path = Path(BIO_DB_ROOT) / "docs" / "registry_snapshot.md"
+        if not snapshot_path.exists():
+            return [ReadResourceContents(
+                content="[ERROR] registry_snapshot.md 尚未產生，請先執行 scripts/export_registry.py",
+                mime_type="text/plain",
+            )]
+        return [ReadResourceContents(
+            content=snapshot_path.read_text(encoding="utf-8"),
+            mime_type="text/markdown",
+        )]
+
+    # artifact://
     def _sync():
         with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
-            return read_artifact_resource(con, str(uri))
+            return read_artifact_resource(con, uri_str)
 
     try:
         content, mime = await asyncio.to_thread(_sync)
     except ArtifactResourceError as exc:
-        # 以文字內容回報錯誤，讓客戶端/使用者看到原因與下載備援
         return [ReadResourceContents(content=f"[ERROR] {exc}", mime_type="text/plain")]
 
     return [ReadResourceContents(content=content, mime_type=mime)]
@@ -572,6 +608,44 @@ def _build_all_tools() -> list[types.Tool]:
                     },
                 },
                 "required": ["result_path"],
+            },
+        ),
+        types.Tool(
+            name="bio_lookup_sample",
+            description=(
+                "查詢樣本資訊：支援新 ID、舊 ID（alias）、模糊查詢及依 project/data_type 列出。"
+                "可解答「這個 ID 是什麼樣本」、「舊名 ctrl_1_Hair_germ 對應哪個新 ID」等問題。"
+                "若只需要整份清單，優先讀取 registry://snapshot resource 以節省 token。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "查詢字串：新 ID（HF01_HG_T0_R1）、舊 ID（ctrl_1_Hair_germ）"
+                            "或部分字串（fuzzy=true 時）。list_all=true 時可省略。"
+                        ),
+                    },
+                    "fuzzy": {
+                        "type": "boolean",
+                        "description": "True 時用 LIKE 模糊匹配（預設 false）。",
+                        "default": False,
+                    },
+                    "list_all": {
+                        "type": "boolean",
+                        "description": "True 時列出所有符合 project/data_type 的樣本（忽略 query）。",
+                        "default": False,
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "限定 project，例如 hair_follicle_exp1、MQ250428。",
+                    },
+                    "data_type": {
+                        "type": "string",
+                        "description": "限定資料類型：bulk_rnaseq | visium | visium_hd | scrna。",
+                    },
+                },
             },
         ),
         types.Tool(
@@ -1516,6 +1590,28 @@ async def _handle_bio_artifact_summary(args: dict) -> str:
 # 若未來重構 agent.py 時違反此契約，需同步調整本 wrapper（例如改成 subprocess）。
 
 
+async def _handle_bio_lookup_sample(args: dict) -> str:
+    from analysis.sample_lookup import lookup_sample, list_samples
+
+    def _sync() -> str:
+        if args.get("list_all"):
+            return list_samples(
+                project=args.get("project"),
+                data_type=args.get("data_type"),
+            )
+        query = args.get("query", "").strip()
+        if not query:
+            return "請提供 query 或設定 list_all=true。"
+        return lookup_sample(
+            query,
+            fuzzy=bool(args.get("fuzzy", False)),
+            project=args.get("project"),
+            data_type=args.get("data_type"),
+        )
+
+    return await asyncio.to_thread(_sync)
+
+
 async def _handle_bio_check_l2_sufficiency(args: dict) -> str:
     from server.agent import _exec_bio_check_l2_sufficiency
 
@@ -1775,6 +1871,7 @@ _HANDLERS = {
     "bio_register_sample": _handle_bio_register_sample,
     "bio_artifact_search": _handle_bio_artifact_search,
     "bio_artifact_summary": _handle_bio_artifact_summary,
+    "bio_lookup_sample": _handle_bio_lookup_sample,
     "bio_check_l2_sufficiency": _handle_bio_check_l2_sufficiency,
     "bio_run_spatial_eda": _handle_bio_run_spatial_eda,
     "bio_run_bulk_eda": _handle_bio_run_bulk_eda,
