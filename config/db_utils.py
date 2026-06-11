@@ -89,6 +89,19 @@ def param_hash(parameters: dict | None) -> str | None:
     return hashlib.md5(canon.encode()).hexdigest()[:16]
 
 
+def connect_db(path: "Path | str | None" = None) -> duckdb.DuckDBPyConnection:
+    """Open a write connection with VSS loaded. Caller is responsible for closing.
+
+    Use this instead of bare ``duckdb.connect()`` so VSS is always bootstrapped.
+    Prefer ``open_db()`` context manager when possible; use this only when the
+    connection lifetime spans a try/finally that can't be expressed as a ``with``.
+    """
+    target = Path(path) if path else DUCKDB_PATH
+    con = duckdb.connect(str(target))
+    _bootstrap_vss(con)
+    return con
+
+
 def safe_write(con: duckdb.DuckDBPyConnection, sql: str, params: list = None) -> None:
     """
     執行寫入並立即 CHECKPOINT。
@@ -114,25 +127,18 @@ def cleanup_stale_runs(con: duckdb.DuckDBPyConnection, hours: int = 24) -> int:
         清理筆數
     """
     hours = int(hours)
-    cleaned = con.execute(
+    rows = con.execute(
         """
-        SELECT COUNT(*) FROM analysis_history
-        WHERE status = 'running'
-          AND started_at < now() - (? * INTERVAL '1 hour')
+        UPDATE analysis_history
+        SET    status = 'stale'
+        WHERE  status  = 'running'
+          AND  started_at < now() - (? * INTERVAL '1 hour')
+        RETURNING analysis_id
         """,
         [hours],
-    ).fetchone()[0]
+    ).fetchall()
+    cleaned = len(rows)
 
-    if cleaned:
-        con.execute(
-            """
-            UPDATE analysis_history
-            SET    status = 'stale'
-            WHERE  status  = 'running'
-              AND  started_at < now() - (? * INTERVAL '1 hour')
-            """,
-            [hours],
-        )
     if cleaned:
         con.execute("CHECKPOINT")
         print(f"[db_utils] cleaned {cleaned} stale running record(s)")

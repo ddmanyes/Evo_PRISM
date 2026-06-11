@@ -62,6 +62,8 @@ def lookup_sample(
             conditions.append("data_type = ?")
             params.append(data_type)
 
+        # {where} contains only hardcoded condition strings (e.g. "project = ?").
+        # All values are passed via `params` — no user input is interpolated.
         where = " AND ".join(conditions)
         rows = c.execute(f"""
             SELECT sample_id, alias, data_type, project,
@@ -120,6 +122,8 @@ def list_samples(
             conditions.append("data_type = ?")
             params.append(data_type)
 
+        # {where} contains only hardcoded condition strings; values via `params`.
+        # No filter → returns all samples (intentional for list_all use case).
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         rows = c.execute(f"""
             SELECT sample_id, alias, data_type, project,

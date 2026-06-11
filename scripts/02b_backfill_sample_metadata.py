@@ -30,11 +30,11 @@ def _get_parse_fn():
     """取得解析函數（直接從 01_register_sample 模組載入）。"""
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location(
-        "register_sample",
-        Path(__file__).parent / "01_register_sample.py",
-    )
-    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    target = Path(__file__).parent / "01_register_sample.py"
+    spec = importlib.util.spec_from_file_location("register_sample", target)
+    if spec is None:
+        raise ImportError(f"Cannot load 01_register_sample.py from {target}")
+    mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod.parse_kallisto_sample_metadata
 

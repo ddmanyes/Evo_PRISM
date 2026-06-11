@@ -24,9 +24,11 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
-import duckdb
+if TYPE_CHECKING:
+    import duckdb
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,7 +38,7 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.db_utils import safe_write
-from config.settings import DUCKDB_PATH, SUMMARY_MAX_CHARS
+from config.settings import BIO_DB_ROOT, DUCKDB_PATH, SUMMARY_MAX_CHARS
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.tool_registry import register_tool_on_import
@@ -244,9 +246,15 @@ def run_deg_analysis(
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
+    def _rel(p: Path) -> str:
+        try:
+            return str(p.relative_to(BIO_DB_ROOT))
+        except ValueError:
+            return str(p)
+
     _params = {
-        "counts_path": str(counts_path),
-        "coldata_path": str(coldata_path),
+        "counts_path": _rel(counts_path),
+        "coldata_path": _rel(coldata_path),
         "comparisons": [list(c) for c in comparisons],
         "method": method,
         "fc_threshold": fc_threshold,
@@ -254,11 +262,11 @@ def run_deg_analysis(
     }
     params_json = json.dumps(_params)
 
-    from config.db_utils import get_canonical_id, mark_canonical, param_hash
+    from config.db_utils import connect_db, get_canonical_id, mark_canonical, param_hash
 
     _own_con = con is None
     if con is None:
-        con = duckdb.connect(str(DUCKDB_PATH))
+        con = connect_db(DUCKDB_PATH)
 
     try:
         if parent_analysis_id is None:
@@ -378,12 +386,6 @@ def run_deg_analysis(
             [str(report_path), completed_at, summary, analysis_id],
         )
         mark_canonical(con, analysis_id, sample_id, "bulk_deg")
-        try:
-            from scripts.export_registry import export_snapshot
-            export_snapshot()
-        except Exception as _exp_exc:
-            logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
-
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
 
         write_diagnosis(con, analysis_id, success_diagnosis())
@@ -416,5 +418,13 @@ def run_deg_analysis(
 
     if _own_con:
         con.close()
+
+    # con 已關閉 — 安全地開啟新連線產生快照
+    try:
+        from scripts.export_registry import export_snapshot
+        export_snapshot()
+    except Exception as _exp_exc:
+        logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
+
     logger.info("bulk_deg 完成  analysis_id=%s  report=%s", analysis_id, report_path)
     return analysis_id, str(report_path)

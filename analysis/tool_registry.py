@@ -37,6 +37,20 @@ from config.settings import (
 
 logger = logging.getLogger(__name__)
 
+# Cached once per process — tools schema is fixed for the lifetime of a process.
+_env_hash_col_present: Optional[bool] = None
+
+
+def _check_env_hash_col(con: duckdb.DuckDBPyConnection) -> bool:
+    """Return True if tools.env_hash column exists. Result cached for the process lifetime."""
+    global _env_hash_col_present
+    if _env_hash_col_present is None:
+        _env_hash_col_present = con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'tools' AND column_name = 'env_hash' LIMIT 1"
+        ).fetchone() is not None
+    return _env_hash_col_present
+
 
 # ---------------------------------------------------------------------------
 # HELIX Eq.(2) — HealthScore
@@ -252,11 +266,7 @@ def register_tool(
 
     # --- insert new active row ---
     new_tool_id = str(uuid.uuid4())
-    _has_env_hash_col = con.execute(
-        "SELECT 1 FROM information_schema.columns "
-        "WHERE table_name = 'tools' AND column_name = 'env_hash' LIMIT 1"
-    ).fetchone() is not None
-    if _has_env_hash_col:
+    if _check_env_hash_col(con):
         con.execute(
             """
             INSERT INTO tools

@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import duckdb
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -271,16 +270,25 @@ def generate_bulk_report(
 
     回傳 (analysis_id, report_path)。
     """
-    from config.db_utils import get_canonical_id, mark_canonical, param_hash
+    from config.db_utils import connect_db, get_canonical_id, mark_canonical, param_hash
 
     validate_sample_id(sample_id)
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    _params = {"counts_path": str(counts_path or "auto")}
-    params_json = json.dumps(_params)
+    def _rel(p: Optional[Path]) -> str:
+        if p is None:
+            return "auto"
+        try:
+            return str(p.relative_to(BIO_DB_ROOT))
+        except ValueError:
+            return str(p)
 
-    con = duckdb.connect(str(DUCKDB_PATH))
+    _params = {"counts_path": _rel(counts_path)}
+    params_json = json.dumps(_params)
+    report_path: Optional[Path] = None
+
+    con = connect_db(DUCKDB_PATH)
     try:
         # 自動偵測父節點
         if parent_analysis_id is None:
@@ -363,11 +371,6 @@ def generate_bulk_report(
             [str(report_path), completed_at, summary, analysis_id],
         )
         mark_canonical(con, analysis_id, sample_id, "bulk_eda")
-        try:
-            from scripts.export_registry import export_snapshot
-            export_snapshot()
-        except Exception as _exp_exc:
-            logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
 
         from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
 
@@ -429,6 +432,13 @@ def generate_bulk_report(
         raise
     finally:
         con.close()
+
+    # con 已關閉 — 安全地開啟新連線產生快照
+    try:
+        from scripts.export_registry import export_snapshot
+        export_snapshot()
+    except Exception as _exp_exc:
+        logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
 
     logger.info("analysis_history 寫入完成  analysis_id=%s", analysis_id)
     return analysis_id, str(report_path)

@@ -115,41 +115,58 @@ _CHILD_TABLES = [
 
 
 def _rename_one(con, old_id: str, new_id: str, *, dry_run: bool) -> None:
-    """單一樣本重命名：INSERT 新 PK → 更新子表 → DELETE 舊 PK。"""
+    """單一樣本重命名：BEGIN → INSERT 新 PK → 更新子表 → DELETE 舊 PK → COMMIT。
+
+    任一步驟失敗均 ROLLBACK，確保原子性。
+    """
     logger.info("  %s  →  %s", old_id, new_id)
 
     if dry_run:
         return
 
-    # 1. 複製 sample_registry row，新 sample_id，alias = old_id
+    # 取出欄位清單（來自 schema，非用戶輸入，col_list 拼接安全）
     cols = [r[0] for r in con.execute("DESCRIBE sample_registry").fetchall()]
     col_list = ", ".join(cols)
-    val_exprs = ", ".join(
-        f"'{new_id}'" if c == "sample_id"
-        else f"'{old_id}'" if c == "alias"
-        else c
-        for c in cols
-    )
-    con.execute(
-        f"INSERT INTO sample_registry ({col_list}) "
-        f"SELECT {val_exprs} FROM sample_registry WHERE sample_id = ?",
-        [old_id],
-    )
+    placeholders = ", ".join("?" for _ in cols)
 
-    # 2. 更新子表
-    for table in _CHILD_TABLES:
-        try:
+    # 取出舊 row 的所有欄位值
+    old_row = con.execute(
+        f"SELECT {col_list} FROM sample_registry WHERE sample_id = ?",
+        [old_id],
+    ).fetchone()
+    if old_row is None:
+        raise ValueError(f"sample_id '{old_id}' not found — 無法重命名")
+
+    # 建立新 row：覆蓋 sample_id → new_id，alias → old_id（保留舊 ID 可追溯）
+    new_row = list(old_row)
+    new_row[cols.index("sample_id")] = new_id
+    if "alias" in cols:
+        new_row[cols.index("alias")] = old_id
+
+    con.execute("BEGIN")
+    try:
+        # 1. INSERT 新 PK（全參數化，無 f-string 值插值）
+        con.execute(
+            f"INSERT INTO sample_registry ({col_list}) VALUES ({placeholders})",
+            new_row,
+        )
+
+        # 2. 更新子表（任一失敗 → 整體 ROLLBACK）
+        for table in _CHILD_TABLES:
             con.execute(
                 f"UPDATE {table} SET sample_id = ? WHERE sample_id = ?",
                 [new_id, old_id],
             )
-        except Exception as exc:
-            logger.warning("  %s UPDATE 失敗（跳過）: %s", table, exc)
 
-    # 3. 刪除舊 row
-    con.execute("DELETE FROM sample_registry WHERE sample_id = ?", [old_id])
+        # 3. 刪除舊 PK
+        con.execute("DELETE FROM sample_registry WHERE sample_id = ?", [old_id])
 
-    con.execute("CHECKPOINT")
+        con.execute("COMMIT")
+        con.execute("CHECKPOINT")
+
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
