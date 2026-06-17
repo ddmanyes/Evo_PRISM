@@ -37,6 +37,7 @@ dependencies = [
     # === 核心資料庫 ===
     "duckdb>=1.1.0",
     "pyarrow>=14.0.0",
+    "psycopg2-binary>=2.9.0",
     # === 生資分析 ===
     "anndata>=0.10.0",
     "scanpy>=1.10.0",

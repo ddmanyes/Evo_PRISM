@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Iterator
 
@@ -27,7 +28,13 @@ logger = logging.getLogger(__name__)
 
 
 def _to_pg(sql: str) -> str:
-    """Translate DuckDB-style ? position markers to psycopg2 %s."""
+    """Translate DuckDB-style ? position markers to psycopg2 %s.
+
+    Escapes literal % (e.g. strftime format specifiers: %Y, %m, %H) as %%
+    so psycopg2 does not misinterpret them as parameter placeholders.
+    Existing %s placeholders (native psycopg2 style) are left untouched.
+    """
+    sql = re.sub(r"%(?!s)", "%%", sql)
     return sql.replace("?", "%s")
 
 
@@ -42,7 +49,25 @@ class _PgCursor:
         self._cur = cursor
 
     def execute(self, sql: str, params=None) -> "_PgCursor":
-        self._cur.execute(_to_pg(sql), params or ())
+        # Use a SAVEPOINT so a failed statement doesn't abort the whole transaction.
+        # This is critical when escape-hatch callers run DuckDB-specific SQL
+        # (e.g. "LOAD fts") that is invalid in Postgres: without a savepoint the
+        # entire connection enters an aborted state and all subsequent queries fail.
+        #
+        # Savepoint management uses a *separate* cursor so that self._cur retains
+        # the result set from the actual SQL and fetchone()/fetchall() work correctly.
+        conn = self._cur.connection
+        with conn.cursor() as _sp:
+            _sp.execute("SAVEPOINT _pgcursor_sp")
+        try:
+            self._cur.execute(_to_pg(sql), params or ())
+        except Exception:
+            with conn.cursor() as _sp:
+                _sp.execute("ROLLBACK TO SAVEPOINT _pgcursor_sp")
+            raise
+        else:
+            with conn.cursor() as _sp:
+                _sp.execute("RELEASE SAVEPOINT _pgcursor_sp")
         return self
 
     def fetchone(self):

@@ -137,13 +137,20 @@ CREATE INDEX IF NOT EXISTS idx_ah_completed
 -- analysis_artifacts
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS analysis_artifacts (
-    artifact_id   UUID  NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    analysis_id   UUID  NOT NULL REFERENCES analysis_history(analysis_id),
-    label         TEXT  NOT NULL,
-    artifact_type TEXT  NOT NULL,   -- figure | table | report | embedding | ...
-    file_path     TEXT,
-    file_size_kb  INTEGER,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    artifact_id      UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    analysis_id      UUID        NOT NULL REFERENCES analysis_history(analysis_id),
+    artifact_type    TEXT        NOT NULL,  -- figure | table | report | embedding | ...
+    artifact_subtype TEXT,
+    label            TEXT        NOT NULL,
+    file_path        TEXT,
+    file_size_kb     INTEGER,
+    mime_type        TEXT,
+    embedding        vector(1024),
+    embedding_256    vector(256),
+    input_data_hash  TEXT,
+    code_hash        TEXT,
+    env_hash         TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_analysis

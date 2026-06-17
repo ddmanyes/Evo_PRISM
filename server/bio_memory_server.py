@@ -1473,7 +1473,7 @@ async def _handle_bio_history_timeline(args: dict) -> str:
                    analysis_type,
                    status,
                    requested_by,
-                   strftime(completed_at, '%Y-%m-%d %H:%M') AS completed_at,
+                   completed_at,
                    summary
             FROM   analysis_history
             WHERE  completed_at >= now() - (? * INTERVAL '1 day')
@@ -1483,7 +1483,10 @@ async def _handle_bio_history_timeline(args: dict) -> str:
             [n_days],
         ).fetchall()
         cols = ["sample_id", "analysis_type", "status", "requested_by", "completed_at", "summary"]
-        result_rows = [dict(zip(cols, r)) for r in rows]
+        result_rows = [
+            {**dict(zip(cols, r)), "completed_at": str(r[4])[:16] if r[4] else ""}
+            for r in rows
+        ]
 
     if not result_rows:
         if fmt == "json":
