@@ -37,7 +37,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import (
     BIO_DB_ROOT,
-    DUCKDB_PATH,
     HELIX_ALPHA,
     HELIX_BETA,
     HELIX_GAMMA,
@@ -108,7 +107,9 @@ def scan_candidates(min_reuse: int = 1) -> list[dict]:
         user_approval, complexity, f_promote.
     Only candidates whose f_promote ≥ HELIX_THETA_PROMOTE are included.
     """
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    from store.factory import get_store as _get_store
+
+    with _get_store().read_conn() as con:
         try:
             rows = con.execute(
                 """SELECT origin_id, analysis_type, reuse_count, last_used
@@ -197,14 +198,14 @@ def check_and_revert_regressions(
         tool_name, new_tool_id, new_rate, prev_tool_id, prev_rate, delta
     """
     from analysis.tool_registry import compute_version_success_rate
-    from config.db_utils import safe_write
+    from store.factory import get_store as _get_store
 
     if tau is None:
         tau = HELIX_REVERT_THRESHOLD
 
     reverted: list[dict] = []
 
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
+    with _get_store().write_conn() as con:
         # All active tools
         active_rows = con.execute(
             "SELECT tool_id, tool_name FROM tools WHERE status = 'active'"
@@ -255,18 +256,15 @@ def check_and_revert_regressions(
                 tau,
             )
             try:
-                safe_write(
-                    con,
+                con.execute(
                     "UPDATE tools SET status = 'deprecated', deprecated_at = ? WHERE tool_id = ?",
                     [datetime.now(timezone.utc), active_id],
                 )
-                safe_write(
-                    con,
+                con.execute(
                     "UPDATE tools SET status = 'active', deprecated_at = NULL WHERE tool_id = ?",
                     [best_prev_id],
                 )
-                safe_write(
-                    con,
+                con.execute(
                     """INSERT INTO tool_change_log
                            (tool_name, old_hash, new_hash, revision_number,
                             change_reason, changed_at)
@@ -519,6 +517,7 @@ def detect_stagnation(
     from datetime import timedelta
     from analysis.tool_registry import get_open_stabilizations
     from config.settings import ANTHROPIC_API_KEY as api_key
+    from store.factory import get_store as _get_store
 
     if min_calls is None:
         min_calls = HELIX_STAGNATION_MIN_CALLS
@@ -530,7 +529,7 @@ def detect_stagnation(
     cutoff = datetime.now(timezone.utc) - timedelta(days=look_back_days)
     events: list[dict] = []
 
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
+    with _get_store().write_conn() as con:
         rows = con.execute(
             """
             SELECT
@@ -626,7 +625,9 @@ def detect_stagnation(
 
 def get_origin_code(origin_id: str) -> Optional[str]:
     """從 analysis_history 取回首次生成的程式碼。"""
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    from store.factory import get_store as _get_store
+
+    with _get_store().read_conn() as con:
         row = con.execute(
             "SELECT parameters FROM analysis_history WHERE analysis_id=?",
             [origin_id],

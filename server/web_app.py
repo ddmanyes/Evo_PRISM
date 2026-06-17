@@ -101,24 +101,14 @@ async def _lifespan(_app: FastAPI):
     # 只在確實有 zombie 時才開短連線：不 LOAD vss、立即 CHECKPOINT 後 close，
     # 縮小 WAL 損壞視窗（ExFAT 無日誌）。同步 I/O 包在 to_thread 避免阻塞 event loop。
     def _do_deferred_cleanup() -> None:
-        import duckdb as _duckdb
-        from config.settings import DUCKDB_PATH as _DB
+        from store.factory import get_store as _get_store
 
         try:
-            with _duckdb.connect(str(_DB), read_only=True) as _ro:
-                n = _ro.execute(
-                    "SELECT COUNT(*) FROM analysis_history WHERE status='running'"
-                ).fetchone()[0]
-            if not n:
-                logger.debug("deferred cleanup: no zombie running records, write open skipped")
-                return
-            _con = _duckdb.connect(str(_DB))
-            try:
-                _con.execute("UPDATE analysis_history SET status='stale' WHERE status='running'")
-                _con.execute("CHECKPOINT")
-            finally:
-                _con.close()
-            logger.info("deferred startup cleanup: cleared %d zombie running records", n)
+            n = _get_store().cleanup_stale_runs()
+            if n:
+                logger.info("deferred startup cleanup: cleared %d zombie running records", n)
+            else:
+                logger.debug("deferred cleanup: no zombie running records")
         except Exception as _e:
             logger.warning("deferred startup cleanup failed (non-fatal): %s", _e)
 
@@ -615,11 +605,10 @@ async def dashboard_page():
 @app.get("/api/dashboard")
 async def api_dashboard():
     """聚合所有 panel 一次回傳，供首屏載入。"""
-    import duckdb
-    from config.settings import DUCKDB_PATH
     from server.dashboard import full_snapshot
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         return full_snapshot(con)
 
 
@@ -693,13 +682,11 @@ async def api_dashboard_action(request: Request):
 @app.get("/api/dashboard/graduation")
 async def api_graduation_candidates():
     """畢業候選清單（同 description 多次 completed + 非 1 行噪音）。唯讀，無需 guard。"""
-    import duckdb
-
     from config import settings
-    from config.settings import DUCKDB_PATH
     from server.graduation import list_candidates
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         candidates = list_candidates(con)
     return {
         "candidates": candidates,
@@ -712,12 +699,10 @@ async def api_graduation_candidates():
 async def api_graduation_plan(analysis_id: str):
     """單筆畢業計畫：archive（code/meta/output）+ 生成的 analysis/ 骨架。唯讀。"""
     _require_analysis_id(analysis_id)
-    import duckdb
-
-    from config.settings import DUCKDB_PATH
     from server.graduation import graduation_plan
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         try:
             return graduation_plan(con, analysis_id)
         except ValueError as e:
@@ -727,10 +712,9 @@ async def api_graduation_plan(analysis_id: str):
 @app.get("/results/{analysis_id}", response_class=HTMLResponse)
 async def report_page(analysis_id: str):
     _require_analysis_id(analysis_id)
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         row = con.execute(
             "SELECT sample_id, result_path, completed_at, summary FROM analysis_history WHERE analysis_id=?",
             [analysis_id],
@@ -887,10 +871,9 @@ async def get_backend():
 
 @app.get("/api/history")
 async def api_history(sample_id: Optional[str] = None, limit: int = 50):
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         if sample_id:
             rows = con.execute(
                 """SELECT analysis_id, sample_id, analysis_type, status,
@@ -928,11 +911,12 @@ async def download_csv(analysis_id: str):
     import glob as _glob
 
     import duckdb
-    from config.settings import DUCKDB_PATH, L2_ROOT
+    from config.settings import L2_ROOT
+    from store.factory import get_store
 
     _require_analysis_id(analysis_id)
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         row = con.execute(
             "SELECT sample_id FROM analysis_history WHERE analysis_id=?",
             [analysis_id],
@@ -958,7 +942,7 @@ async def download_csv(analysis_id: str):
         raise HTTPException(status_code=404, detail="找不到 expression parquet 檔案")
 
     try:
-        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        with duckdb.connect() as con:
             df = con.execute(
                 "SELECT gene_name,"
                 " SUM(count)::BIGINT AS total_umi,"
@@ -986,11 +970,9 @@ async def result_images(analysis_id: str):
     _require_analysis_id(analysis_id)
     import re
 
-    import duckdb
+    from store.factory import get_store
 
-    from config.settings import DUCKDB_PATH
-
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         row = con.execute(
             "SELECT result_path FROM analysis_history WHERE analysis_id=?",
             [analysis_id],
@@ -1196,15 +1178,13 @@ async def analysis_feedback(analysis_id: str, body: FeedbackRequest):
     approval=1 → 讚；approval=-1 → 倒讚。
     寫入 analysis_history.user_approval，供 HELIX Eq.(1) f_promote 計算使用。
     """
-    import duckdb
-    from config.settings import DUCKDB_PATH
-    from config.db_utils import safe_write
+    from store.factory import get_store
 
     _require_analysis_id(analysis_id)
     if body.approval not in (1, -1):
         raise HTTPException(status_code=422, detail="approval 必須為 1 或 -1")
 
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
+    with get_store().write_conn() as con:
         row = con.execute(
             "SELECT analysis_id FROM analysis_history WHERE analysis_id=?",
             [analysis_id],
@@ -1212,8 +1192,7 @@ async def analysis_feedback(analysis_id: str, body: FeedbackRequest):
         if not row:
             raise HTTPException(status_code=404, detail="分析記錄不存在")
 
-        safe_write(
-            con,
+        con.execute(
             "UPDATE analysis_history SET user_approval=? WHERE analysis_id=?",
             [body.approval, analysis_id],
         )
@@ -1235,10 +1214,9 @@ async def engram_page():
 @app.get("/api/engram/samples")
 async def engram_samples():
     """列出所有有 artifact 記錄的樣本及統計。"""
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         rows = con.execute(
             """
             SELECT ah.sample_id,
@@ -1267,11 +1245,10 @@ async def engram_samples():
 async def engram_summary(sample_id: str):
     """一個樣本的 artifact 統計概覽（0-token 設計）。"""
     _require_sample_id(sample_id)
-    import duckdb
-    from config.settings import DUCKDB_PATH
     from analysis.artifact_registry import artifact_summary
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         return artifact_summary(con, sample_id)
 
 
@@ -1279,10 +1256,9 @@ async def engram_summary(sample_id: str):
 async def engram_analyses(sample_id: str):
     """列出某樣本下所有已完成分析，附帶 artifact 數量。"""
     _require_sample_id(sample_id)
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         rows = con.execute(
             """
             SELECT ah.analysis_id::VARCHAR, ah.analysis_type, ah.status,
@@ -1319,11 +1295,10 @@ async def engram_artifacts(
 ):
     """列出某分析的所有 artifact（預設不含 inline_data）。"""
     _require_analysis_id(analysis_id)
-    import duckdb
-    from config.settings import DUCKDB_PATH
     from analysis.artifact_registry import get_artifacts
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         return get_artifacts(
             con,
             analysis_id,
@@ -1337,10 +1312,9 @@ async def engram_artifacts(
 async def engram_artifact_inline(artifact_id: str):
     """取得單一 artifact 的 inline_data（base64）。"""
     _require_analysis_id(artifact_id)
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         row = con.execute(
             """SELECT artifact_id::VARCHAR, label, mime_type, inline_data
                FROM analysis_artifacts WHERE artifact_id = ?""",
@@ -1362,16 +1336,15 @@ async def engram_compare(
     artifact_subtype: Optional[str] = None,
 ):
     """並排比較多個分析的 artifact。ids 以逗號分隔。"""
-    import duckdb
-    from config.settings import DUCKDB_PATH
     from analysis.artifact_registry import compare_analyses
+    from store.factory import get_store
 
     analysis_ids = [i.strip() for i in ids.split(",") if i.strip()]
     if not analysis_ids:
         return {}
     for aid in analysis_ids:
         _require_analysis_id(aid)
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         return compare_analyses(
             con, analysis_ids, artifact_subtype=artifact_subtype, include_inline=False
         )
@@ -1385,11 +1358,10 @@ async def engram_search(
     n: int = 10,
 ):
     """語意搜尋 artifact（Layer 1: 精確 subtype；Layer 2: HNSW）。"""
-    import duckdb
-    from config.settings import DUCKDB_PATH
     from analysis.artifact_registry import search_artifacts
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         return search_artifacts(
             con,
             q,

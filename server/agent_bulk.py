@@ -11,12 +11,16 @@ logger = logging.getLogger(__name__)
 
 
 def _exec_bio_run_bulk_eda(args: dict) -> str:
+    from pathlib import Path as _Path2
     from analysis.bulk_eda import generate_bulk_report
 
     sample_id = args["sample_id"]
     requested_by = args.get("requested_by", "agent")
+    coldata_path = _Path2(args["coldata_path"]) if args.get("coldata_path") else None
     try:
-        analysis_id, report_path = generate_bulk_report(sample_id, requested_by=requested_by)
+        analysis_id, report_path = generate_bulk_report(
+            sample_id, coldata_path=coldata_path, requested_by=requested_by
+        )
         # 讀取完整報告（含 inline base64 圖片），讓 web_app 解析並顯示
         report_text = ""
         if report_path:
@@ -62,6 +66,26 @@ def _exec_bio_run_mcseg_qc(args: dict) -> str:
         return f"MCseg QC 執行失敗：{e}"
 
 
+def _roi_figures_md(roi_dir) -> str:
+    """讀取 ROI 目錄下的分析圖，回傳 Markdown inline base64 字串（供 strip_base64_for_llm 處理）。"""
+    import base64
+    from pathlib import Path as _Path
+
+    _FIGURES = [
+        ("umap_spatial_combined.png", "UMAP + 空間分布"),
+        ("mask_he_overlay.png", "H&E Overlay（細胞類型著色）"),
+        ("mask_he_boundary.png", "H&E Overlay（純邊界版）"),
+        ("skin_markers_dotplot.png", "Marker Gene Dotplot"),
+    ]
+    parts: list[str] = []
+    for fname, alt in _FIGURES:
+        p = _Path(roi_dir) / fname
+        if p.exists():
+            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+            parts.append(f"![{alt}](data:image/png;base64,{b64})\n")
+    return "\n".join(parts) + ("\n" if parts else "")
+
+
 def _exec_bio_run_mcseg_roi(args: dict) -> str:
     """單 ROI MCseg 完整管線（Stage 0–7）。"""
     import sys
@@ -80,17 +104,12 @@ def _exec_bio_run_mcseg_roi(args: dict) -> str:
     binned_dir = args.get("binned_dir")
     if not (btf_path and binned_dir):
         try:
-            import duckdb
-            from config.settings import DUCKDB_PATH, MCSEG_RESULTS_ROOT
+            from config.settings import MCSEG_RESULTS_ROOT
+            from store.factory import get_store as _get_store
 
-            con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-            row = con.execute(
-                "SELECT l3_path FROM sample_registry WHERE sample_id = ?",
-                [sample_id],
-            ).fetchone()
-            con.close()
-            if row:
-                l3_path = _Path(row[0])
+            _sample = _get_store().get_sample(sample_id)
+            if _sample:
+                l3_path = _Path(_sample["l3_path"])
                 btf_path = btf_path or str(next(l3_path.glob("*.tif*"), l3_path))
                 binned_dir = binned_dir or str(l3_path)
         except Exception as e:
@@ -194,14 +213,27 @@ def _exec_bio_run_mcseg_roi(args: dict) -> str:
         )
         stdout = result.stdout[-3000:] if len(result.stdout) > 3000 else result.stdout
 
+        if result.returncode != 0:
+            stderr_tail = result.stderr[-2000:] if result.stderr else ""
+            return (
+                f"bio_run_mcseg_roi Stages 3–7 失敗（returncode={result.returncode}）。\n"
+                f"sample_id: {sample_id}  ROI: {roi_name}\n"
+                f"output_dir: {roi_dir}\n\n"
+                f"--- stderr ---\n{stderr_tail}\n"
+                f"--- stdout tail ---\n{stdout}"
+            )
+
         summary_path = roi_dir / "analysis_summary.txt"
         summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
+
+        figures_md = _roi_figures_md(roi_dir)
 
         return (
             f"bio_run_mcseg_roi 完成。\n"
             f"sample_id: {sample_id}  ROI: {roi_name}\n"
             f"output_dir: {roi_dir}\n\n"
             f"{summary}\n"
+            f"{figures_md}"
             f"--- stdout tail ---\n{stdout}"
         )
     except Exception as e:
@@ -224,16 +256,12 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
     binned_dir = args.get("binned_dir")
     if not (btf_path and binned_dir):
         try:
-            import duckdb
-            from config.settings import DUCKDB_PATH, MCSEG_RESULTS_ROOT
+            from config.settings import MCSEG_RESULTS_ROOT
+            from store.factory import get_store as _get_store
 
-            con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-            row = con.execute(
-                "SELECT l3_path FROM sample_registry WHERE sample_id = ?", [sample_id]
-            ).fetchone()
-            con.close()
-            if row:
-                l3_path = _Path(row[0])
+            _sample = _get_store().get_sample(sample_id)
+            if _sample:
+                l3_path = _Path(_sample["l3_path"])
                 btf_path = btf_path or str(next(l3_path.glob("*.tif*"), l3_path))
                 binned_dir = binned_dir or str(l3_path)
         except Exception as e:
@@ -284,35 +312,31 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
         n_cells = int(mask.max())
 
         # Register in analysis_history (CLAUDE.md: every analysis must be logged)
-        import duckdb as _duckdb
         import uuid as _uuid
         from datetime import datetime as _dt
-        from config.settings import DUCKDB_PATH
-        from config.db_utils import safe_write as _safe_write
+        from store.factory import get_store as _get_store
 
         try:
-            _con = _duckdb.connect(str(DUCKDB_PATH))
             _now = _dt.now().isoformat(timespec="seconds")
-            _safe_write(
-                _con,
-                """INSERT INTO analysis_history
-                   (analysis_id, sample_id, analysis_type, parameters, status,
-                    result_path, requested_by, started_at, completed_at, summary)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [
-                    str(_uuid.uuid4()),
-                    sample_id,
-                    "mcseg_fullslide",
-                    f'{{"tile_size":{tile_size},"overlap":{overlap},"use_cpsam":{int(use_cpsam)}}}',
-                    "completed",
-                    str(mask_path),
-                    "bio_run_mcseg_fullslide",
-                    _now,
-                    _now,
-                    f"Full-slide segmentation: {n_cells:,} cells",
-                ],
-            )
-            _con.close()
+            with _get_store().write_conn() as _con:
+                _con.execute(
+                    """INSERT INTO analysis_history
+                       (analysis_id, sample_id, analysis_type, parameters, status,
+                        result_path, requested_by, started_at, completed_at, summary)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    [
+                        str(_uuid.uuid4()),
+                        sample_id,
+                        "mcseg_fullslide",
+                        f'{{"tile_size":{tile_size},"overlap":{overlap},"use_cpsam":{int(use_cpsam)}}}',
+                        "completed",
+                        str(mask_path),
+                        "bio_run_mcseg_fullslide",
+                        _now,
+                        _now,
+                        f"Full-slide segmentation: {n_cells:,} cells",
+                    ],
+                )
         except Exception:
             pass  # DB failure must not block segmentation results
 
@@ -507,17 +531,12 @@ def _exec_bio_compute_crc_metrics(args: dict) -> str:
         # Resolve tissue_positions.parquet
         tp_path = args.get("tp_parquet_path")
         if not tp_path:
-            import duckdb
-
             try:
-                con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-                row = con.execute(
-                    "SELECT l3_path FROM sample_registry WHERE sample_id = ?",
-                    [sample_id],
-                ).fetchone()
-                con.close()
-                if row:
-                    l3 = _Path(row[0])
+                from store.factory import get_store as _get_store
+
+                _sample = _get_store().get_sample(sample_id)
+                if _sample:
+                    l3 = _Path(_sample["l3_path"])
                     candidates = [
                         l3
                         / "binned_outputs"
@@ -585,3 +604,177 @@ def _exec_bio_compute_crc_metrics(args: dict) -> str:
         import traceback
 
         return f"bio_compute_crc_metrics 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_get_marker_genes(args: dict) -> str:
+    """Rank marker genes for an existing MCseg ROI umap_computed.h5ad."""
+    from pathlib import Path as _Path
+    sample_id = args["sample_id"]
+    roi_name = args["roi_name"]
+    roi_dir = args.get("roi_dir")
+    groupby = args.get("groupby", "leiden")
+    n_genes = int(args.get("n_genes", 20))
+    method = args.get("method", "wilcoxon")
+    requested_by = str(args.get("requested_by", "agent"))
+
+    try:
+        from analysis.marker_genes import run_marker_genes
+        analysis_id, report_path = run_marker_genes(
+            sample_id=sample_id, roi_name=roi_name,
+            roi_dir=_Path(roi_dir) if roi_dir else None,
+            groupby=groupby, n_genes=n_genes, method=method,
+            requested_by=requested_by,
+        )
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"bio_get_marker_genes 完成。\n"
+            f"sample_id: {sample_id}  ROI: {roi_name}\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except Exception as e:
+        import traceback
+        return f"bio_get_marker_genes 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_relabel_clusters(args: dict) -> str:
+    """Apply manual label_map to cluster column, regenerate UMAP."""
+    from pathlib import Path as _Path
+    sample_id = args["sample_id"]
+    roi_name = args["roi_name"]
+    label_map = args.get("label_map") or {}
+    roi_dir = args.get("roi_dir")
+    groupby = args.get("groupby", "leiden")
+    requested_by = str(args.get("requested_by", "agent"))
+
+    if not isinstance(label_map, dict):
+        return "bio_relabel_clusters 失敗：label_map 必須是 JSON 物件（dict）。"
+
+    try:
+        from analysis.relabel_clusters import run_relabel_clusters
+        analysis_id, report_path = run_relabel_clusters(
+            sample_id=sample_id, roi_name=roi_name, label_map=label_map,
+            roi_dir=_Path(roi_dir) if roi_dir else None,
+            groupby=groupby, requested_by=requested_by,
+        )
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"bio_relabel_clusters 完成。\n"
+            f"sample_id: {sample_id}  ROI: {roi_name}\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except Exception as e:
+        import traceback
+        return f"bio_relabel_clusters 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_run_celltypist(args: dict) -> str:
+    """CellTypist automated cell type annotation on existing umap_computed.h5ad."""
+    from pathlib import Path as _Path
+    sample_id = args["sample_id"]
+    roi_name = args["roi_name"]
+    roi_dir = args.get("roi_dir")
+    model = args.get("model", "Immune_All_Low.pkl")
+    majority_voting = bool(args.get("majority_voting", True))
+    requested_by = str(args.get("requested_by", "agent"))
+
+    try:
+        from analysis.celltypist_annotate import run_celltypist
+        analysis_id, report_path = run_celltypist(
+            sample_id=sample_id, roi_name=roi_name,
+            roi_dir=_Path(roi_dir) if roi_dir else None,
+            model=model, majority_voting=majority_voting,
+            requested_by=requested_by,
+        )
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"bio_run_celltypist 完成。\n"
+            f"sample_id: {sample_id}  ROI: {roi_name}  model: {model}\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except Exception as e:
+        import traceback
+        return f"bio_run_celltypist 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_run_mcseg_merge(args: dict) -> str:
+    """Merge multiple MCseg ROI cellpose_cells.h5ad and run integrated Scanpy pipeline."""
+    from pathlib import Path as _Path
+    sample_id = args["sample_id"]
+    roi_names = args.get("roi_names") or []
+    merged_name = args.get("merged_name", "merged")
+    output_base = args.get("output_base")
+    integrate = args.get("integrate", "auto")
+    requested_by = str(args.get("requested_by", "agent"))
+
+    if not isinstance(roi_names, list) or len(roi_names) < 2:
+        return "bio_run_mcseg_merge 失敗：roi_names 必須是至少包含 2 個名稱的陣列。"
+
+    try:
+        from analysis.mcseg_merge import run_mcseg_merge
+        analysis_id, report_path = run_mcseg_merge(
+            sample_id=sample_id, roi_names=roi_names, merged_name=merged_name,
+            output_base=_Path(output_base) if output_base else None,
+            integrate=integrate, requested_by=requested_by,
+        )
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"bio_run_mcseg_merge 完成。\n"
+            f"sample_id: {sample_id}  merged_name: {merged_name}\n"
+            f"ROIs: {roi_names}\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except Exception as e:
+        import traceback
+        return f"bio_run_mcseg_merge 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_export_loupe(args: dict) -> str:
+    """Export MCseg ROI to Loupe Browser GeoJSON + cell_metadata.csv (+ optional .cloupe)."""
+    from pathlib import Path as _Path
+    sample_id = args["sample_id"]
+    roi_name = args["roi_name"]
+    roi_dir = args.get("roi_dir")
+    pixel_size_um = float(args.get("pixel_size_um", 0.2737))
+    requested_by = str(args.get("requested_by", "agent"))
+
+    try:
+        from analysis.loupe_export import run_loupe_export
+        analysis_id, report_path = run_loupe_export(
+            sample_id=sample_id, roi_name=roi_name,
+            roi_dir=_Path(roi_dir) if roi_dir else None,
+            pixel_size_um=pixel_size_um, requested_by=requested_by,
+        )
+        try:
+            report_text = _Path(report_path).read_text(encoding="utf-8")
+        except Exception:
+            report_text = ""
+        return (
+            f"bio_export_loupe 完成。\n"
+            f"sample_id: {sample_id}  ROI: {roi_name}\n"
+            f"analysis_id: {analysis_id}\n"
+            f"report_path: {report_path}\n\n"
+            f"{report_text}"
+        )
+    except Exception as e:
+        import traceback
+        return f"bio_export_loupe 失敗：{e}\n{traceback.format_exc()[-2000:]}"

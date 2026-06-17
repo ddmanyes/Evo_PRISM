@@ -33,11 +33,9 @@ logger = logging.getLogger(__name__)
 
 def _helix_con():
     """開一條對主 DuckDB 的 write 連線（HELIX 操作用）。"""
-    import duckdb
+    from config.db_utils import connect_db
 
-    from config.settings import DUCKDB_PATH
-
-    return duckdb.connect(str(DUCKDB_PATH))
+    return connect_db()
 
 
 def _require(args: dict, key: str) -> str:
