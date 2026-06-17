@@ -15,16 +15,32 @@ Frontmatter 必填欄位：
     data_type   — 對應 sample_registry.data_type，如 ``bulk_rnaseq``
     when_to_use — 一句話：何時用這份說明書
 選填：
-    agent_tool  — 主要對應的 agent 工具名，如 ``bio_run_bulk_eda``
+    agent_tools — MCP 工具清單，如 ``[bio_run_bulk_eda, bio_execute_code]``
+    sections    — 已定義的 section 名稱清單（自動從 body 解析，不需手動填）
+
+Section 標記格式（正文內嵌，供分段取用）：
+    <!-- section: overview -->
+    ...
+    <!-- /section -->
+
+可用 section 名稱慣例：
+    overview      — pipeline 示意圖 + 決策流程 + tool 對照表（~400 token）
+    prerequisites — 前置條件 + 分析前必呼叫（~200 token）
+    steps         — 標準步驟（含品質關卡、回傳格式）（~1500 token）
+    template      — 完整分析範本程式碼（~600 token）
+    appendix      — 完成後確認事項 + bio_execute_code 場景（~300 token）
 
 主要函數：
-    list_playbooks()              — 列出所有說明書的 frontmatter metadata
-    get_playbook(name_or_dtype)   — 依 name 或 data_type 載入單一說明書
+    list_playbooks()                          — 列出所有說明書的 frontmatter metadata
+    get_playbook(name_or_dtype)               — 依 name 或 data_type 載入單一說明書
+    Playbook.as_markdown(section=None)        — 回傳完整或指定 section 的 Markdown
+    Playbook.available_sections()             — 列出此說明書已定義的 section 名稱
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -42,6 +58,11 @@ PLAYBOOKS_DIR = BIO_DB_ROOT / "playbooks"
 
 _REQUIRED_KEYS = ("name", "version", "data_type", "when_to_use")
 _FRONTMATTER_DELIM = "---"
+
+_SECTION_RE = re.compile(
+    r"<!--\s*section:\s*(?P<name>\w+)\s*-->(?P<content>.*?)<!--\s*/section\s*-->",
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 class PlaybookError(Exception):
@@ -64,17 +85,56 @@ class Playbook:
     def data_type(self) -> str:
         return self.meta["data_type"]
 
-    def as_markdown(self) -> str:
-        """回傳「metadata 摘要 + 正文」的完整 Markdown，供 agent 直接閱讀。"""
+    def available_sections(self) -> list[str]:
+        """回傳此說明書已定義的 section 名稱清單。"""
+        return [m.group("name") for m in _SECTION_RE.finditer(self.body)]
+
+    def get_section(self, section_name: str) -> str:
+        """取出指定 section 的內容，找不到回傳空字串。"""
+        for m in _SECTION_RE.finditer(self.body):
+            if m.group("name").lower() == section_name.lower():
+                return m.group("content").strip()
+        return ""
+
+    def as_markdown(self, section: Optional[str] = None) -> str:
+        """回傳「metadata 摘要 + 正文（或指定 section）」的 Markdown。
+
+        section 省略 → 回傳完整正文（自動剝除 section 標記）。
+        section 指定 → 只回傳該 section 內容（省 token）。
+        """
         m = self.meta
         head = (
             f"# 分析說明書：{m['name']} (v{m['version']})\n\n"
             f"- **適用 data_type**：{m['data_type']}\n"
             f"- **何時使用**：{m['when_to_use']}\n"
         )
-        if m.get("agent_tool"):
+        if m.get("agent_tools"):
+            tools = m["agent_tools"]
+            head += f"- **工具**：{', '.join(tools) if isinstance(tools, list) else tools}\n"
+        elif m.get("agent_tool"):
             head += f"- **主要工具**：{m['agent_tool']}\n"
-        return head + "\n---\n\n" + self.body.strip() + "\n"
+
+        if section:
+            available = self.available_sections()
+            content = self.get_section(section)
+            if not content:
+                if available:
+                    return (
+                        f"{head}\n---\n\n"
+                        f"找不到 section `{section}`。\n"
+                        f"可用 sections：{available}\n"
+                        f"省略 section 參數可取完整說明書。"
+                    )
+                return (
+                    f"{head}\n---\n\n"
+                    f"此說明書尚未劃分 sections，請省略 section 參數取完整內容。"
+                )
+            return head + f"\n---\n\n*（section: {section}）*\n\n{content}\n"
+
+        # 完整內容：剝除 section 標記，保留內容
+        body = _SECTION_RE.sub(lambda mo: mo.group("content"), self.body)
+        body = re.sub(r"<!--[^>]*-->", "", body)
+        return head + "\n---\n\n" + body.strip() + "\n"
 
 
 def _parse_frontmatter(text: str, path: Path) -> tuple[dict[str, Any], str]:

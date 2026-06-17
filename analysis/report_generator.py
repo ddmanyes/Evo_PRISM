@@ -74,7 +74,13 @@ _REPORT_TEMPLATE = """\
 
 ---
 
-## 4. 空間覆蓋率
+## 4. 代表基因空間分布
+
+{spatial_figures}
+
+---
+
+## 5. 空間覆蓋率
 
 | 指標 | 數值 |
 |------|------|
@@ -84,7 +90,7 @@ _REPORT_TEMPLATE = """\
 
 ---
 
-## 5. 結論摘要
+## 6. 結論摘要
 
 {summary}
 
@@ -119,45 +125,30 @@ def _l2_obs_path(sample_id: str) -> str:
 
 
 def _collect_stats(sample_id: str, db_path: Path) -> dict:
-    """從 L2 Parquet 收集統計數字（純 DuckDB，0-token）。"""
+    """從 L2 Parquet 收集統計數字，複用 spatial_eda.qc_stats 避免重複實作。"""
     validate_sample_id(sample_id)
+    from analysis.spatial_eda import qc_stats, top_genes as _top_genes, _l2_expr_glob
+
+    # QC DataFrame（複用 spatial_eda.qc_stats，save=False 避免寫入 DB）
+    qc_df = qc_stats(sample_id, save=False, db_path=db_path)
+
+    # Top 20 genes（複用 spatial_eda.top_genes）
+    top_df = _top_genes(sample_id, n=20, db_path=db_path)
+    top_df = top_df.rename(columns={"total_counts": "total_umi"})
+
+    # n_nonzero 和 n_genes 需額外查詢（qc_stats 不回傳這些）
     expr_glob = _l2_expr_glob(sample_id)
-    obs_path = _l2_obs_path(sample_id)
-
     with duckdb.connect(str(db_path), read_only=True) as con:
-        n_bins = con.execute(f"SELECT COUNT(*) FROM read_parquet('{obs_path}')").fetchone()[0]
-
-        n_genes = con.execute(
+        row = con.execute(
             f"SELECT COUNT(DISTINCT gene_name) FROM read_parquet('{expr_glob}')"
-        ).fetchone()[0]
+        ).fetchone()
+        n_genes: int = row[0] if row else 0
+        row = con.execute(
+            f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')"
+        ).fetchone()
+        n_nonzero: int = row[0] if row else 0
 
-        n_nonzero = con.execute(f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')").fetchone()[0]
-
-        top_df = con.execute(
-            f"""
-            SELECT gene_name,
-                   SUM(count)::BIGINT AS total_umi,
-                   COUNT(*)::BIGINT   AS n_bins
-            FROM   read_parquet('{expr_glob}')
-            GROUP BY gene_name
-            ORDER BY total_umi DESC
-            LIMIT 20
-            """
-        ).fetchdf()
-
-        qc_df = con.execute(
-            f"""
-            SELECT o.barcode,
-                   o.array_row_8um,
-                   o.array_col_8um,
-                   COUNT(e.gene_name)        AS n_genes,
-                   COALESCE(SUM(e.count), 0) AS total_counts
-            FROM   read_parquet('{obs_path}') AS o
-            LEFT JOIN read_parquet('{expr_glob}') AS e USING (barcode)
-            GROUP BY o.barcode, o.array_row_8um, o.array_col_8um
-            """
-        ).fetchdf()
-
+    n_bins = len(qc_df)
     sparsity = 1 - (n_nonzero / (n_bins * n_genes)) if n_bins * n_genes > 0 else 1.0
     zero_bins = int((qc_df["n_genes"] == 0).sum())
 
@@ -208,9 +199,33 @@ def generate_summary(stats: dict, sample_id: str) -> str:
 
     # 硬截斷至 50 字（中文字符計算）
     if len(summary) > 50:
-        summary = summary[:49] + "…"
+        summary = summary[:50]
 
     return summary
+
+
+def _generate_spatial_figures_md(sample_id: str, top_genes_df, db_path: Path) -> str:
+    """呼叫 gene_spatial_map 對前 3 高表達基因生成空間圖，回傳 Markdown 字串。
+
+    失敗時靜默回傳說明文字，不中斷 EDA 報告生成。
+    """
+    from analysis.spatial_eda import gene_spatial_map
+
+    genes = top_genes_df["gene_name"].head(3).tolist()
+    sections: list[str] = []
+    for gene in genes:
+        try:
+            _, fig_md = gene_spatial_map(
+                sample_id, gene, save=True, db_path=db_path,
+                requested_by="report_generator",
+            )
+            if fig_md:
+                sections.append(f"### {gene}\n\n{fig_md}")
+        except Exception as exc:
+            logger.warning("spatial map for %s failed (non-fatal): %s", gene, exc)
+            sections.append(f"### {gene}\n\n*空間圖生成失敗：{exc}*")
+
+    return "\n\n".join(sections) if sections else "*無法生成代表基因空間圖（L2 數據不可用）*"
 
 
 def generate_eda_report(
@@ -218,8 +233,7 @@ def generate_eda_report(
     *,
     db_path: Optional[Path] = None,
 ) -> tuple[str, str, dict]:
-    """
-    生成完整 Markdown EDA 報告與 50 字摘要。
+    """生成完整 Markdown EDA 報告與 50 字摘要，含前 3 代表基因空間分布圖。
 
     Returns:
         (report_text, summary_text, stats_dict)
@@ -236,6 +250,7 @@ def generate_eda_report(
 
     summary = generate_summary(stats, sample_id)
     qc_figure = _generate_qc_figure_b64(stats)
+    spatial_figures = _generate_spatial_figures_md(sample_id, tg, db_path)
 
     report = _REPORT_TEMPLATE.format(
         sample_id=sample_id,
@@ -258,6 +273,7 @@ def generate_eda_report(
         valid_density=stats["valid_density"],
         summary=summary,
         qc_figure=qc_figure,
+        spatial_figures=spatial_figures,
     )
 
     return report, summary, stats

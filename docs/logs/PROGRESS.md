@@ -702,6 +702,45 @@ python run_visium_hd_showcase.py --roi-name my_roi --roi-x 9000 --roi-y 9000
 
 ---
 
+## ✅ 2026-06-12 Session-AE：Spatial EDA 全面 Code Review 修正 + Test Suite 補齊（spatial_visium.md v1.1.0）
+
+**動機**：對 VHD 分析手冊（`playbooks/spatial_visium.md`）進行全面 Code Review，發現 2 項 CRITICAL、4 項 HIGH、多項 MEDIUM/LOW 問題，全部修正後 45 tests pass。
+
+### 🔍 本 Session 完成事項
+
+### MCseg 功能收納分析（前置工作）
+
+- 逐一對照 MSseg 核心功能 vs Evo_PRISM 已收納情況，識別 3 大缺口（CellTypist、SVG、鄰域富集）
+- 搜尋 2025 年空間轉錄體報告標準（SpatialQM / Nature Biotech / ENACT），識別報告改善方向
+- 建立兩份 second brain 筆記：mcseg 功能對照分析 + MCseg 報告三階段改善計畫（Phase 1/2/3，使用者決定後續實施）
+
+### VHD 分析手冊 Code Review 與全面修正
+
+- **C1（CRITICAL）**：`bio_run_spatial_eda` 從未呼叫 `gene_spatial_map`，卻在說明書聲稱會產出基因空間圖。修正：`report_generator.py` 新增 `_generate_spatial_figures_md()`，自動取 top-3 基因並嵌入報告第 4 節。
+- **C2（CRITICAL）**：`gene_coexpression` 是純散點圖，但說明書寫「空間疊圖」。修正：完整改寫為 3-panel figure（gene_a 空間 Blues / gene_b 空間 Reds / 共表達散點）。
+- **H1（HIGH）**：所有 `spatial_eda` 函數缺少 `register_artifact`。修正：新增 `_register()` helper，在每個 `save=True` 分支呼叫。
+- **H2（HIGH）**：`tool_id` 永遠為 NULL。修正：新增 `_backfill()` helper，分析後呼叫 `backfill_tool_id`。
+- **H3（HIGH）**：`report_generator._collect_stats()` 重複實作 QC SQL。修正：改呼叫 `spatial_eda.qc_stats(save=False)`，消除重複邏輯。
+- **H4（HIGH）**：`requested_by` 硬編碼。修正：全鏈路加 `requested_by` 參數傳遞。
+- **MEDIUM**：記憶體洩漏（缺少 `plt.close`）、summary 截斷 off-by-one、return API 不一致（3-tuple→2-tuple）。全數修正。
+
+### 測試補齊
+
+- `test_phase10.py` `_EXPECTED_TOOLS` 由 26 → 31（補上 `bio_lookup_sample`、`bio_get_playbook`、`bio_sample_list`、`bio_sample_compare`、`bio_run_mcseg_qc`），修正預存失敗。
+- 最終：**45 passed, 0 failed**。
+
+### 📁 異動檔案
+
+| 檔案 | 異動 |
+|------|------|
+| `analysis/spatial_eda.py` | 全面重寫（C2、H1/H2/H4、記憶體、return API） |
+| `analysis/report_generator.py` | C1 自動基因空間圖 + H3 QC 整合 + MEDIUM |
+| `playbooks/spatial_visium.md` | v1.1.0（步驟描述與程式碼對齊） |
+| `scratch/run_spatial_eda.py` | 配合 2-tuple return API 更新 |
+| `tests/test_phase10.py` | `_EXPECTED_TOOLS` 26→31 |
+
+---
+
 ## ✅ 2026-05-26 Session-AD：論文 §3 全面重構 + Review 三項硬錯誤修正（paper v2.9.0）
 
 **動機**：延續前次 context overflow 的 §3 重構計畫，完整執行 6 項 §3 改動，並對全文進行一輪 review，修正三項影響可讀性與交叉引用正確性的硬錯誤。
@@ -2584,6 +2623,8 @@ P1-C 揭露的後續任務：`mcp_tool_metrics` 是 `v_tool_perf_30d` 的前置�
 | 2026-05-21 | tool_id 回填集中化（HELIX §7.3） | `backfill_tool_id()` 統一出口下沉到 6 個分析函數；移除 wrapper 層重複回填；工具產出分析 tool_id 覆蓋 4/23 → 23/23；impact(bulk_eda) 3 exact+8 heuristic → 11 exact；6 新測試；全套件 555 passed |
 | 2026-05-22 | 98 樣本 Joint Downstream 分析打通 & AB4 延遲註冊 | 於 run_joint_pipeline.py 強制 UTF-8 解除 omicverse emoji 終端編碼崩潰；成功跑通 98 樣本 EDA/DEG/Heatmap/ORA 端對端聯合分析；產出 20+ 多模態 Artifacts，完成 sample_registry 樣本治理登記；於 tool_registry.py 實現 `@register_tool_on_import` 與 lazy 登記 (AB4)，徹底解決 tool_id 覆蓋率 (100% 寫入)；學術量化數據回填 paper_draft.md C1 段落，全套件 562 passed |
 | 2026-05-23 | 代碼庫 Housekeeping 實體拆檔重構 (AB6) | 將 2,436 行的 server/agent.py 物理拆分為 agent_spatial.py、agent_bulk.py 與 agent_history.py 三個專屬模組；在 agent.py 中以 import 重新導出所有 `_exec_bio_*` 函數，達成 100% API 與 Mock 測試相容性；運行 631 項回歸測試（617 項通過，其餘失敗屬 Windows 既有環境限制，無 Regression）；完成 CLI 手動交互驗證 |
+| 2026-06-11 | v27 migration — parameter_hash + env_hash (B1/B2) | `analysis_history.parameter_hash VARCHAR(16)`（MD5[:16] sort_keys JSON）；`tools.env_hash VARCHAR(16)`（SHA256[:16] of uv.lock）；`param_hash()` utility；`settings.ENV_HASH` import-time 計算；`register_tool()` 新增 `env_hash=` kwarg；bulk_eda/deg/enrichment INSERT 補寫；commit `b07d051` |
+| 2026-06-11 | Code Review 全專案改善批次（CRITICAL×1 + HIGH×4 + MEDIUM×4） | SQL injection 修復（parameterized INSERT + transaction）；`connect_db()` 取代裸 `duckdb.connect()`；`export_snapshot()` 移至 `con.close()` 之後；`tool_registry` TOCTOU 緩存；`param_hash` 路徑相對化；commit `2be114b` |
 
 ---
 
@@ -3052,3 +3093,4 @@ P1-C 揭露的後續任務：`mcp_tool_metrics` 是 `v_tool_perf_30d` 的前置�
 3. **[docs/logs/PROGRESS.md](file:///i:/Evo_PRISM/docs/logs/PROGRESS.md)** [MODIFY]：追加本輪 Phase 16 README 雙語同步更新里程碑封存。
 
 *本輪更新使專案門戶文檔完美對齊最新實測效能，為開源社群及期刊審稿人提供最具信服力之第一眼學術與工程指引！*
+| 2026-06-11 | B3/B4/B5 架構改善批次完成 | summary_metrics v28 migration（bulk_eda/deg/enrichment）；gc_orphan_results.py（孤兒 GC）；BM25 4-way RRF（l1_cache + cleanup_l1_cache）；commit `a6a58b1` |

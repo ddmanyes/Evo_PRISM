@@ -112,12 +112,48 @@ def sample_correlation(counts: pd.DataFrame) -> pd.DataFrame:
     return np.log1p(counts).corr(method="pearson")
 
 
+def assess_qc_flags(
+    qc: pd.DataFrame,
+    corr: pd.DataFrame,
+    *,
+    mapping_rate_threshold: float = 70.0,
+    pearson_threshold: float = 0.9,
+) -> list[str]:
+    """回傳品質警告旗標清單（空列表 = 全部通過）。
+
+    旗標格式：
+        low_mapping_rate:<sample>(<rate>%)
+        low_correlation:<sample>(mean_r=<r>)
+    """
+    flags: list[str] = []
+
+    if "mapping_rate_pct" in qc.columns:
+        bad = qc[qc["mapping_rate_pct"] < mapping_rate_threshold]["mapping_rate_pct"]
+        for sample, rate in bad.items():
+            flags.append(f"low_mapping_rate:{sample}({rate:.1f}%)")
+
+    # 平均相關性：排除自身（對角線）
+    corr_copy = corr.copy().astype(float)
+    np.fill_diagonal(corr_copy.values, np.nan)
+    mean_r = corr_copy.mean(axis=1, skipna=True)
+    bad_corr = mean_r[mean_r < pearson_threshold]
+    for sample, r in bad_corr.items():
+        flags.append(f"low_correlation:{sample}(mean_r={r:.3f})")
+
+    return flags
+
+
 def pca_plot(
     counts: pd.DataFrame,
     output_path: Optional[Path] = None,
     n_top_genes: int = 2000,
+    coldata: Optional[pd.DataFrame] = None,
+    color_by: str = "group",
 ) -> Path:
-    """以變異量最高的 n_top_genes 基因做 PCA，儲存圖檔並回傳路徑。"""
+    """以變異量最高的 n_top_genes 基因做 PCA，儲存圖檔並回傳路徑。
+
+    coldata 若提供，依 color_by 欄位著色（優先於 sample name 前綴推斷）。
+    """
     from sklearn.decomposition import PCA
     from sklearn.preprocessing import StandardScaler
 
@@ -130,9 +166,15 @@ def pca_plot(
     coords = pca.fit_transform(mat)
     explained = pca.explained_variance_ratio_ * 100
 
-    fig, ax = plt.subplots(figsize=(8, 6))
     samples = counts.columns.tolist()
-    groups = [s.split("_")[0] for s in samples]
+    if coldata is not None and color_by in coldata.columns:
+        groups = [str(coldata.loc[s, color_by]) if s in coldata.index else "unknown" for s in samples]
+        legend_title = color_by
+    else:
+        groups = [s.split("_")[0] for s in samples]
+        legend_title = "condition"
+
+    fig, ax = plt.subplots(figsize=(8, 6))
     palette = {g: plt.cm.tab10(i) for i, g in enumerate(sorted(set(groups)))}
 
     for sample, group, (x, y) in zip(samples, groups, coords):
@@ -142,7 +184,7 @@ def pca_plot(
     from matplotlib.patches import Patch
 
     handles = [Patch(color=c, label=g) for g, c in sorted(palette.items())]
-    ax.legend(handles=handles, fontsize=8, title="condition")
+    ax.legend(handles=handles, fontsize=8, title=legend_title)
     ax.set_xlabel(f"PC1 ({explained[0]:.1f}%)", fontsize=11)
     ax.set_ylabel(f"PC2 ({explained[1]:.1f}%)" if len(explained) > 1 else "PC2", fontsize=11)
     ax.set_title("Bulk RNA-seq PCA (log1p counts)", fontsize=13)
@@ -211,15 +253,121 @@ def correlation_heatmap(
     return out
 
 
+# ── 報告生成輔助 ─────────────────────────────────────────────────────────────
+
+
+def _caption_qc(qc: pd.DataFrame) -> str:
+    try:
+        if qc.empty or qc["total_counts"].isna().all():
+            return "QC 統計不可用"
+        lo, hi = int(qc["total_counts"].min()), int(qc["total_counts"].max())
+        g_lo, g_hi = int(qc["n_genes"].min()), int(qc["n_genes"].max())
+        return f"lib.size {lo:,}–{hi:,}；偵測基因 {g_lo:,}–{g_hi:,}"
+    except Exception:
+        return "QC 統計不可用"
+
+
+def _caption_dist(counts: pd.DataFrame) -> str:
+    try:
+        if counts.empty:
+            return "count 分布不可用"
+        vals = np.log1p(counts.values.astype(float))
+        medians = np.median(vals, axis=0)
+        return f"各樣本 log1p 中位數 {medians.min():.2f}–{medians.max():.2f}"
+    except Exception:
+        return "count 分布不可用"
+
+
+def _caption_corr(corr: pd.DataFrame) -> str:
+    try:
+        vals = corr.values.copy().astype(float)
+        np.fill_diagonal(vals, np.nan)
+        off = vals[~np.isnan(vals)]
+        if off.size == 0:
+            return "Pearson r N/A（樣本數不足）"
+        return f"Pearson r {off.min():.2f}–{off.max():.2f}（不含對角線）"
+    except Exception:
+        return "相關矩陣不可用"
+
+
+def _caption_pca(counts: pd.DataFrame) -> str:
+    try:
+        from sklearn.decomposition import PCA
+        from sklearn.preprocessing import StandardScaler
+        top_idx = counts.var(axis=1).sort_values(ascending=False).head(2000).index
+        mat = StandardScaler().fit_transform(np.log1p(counts.loc[top_idx].T.values))
+        ev = PCA(n_components=min(2, mat.shape[1])).fit(mat).explained_variance_ratio_ * 100
+        return f"PC1={ev[0]:.1f}%，PC2={ev[1]:.1f}%" if len(ev) > 1 else f"PC1={ev[0]:.1f}%"
+    except Exception:
+        return "PC% 不可用"
+
+
+def _version_block() -> str:
+    """Markdown table of key package versions for reproducibility."""
+    import importlib as _il
+    import sys as _sys
+    pkgs = [("pandas", "pandas"), ("numpy", "numpy"), ("scipy", "scipy"),
+            ("omicverse", "omicverse"), ("seaborn", "seaborn"), ("sklearn", "sklearn")]
+    rows = [f"| Python | {_sys.version.split()[0]} |"]
+    for label, pkg in pkgs:
+        try:
+            ver = getattr(_il.import_module(pkg), "__version__", "?")
+        except ImportError:
+            ver = "—"
+        rows.append(f"| `{label}` | {ver} |")
+    return "| 套件 | 版本 |\n| --- | --- |\n" + "\n".join(rows)
+
+
+def count_dist_boxplot(
+    counts: pd.DataFrame,
+    *,
+    output_path: Path,
+) -> Path:
+    """每樣本 log1p counts 分布 boxplot（正規化前）。"""
+    n = counts.shape[1]
+    fig, ax = plt.subplots(figsize=(max(8, n * 0.55), 5))
+    log_data = [np.log1p(counts[col].values) for col in counts.columns]
+    bp = ax.boxplot(
+        log_data,
+        labels=counts.columns,
+        showfliers=False,
+        patch_artist=True,
+        medianprops=dict(color="white", lw=1.5),
+    )
+    for patch in bp["boxes"]:
+        patch.set_facecolor("#4C72B0")
+        patch.set_alpha(0.75)
+    ax.tick_params(axis="x", labelrotation=90, labelsize=7)
+    ax.set_ylabel("log1p(counts)", fontsize=11)
+    ax.set_title("Count distribution per sample (pre-normalization)", fontsize=12)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 # ── 報告生成 ──────────────────────────────────────────────────────────────────
 
 _REPORT_TEMPLATE = """\
 # Bulk RNA-seq EDA 報告
 
-**生成時間**：{timestamp}
-**樣本集**：{sample_id}
-**樣本數**：{n_samples}
-**基因數**：{n_genes:,}
+| 欄位 | 值 |
+| --- | --- |
+| **analysis_id** | `{analysis_id}` |
+| **生成時間** | {timestamp} |
+| **樣本集** | {sample_id} |
+| **樣本數** | {n_samples} |
+| **基因數** | {n_genes:,} |
+
+---
+
+{quality_warnings}
+
+## 0. 實驗設計（coldata）
+
+{design_table}
 
 ---
 
@@ -230,41 +378,54 @@ _REPORT_TEMPLATE = """\
 
 ---
 
-## 2. Top {n_top} 高表達基因（平均 counts）
+## 2. Count 分布（log1p，正規化前）
+
+{dist_fig}
+
+---
+
+## 3. Top {n_top} 高表達基因（平均 counts）
 
 {top_table}
 
 ---
 
-## 3. 樣本相關矩陣（Pearson, log1p）
+## 4. 樣本相關矩陣（Pearson, log1p）
 
 {corr_table}
 {corr_fig}
 
 ---
 
-## 4. PCA 圖
+## 5. PCA 圖
+
 {pca_fig}
 
 ---
 
-*由 BioAgent analysis/bulk_eda.py 自動生成*
+## 套件版本（reproducibility）
+
+{version_block}
+
+*由 Evo_PRISM analysis/bulk_eda.py 自動生成*
 """
 
 
 @register_tool_on_import(
     tool_name="bio_run_bulk_eda",
-    version="1.0.0",
-    description="執行 98 樣本 Bulk RNA-seq 的 EDA 探索性數據分析並繪製圖表",
+    version="1.1.0",
+    description="對 Bulk RNA-seq 樣本執行 EDA（QC / top genes / 相關矩陣 / PCA），支援 coldata 著色",
 )
 def generate_bulk_report(
     sample_id: str,
     counts_path: Optional[Path] = None,
+    coldata_path: Optional[Path] = None,
     requested_by: str = "agent",
     parent_analysis_id: Optional[str] = None,
 ) -> tuple[str, str]:
     """執行完整 Bulk EDA 並將報告 + 摘要寫入 analysis_history。
 
+    coldata_path 若提供，PCA 圖依 'group' 欄著色（否則以 sample name 前綴推斷）。
     成功完成後自動標記為 canonical，舊 canonical 降為 superseded。
     parent_analysis_id 若未指定則自動查詢當前 canonical 作為父節點。
 
@@ -284,7 +445,7 @@ def generate_bulk_report(
         except ValueError:
             return str(p)
 
-    _params = {"counts_path": _rel(counts_path)}
+    _params = {"counts_path": _rel(counts_path), "coldata_path": _rel(coldata_path)}
     params_json = json.dumps(_params)
     report_path: Optional[Path] = None
 
@@ -308,6 +469,19 @@ def generate_bulk_report(
         qc = qc_stats(counts)
         top = top_genes(counts, n=20)
         corr = sample_correlation(counts)
+        quality_flags = assess_qc_flags(qc, corr)
+
+        coldata: Optional[pd.DataFrame] = None
+        if coldata_path is not None:
+            _cp = Path(coldata_path)
+            if _cp.exists():
+                coldata = (
+                    pd.read_csv(_cp, sep="\t", index_col=0)
+                    if _cp.suffix in {".tsv", ".txt"}
+                    else pd.read_csv(_cp, index_col=0)
+                )
+            else:
+                logger.warning("coldata_path 不存在，PCA 改用 sample name 前綴著色：%s", _cp)
 
         out_dir = results_dir(sample_id, "bulk_eda")
         ts = started_at.strftime("%Y%m%d_%H%M%S")
@@ -325,26 +499,52 @@ def generate_bulk_report(
                 logger.warning("%s 生成失敗，跳過", alt, exc_info=True)
                 return None, f"\n（{alt} 生成失敗）\n"
 
+        dist_out = out_dir / f"dist_{sample_id}_{ts}.png"
+
         qc_file, qc_fig = _safe_fig(lambda p: qc_barplot(qc, output_path=p), qc_out, "QC barplot")
+        dist_file, dist_fig = _safe_fig(
+            lambda p: count_dist_boxplot(counts, output_path=p), dist_out, "Count distribution"
+        )
         corr_file, corr_fig = _safe_fig(
             lambda p: correlation_heatmap(corr, output_path=p),
             corr_out,
             "Sample correlation heatmap",
         )
-        pca_file, pca_fig = _safe_fig(lambda p: pca_plot(counts, output_path=p), pca_out, "PCA")
+        pca_file, pca_fig = _safe_fig(
+            lambda p: pca_plot(counts, output_path=p, coldata=coldata), pca_out, "PCA"
+        )
+
+        if quality_flags:
+            warnings_md = (
+                "## ⚠️ 品質警告\n\n"
+                + "\n".join(f"- `{f}`" for f in quality_flags)
+                + "\n\n---\n"
+            )
+        else:
+            warnings_md = ""
+
+        if coldata is not None:
+            design_table = coldata.to_markdown()
+        else:
+            design_table = "（未提供 coldata，請傳入 `coldata_path` 以顯示實驗設計）"
 
         report_text = _REPORT_TEMPLATE.format(
+            analysis_id=analysis_id,
             timestamp=started_at.isoformat(),
             sample_id=sample_id,
             n_samples=counts.shape[1],
             n_genes=counts.shape[0],
+            quality_warnings=warnings_md,
+            design_table=design_table,
             qc_table=qc.to_markdown(floatfmt=".1f"),
             qc_fig=qc_fig,
+            dist_fig=dist_fig,
             n_top=20,
             top_table=top.to_markdown(floatfmt=".1f"),
             corr_table=corr.to_markdown(floatfmt=".3f"),
             corr_fig=corr_fig,
             pca_fig=pca_fig,
+            version_block=_version_block(),
         )
 
         report_path = out_dir / f"bulk_eda_{sample_id}_{ts}.md"
@@ -365,6 +565,7 @@ def generate_bulk_report(
             "n_samples": n_samples,
             "avg_detected_genes": avg_genes,
             "avg_total_counts": int(avg_total),
+            "quality_flags": quality_flags,
         })
 
         completed_at = datetime.now(timezone.utc)
@@ -390,8 +591,17 @@ def generate_bulk_report(
                     analysis_id,
                     qc_file,
                     "figure",
-                    "QC barplot（library size + 偵測基因數）",
+                    f"QC barplot（library size + 偵測基因數）— {_caption_qc(qc)}",
                     artifact_subtype="qc",
+                )
+            if dist_file and dist_file.exists():
+                register_artifact(
+                    con,
+                    analysis_id,
+                    dist_file,
+                    "figure",
+                    f"Count 分布 boxplot（log1p）— {_caption_dist(counts)}",
+                    artifact_subtype="count_dist",
                 )
             if corr_file and corr_file.exists():
                 register_artifact(
@@ -399,7 +609,7 @@ def generate_bulk_report(
                     analysis_id,
                     corr_file,
                     "figure",
-                    "樣本相關矩陣 heatmap",
+                    f"樣本相關矩陣 heatmap — {_caption_corr(corr)}",
                     artifact_subtype="correlation",
                 )
             if pca_file and pca_file.exists():
@@ -408,7 +618,7 @@ def generate_bulk_report(
                     analysis_id,
                     pca_file,
                     "figure",
-                    "PCA 主成分分析圖",
+                    f"PCA 主成分分析圖 — {_caption_pca(counts)}",
                     artifact_subtype="pca",
                 )
             register_artifact(

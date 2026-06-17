@@ -1,6 +1,6 @@
 ---
 name: mcseg
-version: 2.0.0
+version: 2.1.0
 data_type: imaging
 when_to_use: |
   Visium HD 空間轉錄組 H&E 影像細胞分割與下游分析。適用情境：
@@ -46,7 +46,19 @@ mask 輸出後再 nearest-neighbor downscale 回 virtual_fullres（供 bin attri
 
 **耗時**：30–90 分鐘（GPU），Stage 1 最長  
 **必要參數**：`sample_id`, `roi_x`, `roi_y`（virtual_fullres px）  
-**選填**：`roi_width_px`（預設 1500）、`roi_height_px`（預設 1500）、`roi_name`、`use_cpsam`（預設 true）
+**選填**：
+
+| 參數 | 預設 | 說明 |
+| --- | --- | --- |
+| `roi_width_px` | 1500 | ROI 寬度（virtual_fullres px） |
+| `roi_height_px` | 1500 | ROI 高度（virtual_fullres px） |
+| `roi_name` | `roi_<x>_<y>` | 輸出目錄識別名稱 |
+| `use_cpsam` | `true` | false → 4-pass only；true → 7-pass（含 cpsam） |
+| `btf_image_path` | *(auto)* | BTF/TIFF 全圖路徑；省略則從 `sample_registry.l3_path` 自動解析 |
+| `binned_dir` | *(auto)* | Visium HD `binned_outputs` 目錄；省略則同上自動解析 |
+| `output_base` | *(auto)* | 輸出根目錄；省略則用 `MCSEG_RESULTS_ROOT/<sample_id>` |
+
+> **⚠️ `pixel_size_um` 限制**：RNA 計數的像素物理尺寸固定為 **0.2737 µm/px**（TIFF 解析度），目前 MCP 工具未開放此參數，僅適用 10x Visium HD SDS-D0D1D2 數據集。若分析其他解析度的樣本需修改 `agent_bulk.py`。
 
 ### Stage 0 — ROI 裁切
 
@@ -60,15 +72,15 @@ mask 輸出後再 nearest-neighbor downscale 回 virtual_fullres（供 bin attri
 ### Stage 1 — 7-Pass MCseg 集成分割
 
 - 函數：`mcseg_wrapper.run_mcseg_segmentation` → `cellpose_runner.run_tiled_mcseg_v2`
-- **4-pass（預設）**：
+- **7-pass（預設，use_cpsam=true）**：
   1. cyto3 × RGB-CLAHE，dia=17px（mid）
   2. cyto3 × RGB-CLAHE，dia=13px（small，cellprob 更寬鬆）
   3. cyto3 × RGB-CLAHE，dia=22px（large）
   4. cyto3 × Hematoxylin 通道
-- **額外 3-pass（use_cpsam=true）**：
   5. cpsam × RGB-CLAHE，dia=auto（~30px）
   6. cpsam × RGB-CLAHE，dia=16px
   7. cpsam × Hematoxylin
+- **4-pass（use_cpsam=false）**：只跑上方 Pass 1–4，省略 cpsam
 - 合併策略：`merge_masks_fast`（重疊 < 15% 才納入）
 - 後處理：clean_mask → Voronoi 擴張（max 9px）→ relabel_sequential
 - 輸出：`segmentation_masks.npy`（int32）、`segmentation_masks.tif`（uint16/uint32）
@@ -82,6 +94,8 @@ mask 輸出後再 nearest-neighbor downscale 回 virtual_fullres（供 bin attri
 - 將 2µm bins（`pxl_col/row_in_fullres`）mapping 到 mask 細胞 ID
 - 輸出：`cellpose_cells.h5ad`（細胞 × 基因矩陣）
 
+> **注意**：Stages 3–7 透過 `subprocess.run()` 委派至 `scratch/run_visium_hd_showcase.py` 執行（timeout 7200 s），而非在 MCP server 進程內直接執行。子進程的 stdout/stderr 不即時串流至工具回傳值，失敗時需查看 `<roi_dir>/` 下的日誌或錯誤訊息。
+
 ### Stage 3 — Scanpy 下游分析
 
 - QC（adaptive p10 threshold）：
@@ -89,12 +103,15 @@ mask 輸出後再 nearest-neighbor downscale 回 virtual_fullres（供 bin attri
   MIN_COUNTS = max(50, p10(total_counts))
   MIN_GENES  = max(20, p10(n_genes_by_counts))
   ```
+- `sc.pp.filter_genes(adata, min_cells=3)`（移除極稀疏基因）
+- **提前終止**：若 QC 後 `n_obs < 15`，Stage 3–7 全部中止並回傳告警；ROI 組織過少或裁切有誤
 - normalization → log1p → HVG 選取 → PCA → Leiden clustering → UMAP
 - 輸出：`umap_computed.h5ad`
 
 ### Stage 4 — 細胞類型標注
 
 - `sc.tl.score_genes()` 向量化評分（避免 O(n×g) 逐細胞迴圈）
+- **Fallback 行為**：max score ≤ 0.05 的細胞一律標注為 `Dermal_Fibroblasts`（非 "Unknown"），門檻值硬編碼
 - 預設 marker 基因（皮膚 / 毛囊）：
 
   | 類型 | Markers |
@@ -114,8 +131,8 @@ mask 輸出後再 nearest-neighbor downscale 回 virtual_fullres（供 bin attri
 | **NED**（鄰域生態距離） | Delaunay 三角化 + Hellinger 距離 | 向量化 numpy，衡量邊界銳利度 |
 | **Doublet rate** | Krt14 × Col1a1 共表現 | 分割品質指標 |
 | **Stem↔Dermal 距離** | sklearn NearestNeighbors（O(n log n)）| 空間隔離程度 |
-| **Permutation p-value** | 1000 次 shuffle CSR | 觀測距離是否顯著 < CSR |
-| **Spatial niche** | KMeans 聚類（NearestNeighbors 鄰域組成） | 4 個 niche 類型 |
+| **Permutation p-value** | 100 次 shuffle CSR | 觀測距離是否顯著 < CSR |
+| **Spatial niche** | KMeans 聚類（NearestNeighbors 鄰域組成） | `min(4, n_lin)` 個 niche（細胞類型數不足 4 時自動縮減） |
 
 ### Stage 6 — 圖片輸出與 Xenium 匯出
 
@@ -130,7 +147,7 @@ mask 輸出後再 nearest-neighbor downscale 回 virtual_fullres（供 bin attri
 ### Stage 7 — H&E Overlay 視覺化
 
 - 函數：`_generate_mask_overlay`（`scratch/run_visium_hd_showcase.py`）
-- mask 從 virtual_fullres（1500×1500）nearest-neighbor upscale 回 TIFF 解析度（2321×2321）疊圖
+- mask 從 virtual_fullres（1500×1500）nearest-neighbor upscale 回原始 H&E TIFF 解析度疊圖（尺寸動態讀取，非固定值）
 - 輸出兩張：
   - `mask_he_overlay.png`：細胞類型著色填色（alpha=0.38）+ 白色邊界（alpha=0.85）
   - `mask_he_boundary.png`：純白邊界版（適合論文）
@@ -194,8 +211,7 @@ results/mcseg/<sample_id>/
     ├── transcripts.zarr.zip
     ├── cell_feature_matrix.zarr.zip
     ├── analysis_zarr.zip
-    ├── cell_metadata.json
-    └── analysis_summary.html
+    └── cell_metadata.json
 ```
 
 ---

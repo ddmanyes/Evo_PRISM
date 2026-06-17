@@ -304,16 +304,21 @@ BIO_TOOLS = [
         "name": "bio_run_bulk_eda",
         "description": (
             "對 Bulk RNA-seq 樣本集執行 EDA（QC 統計 + top genes + 樣本相關 + PCA）。"
-            "完成後自動寫入 analysis_history。"
-            "需要先執行 scripts/bulk_rna/ pipeline 產生 gene_counts.tsv。耗時約 10–60 秒。"
+            "自動偵測品質問題（mapping_rate < 70%、Pearson < 0.9）並寫入 quality_flags。"
+            "coldata_path 若提供，PCA 依 group 欄著色；省略則以 sample name 前綴推斷。"
+            "完成後自動寫入 analysis_history。耗時約 10–60 秒。"
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "sample_id": {"type": "string", "description": "樣本集 ID,例如 Kallisto_v1"},
+                "sample_id": {"type": "string", "description": "樣本集 ID，例如 Kallisto_v1"},
+                "coldata_path": {
+                    "type": "string",
+                    "description": "sample × group 設計表路徑（TSV/CSV，含 group 欄）；供 PCA 著色用，可選",
+                },
                 "requested_by": {
                     "type": "string",
-                    "description": "請求者(預設 agent)",
+                    "description": "請求者（預設 agent）",
                     "default": "agent",
                 },
             },
@@ -323,11 +328,13 @@ BIO_TOOLS = [
     {
         "name": "bio_run_deg",
         "description": (
-            "Bulk RNA-seq 差異表達分析(DESeq2 via omicverse.pyDEG)+ 火山圖。"
-            "對多組對照逐一跑 DEG,每組產出 DEG_<a>_vs_<b>.csv + Volcano_<a>_vs_<b>.png,"
-            "彙整報告寫入 analysis_history(analysis_type=bulk_deg)。"
+            "Bulk RNA-seq 差異表達分析（DESeq2 via omicverse.pyDEG）+ 火山圖。"
+            "執行前自動過濾低表達基因（CPM ≥ 1 in ≥ N/4 樣本），結果記錄於 summary_metrics。"
+            "對多組對照逐一跑 DEG，每組產出 DEG_<a>_vs_<b>.csv + Volcano_<a>_vs_<b>.png，"
+            "自動偵測 DEG 數量異常（few_deg/high_deg/excess_deg）並寫入 quality_flags。"
+            "彙整報告寫入 analysis_history（analysis_type=bulk_deg）。"
             "**對齊 ddmanyes/bulk-rnaseq-pipeline 的 DESeq2 流程**。先 bio_get_playbook(bulk_rnaseq)。"
-            "耗時依樣本數而定(84 樣本 × 1 對照 ≈ 1–3 分鐘)。"
+            "耗時依樣本數而定（大型樣本集 × 1 對照 ≈ 1–3 分鐘）。"
         ),
         "input_schema": {
             "type": "object",
@@ -409,9 +416,10 @@ BIO_TOOLS = [
     {
         "name": "bio_run_heatmaps",
         "description": (
-            "為 Bulk RNA-seq 產出兩張熱圖:(1) 顯著基因熱圖(union of DEG 顯著基因),"
-            "(2) Top N 變異基因熱圖(預設 top 50)。皆 z-score normalized,含階層聚類(sns.clustermap)。"
-            "寫入 analysis_history(analysis_type=bulk_heatmap)。"
+            "為 Bulk RNA-seq 產出兩張熱圖：(1) 顯著基因熱圖（union of DEG 顯著基因），"
+            "(2) Top N 變異基因熱圖（預設 top 50）。皆 z-score normalized，含階層聚類（sns.clustermap）。"
+            "coldata_path 若提供，熱圖上方自動顯示 group/batch annotation 顏色條。"
+            "寫入 analysis_history（analysis_type=bulk_heatmap）。"
             "對齊 ddmanyes/bulk-rnaseq-pipeline 的 Heatmap_Significant_Genes / Heatmap_Top50_Variable_Genes。"
         ),
         "input_schema": {
@@ -421,13 +429,17 @@ BIO_TOOLS = [
                 "counts_path": {"type": "string", "description": "gene × sample counts CSV"},
                 "deg_tables": {
                     "type": "array",
-                    "description": "一張或多張 DEG CSV 路徑;會 union 後抽顯著基因",
+                    "description": "一張或多張 DEG CSV 路徑；會 union 後抽顯著基因",
                     "items": {"type": "string"},
                     "minItems": 1,
                 },
                 "top_n": {"type": "integer", "default": 50},
                 "fc_threshold": {"type": "number", "default": 1.0},
                 "pval_threshold": {"type": "number", "default": 0.05},
+                "coldata_path": {
+                    "type": "string",
+                    "description": "sample × group 設計表路徑（TSV/CSV）；供熱圖 annotation bar 著色用，可選",
+                },
                 "requested_by": {"type": "string", "default": "agent"},
             },
             "required": ["sample_id", "counts_path", "deg_tables"],
@@ -502,7 +514,8 @@ BIO_TOOLS = [
         "description": (
             "取得某分析領域的『技能說明書』（標準步驟順序 + 每步該呼叫的函數 + 該產出的圖 + 品質關卡）。"
             "**執行任何領域分析（bulk / 空間 / mcseg）前先呼叫**，依說明書分步進行，確保每步出圖、不漏步。"
-            "省略 domain 則列出所有可用說明書。0 LLM token 的本地讀取。"
+            "省略 domain 則列出所有可用說明書。省略 section 取完整說明書；指定 section 只取該段（省 token）。"
+            "可用 section 名稱：overview / prerequisites / steps / template / appendix。"
         ),
         "input_schema": {
             "type": "object",
@@ -510,6 +523,10 @@ BIO_TOOLS = [
                 "domain": {
                     "type": "string",
                     "description": "說明書名稱或 data_type，如 bulk_rnaseq / spatial_visium / visium_hd（省略則列出全部）",
+                },
+                "section": {
+                    "type": "string",
+                    "description": "只取特定段落（省 token）：overview / prerequisites / steps / template / appendix。省略取完整說明書。",
                 },
             },
             "required": [],

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     import duckdb
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 matplotlib.use("Agg")
@@ -48,6 +49,15 @@ from analysis.validators import validate_sample_id
 # 預設 library 集合（與參考 pipeline 對齊；可由呼叫端覆蓋）
 DEFAULT_LIBRARIES: tuple[str, ...] = (
     "GO_Biological_Process_2023",
+    "KEGG_2021_Human",
+    "Reactome_2022",
+)
+
+# 擴充 library 集合（含 GO 三子本體；API 呼叫較多，按需使用）
+EXTENDED_LIBRARIES: tuple[str, ...] = (
+    "GO_Biological_Process_2023",
+    "GO_Molecular_Function_2023",
+    "GO_Cellular_Component_2023",
     "KEGG_2021_Human",
     "Reactome_2022",
 )
@@ -156,23 +166,89 @@ def dotplot_from_enrichr(
         return None
 
 
+def bar_plot_from_enrichr(
+    res: pd.DataFrame,
+    *,
+    output_path: Path,
+    top_term: int = 10,
+    title: str = "",
+    figsize: tuple[float, float] = (7.0, 5.0),
+) -> Optional[Path]:
+    """Enrichr ORA 結果長條圖（-log10 padj）；補充 dot plot 使用。"""
+    if res is None or res.empty:
+        return None
+    pval_col = "Adjusted P-value" if "Adjusted P-value" in res.columns else "P-value"
+    term_col = "Term" if "Term" in res.columns else res.columns[0]
+    df = res.nsmallest(top_term, pval_col).copy()
+    if df.empty:
+        return None
+    df["_neglog10p"] = -np.log10(df[pval_col].clip(lower=1e-300))
+    df = df.sort_values("_neglog10p", ascending=True)
+    terms = df[term_col].str[:55].tolist()
+    values = df["_neglog10p"].tolist()
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.barh(terms, values, color="#4C72B0", alpha=0.8)
+    ax.axvline(-np.log10(0.05), color="grey", ls="--", lw=0.8, label="padj=0.05")
+    ax.set_xlabel("-log10(Adjusted P-value)", fontsize=10)
+    ax.set_title(title or "Enrichment bar plot", fontsize=11)
+    ax.legend(fontsize=8)
+    ax.tick_params(axis="y", labelsize=7)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
+def _version_block() -> str:
+    import importlib as _il, sys as _sys
+    pkgs = [("pandas", "pandas"), ("numpy", "numpy"), ("gseapy", "gseapy"),
+            ("matplotlib", "matplotlib")]
+    rows = [f"| Python | {_sys.version.split()[0]} |"]
+    for label, pkg in pkgs:
+        try:
+            ver = getattr(_il.import_module(pkg), "__version__", "?")
+        except ImportError:
+            ver = "—"
+        rows.append(f"| `{label}` | {ver} |")
+    return "| 套件 | 版本 |\n| --- | --- |\n" + "\n".join(rows)
+
+
 # ── 主流程：DEG → ORA → 報告 ─────────────────────────────────────────────────
 
 _REPORT_TEMPLATE = """# Bulk 富集分析報告（ORA）
 
-- **樣本登記 ID**：{sample_id}
-- **執行時間**：{timestamp}
-- **DEG 來源**：`{deg_source}`
-- **Gene set libraries**：{libraries}
-- **閾值**：|log2FC| > {fc_thr}, qvalue < {pval_thr}
+| 欄位 | 值 |
+| --- | --- |
+| **analysis_id** | `{analysis_id}` |
+| **樣本登記 ID** | {sample_id} |
+| **執行時間** | {timestamp} |
+| **DEG 來源** | `{deg_source}` |
+| **物種** | {organism} |
+| **Gene set libraries** | {libraries} |
+| **閾值** | \\|log2FC\\| > {fc_thr}, qvalue < {pval_thr} |
+| **ORA background** | Enrichr 全資料庫基因（gseapy 預設；限縮 background 建議改用 clusterProfiler） |
 
 ## 命中通路統計
 
 {summary_table}
 
-## Dot plots
+## 長條圖（Bar plots，-log10 padj）
+
+{barplot_figs}
+
+## 點圖（Dot plots）
 
 {dotplot_figs}
+
+---
+
+## 套件版本（reproducibility）
+
+{version_block}
+
+*由 Evo_PRISM analysis/enrichment.py 自動生成*
 """
 
 
@@ -263,7 +339,8 @@ def run_ora(
         prefix = deg_table_path.stem  # 例：DEG_pw24hr_vs_ctrl_20260521_093045
 
         summary_rows: list[dict] = []
-        figs_md_parts: list[str] = []
+        barplot_md_parts: list[str] = []
+        dotplot_md_parts: list[str] = []
         artifact_files: list[tuple[Path, str, str, str]] = []
 
         for direction, gene_list in directions.items():
@@ -281,22 +358,38 @@ def run_ora(
                     artifact_files.append(
                         (csv_path, "csv", f"ORA {direction} / {lib}", "enrichment_table")
                     )
+                    # 共用 pval 欄與 caption（bar + dot plot 都用）
+                    _pval_col = "Adjusted P-value" if "Adjusted P-value" in res.columns else "P-value"
+                    _term_col = "Term" if "Term" in res.columns else res.columns[0]
+                    n_sig = int((res[_pval_col] < pval_threshold).sum())
+                    _top_row = res.nsmallest(1, _pval_col)
+                    _top_term = str(_top_row[_term_col].iloc[0])[:40] if not _top_row.empty else "—"
+                    _top_p = float(_top_row[_pval_col].iloc[0]) if not _top_row.empty else 1.0
+                    _caption = f"top: {_top_term}（padj={_top_p:.1e}）；顯著 {n_sig} term"
+                    # bar plot
+                    bar_path = out_dir / f"{tag}_bar_{ts}.png"
+                    bar_file = bar_plot_from_enrichr(
+                        res, output_path=bar_path, top_term=top_term,
+                        title=f"{direction} / {lib}"
+                    )
+                    if bar_file:
+                        barplot_md_parts.append(_file_to_b64_md(bar_path, f"Bar {direction}/{lib}"))
+                        artifact_files.append((
+                            bar_path, "figure",
+                            f"ORA bar plot {direction} / {lib} — {_caption}",
+                            "enrichment_barplot",
+                        ))
+                    # dot plot
                     png_path = out_dir / f"{tag}_{ts}.png"
                     if dotplot_from_enrichr(
                         res, output_path=png_path, top_term=top_term, title=tag
                     ):
-                        figs_md_parts.append(_file_to_b64_md(png_path, tag))
-                        artifact_files.append(
-                            (
-                                png_path,
-                                "figure",
-                                f"ORA dot plot {direction} / {lib}",
-                                "enrichment_dotplot",
-                            )
-                        )
-                    n_sig = int(
-                        (res.get("Adjusted P-value", pd.Series(dtype=float)) < pval_threshold).sum()
-                    )
+                        dotplot_md_parts.append(_file_to_b64_md(png_path, tag))
+                        artifact_files.append((
+                            png_path, "figure",
+                            f"ORA dot plot {direction} / {lib} — {_caption}",
+                            "enrichment_dotplot",
+                        ))
                 else:
                     n_sig = 0
 
@@ -313,14 +406,18 @@ def run_ora(
         report_path = out_dir / f"bulk_enrichment_{sample_id}_{ts}.md"
         report_path.write_text(
             _REPORT_TEMPLATE.format(
+                analysis_id=analysis_id,
                 sample_id=sample_id,
                 timestamp=started_at.isoformat(),
                 deg_source=deg_table_path.name,
+                organism=organism,
                 libraries=", ".join(libraries),
                 fc_thr=fc_threshold,
                 pval_thr=pval_threshold,
                 summary_table=summary_df.to_markdown(index=False),
-                dotplot_figs="\n".join(figs_md_parts) or "（無顯著富集 → 無 dot plot）",
+                barplot_figs="\n".join(barplot_md_parts) or "（無顯著富集 → 無長條圖）",
+                dotplot_figs="\n".join(dotplot_md_parts) or "（無顯著富集 → 無 dot plot）",
+                version_block=_version_block(),
             ),
             encoding="utf-8",
         )
