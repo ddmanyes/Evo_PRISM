@@ -113,6 +113,12 @@ _RATE_LIMITED_TOOLS = frozenset(
         "bio_run_mcseg_fullslide",
         # MCseg 品質指標：CPU，需已有 mcseg_roi 結果
         "bio_compute_crc_metrics",
+        # MCseg 後處理工具：需已有 mcseg_roi 結果
+        "bio_get_marker_genes",
+        "bio_run_celltypist",
+        "bio_run_mcseg_merge",
+        "bio_relabel_clusters",
+        "bio_export_loupe",
         # 沙盒執行：CPU/I/O 重量級
         "bio_execute_code",
     }
@@ -134,39 +140,6 @@ def _dangerous_tools_enabled() -> bool:
     return os.environ.get("MCP_ENABLE_DANGEROUS_TOOLS", "").lower() in ("1", "true", "yes")
 
 
-_METRICS_SCHEMA_READY = False
-
-
-def _ensure_metrics_table() -> None:
-    """首次寫入時建立 mcp_tool_metrics 表（lazy, idempotent）。"""
-    global _METRICS_SCHEMA_READY
-    if _METRICS_SCHEMA_READY:
-        return
-    import duckdb
-    from config.settings import DUCKDB_PATH
-
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS mcp_tool_metrics (
-                metric_id    UUID    PRIMARY KEY DEFAULT uuid(),
-                tool_name    VARCHAR NOT NULL,
-                tool_id      UUID,
-                duration_ms  INTEGER NOT NULL,
-                status       VARCHAR NOT NULL,  -- ok | user_error | system_error | rate_limited
-                error_class  VARCHAR,
-                requested_by VARCHAR NOT NULL DEFAULT 'mcp_client',
-                recorded_at  TIMESTAMP NOT NULL DEFAULT now()
-            )
-            """
-        )
-        con.execute(
-            "CREATE INDEX IF NOT EXISTS idx_mcp_metrics_tool_time "
-            "ON mcp_tool_metrics(tool_name, recorded_at)"
-        )
-    _METRICS_SCHEMA_READY = True
-
-
 def _record_metric(
     tool_name: str,
     duration_ms: int,
@@ -176,28 +149,22 @@ def _record_metric(
 ) -> None:
     """Best-effort metric write; never raise to caller."""
     try:
-        _ensure_metrics_table()
-        import duckdb
-        from config.settings import DUCKDB_PATH
         from analysis.tool_registry import get_active_tool_id
+        from store.factory import get_store
 
-        final_req_by = requested_by or "mcp_client"
-
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
-            tool_id = None
+        store = get_store()
+        tool_id = None
+        with store.write_conn() as con:
             try:
                 tool_id = get_active_tool_id(con, tool_name)
             except Exception:
                 pass
-
-            con.execute(
-                """
-                INSERT INTO mcp_tool_metrics (
-                    tool_name, tool_id, duration_ms, status, error_class, requested_by
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                [tool_name, tool_id, int(duration_ms), status, error_class, final_req_by],
-            )
+        store.record_metric(
+            tool_name, duration_ms, status,
+            error_class=error_class,
+            requested_by=requested_by,
+            tool_id=tool_id,
+        )
     except Exception as exc:  # pragma: no cover
         logger.debug("metric write failed (%s): %s", tool_name, exc)
 
@@ -219,13 +186,14 @@ async def list_tools() -> list[types.Tool]:
 @server.list_resources()
 async def list_resources() -> list[types.Resource]:
     """列出可用 resource：分析 artifact（artifact://）+ 樣本登記快照（registry://snapshot）。"""
-    import duckdb
     from analysis.artifact_resources import list_artifact_resources
-    from config.settings import DUCKDB_PATH, BIO_DB_ROOT
+    from config.settings import BIO_DB_ROOT
     from pathlib import Path
 
+    from store.factory import get_store
+
     def _sync() -> list[dict]:
-        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        with get_store().read_conn() as con:
             return list_artifact_resources(con)
 
     items = await asyncio.to_thread(_sync)
@@ -263,9 +231,8 @@ async def list_resources() -> list[types.Resource]:
 async def read_resource(uri):  # uri: pydantic AnyUrl
     """依 URI 取回 resource 內容：artifact:// 或 registry://snapshot。"""
     from mcp.server.lowlevel.helper_types import ReadResourceContents
-    import duckdb
     from analysis.artifact_resources import read_artifact_resource, ArtifactResourceError
-    from config.settings import DUCKDB_PATH, BIO_DB_ROOT
+    from config.settings import BIO_DB_ROOT
     from pathlib import Path
 
     uri_str = str(uri)
@@ -284,8 +251,10 @@ async def read_resource(uri):  # uri: pydantic AnyUrl
         )]
 
     # artifact://
+    from store.factory import get_store as _get_store
+
     def _sync():
-        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        with _get_store().read_conn() as con:
             return read_artifact_resource(con, uri_str)
 
     try:
@@ -1182,6 +1151,212 @@ def _build_all_tools() -> list[types.Tool]:
                 "required": ["sample_id", "roi_name"],
             },
         ),
+        types.Tool(
+            name="bio_get_playbook",
+            description=(
+                "取得某分析領域的『技能說明書』（標準步驟順序 + 每步該呼叫的函數 + 該產出的圖 + 品質關卡）。"
+                "**執行任何領域分析（bulk / 空間 / mcseg）前先呼叫**，依說明書分步進行，確保每步出圖、不漏步。"
+                "省略 domain 則列出所有可用說明書。省略 section 取完整說明書；指定 section 只取該段（省 token）。"
+                "可用 section 名稱：overview / prerequisites / steps / template / appendix。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "domain": {
+                        "type": "string",
+                        "description": "說明書名稱或 data_type，如 bulk_rnaseq / spatial_visium / mcseg（省略則列出全部）",
+                    },
+                    "section": {
+                        "type": "string",
+                        "description": "只取特定段落（省 token）：overview / prerequisites / steps / template / appendix。省略取完整說明書。",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        types.Tool(
+            name="bio_sample_list",
+            description=(
+                "列出 sample_registry 中已登記的樣本（0 token，純 SQL）。"
+                "支援 data_type / tissue / condition 過濾，方便快速瀏覽現有資料集。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "data_type": {
+                        "type": "string",
+                        "description": "資料類型篩選（可選，如 visium_hd / bulk_rnaseq）",
+                    },
+                    "tissue": {"type": "string", "description": "組織類型篩選（可選，模糊比對）"},
+                    "condition": {
+                        "type": "string",
+                        "description": "樣本條件篩選（可選，對應 notes 欄位模糊比對）",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "最多回傳筆數（預設 50）",
+                        "default": 50,
+                    },
+                },
+                "required": [],
+            },
+        ),
+        types.Tool(
+            name="bio_sample_compare",
+            description=(
+                "比較兩個或多個樣本的分析歷史摘要，回傳各樣本最新各類型分析的摘要對照表。"
+                "協助判斷不同樣本的分析狀態差異，無需閱讀完整報告。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要比較的樣本 ID 列表（2 個以上）",
+                    },
+                },
+                "required": ["sample_ids"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_mcseg_qc",
+            description=(
+                "MCseg 細胞分割品質視覺化（讀既有 .npy 遮罩，**不**即時重跑分割）。"
+                "掃 qc_dir 內成對的 *_nuc.npy / *_mcseg.npy，產出 NUC vs MCseg 對比圖 + "
+                "細胞面積分布 + 量化表，寫入 analysis_history（analysis_type=mcseg_qc）。"
+                "先 bio_get_playbook(mcseg) 取方法學。需先有分割輸出檔。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {"type": "string", "description": "樣本 ID"},
+                    "qc_dir": {
+                        "type": "string",
+                        "description": "分割遮罩目錄（省略則用預設 results/mcseg_qc/）",
+                    },
+                },
+                "required": ["sample_id"],
+            },
+        ),
+        types.Tool(
+            name="bio_get_marker_genes",
+            description=(
+                "對 bio_run_mcseg_roi 的 umap_computed.h5ad 執行 rank_genes_groups，"
+                "匯出每個 cluster 的 top marker genes（CSV + inline 摘要表）。"
+                "支援 groupby leiden 或 cell_type；需先完成 bio_run_mcseg_roi。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {"type": "string", "description": "樣本 ID"},
+                    "roi_name": {"type": "string", "description": "ROI 名稱"},
+                    "groupby": {"type": "string", "description": "分群欄位（預設 leiden）"},
+                    "n_genes": {"type": "integer", "description": "每群 top-N genes（預設 20）"},
+                    "method": {"type": "string", "description": "統計方法（預設 wilcoxon）"},
+                    "roi_dir": {"type": "string", "description": "ROI 目錄（省略則自動解析）"},
+                },
+                "required": ["sample_id", "roi_name"],
+            },
+        ),
+        types.Tool(
+            name="bio_relabel_clusters",
+            description=(
+                "依 label_map 手動重標 MCseg ROI 的 cluster，寫入 cell_type_manual 欄位並重繪 UMAP。"
+                "label_map 格式：{\"0\": \"Keratinocyte\", \"1\": \"Fibroblast\", ...}。"
+                "未在 label_map 中的 cluster 保留原標籤。需先完成 bio_run_mcseg_roi。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {"type": "string", "description": "樣本 ID"},
+                    "roi_name": {"type": "string", "description": "ROI 名稱"},
+                    "label_map": {
+                        "type": "object",
+                        "description": "cluster ID（字串）→ 標籤名稱的對應",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "groupby": {"type": "string", "description": "來源分群欄位（預設 leiden）"},
+                    "roi_dir": {"type": "string", "description": "ROI 目錄（省略則自動解析）"},
+                },
+                "required": ["sample_id", "roi_name", "label_map"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_celltypist",
+            description=(
+                "用 CellTypist 預訓練模型自動標注 MCseg ROI 的細胞類型，"
+                "結果寫入 celltypist_cell_type 欄位。"
+                "注意：大多數模型為人類資料；小鼠樣本請確認基因匹配率。"
+                "需先安裝 celltypist（uv add celltypist）且完成 bio_run_mcseg_roi。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {"type": "string", "description": "樣本 ID"},
+                    "roi_name": {"type": "string", "description": "ROI 名稱"},
+                    "model": {
+                        "type": "string",
+                        "description": "CellTypist 模型名稱（預設 Immune_All_Low.pkl）",
+                    },
+                    "majority_voting": {
+                        "type": "boolean",
+                        "description": "啟用 majority voting（預設 true）",
+                    },
+                    "roi_dir": {"type": "string", "description": "ROI 目錄（省略則自動解析）"},
+                },
+                "required": ["sample_id", "roi_name"],
+            },
+        ),
+        types.Tool(
+            name="bio_run_mcseg_merge",
+            description=(
+                "合併多個 MCseg ROI 的 cellpose_cells.h5ad，執行整合 Scanpy 管線"
+                "（normalize → HVG → PCA → harmony/bbknn → leiden → UMAP）。"
+                "integrate 可選 auto/harmony/bbknn/none；auto 依安裝狀況自動選擇。"
+                "需先對每個 ROI 完成 bio_run_mcseg_roi。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {"type": "string", "description": "樣本 ID"},
+                    "roi_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要合併的 ROI 名稱清單（至少 2 個）",
+                    },
+                    "merged_name": {"type": "string", "description": "合併結果的識別名稱"},
+                    "integrate": {
+                        "type": "string",
+                        "description": "整合策略：auto/harmony/bbknn/none（預設 auto）",
+                    },
+                    "output_base": {"type": "string", "description": "輸出根目錄（省略則自動）"},
+                },
+                "required": ["sample_id", "roi_names", "merged_name"],
+            },
+        ),
+        types.Tool(
+            name="bio_export_loupe",
+            description=(
+                "匯出 MCseg ROI 分割結果為 Loupe Browser 格式。"
+                "必定產出：cells.geojson（細胞多邊形 + 標注）+ cell_metadata.csv。"
+                "若已安裝 loupepy + 10x loupe_converter 則額外產出 .cloupe 檔案。"
+                "需先完成 bio_run_mcseg_roi。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sample_id": {"type": "string", "description": "樣本 ID"},
+                    "roi_name": {"type": "string", "description": "ROI 名稱"},
+                    "pixel_size_um": {
+                        "type": "number",
+                        "description": "像素物理尺寸（µm/px，預設 0.2737）",
+                    },
+                    "roi_dir": {"type": "string", "description": "ROI 目錄（省略則自動解析）"},
+                },
+                "required": ["sample_id", "roi_name"],
+            },
+        ),
     ]
 
 
@@ -1286,13 +1461,12 @@ async def _handle_bio_history_lookup(args: dict) -> str:
 
 
 async def _handle_bio_history_timeline(args: dict) -> str:
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     n_days = int(args.get("n_days", 7))
     limit = max(1, min(int(args.get("limit", 50)), 500))
     fmt = _resolve_format_mode(args)
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         rows = con.execute(
             f"""
             SELECT sample_id,
@@ -1350,13 +1524,12 @@ async def _handle_bio_history_timeline(args: dict) -> str:
 
 
 async def _handle_bio_history_check(args: dict) -> str:
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
     fmt = _resolve_format_mode(args)
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         row = con.execute(
             """
             SELECT analysis_id, completed_at, result_path, summary
@@ -1466,53 +1639,35 @@ async def _handle_bio_memory_write(args: dict) -> str:
 
 
 async def _handle_bio_register_sample(args: dict) -> str:
-    import duckdb
-    from config.db_utils import safe_write
-    from config.settings import DUCKDB_PATH
-    from datetime import datetime, timezone
-
     import re
+    from store.factory import get_store
 
     sample_id = args["sample_id"]
     if not re.match(r"^[a-z0-9_-]+$", sample_id):
         return f"樣本 ID {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號。"
 
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
-        existing = con.execute(
-            "SELECT sample_id FROM sample_registry WHERE sample_id = ?", [sample_id]
-        ).fetchone()
-        if existing:
-            return f"樣本 {sample_id!r} 已存在於 sample_registry，跳過登記。"
+    store = get_store()
+    existing = store.get_sample(sample_id)
+    if existing:
+        return f"樣本 {sample_id!r} 已存在於 sample_registry，跳過登記。"
 
-        safe_write(
-            con,
-            """
-            INSERT INTO sample_registry
-                (sample_id, project, data_type, platform, species, tissue,
-                 l3_path, l2_ready, analysis_done, added_by, notes, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?, false, false, ?, ?, ?)
-            """,
-            [
-                sample_id,
-                args.get("project", ""),
-                args["data_type"],
-                args.get("platform", ""),
-                args.get("species", "human"),
-                args.get("tissue", ""),
-                args["l3_path"],
-                "mcp_server",
-                args.get("notes", ""),
-                datetime.now(timezone.utc),
-            ],
-        )
-
+    store.register_sample(
+        sample_id,
+        args.get("project", ""),
+        args["data_type"],
+        args.get("platform", ""),
+        args.get("species", "human"),
+        args.get("tissue", ""),
+        args["l3_path"],
+        "mcp_server",
+        args.get("notes", ""),
+    )
     return f"樣本 {sample_id!r} 已登記至 sample_registry。\ndata_type: {args['data_type']}\nl3_path: {args['l3_path']}"
 
 
 async def _handle_bio_artifact_search(args: dict) -> str:
-    import duckdb
     from analysis.artifact_registry import search_artifacts
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     query = args["query"]
     n = int(args.get("n", 5))
@@ -1520,7 +1675,7 @@ async def _handle_bio_artifact_search(args: dict) -> str:
     artifact_subtype = args.get("artifact_subtype")
     sample_id = args.get("sample_id")
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         results = search_artifacts(
             con,
             query,
@@ -1550,12 +1705,11 @@ async def _handle_bio_artifact_search(args: dict) -> str:
 
 
 async def _handle_bio_artifact_summary(args: dict) -> str:
-    import duckdb
     from analysis.artifact_registry import artifact_summary
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     sample_id = args["sample_id"]
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         summary = artifact_summary(con, sample_id)
 
     if summary["total_runs"] == 0:
@@ -1693,8 +1847,7 @@ async def _handle_bio_tool_health(args: dict) -> str:
 
 async def _handle_bio_failure_summary(args: dict) -> str:
     """PM1: Aggregate failure_diagnosis from analysis_history (EvolveMem-inspired)."""
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     sample_id = args.get("sample_id", "").strip() or None
     analysis_type = args.get("analysis_type", "").strip() or None
@@ -1702,7 +1855,7 @@ async def _handle_bio_failure_summary(args: dict) -> str:
     top_n = int(args.get("top_n", 5))
 
     def _sync() -> str:
-        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        with get_store().read_conn() as con:
             # Build WHERE clause
             conditions = [
                 "failure_diagnosis IS NOT NULL",
@@ -1829,15 +1982,14 @@ async def _handle_bio_get_figure(args: dict) -> list[types.ImageContent]:
 
 async def _handle_bio_get_artifact(args: dict) -> str:
     """回傳分析數據檔的取用 handle（路徑 + 下載 URL + 預覽）；任何 client 皆可用。"""
-    import duckdb
     from analysis.artifact_resources import get_artifact_handle, ArtifactResourceError
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     artifact_id = args["artifact_id"]
     preview_lines = int(args.get("preview_lines", 20))
 
     def _sync() -> dict:
-        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        with get_store().read_conn() as con:
             return get_artifact_handle(con, artifact_id, preview_lines=preview_lines)
 
     try:
@@ -1857,6 +2009,55 @@ async def _handle_bio_get_artifact(args: dict) -> str:
     if h.get("preview"):
         lines.append(f"\n--- 預覽（前 {preview_lines} 行）---\n{h['preview']}")
     return "\n".join(lines)
+
+
+async def _handle_bio_get_playbook(args: dict) -> str:
+    """取得分析領域技能說明書（playbook）。"""
+    from server.agent_history import _exec_bio_get_playbook
+    return await asyncio.to_thread(_exec_bio_get_playbook, args)
+
+
+async def _handle_bio_sample_list(args: dict) -> str:
+    """列出 sample_registry 中已登記的樣本。"""
+    from server.agent_history import _exec_bio_sample_list
+    return await asyncio.to_thread(_exec_bio_sample_list, args)
+
+
+async def _handle_bio_sample_compare(args: dict) -> str:
+    """比較多個樣本的分析歷史摘要。"""
+    from server.agent_history import _exec_bio_sample_compare
+    return await asyncio.to_thread(_exec_bio_sample_compare, args)
+
+
+async def _handle_bio_run_mcseg_qc(args: dict) -> str:
+    """MCseg 細胞分割品質視覺化。"""
+    from server.agent_bulk import _exec_bio_run_mcseg_qc
+    return await asyncio.to_thread(_exec_bio_run_mcseg_qc, args)
+
+
+async def _handle_bio_get_marker_genes(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_get_marker_genes
+    return await asyncio.to_thread(_exec_bio_get_marker_genes, args)
+
+
+async def _handle_bio_relabel_clusters(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_relabel_clusters
+    return await asyncio.to_thread(_exec_bio_relabel_clusters, args)
+
+
+async def _handle_bio_run_celltypist(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_run_celltypist
+    return await asyncio.to_thread(_exec_bio_run_celltypist, args)
+
+
+async def _handle_bio_run_mcseg_merge(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_run_mcseg_merge
+    return await asyncio.to_thread(_exec_bio_run_mcseg_merge, args)
+
+
+async def _handle_bio_export_loupe(args: dict) -> str:
+    from server.agent_bulk import _exec_bio_export_loupe
+    return await asyncio.to_thread(_exec_bio_export_loupe, args)
 
 
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
@@ -1889,6 +2090,15 @@ _HANDLERS = {
     "bio_read_report": _handle_bio_read_report,
     "bio_get_figure": _handle_bio_get_figure,
     "bio_get_artifact": _handle_bio_get_artifact,
+    "bio_get_playbook": _handle_bio_get_playbook,
+    "bio_sample_list": _handle_bio_sample_list,
+    "bio_sample_compare": _handle_bio_sample_compare,
+    "bio_run_mcseg_qc": _handle_bio_run_mcseg_qc,
+    "bio_get_marker_genes": _handle_bio_get_marker_genes,
+    "bio_relabel_clusters": _handle_bio_relabel_clusters,
+    "bio_run_celltypist": _handle_bio_run_celltypist,
+    "bio_run_mcseg_merge": _handle_bio_run_mcseg_merge,
+    "bio_export_loupe": _handle_bio_export_loupe,
 }
 
 
@@ -2124,31 +2334,36 @@ def create_http_app():
 
 def _startup_cleanup_stale_runs() -> None:
     """MCP server 為長駐程序，啟動時清理 > 24h 仍為 running 的紀錄（CLAUDE.md §6），並自動註冊所有 Lazy Tools (AB4)。"""
-    import duckdb
-    from config.db_utils import cleanup_stale_runs
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
-        # 1. 清理過期運行紀錄
-        n = cleanup_stale_runs(con)
-        if n:
-            logger.info("Startup cleanup: marked %d stale running rows", n)
+    store = get_store()
 
-        # 2. 自動註冊 @register_tool_on_import 的 Lazy Tools (AB4)
-        try:
-            # 導入分析模組以激活裝飾器 lazy append
-            import analysis.bulk_eda  # noqa: F401
-            import analysis.bulk_deg  # noqa: F401
-            import analysis.bulk_heatmap  # noqa: F401
-            import analysis.enrichment  # noqa: F401
+    # 1. 清理過期運行紀錄
+    n = store.cleanup_stale_runs()
+    if n:
+        logger.info("Startup cleanup: marked %d stale running rows", n)
 
-            from analysis.tool_registry import register_all_lazy_tools
+    # 2. 自動註冊 @register_tool_on_import 的 Lazy Tools (AB4)
+    try:
+        # 導入分析模組以激活裝飾器 lazy append
+        import analysis.bulk_eda  # noqa: F401
+        import analysis.bulk_deg  # noqa: F401
+        import analysis.bulk_heatmap  # noqa: F401
+        import analysis.enrichment  # noqa: F401
+        import analysis.marker_genes  # noqa: F401
+        import analysis.relabel_clusters  # noqa: F401
+        import analysis.celltypist_annotate  # noqa: F401
+        import analysis.mcseg_merge  # noqa: F401
+        import analysis.loupe_export  # noqa: F401
 
+        from analysis.tool_registry import register_all_lazy_tools
+
+        with store.write_conn() as con:
             n_lazy = register_all_lazy_tools(con)
-            if n_lazy:
-                logger.info("Startup lazy registry: registered %d active tools in DuckDB", n_lazy)
-        except Exception as lazy_exc:
-            logger.warning("Startup lazy registry failed: %s", lazy_exc)
+        if n_lazy:
+            logger.info("Startup lazy registry: registered %d active tools in DuckDB", n_lazy)
+    except Exception as lazy_exc:
+        logger.warning("Startup lazy registry failed: %s", lazy_exc)
 
 
 # ── 啟動 ─────────────────────────────────────────────────────────────────────

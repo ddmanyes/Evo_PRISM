@@ -16,30 +16,19 @@ logger = logging.getLogger(__name__)
 
 
 def _exec_bio_history_check(args: dict) -> str:
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
-        row = con.execute(
-            """
-            SELECT analysis_id, completed_at, result_path, summary, parameters
-            FROM   analysis_history
-            WHERE  sample_id = ? AND analysis_type = ? AND status = 'completed'
-            ORDER  BY completed_at DESC LIMIT 1
-            """,
-            [sample_id, analysis_type],
-        ).fetchone()
-    if row:
-        analysis_id, completed_at, result_path, summary, parameters = row
-        params_str = parameters if parameters else "{}"
+    rec = get_store().get_history(sample_id, analysis_type)
+    if rec:
+        params_str = rec.get("parameters") or "{}"
         return (
-            f"exists: true\nanalysis_id: {analysis_id}\n"
-            f"completed_at: {str(completed_at)[:16]}\n"
-            f"result_path: {result_path or '（未記錄）'}\n"
+            f"exists: true\nanalysis_id: {rec['analysis_id']}\n"
+            f"completed_at: {str(rec.get('completed_at', ''))[:16]}\n"
+            f"result_path: {rec.get('result_path') or '（未記錄）'}\n"
             f"parameters: {params_str}\n"
-            f"summary: {(summary or '')[:80]}"
+            f"summary: {(rec.get('summary') or '')[:80]}"
         )
     return f"exists: false\n{sample_id!r} × {analysis_type!r} 尚無完成存檔。"
 
@@ -69,11 +58,10 @@ def _exec_bio_history_lookup(args: dict) -> str:
 
 
 def _exec_bio_history_timeline(args: dict) -> str:
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     n_days = int(args.get("n_days", 7))
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         rows = con.execute(
             """
             SELECT sample_id, analysis_type, status,
@@ -93,9 +81,8 @@ def _exec_bio_history_timeline(args: dict) -> str:
 
 
 def _exec_bio_history_search(args: dict) -> str:
-    import duckdb
     from analysis.l1_cache import semantic_search
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     results = semantic_search(
         args["query"],
@@ -109,7 +96,7 @@ def _exec_bio_history_search(args: dict) -> str:
     # Enrich each L1 hit with parameters + result_path via l1_cache_id join
     l1_ids = [str(r["id"]) for r in results]  # 統一轉 str，避免 DuckDB UUID 物件型別不一致
     placeholders = ", ".join("?" * len(l1_ids))
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         enrichment_rows = con.execute(
             f"""
             SELECT l1_cache_id, parameters, result_path
@@ -165,8 +152,7 @@ def _exec_bio_memory_query(args: dict) -> str:
 
 def _exec_bio_sample_list(args: dict) -> str:
     """列出 sample_registry 中的樣本，支援 data_type / tissue / condition 過濾。"""
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     data_type: Optional[str] = args.get("data_type")
     tissue: Optional[str] = args.get("tissue")
@@ -190,7 +176,7 @@ def _exec_bio_sample_list(args: dict) -> str:
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
     params.append(limit)
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         rows = con.execute(
             f"""
             SELECT sample_id, data_type, tissue, notes AS condition,
@@ -220,8 +206,7 @@ def _exec_bio_sample_list(args: dict) -> str:
 
 def _exec_bio_sample_compare(args: dict) -> str:
     """比較多個樣本的最新各類型分析摘要，回傳對照表。"""
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
 
     sample_ids: list[str] = args.get("sample_ids", [])
     if len(sample_ids) < 2:
@@ -229,7 +214,7 @@ def _exec_bio_sample_compare(args: dict) -> str:
 
     placeholders = ", ".join("?" * len(sample_ids))
 
-    with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+    with get_store().read_conn() as con:
         # 取每個樣本每種分析類型的最新 completed 紀錄
         rows = con.execute(
             f"""
@@ -329,8 +314,7 @@ def _resolve_tool_fn(tool_name: str):
 
 
 def _exec_bio_tool_health(args: dict) -> str:
-    import duckdb
-    from config.settings import DUCKDB_PATH
+    from store.factory import get_store
     from analysis.tool_registry import (
         tool_health_report,
         set_stability_note,
@@ -342,8 +326,10 @@ def _exec_bio_tool_health(args: dict) -> str:
 
     action = args.get("action", "report")
 
+    store = get_store()
+
     if action == "report":
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
+        with store.write_conn() as con:
             report = tool_health_report(con)
             # Fetch diagnosis_img for each open stabilization for VLM recall
             snapshot_imgs: list[str] = []
@@ -436,9 +422,8 @@ def _exec_bio_tool_health(args: dict) -> str:
         note = args.get("note")
         if not tool_name or not note:
             return "[Error] diagnose requires tool_name and note."
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
+        with store.write_conn() as con:
             set_stability_note(con, tool_name, note)
-            con.execute("CHECKPOINT")
         return (
             f"已寫入 stability_note for {tool_name!r}：\n{note}\n\n"
             "建議接著呼叫 action=stabilize 開啟正式穩定化迭代，記錄行動計畫。"
@@ -453,7 +438,7 @@ def _exec_bio_tool_health(args: dict) -> str:
         # Resolve the live callable for complexity + snapshot rendering
         fn = _resolve_tool_fn(tool_name)
         rev_history = None
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
+        with store.write_conn() as con:
             if fn:
                 try:
                     rows = con.execute(
@@ -481,7 +466,6 @@ def _exec_bio_tool_health(args: dict) -> str:
                 fn=fn,
                 revision_history=rev_history,
             )
-            con.execute("CHECKPOINT")
         snapshot_note = "（已渲染視覺快照 ✓）" if fn else "（無法取得 callable，快照略過）"
         return (
             f"已開啟穩定化迭代 for {tool_name!r} {snapshot_note}\n"
@@ -496,7 +480,7 @@ def _exec_bio_tool_health(args: dict) -> str:
         outcome = args.get("outcome")
         if not log_id or not outcome:
             return "[Error] close_stabilize requires log_id and outcome."
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
+        with store.write_conn() as con:
             try:
                 # Fetch tool_name to resolve fn for complexity_after
                 row = con.execute(
@@ -517,7 +501,6 @@ def _exec_bio_tool_health(args: dict) -> str:
                     "WHERE log_id = ?",
                     [log_id],
                 ).fetchone()
-                con.execute("CHECKPOINT")
             except ValueError as e:
                 return f"[Error] {e}"
         outcome_zh = {
@@ -536,7 +519,7 @@ def _exec_bio_tool_health(args: dict) -> str:
 
     elif action == "trend":
         tool_name = args.get("tool_name")
-        with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:
+        with store.read_conn() as con:
             rows = get_complexity_trend(con, tool_name=tool_name)
         if not rows:
             scope = f"{tool_name!r} " if tool_name else ""
@@ -561,9 +544,8 @@ def _exec_bio_tool_health(args: dict) -> str:
         tool_name = args.get("tool_name")
         if not tool_name:
             return "[Error] prune requires tool_name."
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
+        with store.write_conn() as con:
             deleted = prune_deprecated(con, tool_name)
-            con.execute("CHECKPOINT")
         if deleted == 0:
             return f"{tool_name!r} 無可清理的 deprecated 紀錄（所有舊版本均有分析引用，已保留）。"
         return f"已清理 {tool_name!r} 的 {deleted} 筆 deprecated 紀錄（無分析引用的版本）。"
@@ -635,10 +617,16 @@ def _exec_bio_find_tool(args: dict) -> str:
 
 
 def _exec_bio_get_playbook(args: dict) -> str:
-    """取得某分析領域的技能說明書（標準步驟 + 每步該呼叫的函數 + 該出的圖）。"""
+    """取得某分析領域的技能說明書（標準步驟 + 每步該呼叫的函數 + 該出的圖）。
+
+    section 省略 → 回傳完整說明書。
+    section 指定 → 只回傳該 section（省 token）。可用 sections 由說明書本身定義。
+    """
     from analysis.playbook import get_playbook, list_playbooks, PlaybookError
 
     key = str(args.get("domain", "")).strip()
+    section = str(args.get("section", "")).strip() or None
+
     if not key:
         metas = list_playbooks()
         if not metas:
@@ -651,7 +639,8 @@ def _exec_bio_get_playbook(args: dict) -> str:
         return "\n".join(lines)
 
     try:
-        return get_playbook(key).as_markdown()
+        pb = get_playbook(key)
+        return pb.as_markdown(section=section)
     except PlaybookError as e:
         return f"找不到說明書：{e}"
 
@@ -677,36 +666,25 @@ def _exec_bio_impact(args: dict) -> str:
 
 
 def _exec_bio_register_sample(args: dict) -> str:
-    import duckdb
-    from config.db_utils import safe_write
-    from config.settings import DUCKDB_PATH
-    from datetime import datetime as dt, timezone as tz
+    from store.factory import get_store
 
     sample_id = args["sample_id"]
     if not re.match(r"^[a-z0-9_-]+$", sample_id):
         return f"樣本 ID {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號。"
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
-        if con.execute("SELECT 1 FROM sample_registry WHERE sample_id=?", [sample_id]).fetchone():
-            return f"樣本 {sample_id!r} 已存在，跳過。"
-        safe_write(
-            con,
-            """INSERT INTO sample_registry
-                   (sample_id, project, data_type, platform, species, tissue,
-                    l3_path, l2_ready, analysis_done, added_by, notes, last_updated)
-               VALUES (?, ?, ?, ?, ?, ?, ?, false, false, ?, ?, ?)""",
-            [
-                sample_id,
-                args.get("project", ""),
-                args["data_type"],
-                args.get("platform", ""),
-                args.get("species", "human"),
-                args.get("tissue", ""),
-                args["l3_path"],
-                "agent",
-                args.get("notes", ""),
-                dt.now(tz.utc),
-            ],
-        )
+    store = get_store()
+    if store.get_sample(sample_id):
+        return f"樣本 {sample_id!r} 已存在，跳過。"
+    store.register_sample(
+        sample_id,
+        args.get("project", ""),
+        args["data_type"],
+        args.get("platform", ""),
+        args.get("species", "human"),
+        args.get("tissue", ""),
+        args["l3_path"],
+        "agent",
+        args.get("notes", ""),
+    )
     return f"樣本 {sample_id!r} 已登記。data_type={args['data_type']!r}"
 
 
@@ -724,9 +702,7 @@ def _archive_history_insert(
     completed_at,  # datetime aware UTC
 ) -> None:
     """寫一筆 dynamic_code 歸檔記錄到 analysis_history；失敗只 log 不 raise。"""
-    import duckdb
-    from config.settings import DUCKDB_PATH
-    from config.db_utils import safe_write
+    from store.factory import get_store
 
     params_json: dict[str, Any] = {
         "description": description,
@@ -741,9 +717,8 @@ def _archive_history_insert(
         summary_text = f"[FAILED] {summary_text}"[:50]
 
     try:
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
-            safe_write(
-                con,
+        with get_store().write_conn() as con:
+            con.execute(
                 """INSERT INTO analysis_history
                        (analysis_id, sample_id, analysis_type, parameters, status,
                         result_path, requested_by, started_at, completed_at, summary)

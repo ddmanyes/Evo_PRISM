@@ -29,8 +29,7 @@ import seaborn as sns
 matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.db_utils import safe_write
-from config.settings import DUCKDB_PATH
+from config.db_utils import safe_write, connect_db
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.tool_registry import register_tool_on_import
@@ -43,6 +42,31 @@ from analysis.validators import validate_sample_id
 # ── 純畫圖（無 DB I/O，供測試與獨立使用）──────────────────────────────────
 
 
+def _make_col_colors(
+    samples: list[str],
+    coldata: pd.DataFrame,
+    color_cols: Sequence[str] | None = None,
+) -> Optional[pd.DataFrame]:
+    """從 coldata 產出 seaborn clustermap 用的 col_colors DataFrame。
+
+    color_cols 省略時自動選 'group' 和 'batch'（若存在）。
+    回傳 None 表示無可用欄位。
+    """
+    available = [c for c in (color_cols or ["group", "batch", "condition"]) if c in coldata.columns]
+    if not available:
+        return None
+
+    result = pd.DataFrame(index=samples)
+    for col in available:
+        cats = coldata[col].astype(str).unique()
+        palette = {c: plt.cm.tab10(i % 10) for i, c in enumerate(sorted(cats))}
+        result[col] = [
+            palette.get(str(coldata.loc[s, col]), "#cccccc") if s in coldata.index else "#cccccc"
+            for s in samples
+        ]
+    return result
+
+
 def deg_heatmap(
     counts: pd.DataFrame,
     sig_genes: Sequence[str],
@@ -52,6 +76,7 @@ def deg_heatmap(
     title: str = "Significant genes (z-score)",
     figsize: tuple[float, float] = (8.0, 8.0),
     cmap: str = "RdBu_r",
+    col_colors: Optional[pd.DataFrame] = None,
 ) -> Optional[Path]:
     """顯著基因 z-score heatmap（行：基因，欄：樣本，含階層聚類）。
 
@@ -73,6 +98,10 @@ def deg_heatmap(
         sub = sub.sub(mean, axis=0).div(std, axis=0)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    n_cols = sub.shape[1]
+    max_label_len = max((len(str(c)) for c in sub.columns), default=0)
+    x_fontsize = max(6, min(10, 120 // max(n_cols, 1)))
+    x_rotation = 45 if max_label_len > 8 else 0
     g = sns.clustermap(
         sub,
         cmap=cmap,
@@ -80,7 +109,14 @@ def deg_heatmap(
         center=0,
         xticklabels=True,
         yticklabels=(len(overlap) <= 60),
+        col_colors=col_colors,
         cbar_kws={"label": "z-score" if normalize else "value"},
+    )
+    g.ax_heatmap.set_xticklabels(
+        g.ax_heatmap.get_xticklabels(),
+        rotation=x_rotation,
+        ha="right" if x_rotation > 0 else "center",
+        fontsize=x_fontsize,
     )
     g.figure.suptitle(f"{title}  (n={len(overlap)})", y=1.02)
     g.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -97,6 +133,7 @@ def top_var_heatmap(
     title: str = "Top variable genes (z-score)",
     figsize: tuple[float, float] = (8.0, 9.0),
     cmap: str = "RdBu_r",
+    col_colors: Optional[pd.DataFrame] = None,
 ) -> Optional[Path]:
     """跨樣本 variance top-N 基因熱圖。"""
     if counts.empty:
@@ -111,6 +148,10 @@ def top_var_heatmap(
         sub = sub.sub(mean, axis=0).div(std, axis=0)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    n_cols = sub.shape[1]
+    max_label_len = max((len(str(c)) for c in sub.columns), default=0)
+    x_fontsize = max(6, min(10, 120 // max(n_cols, 1)))
+    x_rotation = 45 if max_label_len > 8 else 0
     g = sns.clustermap(
         sub,
         cmap=cmap,
@@ -118,7 +159,14 @@ def top_var_heatmap(
         center=0,
         xticklabels=True,
         yticklabels=(top_n <= 60),
+        col_colors=col_colors,
         cbar_kws={"label": "z-score" if normalize else "log1p"},
+    )
+    g.ax_heatmap.set_xticklabels(
+        g.ax_heatmap.get_xticklabels(),
+        rotation=x_rotation,
+        ha="right" if x_rotation > 0 else "center",
+        fontsize=x_fontsize,
     )
     g.figure.suptitle(f"{title}  (top {top_n})", y=1.02)
     g.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -155,10 +203,16 @@ def collect_sig_genes(
 
 _REPORT_TEMPLATE = """# Bulk Heatmap 報告
 
-- **樣本登記 ID**：{sample_id}
-- **執行時間**：{timestamp}
-- **顯著基因數**：{n_sig}（union of {n_deg} DEG 表）
-- **Top variable**：top {top_n}
+| 欄位 | 值 |
+| --- | --- |
+| **analysis_id** | `{analysis_id}` |
+| **樣本登記 ID** | {sample_id} |
+| **執行時間** | {timestamp} |
+| **counts 來源** | `{counts_path}` |
+| **DEG 表數量** | {n_deg} 張 |
+| **DEG 來源** | {deg_sources} |
+| **顯著基因數** | {n_sig} |
+| **Top variable** | top {top_n} |
 
 ## 顯著基因熱圖
 
@@ -167,6 +221,10 @@ _REPORT_TEMPLATE = """# Bulk Heatmap 報告
 ## Top 變異基因熱圖
 
 {var_fig}
+
+---
+
+*由 Evo_PRISM analysis/bulk_heatmap.py 自動生成*
 """
 
 
@@ -183,10 +241,14 @@ def run_bulk_heatmaps(
     top_n: int = 50,
     fc_threshold: float = 1.0,
     pval_threshold: float = 0.05,
+    coldata_path: Optional[Path] = None,
     requested_by: str = "agent",
     con: Optional[duckdb.DuckDBPyConnection] = None,
 ) -> tuple[str, str]:
-    """產出顯著基因 heatmap + top variable heatmap，寫入 analysis_history。"""
+    """產出顯著基因 heatmap + top variable heatmap，寫入 analysis_history。
+
+    coldata_path 若提供，熱圖上方顯示 group/batch annotation 色條。
+    """
     validate_sample_id(sample_id)
     counts_path = Path(counts_path)
 
@@ -204,7 +266,7 @@ def run_bulk_heatmaps(
 
     _own_con = con is None
     if con is None:
-        con = duckdb.connect(str(DUCKDB_PATH))
+        con = connect_db()
 
     try:
         safe_write(
@@ -217,6 +279,20 @@ def run_bulk_heatmaps(
         )
 
         counts = pd.read_csv(counts_path, index_col=0)
+
+        col_colors: Optional[pd.DataFrame] = None
+        if coldata_path is not None:
+            _cp = Path(coldata_path)
+            if _cp.exists():
+                _coldata = (
+                    pd.read_csv(_cp, sep="\t", index_col=0)
+                    if _cp.suffix in {".tsv", ".txt"}
+                    else pd.read_csv(_cp, index_col=0)
+                )
+                col_colors = _make_col_colors(counts.columns.tolist(), _coldata)
+            else:
+                logger.warning("coldata_path 不存在，略過 annotation bar：%s", _cp)
+
         sig_genes = collect_sig_genes(
             deg_tables,
             fc_threshold=fc_threshold,
@@ -228,8 +304,8 @@ def run_bulk_heatmaps(
         sig_png = out_dir / f"Heatmap_Significant_Genes_{ts}.png"
         var_png = out_dir / f"Heatmap_Top{top_n}_Variable_Genes_{ts}.png"
 
-        sig_file = deg_heatmap(counts, sig_genes, output_path=sig_png) if sig_genes else None
-        var_file = top_var_heatmap(counts, output_path=var_png, top_n=top_n)
+        sig_file = deg_heatmap(counts, sig_genes, output_path=sig_png, col_colors=col_colors) if sig_genes else None
+        var_file = top_var_heatmap(counts, output_path=var_png, top_n=top_n, col_colors=col_colors)
 
         sig_fig_md = (
             _file_to_b64_md(sig_file, "顯著基因熱圖") if sig_file else "（無顯著基因 → 跳過）"
@@ -241,12 +317,16 @@ def run_bulk_heatmaps(
         )
 
         report_path = out_dir / f"bulk_heatmap_{sample_id}_{ts}.md"
+        deg_sources = ", ".join(f"`{Path(p).name}`" for p in deg_tables) or "（無）"
         report_path.write_text(
             _REPORT_TEMPLATE.format(
+                analysis_id=analysis_id,
                 sample_id=sample_id,
                 timestamp=started_at.isoformat(),
-                n_sig=len(sig_genes),
+                counts_path=str(counts_path),
                 n_deg=len(deg_tables),
+                deg_sources=deg_sources,
+                n_sig=len(sig_genes),
                 top_n=top_n,
                 sig_fig=sig_fig_md,
                 var_fig=var_fig_md,

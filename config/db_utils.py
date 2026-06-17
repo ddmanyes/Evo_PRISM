@@ -4,6 +4,7 @@ DuckDB 安全寫入與維護工具。
 safe_write()        — 寫入關鍵表後立即 CHECKPOINT（對抗 ExFAT 無日誌風險）
 cleanup_stale_runs() — 清理 > 24h 的殭屍 running 狀態
 get_connection()    — 統一連線入口，確保單一寫入者
+get_store()         — 取得 RegistryStore 單例（ER_DB_BACKEND 決定後端）
 """
 
 import contextlib
@@ -286,6 +287,12 @@ def db_health_check(con: duckdb.DuckDBPyConnection | None = None) -> dict:
 
     with duckdb.connect(str(DUCKDB_PATH), read_only=True) as _con:
         return _run(_con)
+
+
+def get_store():
+    """Return the process-level RegistryStore (shortcut for callers that already import db_utils)."""
+    from store.factory import get_store as _get_store
+    return _get_store()
 
 
 if __name__ == "__main__":

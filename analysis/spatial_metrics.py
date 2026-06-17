@@ -22,7 +22,6 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -298,8 +297,7 @@ def generate_crc_metrics_report(
 
     Returns (analysis_id, report_path).
     """
-    from config.settings import DUCKDB_PATH
-    from config.db_utils import safe_write
+    from config.db_utils import safe_write, connect_db
     import scanpy as sc
 
     analysis_id = str(uuid.uuid4())
@@ -314,7 +312,7 @@ def generate_crc_metrics_report(
         "n_hvgs": n_hvgs,
     }
 
-    con = duckdb.connect(str(DUCKDB_PATH))
+    con = connect_db()
     safe_write(
         con,
         """INSERT INTO analysis_history

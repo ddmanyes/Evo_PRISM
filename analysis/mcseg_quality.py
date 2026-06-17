@@ -35,8 +35,7 @@ matplotlib.use("Agg")
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH  # noqa: E402
-from config.db_utils import safe_write  # noqa: E402
+from config.settings import BIO_DB_ROOT  # noqa: E402
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md  # noqa: E402
 from analysis.path_utils import results_dir  # noqa: E402
 
@@ -215,17 +214,10 @@ def generate_mcseg_qc_report(
     started_at = datetime.now(timezone.utc)
     params_json = json.dumps({"qc_dir": str(qc_dir)})
 
-    import duckdb
-
-    with duckdb.connect(str(DUCKDB_PATH)) as con:
-        safe_write(
-            con,
-            """INSERT INTO analysis_history
-                   (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at)
-               VALUES (?, ?, 'mcseg_qc', ?, 'running', ?, ?)""",
-            [analysis_id, sample_id, params_json, requested_by, started_at],
-        )
+    from store.factory import get_store as _get_store
+    _get_store().insert_history(
+        analysis_id, sample_id, "mcseg_qc", params_json, "running", requested_by, started_at
+    )
 
     try:
         out_dir = results_dir(sample_id, "mcseg_qc")
@@ -277,9 +269,8 @@ def generate_mcseg_qc_report(
         summary = (f"MCseg {sample_id}：{len(pairs)} ROI，MCseg 共 {total_cells} 細胞。")[:50]
 
         completed_at = datetime.now(timezone.utc)
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
-            safe_write(
-                con,
+        with _get_store().write_conn() as con:
+            con.execute(
                 """UPDATE analysis_history
                       SET status='completed', result_path=?, completed_at=?, summary=?
                     WHERE analysis_id=?""",
@@ -309,9 +300,8 @@ def generate_mcseg_qc_report(
 
     except Exception as _exc:
         logger.exception("mcseg_qc 分析失敗  analysis_id=%s", analysis_id)
-        with duckdb.connect(str(DUCKDB_PATH)) as con:
-            safe_write(
-                con,
+        with _get_store().write_conn() as con:
+            con.execute(
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
                 [datetime.now(timezone.utc), analysis_id],
             )
