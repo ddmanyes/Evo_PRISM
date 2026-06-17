@@ -21,6 +21,24 @@ from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
+# Whitelist of mutable columns for dynamic UPDATE queries (H1 fix)
+_HISTORY_MUTABLE_COLS = frozenset({
+    "status", "result_path", "completed_at", "summary", "tool_id",
+    "failure_diagnosis", "tags", "parameter_hash", "summary_metrics",
+    "analysis_version", "tool_version", "user_approval", "parent_analysis_id",
+})
+_SAMPLE_MUTABLE_COLS = frozenset({
+    "project", "data_type", "platform", "species", "tissue", "l3_path",
+    "l2_ready", "analysis_done", "added_by", "notes", "last_updated",
+    "condition", "time_point", "batch", "donor_id", "tags", "alias",
+})
+
+
+def _validate_cols(cols: set[str], allowed: frozenset[str], ctx: str) -> None:
+    unknown = cols - allowed
+    if unknown:
+        raise ValueError(f"{ctx}: unknown or immutable columns {sorted(unknown)}")
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -210,6 +228,7 @@ class PostgresStore:
     def update_history(self, analysis_id: str, **kwargs) -> None:
         if not kwargs:
             return
+        _validate_cols(set(kwargs), _HISTORY_MUTABLE_COLS, "update_history")
         cols = ", ".join(f"{k} = %s" for k in kwargs)
         vals = list(kwargs.values()) + [analysis_id]
         with self.write_conn() as con:
@@ -427,6 +446,7 @@ class PostgresStore:
         if not kwargs:
             return
         kwargs.setdefault("last_updated", datetime.now(timezone.utc))
+        _validate_cols(set(kwargs), _SAMPLE_MUTABLE_COLS, "update_sample")
         cols = ", ".join(f"{k} = %s" for k in kwargs)
         vals = list(kwargs.values()) + [sample_id]
         with self.write_conn() as con:
@@ -450,6 +470,12 @@ class PostgresStore:
     ) -> None:
         try:
             with self.write_conn() as con:
+                if tool_id is None:
+                    row = con.execute(
+                        "SELECT tool_id FROM tools WHERE tool_name = %s AND status = 'active' LIMIT 1",
+                        [tool_name],
+                    ).fetchone()
+                    tool_id = str(row[0]) if row else None
                 con.execute(
                     """
                     INSERT INTO mcp_tool_metrics

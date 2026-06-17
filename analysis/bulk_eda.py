@@ -30,7 +30,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BIO_DB_ROOT, DUCKDB_PATH, SUMMARY_MAX_CHARS
-from config.db_utils import safe_write
+from config.db_utils import connect_db
+from store.factory import get_store
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.path_utils import results_dir
 from analysis.tool_registry import register_tool_on_import
@@ -431,10 +432,11 @@ def generate_bulk_report(
 
     回傳 (analysis_id, report_path)。
     """
-    from config.db_utils import connect_db, get_canonical_id, mark_canonical, param_hash
+    from config.db_utils import param_hash
 
     validate_sample_id(sample_id)
 
+    store = get_store()
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
     def _rel(p: Optional[Path]) -> str:
@@ -449,20 +451,15 @@ def generate_bulk_report(
     params_json = json.dumps(_params)
     report_path: Optional[Path] = None
 
-    con = connect_db(DUCKDB_PATH)
     try:
         # 自動偵測父節點
         if parent_analysis_id is None:
-            parent_analysis_id = get_canonical_id(con, sample_id, "bulk_eda")
+            parent_analysis_id = store.get_canonical_id(sample_id, "bulk_eda")
 
-        safe_write(
-            con,
-            """INSERT INTO analysis_history
-                   (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at, parent_analysis_id, parameter_hash)
-               VALUES (?, ?, 'bulk_eda', ?, 'running', ?, ?, ?, ?)""",
-            [analysis_id, sample_id, params_json, requested_by, started_at,
-             parent_analysis_id, param_hash(_params)],
+        store.insert_history(
+            analysis_id, sample_id, "bulk_eda", params_json, "running",
+            requested_by, started_at,
+            parameter_hash=param_hash(_params),
         )
 
         counts = load_counts(counts_path)
@@ -569,87 +566,86 @@ def generate_bulk_report(
         })
 
         completed_at = datetime.now(timezone.utc)
-        safe_write(
-            con,
-            """UPDATE analysis_history
-                  SET status='completed', result_path=?, completed_at=?, summary=?,
-                      summary_metrics=?
-                WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, summary_metrics, analysis_id],
+        store.complete_history(
+            analysis_id, str(report_path), summary, completed_at,
+            summary_metrics=json.loads(summary_metrics),
         )
-        mark_canonical(con, analysis_id, sample_id, "bulk_eda")
+        store.mark_canonical(analysis_id, sample_id, "bulk_eda")
 
-        from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+        from analysis.failure_diagnosis import success_diagnosis
 
-        write_diagnosis(con, analysis_id, success_diagnosis())
+        store.update_history(
+            analysis_id, failure_diagnosis=json.dumps(success_diagnosis())
+        )
+        # register_artifact still uses DuckDB VSS/HNSW — not yet migrated to RegistryStore.
+        # Open a separate DuckDB connection for artifact writes only.
         try:
             from analysis.artifact_registry import register_artifact
 
-            if qc_file and qc_file.exists():
+            _artifact_con = connect_db(DUCKDB_PATH)
+            try:
+                if qc_file and qc_file.exists():
+                    register_artifact(
+                        _artifact_con,
+                        analysis_id,
+                        qc_file,
+                        "figure",
+                        f"QC barplot（library size + 偵測基因數）— {_caption_qc(qc)}",
+                        artifact_subtype="qc",
+                    )
+                if dist_file and dist_file.exists():
+                    register_artifact(
+                        _artifact_con,
+                        analysis_id,
+                        dist_file,
+                        "figure",
+                        f"Count 分布 boxplot（log1p）— {_caption_dist(counts)}",
+                        artifact_subtype="count_dist",
+                    )
+                if corr_file and corr_file.exists():
+                    register_artifact(
+                        _artifact_con,
+                        analysis_id,
+                        corr_file,
+                        "figure",
+                        f"樣本相關矩陣 heatmap — {_caption_corr(corr)}",
+                        artifact_subtype="correlation",
+                    )
+                if pca_file and pca_file.exists():
+                    register_artifact(
+                        _artifact_con,
+                        analysis_id,
+                        pca_file,
+                        "figure",
+                        f"PCA 主成分分析圖 — {_caption_pca(counts)}",
+                        artifact_subtype="pca",
+                    )
                 register_artifact(
-                    con,
+                    _artifact_con,
                     analysis_id,
-                    qc_file,
-                    "figure",
-                    f"QC barplot（library size + 偵測基因數）— {_caption_qc(qc)}",
-                    artifact_subtype="qc",
+                    report_path,
+                    "report",
+                    "Bulk EDA 分析報告",
+                    artifact_subtype="eda_report",
                 )
-            if dist_file and dist_file.exists():
-                register_artifact(
-                    con,
-                    analysis_id,
-                    dist_file,
-                    "figure",
-                    f"Count 分布 boxplot（log1p）— {_caption_dist(counts)}",
-                    artifact_subtype="count_dist",
-                )
-            if corr_file and corr_file.exists():
-                register_artifact(
-                    con,
-                    analysis_id,
-                    corr_file,
-                    "figure",
-                    f"樣本相關矩陣 heatmap — {_caption_corr(corr)}",
-                    artifact_subtype="correlation",
-                )
-            if pca_file and pca_file.exists():
-                register_artifact(
-                    con,
-                    analysis_id,
-                    pca_file,
-                    "figure",
-                    f"PCA 主成分分析圖 — {_caption_pca(counts)}",
-                    artifact_subtype="pca",
-                )
-            register_artifact(
-                con,
-                analysis_id,
-                report_path,
-                "report",
-                "Bulk EDA 分析報告",
-                artifact_subtype="eda_report",
-            )
+            finally:
+                _artifact_con.close()
         except Exception as _exc:
             logger.warning("bulk_eda: register_artifact 失敗（非致命）: %s", _exc)
 
     except Exception as _exc:
         logger.exception("bulk_eda 分析失敗  analysis_id=%s", analysis_id)
         try:
-            safe_write(
-                con,
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id],
+            from analysis.failure_diagnosis import classify_exception
+            store.fail_history(
+                analysis_id, datetime.now(timezone.utc),
+                failure_diagnosis=json.dumps(classify_exception(_exc)),
             )
-            from analysis.failure_diagnosis import classify_exception, write_diagnosis
-
-            write_diagnosis(con, analysis_id, classify_exception(_exc))
         except Exception:
             pass
         raise
-    finally:
-        con.close()
 
-    # con 已關閉 — 安全地開啟新連線產生快照
+    # store 不需要 close() — 連線由 store 自行管理
     try:
         from scripts.export_registry import export_snapshot
         export_snapshot()

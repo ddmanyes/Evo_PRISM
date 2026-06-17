@@ -24,10 +24,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Sequence
-
-if TYPE_CHECKING:
-    import duckdb
+from typing import Optional, Sequence
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -37,7 +34,8 @@ import pandas as pd
 matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.db_utils import safe_write
+from config.db_utils import connect_db
+from store.factory import get_store
 from config.settings import BIO_DB_ROOT, DUCKDB_PATH, SUMMARY_MAX_CHARS
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
@@ -452,7 +450,6 @@ def run_deg_analysis(
     fc_threshold: float = 1.0,
     pval_threshold: float = 0.05,
     requested_by: str = "agent",
-    con: Optional[duckdb.DuckDBPyConnection] = None,
     parent_analysis_id: Optional[str] = None,
 ) -> tuple[str, str]:
     """跑多組對照的 DEG，產出每組 DEG CSV + 火山圖 + 彙整報告。
@@ -500,24 +497,18 @@ def run_deg_analysis(
     }
     params_json = json.dumps(_params)
 
-    from config.db_utils import connect_db, get_canonical_id, mark_canonical, param_hash
+    from config.db_utils import param_hash
 
-    _own_con = con is None
-    if con is None:
-        con = connect_db(DUCKDB_PATH)
+    store = get_store()
 
     try:
         if parent_analysis_id is None:
-            parent_analysis_id = get_canonical_id(con, sample_id, "bulk_deg")
+            parent_analysis_id = store.get_canonical_id(sample_id, "bulk_deg")
 
-        safe_write(
-            con,
-            """INSERT INTO analysis_history
-                   (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at, parent_analysis_id, parameter_hash)
-               VALUES (?, ?, 'bulk_deg', ?, 'running', ?, ?, ?, ?)""",
-            [analysis_id, sample_id, params_json, requested_by, started_at,
-             parent_analysis_id, param_hash(_params)],
+        store.insert_history(
+            analysis_id, sample_id, "bulk_deg", params_json, "running",
+            requested_by, started_at,
+            parameter_hash=param_hash(_params),
         )
 
         counts, coldata = load_deg_inputs(counts_path, coldata_path)
@@ -705,49 +696,48 @@ def run_deg_analysis(
         })
 
         completed_at = datetime.now(timezone.utc)
-        safe_write(
-            con,
-            """UPDATE analysis_history
-                  SET status='completed', result_path=?, completed_at=?, summary=?,
-                      summary_metrics=?
-                WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, summary_metrics, analysis_id],
+        store.complete_history(
+            analysis_id, str(report_path), summary, completed_at,
+            summary_metrics=json.loads(summary_metrics),
         )
-        mark_canonical(con, analysis_id, sample_id, "bulk_deg")
-        from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+        store.mark_canonical(analysis_id, sample_id, "bulk_deg")
 
-        write_diagnosis(con, analysis_id, success_diagnosis())
+        from analysis.failure_diagnosis import success_diagnosis
+
+        store.update_history(
+            analysis_id, failure_diagnosis=json.dumps(success_diagnosis())
+        )
+        # register_artifact still uses DuckDB VSS/HNSW — not yet migrated to RegistryStore.
         try:
             from analysis.artifact_registry import register_artifact
 
-            for path, atype, label, subtype in artifact_files:
-                if path.exists():
-                    register_artifact(
-                        con, analysis_id, path, atype, label, artifact_subtype=subtype
-                    )
+            _artifact_con = connect_db(DUCKDB_PATH)
+            try:
+                for path, atype, label, subtype in artifact_files:
+                    if path.exists():
+                        register_artifact(
+                            _artifact_con, analysis_id, path, atype, label,
+                            artifact_subtype=subtype,
+                        )
+            finally:
+                _artifact_con.close()
         except Exception as _exc:
             logger.warning("bulk_deg: register_artifact 失敗（非致命）: %s", _exc)
 
     except Exception as _exc_outer:
         logger.exception("bulk_deg 分析失敗  analysis_id=%s", analysis_id)
-        from analysis.failure_diagnosis import classify_exception, write_diagnosis
+        from analysis.failure_diagnosis import classify_exception
 
         try:
-            safe_write(
-                con,
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id],
+            store.fail_history(
+                analysis_id, datetime.now(timezone.utc),
+                failure_diagnosis=json.dumps(classify_exception(_exc_outer)),
             )
-            write_diagnosis(con, analysis_id, classify_exception(_exc_outer))
-        finally:
-            if _own_con:
-                con.close()
+        except Exception:
+            pass
         raise
 
-    if _own_con:
-        con.close()
-
-    # con 已關閉 — 安全地開啟新連線產生快照
+    # store 不需要 close() — 連線由 store 自行管理
     try:
         from scripts.export_registry import export_snapshot
         export_snapshot()

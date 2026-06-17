@@ -149,21 +149,12 @@ def _record_metric(
 ) -> None:
     """Best-effort metric write; never raise to caller."""
     try:
-        from analysis.tool_registry import get_active_tool_id
         from store.factory import get_store
 
-        store = get_store()
-        tool_id = None
-        with store.write_conn() as con:
-            try:
-                tool_id = get_active_tool_id(con, tool_name)
-            except Exception:
-                pass
-        store.record_metric(
+        get_store().record_metric(
             tool_name, duration_ms, status,
             error_class=error_class,
             requested_by=requested_by,
-            tool_id=tool_id,
         )
     except Exception as exc:  # pragma: no cover
         logger.debug("metric write failed (%s): %s", tool_name, exc)
