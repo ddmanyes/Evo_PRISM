@@ -105,16 +105,22 @@ def connect_db(path: "Path | str | None" = None) -> duckdb.DuckDBPyConnection:
 
 def safe_write(con: duckdb.DuckDBPyConnection, sql: str, params: list = None) -> None:
     """
-    執行寫入並立即 CHECKPOINT。
+    執行寫入並立即 CHECKPOINT（DuckDB）。
 
     只用於 analysis_history、sample_registry 等關鍵表的寫入。
     L1 memory_recent 等快取寫入不需要呼叫（效能考量）。
 
     ExFAT 無日誌系統，CHECKPOINT 強制把 WAL 刷入主檔，
     縮小斷電損壞視窗：損壞頂多丟失「上次 CHECKPOINT 之後的寫入」。
+
+    Postgres 後端（_PgCursor）：CHECKPOINT 由 Postgres WAL 自動保證，
+    此處靜默跳過；寫入本身已在 MVCC 交易保護下完成。
     """
     con.execute(sql, params or [])
-    con.execute("CHECKPOINT")
+    try:
+        con.execute("CHECKPOINT")
+    except Exception:
+        pass  # Postgres: WAL guarantees durability; CHECKPOINT is DuckDB-only
 
 
 def cleanup_stale_runs(con: duckdb.DuckDBPyConnection, hours: int = 24) -> int:
@@ -141,7 +147,10 @@ def cleanup_stale_runs(con: duckdb.DuckDBPyConnection, hours: int = 24) -> int:
     cleaned = len(rows)
 
     if cleaned:
-        con.execute("CHECKPOINT")
+        try:
+            con.execute("CHECKPOINT")
+        except Exception:
+            pass  # Postgres: not needed
         print(f"[db_utils] cleaned {cleaned} stale running record(s)")
     return cleaned
 
@@ -198,7 +207,10 @@ def mark_canonical(
         """,
         [analysis_id],
     )
-    con.execute("CHECKPOINT")
+    try:
+        con.execute("CHECKPOINT")
+    except Exception:
+        pass  # Postgres: WAL handles durability
 
 
 def wal_preflight_check(db_path: "Path | str | None" = None) -> dict:

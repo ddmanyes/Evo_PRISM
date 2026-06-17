@@ -955,7 +955,10 @@ def open_stabilization(
             halstead_volume,
         ],
     )
-    con.execute("CHECKPOINT")
+    try:
+        con.execute("CHECKPOINT")
+    except Exception:
+        pass  # Postgres: WAL handles durability
     logger.info("open_stabilization: %r  revision=%d  log_id=%s", tool_name, revision_now, log_id)
     return log_id
 
@@ -1042,7 +1045,10 @@ def close_stabilization(
         f"UPDATE tool_stabilization_log SET {', '.join(updates)} WHERE log_id = ?",
         params,
     )
-    con.execute("CHECKPOINT")
+    try:
+        con.execute("CHECKPOINT")
+    except Exception:
+        pass  # Postgres: WAL handles durability
     delta = revision_after - revision_before
     logger.info(
         "close_stabilization: log_id=%s  outcome=%s  revision_delta=+%d",
@@ -1500,7 +1506,10 @@ def mark_stable(
         "UPDATE tools SET stability_note = ? WHERE tool_name = ? AND status = 'active'",
         [sentinel, tool_name],
     )
-    con.execute("CHECKPOINT")
+    try:
+        con.execute("CHECKPOINT")
+    except Exception:
+        pass  # Postgres: WAL handles durability
     logger.info("mark_stable: %r → %s", tool_name, sentinel[:80])
 
 
@@ -1568,7 +1577,10 @@ def auto_revert_stale_stabilizations(
             str(created_at)[:10],
         )
 
-    con.execute("CHECKPOINT")
+    try:
+        con.execute("CHECKPOINT")
+    except Exception:
+        pass  # Postgres: WAL handles durability
     return reverted
 
 
