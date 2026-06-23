@@ -41,9 +41,9 @@ Evo_PRISM addresses all three systematically:
 
 ## Architecture
 
-### Three-Layer Data Architecture
+### Three-Layer Data Pipeline
 
-![Evo_PRISM Three-Layer Architecture](docs/images/figure_1_system_arch.png)
+Evo_PRISM organizes data into three immutable tiers. Every incoming query is routed through a fast-path hierarchy before any computation is triggered:
 
 | Layer |  Name  | Description                                                     |
 | :---: | :----: | :-------------------------------------------------------------- |
@@ -51,14 +51,31 @@ Evo_PRISM addresses all three systematically:
 |  L2  | Silver | DuckDB + Parquet structured features (30B → 416 MB compressed) |
 |  L1  |  Gold  | HNSW semantic cache, TTL 7 days                                 |
 
-### HELIX — Tool Health-Evolving Loop
+![Three-Tier Query Decision Flow](docs/paper/figures/figure_1_simple.png)
 
-![HELIX Simple Flow](docs/images/figure_2_system_arch.png)
+A query first hits the **Fast-Path** (exact SQL, < 1 ms). On miss, it checks the **L1 Semantic Cache** (HNSW cosine ≥ 0.88). If still unresolved, it checks **L2 Analysis History** for a reusable prior result. Only a cold-start query reaches full execution — the result is then archived and feeds future cache hits.
 
+### HELIX — Tool Lifecycle & Self-Evolution
 
-**HELIX** tracks every analysis tool's version, detects hot-spots, measures cyclomatic complexity (Radon CC), and drives stabilization refactors — ensuring the Agent always calls a healthy, well-maintained version.
+HELIX manages every analysis tool's full lifecycle: semantic discovery, version tracking, health scoring, and autonomous promotion.
 
-**Code Promotion is human-confirmed by design.** When a generated script meets the promotion threshold (reused ≥ 3×, `fpromote ≥ 3.0`), LLM review produces a draft — but a human administrator runs `approve_candidate()` before it enters the permanent `analysis/` directory. This intentional gate prevents the "LLM generates → LLM reviews → self-validates" closed loop that undermines trust in autonomous code evolution. The `UserApproval` signal (`+1` / `0` / `-1`) also lets operators veto high-frequency but methodologically flawed scripts before promotion.
+#### Tool Invocation Flow
+
+![HELIX Tool Invocation Flow](docs/paper/figures/figure_2a_simple.png)
+
+When the Agent receives a task, HELIX first searches the **Active Tool Registry** (semantic search, cosine ≥ 0.45). A **Hit** invokes the registered tool directly; a **Miss** triggers ad-hoc code generation in a sandboxed environment. User-approved results are saved to Analysis History and become candidates for future hits. The **In-Session Context** loop retains short-term state; the **Cross-Session Recall** loop rehydrates ENGRAM memory across sessions.
+
+#### Self-Evolution Loop
+
+![HELIX Self-Evolution Loop](docs/paper/figures/figure_2b_simple.png)
+
+HELIX continuously monitors both the **Dynamic Stage** (Analysis History) and the **Active Stage** (Registered Tools):
+
+- **Promotion Assessment** — scripts reused ≥ 3× with `f_promote ≥ 3.0` become upgrade candidates
+- **Health Monitoring** — hot-spots (high `ChurnRatio` or cyclomatic complexity) trigger refactoring
+- **AI-Assisted Refactoring** generates a draft tool; a **Human Admin Review** gate then either promotes it into the permanent `analysis/` directory or discards the draft
+
+**Code Promotion is human-confirmed by design.** This gate prevents the "LLM generates → LLM reviews → self-validates" closed loop that undermines trust in autonomous code evolution. The `UserApproval` signal (`+1` / `0` / `-1`) also lets operators veto high-frequency but methodologically flawed scripts before promotion.
 
 #### HELIX Memory System
 
@@ -91,9 +108,14 @@ This ensures recent diagnostics remain precise while historical memory retains s
 
 ### ENGRAM — Permanent Artifact Memory
 
-![ENGRAM Architecture](docs/images/figure_3_system_arch_1.png)
+![ENGRAM Architecture](docs/paper/figures/figure_3_simple.png)
 
-**ENGRAM** permanently archives every analysis artifact (CSV, Parquet, images, reports) and enables Hybrid 3-way RRF semantic search (Exact SQL + HNSW + BM25 FTS), linked to HELIX for full version provenance.
+**ENGRAM** permanently archives every analysis artifact (CSV, Parquet, images, reports) into the **Artifact Memory Store**. Two paths operate concurrently:
+
+- **Ingestion path** — analysis results are registered, embedded, and indexed into `analysis_artifacts` with a JOIN to HELIX Tool Versions for full provenance
+- **Query path** — user queries hit L1 SQL and L2 HNSW search in parallel; results are fused via **RRF (Reciprocal Rank Fusion)** combining Exact SQL + HNSW vector + BM25 full-text scores
+
+The recursive CTE **Blast Radius Impact Graph** traverses the HELIX version lineage to identify all historical results produced by a changed tool version — enabling retroactive staleness detection without re-running any analysis.
 
 ### HELIX × ENGRAM Closed Loop — Blast Radius Analysis
 
@@ -115,15 +137,17 @@ This is what conventional workflow managers (Snakemake, Nextflow, DVC) cannot do
 ### Agent Decision Flow
 
 ```text
-Query
- ├─ Step 1  Exact SQL match (0 tokens, < 1 s)              ← Already done? Return directly
- ├─ Step 2  HNSW semantic search (cosine ≥ 0.88)           ← Similar query cached? Return cache
- ├─ Step 3A Standard analysis tool (L2 Parquet ready)
- │           └─ bio_find_tool: 0-token semantic search → reuse existing function before writing new code
- ├─ Step 3B Code Promotion reuse (generated before?)
- └─ Step 3C Fresh code generation (sandbox + retry)
-               └─ Success → store in history → available for 3B next time
-               └─ Reused ≥ 3× → promoted to a permanent 3A tool (human-confirmed)
+User Query
+ ├─ Fast-Path   Exact SQL match (0 tokens, < 1 ms)         ← Structured result returned immediately
+ ├─ L1 Cache   HNSW semantic search (cosine ≥ 0.88)        ← Cached report returned, skips execution
+ ├─ L2 History  Prior analysis match                        ← Reuse archived result, skips execution
+ └─ Cold Start  Full execution path
+       ├─ HELIX Tool Search (cosine ≥ 0.45)
+       │     Hit  → Invoke registered tool → Execute → Return report
+       │     Miss → Generate ad-hoc code → Sandbox execution → User approval
+       │               └─ Approved → Save to Analysis History (feeds L2 next time)
+       │               └─ Reused ≥ 3× → HELIX Promotion → Human review → Permanent tool
+       └─ All results archived in ENGRAM with HELIX version provenance
 ```
 
 ---
