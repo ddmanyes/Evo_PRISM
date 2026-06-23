@@ -27,7 +27,7 @@ from typing import Optional
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import BIO_DB_ROOT, MCSEG_RESULTS_ROOT  # noqa: E402
+from config.settings import BIO_DB_ROOT, MCSEG_RESULTS_ROOT, MSSEG_PATH  # noqa: E402
 from analysis.path_utils import results_dir  # noqa: E402
 from analysis.validators import validate_sample_id  # noqa: E402
 from analysis.tool_registry import register_tool_on_import  # noqa: E402
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Single authoritative list of MSseg root candidates (used by both import helpers)
 _MSSEG_CANDIDATES = [
-    Path("K:/plan_a/MSseg"),
+    MSSEG_PATH,
     BIO_DB_ROOT.parent.parent / "plan_a" / "MSseg",
     Path(__file__).parent.parent.parent / "plan_a" / "MSseg",
 ]

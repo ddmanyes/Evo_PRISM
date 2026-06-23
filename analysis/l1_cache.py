@@ -53,8 +53,8 @@ def _rrf_score(
 ) -> float:
     """4-way Reciprocal Rank Fusion 分數。
 
-    rank_bm25=1（預設）代表 FTS 不可用或視為完美命中，不影響排序。
-    FTS 可用時傳入實際 BM25 rank；未命中傳入 _MISMATCH_RANK。
+    rank_bm25=1（預設）代表 FTS 最高命中位置（score = _W_BM25/61）。
+    FTS 可用時傳入實際 BM25 rank；未命中傳入 _MISMATCH_RANK（score 趨近 0）。
     """
     return (
         _W1 / (rank_cosine + _RRF_K)

@@ -130,7 +130,7 @@ def read_artifact_resource(con, uri: str) -> tuple[str | bytes, str]:
 
     # 沙盒：解析後必須落在 BIO_DB_ROOT 內（防 ../ 越界）
     root = BIO_DB_ROOT.resolve()
-    if root not in abs_path.parents and abs_path != root:
+    if root not in abs_path.parents:
         raise ArtifactResourceError(f"路徑越界，拒絕讀取：{file_path!r}")
     if not abs_path.is_file():
         raise ArtifactResourceError(f"檔案不存在或非一般檔：{file_path!r}")

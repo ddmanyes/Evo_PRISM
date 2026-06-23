@@ -440,6 +440,12 @@ def register_artifact(
                 overflow_path = overflow_dir / filename
                 overflow_path.write_bytes(raw_bytes)
 
+                # Remove original to avoid duplication — overflow_path is now canonical.
+                try:
+                    Path(file_path).unlink(missing_ok=True)
+                except OSError as _unlink_exc:
+                    logger.warning("register_artifact: could not remove original after spill: %s", _unlink_exc)
+
                 path = overflow_path
                 size_kb = int(overflow_path.stat().st_size / 1024)
                 inline_data = None

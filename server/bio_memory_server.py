@@ -74,19 +74,21 @@ _SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")
 _RATE_LIMIT_WINDOW_SEC = 60.0
 _RATE_LIMIT_MAX_CALLS = int(os.environ.get("MCP_RATE_LIMIT_PER_MIN", "30"))
 _rate_buckets: dict[str, deque[float]] = {}
+_rate_lock = asyncio.Lock()
 
 
-def _rate_limit_check(key: str) -> bool:
+async def _rate_limit_check(key: str) -> bool:
     """Return True if request allowed; False if rate limit exceeded."""
-    now = time.monotonic()
-    bucket = _rate_buckets.setdefault(key, deque())
-    cutoff = now - _RATE_LIMIT_WINDOW_SEC
-    while bucket and bucket[0] < cutoff:
-        bucket.popleft()
-    if len(bucket) >= _RATE_LIMIT_MAX_CALLS:
-        return False
-    bucket.append(now)
-    return True
+    async with _rate_lock:
+        now = time.monotonic()
+        bucket = _rate_buckets.setdefault(key, deque())
+        cutoff = now - _RATE_LIMIT_WINDOW_SEC
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= _RATE_LIMIT_MAX_CALLS:
+            return False
+        bucket.append(now)
+        return True
 
 
 class RateLimitExceeded(RuntimeError):
@@ -1459,7 +1461,7 @@ async def _handle_bio_history_timeline(args: dict) -> str:
     fmt = _resolve_format_mode(args)
     with get_store().read_conn() as con:
         rows = con.execute(
-            f"""
+            """
             SELECT sample_id,
                    analysis_type,
                    status,
@@ -1469,9 +1471,9 @@ async def _handle_bio_history_timeline(args: dict) -> str:
             FROM   analysis_history
             WHERE  completed_at >= now() - (? * INTERVAL '1 day')
             ORDER  BY completed_at DESC
-            LIMIT  {limit}
+            LIMIT  ?
             """,
-            [n_days],
+            [n_days, limit],
         ).fetchall()
         cols = ["sample_id", "analysis_type", "status", "requested_by", "completed_at", "summary"]
         result_rows = [
@@ -2167,7 +2169,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
         ]
 
     # Rate limit gate（僅針對打 embedding server 的工具）
-    if name in _RATE_LIMITED_TOOLS and not _rate_limit_check(f"tool:{name}"):
+    if name in _RATE_LIMITED_TOOLS and not await _rate_limit_check(f"tool:{name}"):
         logger.warning("Rate limit exceeded for tool %r", name)
         _record_metric(
             name, 0, "rate_limited", error_class="RateLimitExceeded", requested_by=requested_by

@@ -3,8 +3,9 @@ from pathlib import Path
 import logging
 import numpy as np
 
-# Path to the external MSseg repository
-MSSEG_PATH = Path("K:/plan_a/MSseg")
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.settings import MSSEG_PATH  # noqa: E402
+
 if str(MSSEG_PATH) not in sys.path:
     sys.path.insert(0, str(MSSEG_PATH))
 

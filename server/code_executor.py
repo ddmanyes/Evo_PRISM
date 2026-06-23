@@ -238,16 +238,9 @@ def _check_open_paths(code: str) -> list[str]:
         )
         if not is_open_call:
             continue
-        if not node.args:
-            continue
-        first_arg = node.args[0]
-        if not (isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str)):
-            continue
-        path_val: str = first_arg.value
-        if os.path.isabs(path_val):
-            violations.append(f"Absolute path in open(): {path_val!r}")
-        elif ".." in path_val.replace("\\", "/").split("/"):
-            violations.append(f"Path traversal in open(): {path_val!r}")
+        # Block ALL open() calls unconditionally — including variable-path variants
+        # and calls with spaces before parens (which bypass the text-scan layer).
+        violations.append(f"open() call at line {node.lineno} — all file I/O is blocked")
     return violations
 
 
@@ -331,7 +324,7 @@ def sandbox_exec(code: str, timeout: int = 60, *, preamble: str = "") -> ExecRes
     t0 = time.time()
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False, encoding="utf-8"
+            mode="w", suffix=".py", delete=False, encoding="utf-8", dir=SANDBOX_CWD
         ) as f:
             f.write(code)
             tmp_path = f.name

@@ -22,6 +22,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
@@ -37,19 +38,15 @@ from config.settings import (
 
 logger = logging.getLogger(__name__)
 
-# Cached once per process — tools schema is fixed for the lifetime of a process.
-_env_hash_col_present: Optional[bool] = None
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 
 def _check_env_hash_col(con: duckdb.DuckDBPyConnection) -> bool:
-    """Return True if tools.env_hash column exists. Result cached for the process lifetime."""
-    global _env_hash_col_present
-    if _env_hash_col_present is None:
-        _env_hash_col_present = con.execute(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_name = 'tools' AND column_name = 'env_hash' LIMIT 1"
-        ).fetchone() is not None
-    return _env_hash_col_present
+    """Return True if tools.env_hash column exists (queried per-connection, not cached)."""
+    return con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'tools' AND column_name = 'env_hash' LIMIT 1"
+    ).fetchone() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +168,7 @@ def _compute_churn(
                 deleted_count += i2 - i1
 
     denominator = max(len(old_lines), len(new_lines)) or 1
-    churn_ratio = round((added_count + deleted_count) / denominator, 4)
+    churn_ratio = round(min(1.0, (added_count + deleted_count) / denominator), 4)
     return json.dumps(hunks), churn_ratio
 
 
@@ -1558,16 +1555,16 @@ def auto_revert_stale_stabilizations(
 
     now = datetime.now(timezone.utc)
     reverted: list[str] = []
+    revert_note = f"[auto-reverted: exceeded {days}-day open limit]"
     for log_id, tool_name, created_at in rows:
         con.execute(
-            f"""
+            """
             UPDATE tool_stabilization_log
             SET    outcome = 'reverted', closed_at = ?,
-                   action_taken = COALESCE(action_taken || ' | ', '') ||
-                                  '[auto-reverted: exceeded {days}-day open limit]'
+                   action_taken = COALESCE(action_taken || ' | ', '') || ?
             WHERE  log_id = ?
             """,
-            [now, str(log_id)],
+            [now, revert_note, str(log_id)],
         )
         reverted.append(str(log_id))
         logger.info(
@@ -1674,7 +1671,7 @@ def register_tool_on_import(
             elif isinstance(res, str):
                 analysis_id = res
 
-            if analysis_id:
+            if analysis_id and _UUID_RE.match(analysis_id):
                 import duckdb
                 from config.settings import DUCKDB_PATH
 
@@ -1688,7 +1685,7 @@ def register_tool_on_import(
                     try:
                         backfill_tool_id(con, tool_name, analysis_id)
                     except Exception as e:
-                        logger.warning(f"register_tool_on_import: backfill_tool_id failed: {e}")
+                        logger.warning("register_tool_on_import: backfill_tool_id failed: %s", e)
                 else:
                     import sys
 
@@ -1704,7 +1701,7 @@ def register_tool_on_import(
                         with duckdb.connect(str(path)) as conn:
                             backfill_tool_id(conn, tool_name, analysis_id)
                     except Exception as e:
-                        logger.warning(f"register_tool_on_import: backfill_tool_id failed: {e}")
+                        logger.warning("register_tool_on_import: backfill_tool_id failed: %s", e)
             return res
 
         return wrapper

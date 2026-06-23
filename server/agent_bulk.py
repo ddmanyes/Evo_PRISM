@@ -7,6 +7,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path as _Path
 
+import sys as _sys
+_sys.path.insert(0, str(_Path(__file__).parent.parent))
+from config.settings import MSSEG_PATH as _MSSEG_PATH, EVO_PRISM_LEGACY_ROOT as _EVO_PRISM_LEGACY_ROOT  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,8 +128,8 @@ def _exec_bio_run_mcseg_roi(args: dict) -> str:
 
     # 組裝 ROI_CONFIG 並動態執行 showcase 管線
     try:
-        sys.path.insert(0, str(_Path("K:/plan_a/MSseg")))
-        sys.path.insert(0, str(_Path("I:/Evo_PRISM")))
+        sys.path.insert(0, str(_MSSEG_PATH))
+        sys.path.insert(0, str(_EVO_PRISM_LEGACY_ROOT))
 
         from analysis.mcseg_wrapper import (
             crop_visium_hd_roi,
@@ -178,7 +182,7 @@ def _exec_bio_run_mcseg_roi(args: dict) -> str:
         # Stage 3–7: run the showcase downstream via subprocess to keep GPU memory isolated
         import os
 
-        showcase = _Path("I:/Evo_PRISM/scratch/run_visium_hd_showcase.py")
+        showcase = _EVO_PRISM_LEGACY_ROOT / "scratch" / "run_visium_hd_showcase.py"
         result = subprocess.run(
             [
                 sys.executable,
@@ -275,8 +279,8 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
         return "無法解析 btf_image_path / binned_dir，請明確傳入。"
 
     try:
-        sys.path.insert(0, str(_Path("K:/plan_a/MSseg")))
-        sys.path.insert(0, str(_Path("I:/Evo_PRISM")))
+        sys.path.insert(0, str(_MSSEG_PATH))
+        sys.path.insert(0, str(_EVO_PRISM_LEGACY_ROOT))
         import matplotlib
 
         matplotlib.use("Agg")

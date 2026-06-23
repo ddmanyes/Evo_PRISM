@@ -91,7 +91,7 @@ def compute_code_complexity(code: str) -> int:
 # ── 掃描候選 ──────────────────────────────────────────────────────────────────
 
 
-def scan_candidates(min_reuse: int = 1) -> list[dict]:
+def scan_candidates(min_reuse: int = 1, *, con: "duckdb.DuckDBPyConnection | None" = None) -> list[dict]:
     """掃描 promotion_candidates，以 HELIX Eq.(1) 計算 f_promote，回傳 ≥ θ_promote 的清單。
 
     Parameters
@@ -99,6 +99,10 @@ def scan_candidates(min_reuse: int = 1) -> list[dict]:
     min_reuse:
         SQL pre-filter：僅讀取 reuse_count ≥ this 的記錄，減少不必要的程式碼讀取。
         預設 1（由 f_promote 公式擔任真正的門檻）。
+    con:
+        Optional existing DuckDB connection. When provided the caller owns the
+        connection lifecycle; when omitted a read connection is opened via the
+        store factory (original behaviour).
 
     Returns
     -------
@@ -108,8 +112,10 @@ def scan_candidates(min_reuse: int = 1) -> list[dict]:
     Only candidates whose f_promote ≥ HELIX_THETA_PROMOTE are included.
     """
     from store.factory import get_store as _get_store
+    from contextlib import nullcontext
 
-    with _get_store().read_conn() as con:
+    _ctx = nullcontext(con) if con is not None else _get_store().read_conn()
+    with _ctx as con:
         try:
             rows = con.execute(
                 """SELECT origin_id, analysis_type, reuse_count, last_used

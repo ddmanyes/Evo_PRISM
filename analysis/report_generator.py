@@ -112,7 +112,10 @@ def _l2_expr_glob(sample_id: str) -> str:
     resolved = (L2_ROOT / sample_id).resolve()
     if not resolved.is_relative_to(BIO_DB_ROOT.resolve()):
         raise ValueError(f"Path traversal detected: {sample_id!r}")
-    return str(resolved / "expression" / "*.parquet")
+    path = str(resolved / "expression" / "*.parquet")
+    if "'" in path:
+        raise ValueError(f"Unsafe character in path: {path!r}")
+    return path
 
 
 def _l2_obs_path(sample_id: str) -> str:
@@ -121,7 +124,10 @@ def _l2_obs_path(sample_id: str) -> str:
     resolved = (L2_ROOT / sample_id).resolve()
     if not resolved.is_relative_to(BIO_DB_ROOT.resolve()):
         raise ValueError(f"Path traversal detected: {sample_id!r}")
-    return str(resolved / "obs_metadata.parquet")
+    path = str(resolved / "obs_metadata.parquet")
+    if "'" in path:
+        raise ValueError(f"Unsafe character in path: {path!r}")
+    return path
 
 
 def _collect_stats(sample_id: str, db_path: Path) -> dict:

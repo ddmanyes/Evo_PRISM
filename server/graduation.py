@@ -65,7 +65,7 @@ def list_candidates(
             ORDER BY completed_runs DESC, max_code_lines DESC
             LIMIT ?
             """,
-            [mcr, mcl, int(limit)],
+            [mcr, mcl, limit],
         )
     )
 

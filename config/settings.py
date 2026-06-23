@@ -189,6 +189,11 @@ def resolve_artifact_path(rel_path: str) -> Path:
     return BIO_DB_ROOT / p
 
 
+# ── 外部依賴路徑（env var 覆寫；預設保留 Windows 開發機的原始路徑）──────────────
+# 部署到 Linux 時請在 .env 或 shell 中設定這兩個變數。
+MSSEG_PATH = Path(os.getenv("MSSEG_PATH", "K:/plan_a/MSseg"))
+EVO_PRISM_LEGACY_ROOT = Path(os.getenv("EVO_PRISM_LEGACY_ROOT", "I:/Evo_PRISM"))
+
 # ── 開發設定 ───────────────────────────────────────────────
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"

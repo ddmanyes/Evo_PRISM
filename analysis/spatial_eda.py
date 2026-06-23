@@ -51,14 +51,20 @@ def _l2_expr_glob(sample_id: str) -> str:
     base = (L2_ROOT / sample_id / "expression").resolve()
     if not base.is_relative_to(L2_ROOT.resolve()):
         raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
-    return str(base / "*.parquet")
+    path = str(base / "*.parquet")
+    if "'" in path:
+        raise ValueError(f"Unsafe character in path: {path!r}")
+    return path
 
 
 def _l2_obs_path(sample_id: str) -> str:
     p = (L2_ROOT / sample_id / "obs_metadata.parquet").resolve()
     if not p.is_relative_to(L2_ROOT.resolve()):
         raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
-    return str(p)
+    path = str(p)
+    if "'" in path:
+        raise ValueError(f"Unsafe character in path: {path!r}")
+    return path
 
 
 def _record_analysis(
