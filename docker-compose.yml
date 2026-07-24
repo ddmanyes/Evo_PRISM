@@ -1,82 +1,98 @@
-# Evo_PRISM — Docker Compose (full local stack, exact paper setup)
+# Evo_PRISM — Docker Compose (macOS host deployment, 2026-07-15)
 # ─────────────────────────────────────────────────────────────────────────────
-# Services:
-#   evo-prism   — main application (MCP Server + FastAPI Web UI)
-#   embedding   — llamacpp embedding sidecar (bge-m3-Q8_0, port 8081)
+# Scope on this machine: the bio-memory MCP tool surface (36 tools currently
+# registered — history/memory/artifact/analysis/tool-health), no local LLM
+# needed for the core memory tools. Matches the lcdda / second-brain pattern:
+#   - persistent (restart: unless-stopped)
+#   - bound to this Mac's Tailscale IP only (not 0.0.0.0) on the host side
+#   - MCP_AUTH_TOKEN bearer-auth required (see .env)
+#   - embedding reuses lcdda's already-running nomic-embed-text (host:11435)
+#     via host.docker.internal — no bge-m3 download / llama.cpp sidecar needed.
 #
-# First-time setup:
-#   1. Place bge-m3-Q8_0.gguf in ./models/  (605 MB; see REPRODUCE.md §2)
-#   2. Copy .env.example → .env and fill in ANTHROPIC_API_KEY
-#   3. docker compose up -d
-#   4. docker compose exec evo-prism python scripts/00_init_db.py   # one-time
+# Local LLM/vision inference reuses lcdda's already-running Gemma4-12B (llama-server
+# on host:11434, launched WITH --mmproj so it's vision-capable) instead of standing
+# up a separate local Gemma4 Vision 26B — same substitution as the embedding above.
+# agent.py's LLAMA_BASE_URL/LLAMA_MODEL were hardcoded to localhost:8080; patched to
+# read from env (see server/agent.py) to allow this.
 #
-# API-key embedding alternative (no model download needed):
-#   Set EMBEDDING_PROVIDER=openai, OPENAI_API_KEY=sk-... in .env
-#   Comment out the 'embedding' service and 'depends_on' below.
+# Real data (2026-07-15): the project root already holds the actual research DB +
+# results (bio_memory.duckdb: 126 samples / 269 analyses at schema v23; gold/
+# silver/results/bulk_rna_data), predating this Docker setup. Bind-mounted directly
+# rather than using a Docker-managed volume, so the container reads/writes the
+# SAME files already on disk — no import/copy step, no second copy of 88GB of
+# results. bio_memory.duckdb.bak-2026-07-16 / hermes_cache.duckdb.bak-2026-07-16
+# backups of the pre-migration state live in ~/evo_prism_backups/ on the host.
+#
+# Commands:
+#   docker compose up -d --build
+#   docker compose logs -f evo-prism
+#   docker compose down
 # ─────────────────────────────────────────────────────────────────────────────
-version: "3.9"
-
 services:
-  # ── llamacpp embedding sidecar ─────────────────────────────────────────────
-  # Serves bge-m3-Q8_0 at http://embedding:8081/v1  (OpenAI-compatible API)
-  # Required only when EMBEDDING_PROVIDER=llamacpp (default)
-  embedding:
-    image: ghcr.io/ggerganov/llama.cpp:server
-    restart: unless-stopped
-    volumes:
-      - ./models:/models:ro
-    command: >
-      --model /models/bge-m3-Q8_0.gguf
-      --embedding
-      --port 8081
-      --ctx-size 8192
-      --host 0.0.0.0
-    ports:
-      - "8081:8081"
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8081/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  # ── Evo_PRISM main application ─────────────────────────────────────────────
   evo-prism:
     build:
-      context: .
+      # NOT `.` (KINGSTON/exFAT) — BuildKit's context "sender" fails reading AppleDouble
+      # (._*) xattrs on exFAT ("failed to xattr ...: operation not permitted"), and BuildKit
+      # is required for --platform (the legacy DOCKER_BUILDKIT=0 builder silently ignores
+      # `platform:` and always builds native arch, which was masking the real fix for a
+      # while). Source is mirrored to APFS via:
+      #   rsync -a --delete --exclude-from=.dockerignore ... ~/evo_prism_build/
+      # re-run that after editing files here, before rebuilding.
+      context: /Users/lab_center/evo_prism_build
       dockerfile: Dockerfile
+    platform: linux/amd64   # scikit-misc (omicverse dep) has no linux/arm64 wheel on PyPI, only
+                             # macOS arm64 + linux x86_64 — native arm64 build falls back to a
+                             # broken source build (meson version_please.py fails). Runs under
+                             # Rosetta emulation on Apple Silicon Docker Desktop; slower but correct.
     restart: unless-stopped
-    depends_on:
-      embedding:
-        condition: service_healthy
+    command: ["web"]   # entrypoint.sh: uvicorn server.web_app:app (mounts /mcp), not the stdio-default "server" mode
     env_file: .env
     environment:
       BIO_DB_ROOT: /data/bio_db
+      # Pre-existing bug found 2026-07-16: config/settings.py's MSSEG_PATH default
+      # ("K:/plan_a/MSseg", a Windows path) doesn't exist in this container even
+      # though the real MSseg/ tree is baked into the image at /app/MSseg — mcseg
+      # tools would fail on import before this was set. Never previously exercised
+      # end-to-end in this deployment (see evo-prism-mcp-遠端部署-docker-2026-07-15,
+      # "MCseg 尚未端到端測試").
+      MSSEG_PATH: /app/MSseg
       EMBEDDING_PROVIDER: llamacpp
-      LLAMACPP_BASE_URL: http://embedding:8081/v1
-      EMBEDDING_MODEL: bge-m3
-      EMBEDDING_DIM: "1024"
+      LLAMACPP_BASE_URL: http://host.docker.internal:11435/v1
+      EMBEDDING_MODEL: nomic-embed-text
+      EMBEDDING_DIM: "768"
+      INFERENCE_BACKEND: local
+      LLAMA_BASE_URL: http://host.docker.internal:11434/v1
+      LLAMA_MODEL: gemma
+      LLAMA_NO_THINK: "1"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - evo_data:/data/bio_db
-      - evo_gold:/data/gold
-      - evo_silver:/data/silver
-      - evo_results:/data/results
+      - ./bio_memory.duckdb:/data/bio_db/bio_memory.duckdb
+      - ./gold:/data/bio_db/gold
+      - ./silver:/data/bio_db/silver
+      - ./results:/data/bio_db/results
+      - ./bulk_rna_data:/data/bio_db/bulk_rna_data
+      - ./logs:/data/bio_db/logs
+      # mcseg host-native GPU dispatch job queue (see analysis/mcseg_wrapper.py +
+      # scripts/mcseg_host_watcher.py) — small control-plane JSON files only, no
+      # image data crosses this mount, the actual he_crop/mask files already live
+      # under ./results (mounted above) and are shared with the host as-is.
+      - ./mcseg_jobs:/data/bio_db/mcseg_jobs
+      # Raw L3 source data for samples that live outside KINGSTON (added 2026-07-23:
+      # dpcp01_vh_v114_02_hd_r004's raw binned_outputs/TIFF are on this drive, not
+      # KINGSTON — bio_run_mcseg_roi/bio_run_mcseg_fullslide need it mounted to read
+      # the source h5/tiff. Read-only: this container never writes back to raw L3.
+      - /Volumes/SSD:/data/external_ssd:ro
+      # Analysis playbooks (2026-07-23): playbooks/*.md already existed on disk
+      # (bulk_rnaseq, mcseg, spatial_visium, visium_hd_onboarding) but were never
+      # mounted, so bio_get_playbook always reported "playbooks/ 為空" even though
+      # real content was sitting right here the whole time.
+      - ./playbooks:/data/bio_db/playbooks
     ports:
-      - "8000:8000"   # FastAPI Web UI
-      - "8080:8080"   # MCP HTTP/SSE transport
+      - "100.87.59.15:8000:8000"   # Tailscale-only, matches lcdda(:9104)/second-brain(:9100) binding pattern
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
-
-volumes:
-  evo_data:
-    driver: local
-  evo_gold:
-    driver: local
-  evo_silver:
-    driver: local
-  evo_results:
-    driver: local

@@ -14,25 +14,9 @@ from typing import Iterator
 
 import duckdb
 
+from store.base import _HISTORY_MUTABLE_COLS, _SAMPLE_MUTABLE_COLS, _validate_cols
+
 logger = logging.getLogger(__name__)
-
-# Whitelist of mutable columns for dynamic UPDATE queries (H1 fix — mirrors postgres_store)
-_HISTORY_MUTABLE_COLS = frozenset({
-    "status", "result_path", "completed_at", "summary", "tool_id",
-    "failure_diagnosis", "tags", "parameter_hash", "summary_metrics",
-    "analysis_version", "tool_version", "user_approval", "parent_analysis_id",
-})
-_SAMPLE_MUTABLE_COLS = frozenset({
-    "project", "data_type", "platform", "species", "tissue", "l3_path",
-    "l2_ready", "analysis_done", "added_by", "notes", "last_updated",
-    "condition", "time_point", "batch", "donor_id", "tags", "alias",
-})
-
-
-def _validate_cols(cols: set[str], allowed: frozenset[str], ctx: str) -> None:
-    unknown = cols - allowed
-    if unknown:
-        raise ValueError(f"{ctx}: unknown or immutable columns {sorted(unknown)}")
 
 
 def _bootstrap(con: duckdb.DuckDBPyConnection, *, read_only: bool = False) -> None:
@@ -279,6 +263,16 @@ class DuckDBStore:
             ).fetchone()
         return str(row[0]) if row else None
 
+    # 一列同時只帶一個 canonical/superseded 標記：先濾掉舊的再 append 新的
+    _RETAG_ROW = """
+        UPDATE analysis_history
+        SET tags = list_append(
+            list_filter(COALESCE(tags, []), t -> t NOT IN ('canonical', 'superseded')),
+            ?
+        )
+        WHERE analysis_id = ?
+    """
+
     def mark_canonical(
         self, analysis_id: str, sample_id: str, analysis_type: str
     ) -> None:
@@ -296,17 +290,14 @@ class DuckDBStore:
                 """,
                 [sample_id, analysis_type, analysis_id],
             )
-            con.execute(
-                """
-                UPDATE analysis_history
-                SET tags = list_append(
-                    list_filter(COALESCE(tags, []), t -> t NOT IN ('canonical', 'superseded')),
-                    'canonical'
-                )
-                WHERE analysis_id = ?
-                """,
-                [analysis_id],
-            )
+            con.execute(self._RETAG_ROW, ["canonical", analysis_id])
+
+    def supersede_by_id(
+        self, analysis_id: str, superseded_analysis_id: str
+    ) -> None:
+        with self.write_conn() as con:
+            con.execute(self._RETAG_ROW, ["superseded", superseded_analysis_id])
+            con.execute(self._RETAG_ROW, ["canonical", analysis_id])
 
     # ------------------------------------------------------------------
     # sample_registry

@@ -16,6 +16,28 @@ Phase 5 — BioAgent Agent Loop。
 公開函數：
     handle_message(user_msg, history=[]) → AgentResponse
     run_cli()                            → 互動式 CLI
+
+────────────────────────────────────────────────────────────────────────────
+agent_*.py 家族的分檔規則（2026-07-24 架構審查候選 6：文件化現有切分，不重切）
+────────────────────────────────────────────────────────────────────────────
+Web UI 的工具實作（`_exec_bio_*` handler）依「執行性質」分散在四個檔案；
+每個工具實際落在哪個 module+func，權威來源是 `server/tool_catalog.py`（可直接查），
+本檔只是說明切分原則，避免再靠 grep 猜：
+
+    agent.py         ← 本檔。Agent 主迴圈、LLM client、dispatch 組裝（_TOOL_HANDLERS
+                       由 tool_catalog 自動生成 + 決策 8-B override）、execute_tool 安全閘。
+                       不放具體分析 handler。
+    agent_bulk.py    ← 「計算密集型」分析 handler：mcseg 分割、DEG、enrichment、heatmap、
+                       clustering、celltypist、geneset score、空間鄰距、CRC metrics、
+                       loupe 匯出、外部結果登記等。
+    agent_history.py ← 「metadata／內省／沙盒」handler：歷史查詢、L1 記憶、樣本清單、
+                       tool health、playbook、impact、find_tool、register_sample、
+                       以及動態 code executor（bio_execute_code）。
+    agent_spatial.py ← 「空間專屬」handler：L2 充足性檢查、空間 EDA。
+
+新增工具時：依上述性質選檔放 `_exec_bio_<name>`，並在 tool_catalog.py 補 ToolSpec
+（module+func 指向它，或 mcp_handler 指向 MCP 端 async handler）——兩者同步由
+tests/test_tool_catalog_parity.py 守住。
 """
 
 from __future__ import annotations
@@ -154,626 +176,165 @@ SYSTEM_PROMPT = """你是「智慧生資分析平台」AI Agent，專為實驗�
 
 
 # ── BIO_TOOLS 定義 ────────────────────────────────────────────────────────────
+#
+# 2026-07-24 架構審查（候選 1+3）：description/schema 從 server/tool_catalog.py 生成，
+# 不再手刻第二份（原本這裡只有 21/44 個工具，且同工具的 description 跟 MCP 端各自漂移）。
+#
+# 危險工具過濾在「模組載入時」讀一次 env（跟本檔其餘 env 設定如 LLAMA_BASE_URL 同風格），
+# 不像 MCP 的 list_tools() 每次請求動態算——因為 BIO_TOOLS 是三個推理後端（Claude/本機
+# llama.cpp/Gemini）共用的模組級常數，沒有天然的「每請求重算」掛勾點，而
+# MCP_ENABLE_DANGEROUS_TOOLS 本質是部署期設定，不會在 process 存活期間變動。
+# 真正的安全防護在 execute_tool() 的執行期 gate（每次呼叫都動態檢查，見下方），
+# 就算 BIO_TOOLS 沒即時反映 env 變動，呼叫仍會被正確擋下。
+from server.tool_catalog import TOOL_CATALOG as _TOOL_CATALOG_FOR_BIO_TOOLS
+from server.bio_memory_server import _dangerous_tools_enabled as _dangerous_tools_enabled_at_import
 
 BIO_TOOLS = [
-    {
-        "name": "bio_history_check",
-        "description": (
-            "確認某樣本的某分析類型是否已有完成存檔（0 token，純 SQL）。"
-            "每次執行分析前必須先呼叫此工具，避免重複運算。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "樣本 ID，例如 crc_official_v4"},
-                "analysis_type": {"type": "string", "description": "分析類型，例如 spatial_eda"},
-            },
-            "required": ["sample_id", "analysis_type"],
-        },
-    },
-    {
-        "name": "bio_history_lookup",
-        "description": "查詢樣本分析歷史記錄（0 token，純 SQL）。回傳分析類型、狀態、完成時間、摘要。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "樣本 ID（可選，省略則查全部）"},
-                "analysis_type": {"type": "string", "description": "分析類型篩選（可選）"},
-                "limit": {
-                    "type": "integer",
-                    "description": "最多回傳筆數（預設 20）",
-                    "default": 20,
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "bio_history_timeline",
-        "description": "回傳最近 N 天的分析時間軸（0 token，純 SQL）。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "n_days": {"type": "integer", "description": "往回查幾天（預設 7）", "default": 7},
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "bio_history_search",
-        "description": (
-            "以自然語言語意搜尋 L1 快取（HNSW cosine ≥ 0.88）。"
-            "只回傳 50 字 summary，節省 token。需要 embedding server 在線（port 8081）。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "自然語言查詢"},
-                "n": {"type": "integer", "description": "回傳筆數上限（預設 5）", "default": 5},
-                "threshold": {
-                    "type": "number",
-                    "description": "相似度門檻（預設 0.88）",
-                    "default": 0.88,
-                },
-                "sample_id": {"type": "string", "description": "限定樣本 ID（可選）"},
-                "analysis_type": {
-                    "type": "string",
-                    "description": "限定分析類型（可選，如 spatial_eda / bulk_eda），避免跨類型命中",
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "bio_memory_query",
-        "description": (
-            "從 L1 語意快取取回完整報告（HNSW cosine ≥ threshold 命中）。"
-            "cache miss 時回傳空，需呼叫 bio_run_spatial_eda 生成新報告。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "自然語言查詢"},
-                "sample_id": {"type": "string", "description": "限定樣本 ID（可選）"},
-                "threshold": {"type": "number", "description": "相似度門檻（預設 0.88）"},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "bio_run_spatial_eda",
-        "description": (
-            "對指定樣本執行空間轉錄體 EDA（QC 統計 + top genes + 報告生成）。"
-            "完成後自動寫入 analysis_history + L1 快取。"
-            "需要 L2 Parquet 已轉換（l2_ready = true）。耗時約 10–30 秒。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "樣本 ID，例如 crc_official_v4"},
-                "requested_by": {
-                    "type": "string",
-                    "description": "請求者（預設 agent）",
-                    "default": "agent",
-                },
-            },
-            "required": ["sample_id"],
-        },
-    },
-    {
-        "name": "bio_register_sample",
-        "description": "登記新樣本至 sample_registry。每個樣本只需登記一次。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "唯一樣本 ID（全小寫底線）"},
-                "data_type": {
-                    "type": "string",
-                    "description": "資料類型：visium_hd | visium | scrna | bulk_rnaseq | ...",
-                },
-                "l3_path": {"type": "string", "description": "L3 原始數據絕對路徑（唯讀）"},
-                "project": {"type": "string", "description": "專案代號（可選）"},
-                "platform": {"type": "string", "description": "平台（可選）"},
-                "species": {
-                    "type": "string",
-                    "description": "物種（預設 human）",
-                    "default": "human",
-                },
-                "tissue": {"type": "string", "description": "組織類型（可選）"},
-                "notes": {"type": "string", "description": "備註（可選）"},
-                "condition": {
-                    "type": "string",
-                    "description": "實驗條件（可選）：control/tumor/treated/...",
-                },
-                "time_point": {"type": "string", "description": "時間點（可選）：0h/24h/day3/..."},
-                "batch": {"type": "string", "description": "測序批次（可選）：batch_1/batch_2/..."},
-                "donor_id": {
-                    "type": "string",
-                    "description": "供體 ID（可選），連結同一個體的多個樣本",
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "標籤陣列（可選）：paper_figure/key_result/qc_only/...",
-                },
-            },
-            "required": ["sample_id", "data_type", "l3_path"],
-        },
-    },
-    {
-        "name": "bio_run_bulk_eda",
-        "description": (
-            "對 Bulk RNA-seq 樣本集執行 EDA（QC 統計 + top genes + 樣本相關 + PCA）。"
-            "自動偵測品質問題（mapping_rate < 70%、Pearson < 0.9）並寫入 quality_flags。"
-            "coldata_path 若提供，PCA 依 group 欄著色；省略則以 sample name 前綴推斷。"
-            "完成後自動寫入 analysis_history。耗時約 10–60 秒。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "樣本集 ID，例如 Kallisto_v1"},
-                "coldata_path": {
-                    "type": "string",
-                    "description": "sample × group 設計表路徑（TSV/CSV，含 group 欄）；供 PCA 著色用，可選",
-                },
-                "requested_by": {
-                    "type": "string",
-                    "description": "請求者（預設 agent）",
-                    "default": "agent",
-                },
-            },
-            "required": ["sample_id"],
-        },
-    },
-    {
-        "name": "bio_run_deg",
-        "description": (
-            "Bulk RNA-seq 差異表達分析（DESeq2 via omicverse.pyDEG）+ 火山圖。"
-            "執行前自動過濾低表達基因（CPM ≥ 1 in ≥ N/4 樣本），結果記錄於 summary_metrics。"
-            "對多組對照逐一跑 DEG，每組產出 DEG_<a>_vs_<b>.csv + Volcano_<a>_vs_<b>.png，"
-            "自動偵測 DEG 數量異常（few_deg/high_deg/excess_deg）並寫入 quality_flags。"
-            "彙整報告寫入 analysis_history（analysis_type=bulk_deg）。"
-            "**對齊 ddmanyes/bulk-rnaseq-pipeline 的 DESeq2 流程**。先 bio_get_playbook(bulk_rnaseq)。"
-            "耗時依樣本數而定（大型樣本集 × 1 對照 ≈ 1–3 分鐘）。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "已登記的樣本 ID"},
-                "counts_path": {
-                    "type": "string",
-                    "description": "gene × sample counts CSV(如 bulk_rna_data/.../deseq2_counts.csv)",
-                },
-                "coldata_path": {
-                    "type": "string",
-                    "description": "sample × group 設計表(TSV/CSV,需 'group' 欄)",
-                },
-                "comparisons": {
-                    "type": "array",
-                    "description": "對照組清單,每筆 [treat, ctrl] 兩個 group 名,如 [['pw24hr','ctrl'],['pw48hr','ctrl']]",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "minItems": 2,
-                        "maxItems": 2,
-                    },
-                    "minItems": 1,
-                },
-                "method": {
-                    "type": "string",
-                    "description": "DEseq2 / ttest / wilcox",
-                    "default": "DEseq2",
-                },
-                "fc_threshold": {
-                    "type": "number",
-                    "description": "|log2FC| 顯著閾值",
-                    "default": 1.0,
-                },
-                "pval_threshold": {
-                    "type": "number",
-                    "description": "qvalue 顯著閾值",
-                    "default": 0.05,
-                },
-                "requested_by": {"type": "string", "default": "agent"},
-            },
-            "required": ["sample_id", "counts_path", "coldata_path", "comparisons"],
-        },
-    },
-    {
-        "name": "bio_run_enrichment",
-        "description": (
-            "對 DEG 表跑 ORA 富集分析(gseapy.enrichr 線上 API)。"
-            "up/down 兩方向 × N 個 library(預設 GO_BP / KEGG / Reactome)各自命中通路 + dot plot。"
-            "寫入 analysis_history(analysis_type=bulk_enrichment)。"
-            "**需網路連線 Enrichr API**;deg_table_path 需指向 bio_run_deg 產出的 CSV。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string"},
-                "deg_table_path": {
-                    "type": "string",
-                    "description": "bio_run_deg 產出的 DEG_<a>_vs_<b>.csv 絕對或相對路徑",
-                },
-                "libraries": {
-                    "type": "array",
-                    "description": "Enrichr gene set library 名稱清單;省略則用預設 GO/KEGG/Reactome",
-                    "items": {"type": "string"},
-                },
-                "organism": {"type": "string", "default": "human"},
-                "fc_threshold": {"type": "number", "default": 1.0},
-                "pval_threshold": {"type": "number", "default": 0.05},
-                "top_term": {
-                    "type": "integer",
-                    "description": "dot plot 顯示前 N 條 term",
-                    "default": 10,
-                },
-                "requested_by": {"type": "string", "default": "agent"},
-            },
-            "required": ["sample_id", "deg_table_path"],
-        },
-    },
-    {
-        "name": "bio_run_heatmaps",
-        "description": (
-            "為 Bulk RNA-seq 產出兩張熱圖：(1) 顯著基因熱圖（union of DEG 顯著基因），"
-            "(2) Top N 變異基因熱圖（預設 top 50）。皆 z-score normalized，含階層聚類（sns.clustermap）。"
-            "coldata_path 若提供，熱圖上方自動顯示 group/batch annotation 顏色條。"
-            "寫入 analysis_history（analysis_type=bulk_heatmap）。"
-            "對齊 ddmanyes/bulk-rnaseq-pipeline 的 Heatmap_Significant_Genes / Heatmap_Top50_Variable_Genes。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string"},
-                "counts_path": {"type": "string", "description": "gene × sample counts CSV"},
-                "deg_tables": {
-                    "type": "array",
-                    "description": "一張或多張 DEG CSV 路徑；會 union 後抽顯著基因",
-                    "items": {"type": "string"},
-                    "minItems": 1,
-                },
-                "top_n": {"type": "integer", "default": 50},
-                "fc_threshold": {"type": "number", "default": 1.0},
-                "pval_threshold": {"type": "number", "default": 0.05},
-                "coldata_path": {
-                    "type": "string",
-                    "description": "sample × group 設計表路徑（TSV/CSV）；供熱圖 annotation bar 著色用，可選",
-                },
-                "requested_by": {"type": "string", "default": "agent"},
-            },
-            "required": ["sample_id", "counts_path", "deg_tables"],
-        },
-    },
-    {
-        "name": "bio_impact",
-        "description": (
-            "影響分析 / 爆炸範圍(blast radius)。回答『改版/deprecate 某工具,或重跑/撤回某樣本,"
-            "會影響哪些分析與產物』。借鏡 GitNexus 的 impact tool,每條影響邊帶 confidence:"
-            "tool_id 精確=1.0 / 同分析=0.9 / analysis_type 啟發式=0.6。"
-            "恰好給一個目標:tool_name 或 artifact_id 或 sample_id。0 LLM token 純 SQL。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "tool_name": {
-                    "type": "string",
-                    "description": "工具名(如 bio_run_bulk_eda)→ 該工具改版會影響哪些分析",
-                },
-                "artifact_id": {
-                    "type": "string",
-                    "description": "產物 ID → 下游受影響的 artifacts",
-                },
-                "sample_id": {"type": "string", "description": "樣本 ID → 該樣本所有分析與產物"},
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "bio_find_tool",
-        "description": (
-            "語意搜尋既有可重用的分析函數（tool discovery）。"
-            "**寫 bio_execute_code 前務必先呼叫**：描述你要做的分析意圖，"
-            "回傳最相關的既有函數 + 簽名 + import 方式。命中就在動態碼中 import 重用，"
-            "勿從零重寫。0 LLM token 的本地語意搜尋；全 miss 才表示需自行撰寫。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "要做的分析意圖（自然語言，如『時間序列 log2 fold change』）",
-                },
-                "n": {"type": "integer", "description": "回傳候選數上限（預設 5）", "default": 5},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "bio_run_mcseg_qc",
-        "description": (
-            "MCseg 細胞分割品質視覺化（讀既有 .npy 遮罩，**不**即時重跑分割）。"
-            "掃 qc_dir 內成對的 *_nuc.npy / *_mcseg.npy，產出 NUC vs MCseg 對比圖 + "
-            "細胞面積分布 + 量化表，寫入 analysis_history（analysis_type=mcseg_qc）。"
-            "先 bio_get_playbook(mcseg) 取方法學。需先有分割輸出檔。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "樣本 ID"},
-                "qc_dir": {
-                    "type": "string",
-                    "description": "分割遮罩目錄（省略則用預設 results/mcseg_qc/）",
-                },
-            },
-            "required": ["sample_id"],
-        },
-    },
-    {
-        "name": "bio_get_playbook",
-        "description": (
-            "取得某分析領域的『技能說明書』（標準步驟順序 + 每步該呼叫的函數 + 該產出的圖 + 品質關卡）。"
-            "**執行任何領域分析（bulk / 空間 / mcseg）前先呼叫**，依說明書分步進行，確保每步出圖、不漏步。"
-            "省略 domain 則列出所有可用說明書。省略 section 取完整說明書；指定 section 只取該段（省 token）。"
-            "可用 section 名稱：overview / prerequisites / steps / template / appendix。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "domain": {
-                    "type": "string",
-                    "description": "說明書名稱或 data_type，如 bulk_rnaseq / spatial_visium / visium_hd（省略則列出全部）",
-                },
-                "section": {
-                    "type": "string",
-                    "description": "只取特定段落（省 token）：overview / prerequisites / steps / template / appendix。省略取完整說明書。",
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "bio_execute_code",
-        "description": (
-            "沙盒執行動態生成的 Python 程式碼（用於非標準分析）。"
-            "**呼叫前先用 bio_find_tool 找既有函數**，命中則在此 import 重用，勿重造輪子。"
-            "只允許白名單 import（pandas, numpy, scipy, anndata, scanpy，以及 "
-            "analysis.spatial_eda / bulk_eda / pathway_scoring / multiomics_integration / "
-            "bulk_timeseries / report_generator 等既有分析函數）。"
-            "禁止 os.system, subprocess, open(), eval, exec 等危險操作。"
-            "timeout=60 秒。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "code": {"type": "string", "description": "要執行的 Python 程式碼"},
-                "description": {"type": "string", "description": "此程式碼的分析目的（用於記錄）"},
-                "timeout": {
-                    "type": "integer",
-                    "description": "執行超時秒數（預設 60）",
-                    "default": 60,
-                },
-            },
-            "required": ["code", "description"],
-        },
-    },
-    {
-        "name": "bio_sample_list",
-        "description": (
-            "列出 sample_registry 中已登記的樣本（0 token，純 SQL）。"
-            "支援 data_type / tissue / condition 過濾，方便快速瀏覽現有資料集。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "data_type": {
-                    "type": "string",
-                    "description": "資料類型篩選（可選，如 visium_hd / bulk_rnaseq）",
-                },
-                "tissue": {"type": "string", "description": "組織類型篩選（可選，模糊比對）"},
-                "condition": {
-                    "type": "string",
-                    "description": "樣本條件篩選（可選，對應 notes 欄位模糊比對）",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "最多回傳筆數（預設 50）",
-                    "default": 50,
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "bio_sample_compare",
-        "description": (
-            "比較兩個或多個樣本的分析歷史摘要，回傳各樣本最新各類型分析的摘要對照表。"
-            "協助判斷不同樣本的分析狀態差異，無需閱讀完整報告。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "要比較的樣本 ID 列表（2 個以上）",
-                },
-            },
-            "required": ["sample_ids"],
-        },
-    },
-    {
-        "name": "bio_check_l2_sufficiency",
-        "description": (
-            "確認樣本的 L2 Parquet 是否已就緒（l2_ready = true）。"
-            "在執行 bio_run_spatial_eda 之前必須先呼叫，確認 L2 準備好才能繼續。"
-            "若 l2_ready=false，回傳需要執行的轉換命令。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "sample_id": {"type": "string", "description": "樣本 ID，例如 crc_official_v4"},
-            },
-            "required": ["sample_id"],
-        },
-    },
-    {
-        "name": "bio_read_report",
-        "description": (
-            "讀取分析報告（.md/.txt/.log）原文。路徑必須位於 results/ 或 results_ana/ 內，"
-            "其他路徑會被沙盒拒絕。超過 max_chars 時自動截斷為 head+tail 兩段。"
-            "用於：使用者問「報告裡寫了什麼」「打開 xxx.md」等需要原文佐證的請求。"
-            "禁止憑檔名推測內容——務必呼叫此工具取得真實文字。"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "result_path": {
-                    "type": "string",
-                    "description": (
-                        "報告路徑。可絕對路徑或 BIO_DB_ROOT-relative，"
-                        "例如 results/bulk_eda/bulk_eda_xxx.md。"
-                    ),
-                },
-                "max_chars": {
-                    "type": "integer",
-                    "description": "回傳字元數上限（預設 8000）。",
-                    "default": 8000,
-                },
-                "head_fraction": {
-                    "type": "number",
-                    "description": "head 比例（預設 0.75，其餘為 tail）。",
-                    "default": 0.75,
-                },
-            },
-            "required": ["result_path"],
-        },
-    },
-    {
-        "name": "bio_tool_health",
-        "description": (
-            "工具庫健康報告與穩定化迭代管理。支援六個 action：\n"
-            "  'report'          — 健康狀態總覽（active/deprecated/熱區/進行中迭代/VLM快照）\n"
-            "  'diagnose'        — 寫入 stability_note（需 tool_name + note）\n"
-            "  'stabilize'       — 開啟穩定化迭代，記錄診斷與行動計畫（需 tool_name + diagnosis + action_taken）\n"
-            "  'close_stabilize' — 關閉迭代，記錄結果（需 log_id + outcome；outcome: stabilized/ongoing/reverted）\n"
-            "  'trend'           — 複雜度改善趨勢（可選 tool_name 過濾；查看跨迭代 CC delta）\n"
-            "  'prune'           — 清理未被引用的 deprecated 紀錄（需 tool_name）"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "report",
-                        "diagnose",
-                        "stabilize",
-                        "close_stabilize",
-                        "trend",
-                        "prune",
-                    ],
-                    "description": "操作類型",
-                },
-                "tool_name": {
-                    "type": "string",
-                    "description": "diagnose/stabilize/prune 時必填",
-                },
-                "note": {
-                    "type": "string",
-                    "description": "diagnose 時必填：說明為何頻繁變動及穩定化方向",
-                },
-                "diagnosis": {
-                    "type": "string",
-                    "description": "stabilize 時必填：問題診斷描述",
-                },
-                "action_taken": {
-                    "type": "string",
-                    "description": "stabilize 時必填：計畫採取的行動（重構/抽 helper/加測試...）",
-                },
-                "log_id": {
-                    "type": "string",
-                    "description": "close_stabilize 時必填：open_stabilization 回傳的 UUID",
-                },
-                "outcome": {
-                    "type": "string",
-                    "enum": ["stabilized", "ongoing", "reverted"],
-                    "description": "close_stabilize 時必填：迭代結果",
-                },
-            },
-            "required": ["action"],
-        },
-    },
+    {"name": name, "description": spec.description, "input_schema": spec.json_schema}
+    for name, spec in _TOOL_CATALOG_FOR_BIO_TOOLS.items()
+    if not spec.dangerous or _dangerous_tools_enabled_at_import()
 ]
 
 
 # ── 工具執行 ─────────────────────────────────────────────────────────────────
 
 
-from server.agent_spatial import (
-    _exec_bio_check_l2_sufficiency,
-    _exec_bio_run_spatial_eda,
-)
-from server.agent_bulk import (
-    _exec_bio_run_bulk_eda,
-    _exec_bio_run_mcseg_qc,
-    _exec_bio_run_deg,
-    _exec_bio_run_enrichment,
-    _exec_bio_run_heatmaps,
-)
+# 決策 8-B（2026-07-24 sp-brainstorming；2026-07-24 收斂複審）：以下 6 個工具 Web UI 早就
+# 有自己獨立的實作（跟 MCP 端的內嵌邏輯已經分岔——例如 bio_history_check 這邊用
+# store.get_history()、MCP 端是原生 SQL + format=json 模式），統一 catalog 時**不**調解
+# 兩邊差異，維持 Web UI 現有實作不變，避免對兩端引入未知的行為變更。
+#
+# 分岔性質已逐一查證（見 tests/test_agent_tool_divergence.py 的 KNOWN_DIVERGENCES）：
+#   - history_check/lookup/timeline/search：MCP 端是功能超集或格式不同，屬「可調解但有回歸
+#     風險」，暫留現狀。
+#   - register_sample：僅 added_by провенанс 標籤不同（"agent" vs "mcp_server"）——**刻意**
+#     分岔，非 bug（見兩端 handler 內註解）。
+#   - memory_query：Web UI 刻意把報告截到 2000 字（保護本機 LLM context）——**刻意**分岔。
+# 原本第 7 個 bio_read_report 兩端邏輯**逐字相同**（純重複），已移除 Web UI override，改讓它
+# 走 catalog 自動生成的 MCP bridge handler（零行為變更）。
 from server.agent_history import (
     _exec_bio_history_check,
     _exec_bio_history_lookup,
     _exec_bio_history_timeline,
     _exec_bio_history_search,
     _exec_bio_memory_query,
-    _exec_bio_sample_list,
-    _exec_bio_sample_compare,
-    _exec_bio_tool_health,
-    _exec_bio_read_report,
-    _exec_bio_find_tool,
-    _exec_bio_get_playbook,
-    _exec_bio_impact,
     _exec_bio_register_sample,
-    _exec_bio_execute_code,
 )
 
 
-_TOOL_HANDLERS = {
-    "bio_history_check": _exec_bio_history_check,
-    "bio_find_tool": _exec_bio_find_tool,
-    "bio_get_playbook": _exec_bio_get_playbook,
-    "bio_history_lookup": _exec_bio_history_lookup,
-    "bio_history_timeline": _exec_bio_history_timeline,
-    "bio_history_search": _exec_bio_history_search,
-    "bio_memory_query": _exec_bio_memory_query,
-    "bio_sample_list": _exec_bio_sample_list,
-    "bio_sample_compare": _exec_bio_sample_compare,
-    "bio_check_l2_sufficiency": _exec_bio_check_l2_sufficiency,
-    "bio_tool_health": _exec_bio_tool_health,
-    "bio_run_spatial_eda": _exec_bio_run_spatial_eda,
-    "bio_run_bulk_eda": _exec_bio_run_bulk_eda,
-    "bio_run_deg": _exec_bio_run_deg,
-    "bio_run_enrichment": _exec_bio_run_enrichment,
-    "bio_run_heatmaps": _exec_bio_run_heatmaps,
-    "bio_impact": _exec_bio_impact,
-    "bio_run_mcseg_qc": _exec_bio_run_mcseg_qc,
-    "bio_register_sample": _exec_bio_register_sample,
-    "bio_execute_code": _exec_bio_execute_code,
-    "bio_read_report": _exec_bio_read_report,
-}
+def _make_sync_delegate_handler(module_path: str, func_name: str):
+    """為一個 delegate 工具產生 Web UI sync handler：動態 import + 直接呼叫（同一份實作，
+    MCP 端用 asyncio.to_thread 包一層，這裡直接同步呼叫，執行模型維持現有的 sync 風格）。"""
+    import importlib
+
+    def _handler(args: dict) -> str:
+        fn = getattr(importlib.import_module(module_path), func_name)
+        return fn(args)
+
+    return _handler
+
+
+def _make_mcp_bridge_handler(mcp_handler_name: str):
+    """為一個「只有 MCP 內嵌邏輯、Web UI 從未實作過」的工具產生橋接 handler：
+    透過 asyncio.run() 直接重用 bio_memory_server.py 既有的 async handler，不搬動/
+    不複製任何業務邏輯（sp-brainstorming 決策 7-A）。
+
+    MCP handler 可能回傳 `list[ImageContent]`（僅 bio_get_figure）而非純文字——Web UI
+    需要文字，故轉成 inline base64 markdown（與 Web UI 既有的圖片顯示慣例一致）。
+    """
+    import asyncio
+
+    def _handler(args: dict) -> str:
+        from server import bio_memory_server as _bms
+
+        mcp_handler = getattr(_bms, mcp_handler_name)
+        result = asyncio.run(mcp_handler(args))
+        if isinstance(result, list):
+            parts = []
+            for item in result:
+                data = getattr(item, "data", None)
+                mime = getattr(item, "mimeType", None)
+                if data and mime:
+                    parts.append(f"![figure](data:{mime};base64,{data})")
+                else:
+                    parts.append(str(item))
+            return "\n".join(parts)
+        return result
+
+    return _handler
+
+
+_TOOL_HANDLERS: dict = {}
+for _name, _spec in _TOOL_CATALOG_FOR_BIO_TOOLS.items():
+    if _spec.module is not None and _spec.func is not None:
+        _TOOL_HANDLERS[_name] = _make_sync_delegate_handler(_spec.module, _spec.func)
+    elif _spec.mcp_handler is not None:
+        _TOOL_HANDLERS[_name] = _make_mcp_bridge_handler(_spec.mcp_handler)
+del _name, _spec
+
+# 決策 8-B 例外：覆寫成 Web UI 現有的獨立實作（見上方 import 與說明）。
+# bio_read_report 不在此列——它兩端邏輯逐字相同，已改走 catalog 的 MCP bridge。
+_TOOL_HANDLERS.update(
+    {
+        "bio_history_check": _exec_bio_history_check,
+        "bio_history_lookup": _exec_bio_history_lookup,
+        "bio_history_timeline": _exec_bio_history_timeline,
+        "bio_history_search": _exec_bio_history_search,
+        "bio_memory_query": _exec_bio_memory_query,
+        "bio_register_sample": _exec_bio_register_sample,
+    }
+)
+
+assert set(_TOOL_HANDLERS) == set(_TOOL_CATALOG_FOR_BIO_TOOLS), (
+    f"_TOOL_HANDLERS/TOOL_CATALOG 工具集不一致：只在一邊的有 "
+    f"{set(_TOOL_HANDLERS) ^ set(_TOOL_CATALOG_FOR_BIO_TOOLS)}"
+)
 
 
 def execute_tool(name: str, tool_input: dict) -> str:
-    """執行工具並回傳字串結果（含錯誤訊息）。"""
+    """執行工具並回傳字串結果（含錯誤訊息）。
+
+    2026-07-24 架構審查（決策 2/4）：跟 MCP 端的 call_tool() 對等補上 dangerous gate、
+    rate limit、metric 記錄——原本這裡完全沒有這些防護，`bio_execute_code` 等高權限工具
+    無條件開放，是本次審查發現的安全落差。
+    """
+    import time as _time
+
+    from server.bio_memory_server import (
+        _dangerous_tools_enabled,
+        _rate_limit_check,
+        _record_metric,
+    )
+
+    spec = _TOOL_CATALOG_FOR_BIO_TOOLS.get(name)
     handler = _TOOL_HANDLERS.get(name)
     if handler is None:
         return f"[Error] 未知工具：{name!r}"
+
+    if spec is not None and spec.dangerous and not _dangerous_tools_enabled():
+        return (
+            f"[Error] {name} 為高權限工具，目前未啟用。"
+            "設定 env MCP_ENABLE_DANGEROUS_TOOLS=true 並重啟才可呼叫。"
+        )
+
+    if spec is not None and spec.rate_limited and not _rate_limit_check(f"tool:{name}"):
+        return f"[Error] {name} 已達速率上限，請稍後再試。"
+
+    t0 = _time.monotonic()
     try:
-        return handler(tool_input)
+        result = handler(tool_input)
     except Exception as e:
         logger.exception("Tool %r failed", name)
+        _record_metric(
+            name,
+            int((_time.monotonic() - t0) * 1000),
+            "system_error",
+            error_class=e.__class__.__name__,
+            requested_by="web_ui",
+        )
         return f"[Error] {name} 執行失敗：{e}"
+    _record_metric(name, int((_time.monotonic() - t0) * 1000), "ok", requested_by="web_ui")
+    return result
 
 
 # ── Agent Response ────────────────────────────────────────────────────────────
@@ -814,9 +375,19 @@ _OPENAI_TOOLS = _to_openai_tools(BIO_TOOLS)
 
 
 # ── 推理後端 ─────────────────────────────────────────────────────────────────
+# Was hardcoded to localhost:8080 (start_bioagent.sh's own dedicated Gemma4 Vision
+# 26B), unlike every other backend setting in this file which reads from env. Made
+# configurable so deployments can point at an already-running OpenAI-compatible
+# Gemma endpoint instead (e.g. lcdda's shared llama-server) rather than standing up
+# a second local model.
+import os as _os
 
-LLAMA_BASE_URL = "http://localhost:8080/v1"
-LLAMA_MODEL = "gemma-4"
+LLAMA_BASE_URL = _os.getenv("LLAMA_BASE_URL", "http://localhost:8080/v1")
+LLAMA_MODEL = _os.getenv("LLAMA_MODEL", "gemma-4")
+# Gemma "thinking" template: without disabling it, replies come back slow / empty
+# (same failure mode documented in lcdda's mcp_second_brain/llm_cli.py). Off by
+# default only when explicitly opted out.
+LLAMA_NO_THINK = _os.getenv("LLAMA_NO_THINK", "1") not in ("0", "false", "False", "")
 
 _local_client = None
 _claude_client = None
@@ -900,12 +471,14 @@ def _make_claude_call(messages: list[dict], max_tokens: int) -> tuple[str, list,
 
 def _make_local_call(messages: list[dict], model: str, max_tokens: int):
     """呼叫本機 llama.cpp，回傳 chat completion response。"""
+    extra_body = {"chat_template_kwargs": {"enable_thinking": False}} if LLAMA_NO_THINK else None
     return _get_local_client().chat.completions.create(
         model=model,
         max_tokens=max_tokens,
         tools=_OPENAI_TOOLS,
         tool_choice="auto",
         messages=messages,
+        extra_body=extra_body,
     )
 
 

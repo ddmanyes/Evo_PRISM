@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
+
+from analysis.run_context import analysis_run
 
 logger = logging.getLogger("evo_prism.spatial_metrics")
 
@@ -297,11 +298,8 @@ def generate_crc_metrics_report(
 
     Returns (analysis_id, report_path).
     """
-    from config.db_utils import safe_write, connect_db
     import scanpy as sc
 
-    analysis_id = str(uuid.uuid4())
-    started_at = datetime.now(timezone.utc).isoformat()
     params = {
         "sample_id": sample_id,
         "roi_name": roi_name,
@@ -312,17 +310,11 @@ def generate_crc_metrics_report(
         "n_hvgs": n_hvgs,
     }
 
-    con = connect_db()
-    safe_write(
-        con,
-        """INSERT INTO analysis_history
-               (analysis_id, sample_id, analysis_type, parameters, status,
-                requested_by, started_at)
-           VALUES (?, ?, 'crc_metrics', ?, 'running', ?, ?)""",
-        [analysis_id, sample_id, json.dumps(params), requested_by, started_at],
-    )
-
-    try:
+    with analysis_run(
+        sample_id, "crc_metrics",
+        params=params,
+        requested_by=requested_by,
+    ) as run:
         # Load inputs
         mask = np.load(str(mask_path)).astype(np.uint32)
         adata = sc.read_h5ad(str(adata_cells_path))
@@ -342,7 +334,7 @@ def generate_crc_metrics_report(
         lines = [
             f"# CRC Metrics Report — {sample_id} / {roi_name}",
             "",
-            f"**analysis_id:** `{analysis_id}`  ",
+            f"**analysis_id:** `{run.analysis_id}`  ",
             f"**generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
             "",
             "## RNA Metrics",
@@ -393,18 +385,6 @@ def generate_crc_metrics_report(
         report_path = out_dir / "crc_metrics_report.md"
         report_path.write_text(report_text, encoding="utf-8")
 
-        completed_at = datetime.now(timezone.utc).isoformat()
-        safe_write(
-            con,
-            """UPDATE analysis_history
-               SET status='completed', result_path=?, completed_at=?, summary=?
-               WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, analysis_id],
-        )
-        from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
-
-        write_diagnosis(con, analysis_id, success_diagnosis())
-
         # Persist metric values as artifact JSON for programmatic reuse
         metrics_json = {
             "ftc": ftc,
@@ -419,26 +399,11 @@ def generate_crc_metrics_report(
         metrics_path = out_dir / "crc_metrics.json"
         metrics_path.write_text(json.dumps(metrics_json, indent=2), encoding="utf-8")
 
-        logger.info("CRC metrics complete  analysis_id=%s  %s", analysis_id, summary)
+        # 生命週期收尾（complete/diagnosis/snapshot）由 seam 統一處理。
+        run.complete(report_path, summary)
+        logger.info("CRC metrics complete  analysis_id=%s  %s", run.analysis_id, summary)
 
-    except Exception as _exc:
-        import traceback
-
-        tb = traceback.format_exc()
-        logger.exception("CRC metrics failed  analysis_id=%s", analysis_id)
-        safe_write(
-            con,
-            "UPDATE analysis_history SET status='failed', summary=? WHERE analysis_id=?",
-            [tb[-500:], analysis_id],
-        )
-        from analysis.failure_diagnosis import classify_exception, write_diagnosis
-
-        write_diagnosis(con, analysis_id, classify_exception(_exc))
-        con.close()
-        raise
-
-    con.close()
-    return analysis_id, report_path
+    return run.analysis_id, report_path
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────

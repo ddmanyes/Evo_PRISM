@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd：host-native mcseg GPU worker（常駐）
+
+  Docker Desktop on macOS 對 Linux container 沒有 GPU/Metal passthrough，
+  所以 mcseg 的 cellpose 分割改在 host 上用 MPS 跑，透過
+  BIO_DB_ROOT/mcseg_jobs/ 這個檔案投遞式 job queue 跟 container 溝通。
+  見 analysis/mcseg_wrapper.py 的 run_mcseg_segmentation()（dispatcher）
+  與 scripts/mcseg_host_watcher.py（本 plist 常駐執行的程式）。
+  設計文件：sb note「Evo-PRISM MCseg GPU Host-Native 混合架構計畫」。
+
+  安裝：
+    cp docs/launchd/launchd_mcseg_watcher.plist.example \
+       ~/Library/LaunchAgents/com.hermes.mcseg_watcher.plist
+    launchctl load ~/Library/LaunchAgents/com.hermes.mcseg_watcher.plist
+
+  手動啟動（不需 launchd）：
+    MSSEG_PATH=/Volumes/KINGSTON/Evo_PRISM/MSseg \
+      ~/.venvs/hermes-bio-memory/bin/python \
+      /Volumes/KINGSTON/Evo_PRISM/scripts/mcseg_host_watcher.py
+
+  確認在跑：查看 /Volumes/KINGSTON/Evo_PRISM/logs/mcseg_host_watcher.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.mcseg_watcher</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/lab_center/.venvs/hermes-bio-memory/bin/python</string>
+        <string>/Volumes/KINGSTON/Evo_PRISM/scripts/mcseg_host_watcher.py</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MSSEG_PATH</key>
+        <string>/Volumes/KINGSTON/Evo_PRISM/MSseg</string>
+    </dict>
+
+    <!--
+      Required: without this, launchd defaults cwd to "/" (read-only for this
+      user). MSseg/backend/src/segmentation/cellpose_runner.py has its own
+      pre-existing bug — a hardcoded relative-looking Windows path
+      ("i:/Evo_PRISM/results/mcseg/...", leftover from Windows dev — POSIX has
+      no drive letters, so it resolves as a relative path component "i:" under
+      cwd) that it unconditionally mkdir()s for a tile cache dir. With cwd = "/"
+      that mkdir hits "Read-only file system"; with cwd here it just creates a
+      stray ./i:/ folder under the project root instead of crashing. Not fixed
+      at the source — that's vendored MSseg reference code, a separate latent
+      bug unrelated to the GPU dispatch work (flagged in the sb plan note).
+    -->
+    <key>WorkingDirectory</key>
+    <string>/Volumes/KINGSTON/Evo_PRISM</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/lab_center/evo_prism_backups/mcseg_watcher.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/lab_center/evo_prism_backups/mcseg_watcher_err.log</string>
+</dict>
+</plist>

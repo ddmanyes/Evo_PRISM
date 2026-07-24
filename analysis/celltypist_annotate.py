@@ -16,10 +16,7 @@ Main function:
 
 from __future__ import annotations
 
-import json
 import logging
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -31,6 +28,7 @@ from analysis.path_utils import results_dir  # noqa: E402
 from analysis.viz_utils import fig_to_b64_md  # noqa: E402
 from analysis.validators import validate_sample_id  # noqa: E402
 from analysis.tool_registry import register_tool_on_import  # noqa: E402
+from analysis.run_context import analysis_run  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -69,18 +67,16 @@ def run_celltypist(
             "缺少 celltypist，請執行：uv add celltypist"
         ) from exc
 
-    analysis_id = str(uuid.uuid4())
-    started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
+    _params = {
         "roi_name": roi_name, "model": model, "majority_voting": majority_voting,
-    })
+    }
 
-    from store.factory import get_store as _get_store
-    _get_store().insert_history(
-        analysis_id, sample_id, "celltypist", params_json, "running", requested_by, started_at
-    )
-
-    try:
+    with analysis_run(
+        sample_id, "celltypist",
+        params=_params,
+        requested_by=requested_by,
+        tool_name="bio_run_celltypist",
+    ) as run:
         import celltypist
         import matplotlib
         matplotlib.use("Agg")
@@ -121,7 +117,7 @@ def run_celltypist(
         tmp_path.replace(h5ad_path)  # POSIX atomic rename
 
         out_dir = results_dir(sample_id, "celltypist")
-        ts = started_at.strftime("%Y%m%d_%H%M%S")
+        ts = run.started_at.strftime("%Y%m%d_%H%M%S")
 
         # UMAP colored by celltypist label
         umap_path = out_dir / f"umap_celltypist_{sample_id}_{roi_name}_{ts}.png"
@@ -135,7 +131,7 @@ def run_celltypist(
         label_counts = adata.obs["celltypist_cell_type"].value_counts().to_string()
         report_text = (
             f"# CellTypist 標注 — {sample_id} / {roi_name}\n\n"
-            f"**生成時間**：{started_at.isoformat()}\n"
+            f"**生成時間**：{run.started_at.isoformat()}\n"
             f"**模型**：`{model}`  **majority_voting**：{majority_voting}\n"
             f"**基因匹配**：{overlap_msg}\n\n"
             f"> ⚠️ 大多數預訓練模型為人類資料。"
@@ -149,40 +145,10 @@ def run_celltypist(
 
         top_type = adata.obs["celltypist_cell_type"].value_counts().index[0]
         summary = f"{sample_id}/{roi_name} CellTypist({model[:20]})：top={top_type}"[:50]
-        completed_at = datetime.now(timezone.utc)
+        run.artifact(umap_path, "figure", "UMAP（celltypist_cell_type）", "umap_celltypist")
+        run.artifact(h5ad_path, "data", "umap_computed.h5ad（含 celltypist_cell_type）", "h5ad")
+        run.artifact(report_path, "report", "CellTypist 報告", "celltypist_report")
+        run.complete(report_path, summary)
 
-        with _get_store().write_conn() as con:
-            from analysis.tool_registry import get_active_tool_id
-            tool_id = get_active_tool_id(con, "bio_run_celltypist")
-            con.execute(
-                """UPDATE analysis_history
-                      SET status='completed', result_path=?, completed_at=?, summary=?, tool_id=?
-                    WHERE analysis_id=?""",
-                [str(report_path), completed_at, summary, tool_id, analysis_id],
-            )
-            from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
-            write_diagnosis(con, analysis_id, success_diagnosis())
-            try:
-                from analysis.artifact_registry import register_artifact
-                register_artifact(con, analysis_id, umap_path, "figure",
-                                  "UMAP（celltypist_cell_type）", artifact_subtype="umap_celltypist")
-                register_artifact(con, analysis_id, h5ad_path, "data",
-                                  "umap_computed.h5ad（含 celltypist_cell_type）",
-                                  artifact_subtype="h5ad")
-                register_artifact(con, analysis_id, report_path, "report",
-                                  "CellTypist 報告", artifact_subtype="celltypist_report")
-            except Exception as _exc:
-                logger.warning("celltypist: register_artifact 失敗（非致命）: %s", _exc)
-
-    except Exception as _exc:
-        logger.exception("celltypist 失敗  analysis_id=%s", analysis_id)
-        with _get_store().write_conn() as con:
-            con.execute(
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id])
-            from analysis.failure_diagnosis import classify_exception, write_diagnosis
-            write_diagnosis(con, analysis_id, classify_exception(_exc))
-        raise
-
-    logger.info("celltypist 完成  analysis_id=%s", analysis_id)
-    return analysis_id, str(report_path)
+    logger.info("celltypist 完成  analysis_id=%s", run.analysis_id)
+    return run.analysis_id, str(report_path)

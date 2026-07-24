@@ -1,5 +1,12 @@
 """
-Evo_PRISM — History, Memory, and Sandbox Code Executor Submodule.
+Evo_PRISM — metadata／內省／沙盒 Executor Submodule（Web UI `_exec_bio_*` handler）。
+
+分檔規則見 server/agent.py 頂端「agent_*.py 家族的分檔規則」。本檔收「metadata／內省／
+沙盒」handler：歷史查詢、L1 記憶、樣本清單、tool health、playbook、impact、find_tool、
+register_sample，以及動態 code executor（bio_execute_code）。工具→module+func 對照見
+tool_catalog.py。其中 6 個工具（history_check/lookup/timeline/search、memory_query、
+register_sample）是決策 8-B 刻意保留、與 MCP 端分岔的 Web UI 專屬實作，由
+tests/test_agent_tool_divergence.py 鎖定。
 """
 
 from __future__ import annotations
@@ -9,10 +16,14 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
-import uuid
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+class DynamicCodeFailure(RuntimeError):
+    """Marker exception：result.success=False（無真正例外）時，人工觸發
+    analysis_run seam 的失敗分支（fail_history + classify_exception）。"""
 
 
 def _exec_bio_history_check(args: dict) -> str:
@@ -124,20 +135,31 @@ def _exec_bio_history_search(args: dict) -> str:
 
 
 def _exec_bio_memory_query(args: dict) -> str:
-    from analysis.l1_cache import semantic_search
+    from analysis.l1_cache import SPATIAL_EDA_TOOL_NAME, compute_current_context, semantic_search
     from config.settings import L1_COSINE_THRESHOLD
+
+    sample_id = args.get("sample_id")
+    input_fingerprint = context_hash = None
+    if sample_id:
+        input_fingerprint, context_hash = compute_current_context(
+            sample_id, SPATIAL_EDA_TOOL_NAME
+        )
 
     results = semantic_search(
         args["query"],
         n=1,
         threshold=float(args.get("threshold", L1_COSINE_THRESHOLD)),
-        sample_id=args.get("sample_id"),
+        sample_id=sample_id,
+        input_fingerprint=input_fingerprint,
+        context_hash=context_hash,
     )
     if not results:
         return f"L1 cache miss（threshold={args.get('threshold', L1_COSINE_THRESHOLD)}）。建議執行 bio_run_spatial_eda。"
     r = results[0]
     report = r["report_text"]
     total_chars = len(report)
+    # 【刻意分岔，非 bug】Web UI 版把報告截到 2000 字以保護本機 LLM 的 context 視窗；
+    # MCP 端 _handle_bio_memory_query 回傳完整報告（+ expires_at）。兩端目標不同，不統一。
     if total_chars > 2000:
         report = (
             report[:2000]
@@ -553,29 +575,10 @@ def _exec_bio_tool_health(args: dict) -> str:
     return f"[Error] 未知 action: {action!r}，請使用 report/diagnose/stabilize/close_stabilize/trend/prune。"
 
 
-def _exec_read_report_wrapper(args: dict) -> str:
-    """Helper wrapper because `bio_read_report` was original mapping name."""
-    return _exec_bio_read_report(args)
-
-
-def _exec_bio_read_report(args: dict) -> str:
-    """讀取報告原文（沙盒路徑檢查）。委派至 analysis.report_reader。"""
-    from analysis.report_reader import read_report, ReportReadError
-
-    try:
-        r = read_report(
-            args["result_path"],
-            max_chars=int(args.get("max_chars", 8000)),
-            head_fraction=float(args.get("head_fraction", 0.75)),
-        )
-    except ReportReadError as exc:
-        return f"[ERROR] bio_read_report 失敗：{exc}"
-    meta = (
-        f"path: {r.path}\ntotal_chars: {r.total_chars} | truncated: {r.truncated}\nnote: {r.note}\n"
-    )
-    if r.tail:
-        return f"{meta}--- HEAD ---\n{r.head}\n--- TAIL ---\n{r.tail}"
-    return f"{meta}--- CONTENT ---\n{r.head}"
+# bio_read_report 曾在此有 Web UI 專屬的 _exec_bio_read_report（+ _exec_read_report_wrapper），
+# 但其邏輯與 bio_memory_server._handle_bio_read_report **逐字相同**（純重複）。
+# 2026-07-24 收斂複審移除，改讓 Web UI 走 tool_catalog 自動生成的 MCP bridge handler
+# （asyncio.run 橋接同一份 async handler），零行為變更。詳見 agent.py 決策 8-B 註解。
 
 
 def _exec_bio_find_tool(args: dict) -> str:
@@ -666,6 +669,9 @@ def _exec_bio_impact(args: dict) -> str:
 
 
 def _exec_bio_register_sample(args: dict) -> str:
+    # 【刻意分岔，非 bug】此 Web UI 版與 bio_memory_server._handle_bio_register_sample 唯一
+    # 差別是 added_by 這個 provenance 標籤："agent"（Web UI 對話發起）vs "mcp_server"
+    # （MCP client 發起）。兩者本就代表不同的登記來源，必須保留區分，不可統一。
     from store.factory import get_store
 
     sample_id = args["sample_id"]
@@ -682,83 +688,50 @@ def _exec_bio_register_sample(args: dict) -> str:
         args.get("species", "human"),
         args.get("tissue", ""),
         args["l3_path"],
-        "agent",
+        "agent",  # ← provenance 標籤：Web UI 對話發起（MCP 端為 "mcp_server"）
         args.get("notes", ""),
     )
     return f"樣本 {sample_id!r} 已登記。data_type={args['data_type']!r}"
-
-
-def _archive_history_insert(
-    *,
-    analysis_id: str,
-    sample_id: Optional[str],
-    description: str,
-    code_lines: int,
-    fig_count: int,
-    error_summary: Optional[str],
-    status: str,  # "completed" | "failed"
-    rel_path: str,
-    started_at,  # datetime aware UTC
-    completed_at,  # datetime aware UTC
-) -> None:
-    """寫一筆 dynamic_code 歸檔記錄到 analysis_history；失敗只 log 不 raise。"""
-    from store.factory import get_store
-
-    params_json: dict[str, Any] = {
-        "description": description,
-        "code_lines": code_lines,
-        "fig_count": fig_count,
-    }
-    if error_summary is not None:
-        params_json["error_summary"] = error_summary
-
-    summary_text = description[:50] or "dynamic code execution"
-    if status == "failed":
-        summary_text = f"[FAILED] {summary_text}"[:50]
-
-    try:
-        with get_store().write_conn() as con:
-            con.execute(
-                """INSERT INTO analysis_history
-                       (analysis_id, sample_id, analysis_type, parameters, status,
-                        result_path, requested_by, started_at, completed_at, summary)
-                   VALUES (?, ?, 'dynamic_code', ?, ?, ?, 'agent', ?, ?, ?)""",
-                [
-                    analysis_id,
-                    sample_id,
-                    json.dumps(params_json),
-                    status,
-                    rel_path,
-                    started_at,
-                    completed_at,
-                    summary_text,
-                ],
-            )
-    except Exception:
-        logger.warning("bio_execute_code: 寫入 analysis_history 失敗（不影響結果）", exc_info=True)
 
 
 def _exec_bio_execute_code(args: dict) -> str:
     from server.code_executor import sandbox_exec, SecurityError
     from datetime import datetime as dt, timezone as tz
     from config.settings import DYNAMIC_CODE_DIR, BIO_DB_ROOT
+    from analysis.run_context import analysis_run
 
     code = args["code"]
     description = args.get("description", "")
-    timeout = int(args.get("timeout", 60))
+    # timeout clamp（防呼叫端傳大數/非法值；原本只在 MCP 端做，統一 catalog 後搬進共用函式，
+    # 讓 MCP 與 Web UI 兩端都受保護）
+    try:
+        timeout = max(1, min(int(args.get("timeout", 60)), 300))
+    except (TypeError, ValueError):
+        timeout = 60
     sample_id = args.get("sample_id") or None  # NULL 比 "unknown" 安全（FK 約束）
 
-    analysis_id = str(uuid.uuid4())
-    started_at = dt.now(tz.utc)
-    archive_dir = DYNAMIC_CODE_DIR / f"{started_at.strftime('%Y-%m-%d')}_{analysis_id[:8]}"
-    archive_dir.mkdir(parents=True, exist_ok=True)
+    return_value: str = ""
 
-    # 1) Write code immediately so SecurityError-blocked runs are still archived.
-    (archive_dir / "code.py").write_text(code, encoding="utf-8")
+    try:
+        with analysis_run(
+            sample_id,  # type: ignore[arg-type]  # dynamic_code 允許 sample_id=None（NULL 安全，schema 無 NOT NULL；
+            # seam 的型別標註尚未反映這個既有案例，故此處以型別註解而非放寬 store 全域契約來處理）
+            "dynamic_code",
+            params={"description": description, "code_lines": len(code.splitlines())},
+            requested_by="agent",
+        ) as run:
+            analysis_id = run.analysis_id
+            assert run.started_at is not None  # __enter__ 已設定；narrowing 供型別檢查器辨識
+            started_at = run.started_at
+            archive_dir = DYNAMIC_CODE_DIR / f"{started_at.strftime('%Y-%m-%d')}_{analysis_id[:8]}"
+            archive_dir.mkdir(parents=True, exist_ok=True)
 
-    # SecurityError 在 sandbox_exec 內部檢查；preamble 為系統注入，不經 LLM 生成。
-    # 圖檔直接落地到 archive_dir，省去 tempfile copy。
-    preamble = f"""
+            # 1) Write code immediately so SecurityError-blocked runs are still archived.
+            (archive_dir / "code.py").write_text(code, encoding="utf-8")
+
+            # SecurityError 在 sandbox_exec 內部檢查；preamble 為系統注入，不經 LLM 生成。
+            # 圖檔直接落地到 archive_dir，省去 tempfile copy。
+            preamble = f"""
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as _plt_orig
@@ -772,111 +745,93 @@ def _hermes_show(*a, **kw):
     _plt_orig.close("all")
 _plt_orig.show = _hermes_show
 """
-    # SecurityError 提前歸檔並回傳，後續流程 result 保證非 None
-    try:
-        result = sandbox_exec(code, timeout=timeout, preamble=preamble)
-    except SecurityError as e:
-        completed_at = dt.now(tz.utc)
-        duration_sec = (completed_at - started_at).total_seconds()
-        err_msg = str(e)
-        (archive_dir / "traceback.txt").write_text(f"SecurityError: {err_msg}\n", encoding="utf-8")
-        sec_meta = {
-            "analysis_id": analysis_id,
-            "description": description,
-            "status": "failed",
-            "duration_sec": duration_sec,
-            "code_lines": len(code.splitlines()),
-            "fig_count": 0,
-            "created_at": started_at.isoformat(),
-            "error_summary": f"SecurityError: {err_msg[:200]}",
-        }
-        (archive_dir / "meta.json").write_text(
-            json.dumps(sec_meta, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        try:
-            rel_sec = str(archive_dir.relative_to(BIO_DB_ROOT))
-        except ValueError:
-            rel_sec = str(archive_dir)
-        _archive_history_insert(
-            analysis_id=analysis_id,
-            sample_id=sample_id,
-            description=description,
-            code_lines=len(code.splitlines()),
-            fig_count=0,
-            error_summary=f"SecurityError: {err_msg[:200]}",
-            status="failed",
-            rel_path=rel_sec,
-            started_at=started_at,
-            completed_at=completed_at,
-        )
-        return f"[SecurityError] 程式碼違反安全規則：{err_msg}\n歸檔：{rel_sec}/"
+            # SecurityError 提前歸檔並回傳；raise 讓 seam 標 failed + classify_exception
+            try:
+                result = sandbox_exec(code, timeout=timeout, preamble=preamble)
+            except SecurityError as e:
+                completed_at = dt.now(tz.utc)
+                err_msg = str(e)
+                (archive_dir / "traceback.txt").write_text(
+                    f"SecurityError: {err_msg}\n", encoding="utf-8"
+                )
+                sec_meta = {
+                    "analysis_id": analysis_id,
+                    "description": description,
+                    "status": "failed",
+                    "duration_sec": (completed_at - started_at).total_seconds(),
+                    "code_lines": len(code.splitlines()),
+                    "fig_count": 0,
+                    "created_at": started_at.isoformat(),
+                    "error_summary": f"SecurityError: {err_msg[:200]}",
+                }
+                (archive_dir / "meta.json").write_text(
+                    json.dumps(sec_meta, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                try:
+                    rel_sec = str(archive_dir.relative_to(BIO_DB_ROOT))
+                except ValueError:
+                    rel_sec = str(archive_dir)
+                return_value = f"[SecurityError] 程式碼違反安全規則：{err_msg}\n歸檔：{rel_sec}/"
+                raise
 
-    completed_at = dt.now(tz.utc)
-    duration_sec = (completed_at - started_at).total_seconds()
+            completed_at = dt.now(tz.utc)
 
-    if not result.success:
-        status = "failed"
-        tb_text = result.traceback or ""
-        (archive_dir / "traceback.txt").write_text(tb_text, encoding="utf-8")
-        if result.output:
-            (archive_dir / "output.txt").write_text(result.output, encoding="utf-8")
-        error_summary = tb_text.splitlines()[-1][:200] if tb_text.strip() else "unknown error"
-        fig_count = len(sorted(archive_dir.glob("fig_*.png")))
-        output_text = result.output or ""
-    else:
-        status = "completed"
-        (archive_dir / "output.txt").write_text(result.output or "", encoding="utf-8")
-        error_summary = None
-        fig_count = len(sorted(archive_dir.glob("fig_*.png")))
-        output_text = result.output or ""
+            if not result.success:
+                status = "failed"
+                tb_text = result.traceback or ""
+                (archive_dir / "traceback.txt").write_text(tb_text, encoding="utf-8")
+                if result.output:
+                    (archive_dir / "output.txt").write_text(result.output, encoding="utf-8")
+                error_summary = tb_text.splitlines()[-1][:200] if tb_text.strip() else "unknown error"
+            else:
+                status = "completed"
+                (archive_dir / "output.txt").write_text(result.output or "", encoding="utf-8")
+                error_summary = None
 
-    meta = {
-        "analysis_id": analysis_id,
-        "description": description,
-        "status": status,
-        "duration_sec": duration_sec,
-        "code_lines": len(code.splitlines()),
-        "fig_count": fig_count,
-        "created_at": started_at.isoformat(),
-        "error_summary": error_summary,
-    }
-    (archive_dir / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+            output_text = result.output or ""
+            fig_count = len(sorted(archive_dir.glob("fig_*.png")))
 
-    # 相對 BIO_DB_ROOT 的路徑（跨機器可攜）
-    try:
-        rel_archive = str(archive_dir.relative_to(BIO_DB_ROOT))
-    except ValueError:
-        rel_archive = str(archive_dir)
+            meta = {
+                "analysis_id": analysis_id,
+                "description": description,
+                "status": status,
+                "duration_sec": (completed_at - started_at).total_seconds(),
+                "code_lines": len(code.splitlines()),
+                "fig_count": fig_count,
+                "created_at": started_at.isoformat(),
+                "error_summary": error_summary,
+            }
+            (archive_dir / "meta.json").write_text(
+                json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
-    # 寫入 analysis_history
-    _archive_history_insert(
-        analysis_id=analysis_id,
-        sample_id=sample_id,
-        description=description,
-        code_lines=len(code.splitlines()),
-        fig_count=fig_count,
-        error_summary=error_summary,
-        status=status,
-        rel_path=rel_archive,
-        started_at=started_at,
-        completed_at=completed_at,
-    )
+            # 相對 BIO_DB_ROOT 的路徑（跨機器可攜）
+            try:
+                rel_archive = str(archive_dir.relative_to(BIO_DB_ROOT))
+            except ValueError:
+                rel_archive = str(archive_dir)
 
-    # Collect figures as base64 for inline rendering
-    fig_md = ""
-    for fp in sorted(archive_dir.glob("fig_*.png")):
-        b64 = base64.b64encode(fp.read_bytes()).decode()
-        fig_md += f"\n![figure](data:image/png;base64,{b64})\n"
+            # Collect figures as base64 for inline rendering + 登記成 artifact（只登記圖，
+            # code.py/meta.json/traceback.txt/output.txt 是除錯歸檔，不進 analysis_artifacts）
+            fig_md = ""
+            for fp in sorted(archive_dir.glob("fig_*.png")):
+                b64 = base64.b64encode(fp.read_bytes()).decode()
+                fig_md += f"\n![figure](data:image/png;base64,{b64})\n"
+                run.artifact(fp, "figure", "動態程式碼圖檔", "dynamic_code_fig")
 
-    if status == "failed":
-        tb_preview = (result.traceback or "")[:1000]
-        return (
-            f"執行失敗（{result.duration_sec}s）\n"
-            f"歸檔（含 traceback）：{rel_archive}/\n"
-            f"{tb_preview}"
-        )
+            if status == "failed":
+                tb_preview = (result.traceback or "")[:1000]
+                return_value = (
+                    f"執行失敗（{result.duration_sec}s）\n"
+                    f"歸檔（含 traceback）：{rel_archive}/\n"
+                    f"{tb_preview}"
+                )
+                raise DynamicCodeFailure(error_summary or "dynamic code execution failed")
 
-    out = output_text[:2000] if len(output_text) > 2000 else output_text
-    return f"執行成功（{result.duration_sec}s）\n歸檔：{rel_archive}/\n{out}{fig_md}"
+            out = output_text[:2000] if len(output_text) > 2000 else output_text
+            return_value = f"執行成功（{result.duration_sec}s）\n歸檔：{rel_archive}/\n{out}{fig_md}"
+            run.complete(rel_archive, description[:50] or "dynamic code execution")
+    except (SecurityError, DynamicCodeFailure):
+        pass  # return_value 已在對應分支組好；例外只用來驅動 seam 的失敗分支
+
+    return return_value

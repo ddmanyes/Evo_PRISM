@@ -31,6 +31,10 @@ L2_ROOT = BIO_DB_ROOT / "silver"
 L1_ROOT = BIO_DB_ROOT / "gold"
 RESULTS_ROOT = BIO_DB_ROOT / "results_ana"
 DATA_ROOT = BIO_DB_ROOT / "data_ana"
+
+# ── 外部轉檔工具 ───────────────────────────────────────────
+# Bio-Formats bfconvert：libvips 不可用時的 NDPI→BigTIFF 降級工具（見 analysis/image_conversion.py）
+BFTOOLS_PATH = Path(os.getenv("BFTOOLS_PATH", BIO_DB_ROOT / "tools" / "bftools" / "bfconvert"))
 DYNAMIC_CODE_DIR = BIO_DB_ROOT / "results" / "dynamic_code"
 MCSEG_RESULTS_ROOT = Path(os.getenv("MCSEG_RESULTS_ROOT", BIO_DB_ROOT / "results" / "mcseg"))
 

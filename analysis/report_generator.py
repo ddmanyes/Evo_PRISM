@@ -27,8 +27,9 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import DUCKDB_PATH
-from config.db_utils import safe_write
 from analysis.path_utils import results_dir as _results_dir
+from analysis.run_context import record_completed_run
+from store.factory import get_store
 
 logger = logging.getLogger(__name__)
 
@@ -355,38 +356,27 @@ def write_report_to_history(
         logger.info("Report saved: %s", result_path)
 
     if analysis_id is None:
-        analysis_id = str(uuid.uuid4())
-        with duckdb.connect(str(db_path)) as con:
-            safe_write(
-                con,
-                """INSERT INTO analysis_history
-                       (analysis_id, sample_id, analysis_type, parameters, status,
-                        result_path, requested_by, started_at, completed_at, summary)
-                   VALUES (?, ?, 'eda_report', ?, 'completed', ?, ?, ?, ?, ?)""",
-                [
-                    analysis_id,
-                    sample_id,
-                    json.dumps({"format": "markdown"}),
-                    result_path,
-                    requested_by,
-                    now,
-                    now,
-                    summary,
-                ],
-            )
+        # 一次性記錄（無既有 running 列）→ 走 analysis_run seam 的 record_completed_run 統一出口。
+        analysis_id = record_completed_run(
+            sample_id, "eda_report",
+            params={"format": "markdown"},
+            result_path=result_path, summary=summary,
+            requested_by=requested_by,
+        )
     else:
-        completed_at = datetime.now(timezone.utc)
-        with duckdb.connect(str(db_path)) as con:
-            safe_write(
-                con,
-                """UPDATE analysis_history
-                      SET status='completed', result_path=?, completed_at=?, summary=?
-                    WHERE analysis_id=?""",
-                [result_path, completed_at, summary, analysis_id],
-            )
-            from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+        # 已有 running 列 → 收尾為 completed（走 store，backend-agnostic）。
+        from analysis.failure_diagnosis import success_diagnosis
 
-            write_diagnosis(con, analysis_id, success_diagnosis())
+        store = get_store()
+        store.complete_history(analysis_id, result_path, summary, datetime.now(timezone.utc))
+        try:
+            store.update_history(
+                analysis_id, failure_diagnosis=json.dumps(success_diagnosis())
+            )
+        except Exception:
+            logger.warning(
+                "write_report_to_history: success diagnosis 寫入失敗（非致命）", exc_info=True
+            )
     return analysis_id, result_path
 
 
@@ -417,15 +407,12 @@ def run_full_eda_report(
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    with duckdb.connect(str(db_path)) as con:
-        safe_write(
-            con,
-            """INSERT INTO analysis_history
-                   (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at)
-               VALUES (?, ?, 'eda_report', ?, 'running', ?, ?)""",
-            [analysis_id, sample_id, json.dumps({"format": "markdown"}), requested_by, started_at],
-        )
+    store = get_store()
+    store.insert_history(
+        analysis_id, sample_id, "eda_report",
+        json.dumps({"format": "markdown"}), "running",
+        requested_by, started_at,
+    )
 
     try:
         logger.info("Collecting stats for '%s'...", sample_id)
@@ -443,28 +430,40 @@ def run_full_eda_report(
         )
     except Exception as _exc:
         logger.exception("eda_report 分析失敗  analysis_id=%s", analysis_id)
-        with duckdb.connect(str(db_path)) as con:
-            safe_write(
-                con,
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id],
-            )
-            from analysis.failure_diagnosis import classify_exception, write_diagnosis
+        from analysis.failure_diagnosis import classify_exception
 
-            write_diagnosis(con, analysis_id, classify_exception(_exc))
+        try:
+            store.fail_history(
+                analysis_id, datetime.now(timezone.utc),
+                failure_diagnosis=json.dumps(classify_exception(_exc)),
+            )
+        except Exception:
+            logger.warning("run_full_eda_report: fail_history 寫入失敗（非致命）", exc_info=True)
         raise
 
     try:
-        from analysis.l1_cache import write_to_l1_cache
+        from analysis.l1_cache import (
+            SPATIAL_EDA_TOOL_NAME,
+            compute_current_context,
+            write_to_l1_cache,
+        )
+
+        input_fingerprint, context_hash = compute_current_context(
+            sample_id, SPATIAL_EDA_TOOL_NAME, db_path=db_path
+        )
 
         write_to_l1_cache(
             sample_id=sample_id,
-            query_text=f"{sample_id} 空間轉錄體 EDA 分析",
+            # 保留 tool_name 子字串（bio_run_spatial_eda），確保 register_tool() 升版時
+            # invalidate_tool_cache() 的 LIKE 比對能正確找到並清除此工具產生的舊快取條目。
+            query_text=f"{sample_id} 空間轉錄體 EDA 分析（{SPATIAL_EDA_TOOL_NAME}）",
             report_text=report,
             summary=summary,
             analysis_id=analysis_id,
+            input_fingerprint=input_fingerprint,
+            context_hash=context_hash,
         )
-        logger.info("L1 cache written.")
+        logger.info("L1 cache written (fingerprint=%s, context=%s).", input_fingerprint, context_hash)
     except Exception as e:
         logger.warning("L1 cache write skipped (embedding server offline?): %s", e)
 

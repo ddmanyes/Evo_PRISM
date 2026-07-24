@@ -815,7 +815,7 @@ def _hnsw_rows_standard(
         {sample_join}
         WHERE  aa.embedding IS NOT NULL
                {sample_where}
-        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
+        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[768])
         LIMIT  ?
         """,
         sample_params + [embedding, n * 2],
@@ -854,7 +854,7 @@ def _hnsw_rows_matryoshka(
         FROM   analysis_artifacts aa
         WHERE  aa.artifact_id::VARCHAR IN ({id_placeholders})
           AND  aa.embedding IS NOT NULL
-        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
+        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[768])
         LIMIT  ?
         """,
         coarse_ids + [embedding, n * 2],

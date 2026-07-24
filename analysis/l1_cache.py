@@ -29,6 +29,9 @@ from config.settings import L1_CACHE_PATH, L1_COSINE_THRESHOLD, L1_TTL_DAYS
 
 logger = logging.getLogger(__name__)
 
+# 目前唯一已接上 input_fingerprint/context_hash 整合的分析工具（見 Supplementary Note S5）。
+SPATIAL_EDA_TOOL_NAME = "bio_run_spatial_eda"
+
 
 # ── 4-way RRF 常數（論文 §2.4.1 + B5 BM25）──────────────────────────────────
 # 權重總和保持 1.0，確保 perfect score = 1/(_RRF_K+1) 不變（向後相容）。
@@ -67,16 +70,24 @@ def _rrf_score(
 def _rrf_hit_threshold(
     *, has_fp: bool = False, has_ctx: bool = False, has_bm25: bool = False
 ) -> float:
-    """計算 RRF 命中門檻（完美分與最差失配分的中點）。"""
+    """計算 RRF 命中門檻（完美分與「最難偵測之單一訊號失配」分數的中點）。
+
+    門檻須設在「所有已啟用訊號中，任一失配都必定被拒絕」的位置。由於各訊號權重不同
+    （W2 > W3），失配後分數掉得越少的訊號（權重越小者）越難與完美分區分，因此取
+    各啟用訊號失配分數中的**最大值**（最不明顯的失配）作為基準，而非最小值——
+    否則門檻會被權重較大訊號的失配分數拉低，導致權重較小訊號的失配（如僅
+    context_hash 不符）無法被正確拒絕，造成靜默誤判（見 tests/test_l1_rrf.py 迴歸案例）。
+    """
     perfect = _rrf_score(1, 1, 1, 1)
-    worst_miss = perfect
+    single_mismatch_scores: list[float] = []
     if has_fp:
-        worst_miss = min(worst_miss, _rrf_score(1, _MISMATCH_RANK, 1, 1))
+        single_mismatch_scores.append(_rrf_score(1, _MISMATCH_RANK, 1, 1))
     if has_ctx:
-        worst_miss = min(worst_miss, _rrf_score(1, 1, _MISMATCH_RANK, 1))
+        single_mismatch_scores.append(_rrf_score(1, 1, _MISMATCH_RANK, 1))
     if has_bm25:
-        worst_miss = min(worst_miss, _rrf_score(1, 1, 1, _MISMATCH_RANK))
-    return (perfect + worst_miss) / 2
+        single_mismatch_scores.append(_rrf_score(1, 1, 1, _MISMATCH_RANK))
+    hardest_to_detect_miss = max(single_mismatch_scores) if single_mismatch_scores else perfect
+    return (perfect + hardest_to_detect_miss) / 2
 
 
 # ── FTS 工具 ──────────────────────────────────────────────────────────────────
@@ -146,6 +157,29 @@ def rebuild_fts_index(cache_path: Optional[Path] = None) -> dict:
 # ── 輸入指紋 / 上下文雜湊 ────────────────────────────────────────────────────
 
 
+_FINGERPRINT_MAX_READ_BYTES: int = 8 * 1024 * 1024  # 8 MiB
+
+
+def _hash_path_metadata(h: "hashlib._Hash", path: Path) -> None:
+    """將路徑之 metadata（非內容）納入雜湊：適用於目錄或大型原始檔（如 Visium HD .h5）。
+
+    避免每次分析都完整讀取 GB 級原始檔，改以「路徑 + 大小 + mtime」作為輕量指紋，
+    足以偵測原始數據被替換或更新，但無法偵測內容不變、僅 mtime 被觸碰的邊界情況。
+    """
+    if path.is_dir():
+        total_size = 0
+        latest_mtime = 0.0
+        for child in path.rglob("*"):  # 僅累加總大小與最新 mtime，走訪順序無關，無需排序
+            if child.is_file():
+                stat = child.stat()
+                total_size += stat.st_size
+                latest_mtime = max(latest_mtime, stat.st_mtime)
+        h.update(f"{path}|{total_size}|{latest_mtime}".encode())
+    else:
+        stat = path.stat()
+        h.update(f"{path}|{stat.st_size}|{stat.st_mtime}".encode())
+
+
 def compute_input_fingerprint(
     *,
     raw_content: Optional[str] = None,
@@ -154,14 +188,25 @@ def compute_input_fingerprint(
     """計算輸入數據的 16 字元 SHA-256 指紋。
 
     raw_content 與 file_paths 可同時提供，會一起納入雜湊。
-    file_paths 按字母排序後依序讀入（保持跨平台穩定性）。
+    file_paths 按字母排序後依序處理（保持跨平台穩定性）：
+      - 目錄，或檔案大小超過 8 MiB：改用路徑＋大小＋mtime 的輕量 metadata 指紋
+        （避免每次分析都完整讀取 GB 級原始檔）。
+      - 其餘小檔案：讀入完整內容雜湊（沿用原行為）。
+    路徑不存在時記錄警告並跳過，不中斷寫入。
     """
     h = hashlib.sha256()
     if raw_content is not None:
         h.update(raw_content.encode())
     if file_paths:
         for fp in sorted(str(p) for p in file_paths):
-            h.update(Path(fp).read_bytes())
+            path = Path(fp)
+            try:
+                if path.is_dir() or (path.is_file() and path.stat().st_size > _FINGERPRINT_MAX_READ_BYTES):
+                    _hash_path_metadata(h, path)
+                else:
+                    h.update(path.read_bytes())
+            except OSError as exc:
+                logger.warning("compute_input_fingerprint: skipping unreadable path %s (%s)", fp, exc)
     return h.hexdigest()[:16]
 
 
@@ -185,6 +230,57 @@ def compute_context_hash(
     if env_info:
         h.update(env_info.encode())
     return h.hexdigest()[:17]
+
+
+def compute_current_context(
+    sample_id: str,
+    tool_name: str,
+    *,
+    db_path: Optional[Path] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """查詢 `sample_registry`／`tools`（`bio_memory.duckdb`），計算「當前」的
+    input_fingerprint 與 context_hash。
+
+    供寫入端（快取結果時記錄）與搜尋端（比對是否仍與當前原始數據／工具版本一致）
+    共用同一套邏輯，避免兩端各自實作而產生落差。任一查詢無結果時對應回傳 None
+    （呼叫端應視為「無法判斷是否過時」，而非強制阻擋）。
+
+    Returns:
+        (input_fingerprint, context_hash) — 任一項無法計算時為 None。
+    """
+    from config.settings import DUCKDB_PATH
+
+    path = db_path or DUCKDB_PATH
+    input_fingerprint: Optional[str] = None
+    context_hash: Optional[str] = None
+    try:
+        with duckdb.connect(str(path), read_only=True) as con:
+            l3_row = con.execute(
+                "SELECT l3_path FROM sample_registry WHERE sample_id = ?", [sample_id]
+            ).fetchone()
+            if l3_row and l3_row[0]:
+                input_fingerprint = compute_input_fingerprint(file_paths=[l3_row[0]])
+
+            tool_row = con.execute(
+                "SELECT content_hash FROM tools "
+                "WHERE tool_name = ? AND status = 'active' "
+                "ORDER BY created_at DESC LIMIT 1",
+                [tool_name],
+            ).fetchone()
+            if tool_row and tool_row[0]:
+                context_hash = compute_context_hash(
+                    sample_id,
+                    tool_ids=[tool_name],
+                    tool_versions={tool_name: tool_row[0]},
+                )
+    except Exception as exc:
+        logger.warning(
+            "compute_current_context: lookup failed for sample=%s tool=%s (%s)",
+            sample_id,
+            tool_name,
+            exc,
+        )
+    return input_fingerprint, context_hash
 
 
 # ── 連線工具 ──────────────────────────────────────────────────────────────────
@@ -300,6 +396,64 @@ def _build_semantic_filters(
     return " ".join(filters), params
 
 
+def _exact_match_fallback(
+    *,
+    sample_id: Optional[str],
+    analysis_type: Optional[str],
+    input_fingerprint: Optional[str],
+    context_hash: Optional[str],
+    n: int,
+    cache_path: Path,
+) -> list[dict]:
+    """向量服務離線時的降級路徑（Supplementary Note S5.2）。
+
+    跳過 r_embedding，改用 sample_id + input_fingerprint + context_hash 精確比對
+    （SQL WHERE，無語意模糊匹配）。召回率較低，但保證不會誤命中資料已變更或工具
+    已升版的舊結果——降級模式下寧可 cache miss，也不誤用過時結果。
+    """
+    with duckdb.connect(str(cache_path)) as con:
+        if con.execute("SELECT COUNT(*) FROM memory_recent").fetchone()[0] == 0:  # type: ignore[index]
+            return []
+
+        has_col = _has_analysis_type_col(con) if analysis_type else False
+        filter_clause, params = _build_semantic_filters(sample_id, analysis_type, has_col)
+
+        if input_fingerprint is not None:
+            filter_clause += " AND input_fingerprint = ?"
+            params.append(input_fingerprint)
+        if context_hash is not None:
+            filter_clause += " AND context_hash = ?"
+            params.append(context_hash)
+
+        sql = f"""
+            SELECT id, sample_id, query_text, summary, report_text,
+                   created_at, expires_at
+            FROM   memory_recent
+            WHERE  expires_at > now()
+                   {filter_clause}
+            ORDER BY created_at DESC
+            LIMIT ?
+        """
+        rows = con.execute(sql, params + [n]).fetchall()
+
+    base_cols = [
+        "id",
+        "sample_id",
+        "query_text",
+        "summary",
+        "report_text",
+        "created_at",
+        "expires_at",
+    ]
+    results: list[dict] = []
+    for row in rows:
+        rec = dict(zip(base_cols, row))
+        rec["score"] = 1.0  # 精確比對視為滿分信心（無 cosine 排名可用）
+        rec["degraded"] = True
+        results.append(rec)
+    return results
+
+
 def semantic_search(
     query: str,
     *,
@@ -343,7 +497,24 @@ def semantic_search(
         logger.warning("L1 cache not found: %s", path)
         return []
 
-    query_vec = embed_text(query, provider=embedding_provider)
+    try:
+        query_vec = embed_text(query, provider=embedding_provider)
+    except Exception as exc:
+        logger.warning(
+            "L1 semantic_search: embedding service unavailable (%s); "
+            "degrading to exact-match SQL fallback (sample_id + input_fingerprint + "
+            "context_hash, no semantic ranking).",
+            exc,
+        )
+        return _exact_match_fallback(
+            sample_id=sample_id,
+            analysis_type=analysis_type,
+            input_fingerprint=input_fingerprint,
+            context_hash=context_hash,
+            n=n,
+            cache_path=path,
+        )
+
     use_rrf = input_fingerprint is not None or context_hash is not None
     bm25_rank: dict[str, int] = {}  # populated in RRF branch when FTS is available
 
@@ -476,6 +647,7 @@ def invalidate_tool_cache(
     if not path.exists():
         return 0
     with duckdb.connect(str(path)) as con:
+        _setup_vss(con)  # memory_recent 建有 HNSW 索引，DELETE 前需先 LOAD vss，否則拋例外
         deleted = con.execute(
             "DELETE FROM memory_recent WHERE query_text LIKE ? RETURNING id",
             [f"%{tool_name}%"],

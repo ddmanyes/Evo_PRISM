@@ -1,5 +1,8 @@
 """
-Evo_PRISM — Spatial Transcriptomics Executor Submodule.
+Evo_PRISM — 空間專屬 Executor Submodule（Web UI `_exec_bio_*` handler）。
+
+分檔規則見 server/agent.py 頂端「agent_*.py 家族的分檔規則」。本檔收「空間專屬」
+handler：L2 充足性檢查、空間 EDA。工具→module+func 對照見 tool_catalog.py。
 """
 
 from __future__ import annotations

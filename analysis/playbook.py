@@ -173,6 +173,22 @@ def _load_file(path: Path) -> Playbook:
     return Playbook(meta=meta, body=body, path=path)
 
 
+def _iter_markdown_files(dir_path: Path):
+    """``dir_path`` 下所有 ``*.md``，排除 macOS AppleDouble sidecar 檔（``._*``）。
+
+    playbooks/ 常駐在 exFAT/雲端同步磁碟機上，macOS 會為每個真實檔案自動產生
+    一份同名的 ``._<name>`` 資源分岔檔（非 UTF-8 文字，開頭常是 0xb0 等二進位
+    位元組）。這些檔案也會被 ``*.md`` glob 命中，讀取時觸發
+    ``UnicodeDecodeError`` —— 2026-07-23 實測發現：現有的
+    ``except PlaybookError`` 只吃得住本模組自訂的錯誤，接不住這個，
+    會讓 ``list_playbooks()`` 整個崩潰而不是優雅跳過單一壞檔。
+    """
+    for path in sorted(dir_path.glob("*.md")):
+        if path.name.startswith("._") or path.name.upper() == "TEMPLATE.MD":
+            continue
+        yield path
+
+
 def list_playbooks() -> list[dict[str, Any]]:
     """列出 ``playbooks/`` 下所有說明書的 frontmatter metadata。
 
@@ -181,10 +197,10 @@ def list_playbooks() -> list[dict[str, Any]]:
     if not PLAYBOOKS_DIR.exists():
         return []
     out: list[dict[str, Any]] = []
-    for path in sorted(PLAYBOOKS_DIR.glob("*.md")):
+    for path in _iter_markdown_files(PLAYBOOKS_DIR):
         try:
             out.append(_load_file(path).meta)
-        except PlaybookError as exc:
+        except (PlaybookError, UnicodeDecodeError, OSError) as exc:
             logger.warning("跳過壞掉的說明書 %s：%s", path.name, exc)
     return out
 
@@ -208,10 +224,10 @@ def get_playbook(name_or_data_type: str) -> Playbook:
     by_name: Optional[Playbook] = None
     by_dtype: Optional[Playbook] = None
     if PLAYBOOKS_DIR.exists():
-        for path in sorted(PLAYBOOKS_DIR.glob("*.md")):
+        for path in _iter_markdown_files(PLAYBOOKS_DIR):
             try:
                 pb = _load_file(path)
-            except PlaybookError:
+            except (PlaybookError, UnicodeDecodeError, OSError):
                 continue
             if pb.meta.get("name") == key:
                 by_name = pb

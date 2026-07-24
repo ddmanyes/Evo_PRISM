@@ -195,24 +195,29 @@ No Python setup needed — everything runs inside the container.
 **Prerequisites:**
 
 - [Docker Engine ≥ 24 + Docker Compose v2](https://docs.docker.com/get-docker/)
-- `bge-m3-Q8_0.gguf` (605 MB embedding model — download the Q8_0 quantized version from [HuggingFace BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3))
+- **`scikit-misc` (an `omicverse` dependency, pulled in by the `bulk-analysis`/`mcseg` extras) has no Linux arm64 wheel on PyPI** — only macOS arm64 and Linux x86_64. A native arm64 build (e.g. on Apple Silicon Docker Desktop) falls back to a source build whose meson script fails outright. If you need those extras, build/run with `--platform linux/amd64` (works under Rosetta emulation, just slower).
+- Embedding backend, pick one:
+  - **Bundled sidecar**: `bge-m3-Q8_0.gguf` (605 MB — download the Q8_0 quantized version from [HuggingFace BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)) into `models/`, and add the `embedding` service back to `docker-compose.yml` (see the file's comments for the exact block)
+  - **Reuse an existing OpenAI-compatible embedding endpoint** (e.g. another llama-server instance already running somewhere reachable): skip the sidecar and just point `LLAMACPP_BASE_URL` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` at it — this is what the checked-in `docker-compose.yml` currently does (points at an external nomic-embed-text instance)
 
 ```bash
-# 1. Place the downloaded model into the project's models/ folder
+# 1. If using the bundled sidecar, place the model into models/ (skip if reusing an existing endpoint)
 mkdir -p models
 # Move bge-m3-Q8_0.gguf into models/
 
 # 2. Copy the environment config (no API key needed for MCP mode)
 cp .env.example .env
 
-# 3. Start all services (first run downloads the image, ~343 MB)
+# 3. Start all services (first run downloads/builds the image)
 docker compose up -d
 
-# 4. Initialize the database (one-time only)
-docker compose exec evo-prism python scripts/00_init_db.py
+# 4. Verify — DB schema init + pending migrations run automatically on container start
+curl -s http://localhost:8000/health
 ```
 
-Done! MCP HTTP ready at **<http://localhost:8080>** · Web UI at <http://localhost:8000>
+> ⚠️ **Don't manually loop over every `scripts/[0-9][0-9]_migrate_*.py`** — `entrypoint.sh` already runs only the migrations that are actually pending (via `scripts/run_pending_migrations.py`, gated on `schema_migrations`'s current max version), on every start. Blindly re-running *all* migration scripts against an already-migrated database is unsafe: later migrations restructure what earlier ones created (e.g. a later migration moved an early one's `inline_data` column into a separate table), so an early script's own post-migration check can fail against an already-newer schema and crash-loop the container.
+
+Done! Both the Web UI and MCP (mounted at `/mcp`) are served from the **same port**, **<http://localhost:8000>** — there is no separate `:8080` MCP endpoint in the default `web` entrypoint mode.
 
 > Or pull the pre-built image directly: `docker pull ddmann375000/evo-prism:0.1.0`
 >
@@ -332,7 +337,7 @@ bio_run_deg counts_path=tests/fixtures/bulk_rna/deseq2_counts_top1000.csv
 
 ## LLM + MCP Integration
 
-Evo_PRISM uses **MCP (Model Context Protocol)** as the standard bridge between LLMs and tools. Any MCP-compatible client (Claude Code, Antigravity IDE, Web UI) can invoke 17 built-in tools directly (18 with sandbox enabled) — the LLM autonomously decides when to query history, trigger analysis, or retrieve reports, with no manual intervention required.
+Evo_PRISM uses **MCP (Model Context Protocol)** as the standard bridge between LLMs and tools. Any MCP-compatible client (Claude Code, Antigravity IDE, Web UI) can invoke 36 built-in tools directly (37 with sandbox enabled) — the LLM autonomously decides when to query history, trigger analysis, or retrieve reports, with no manual intervention required.
 
 Both **stdio** and **HTTP** transports are supported for external AI client integration.
 
@@ -341,7 +346,7 @@ Both **stdio** and **HTTP** transports are supported for external AI client inte
 .venv/bin/python server/bio_memory_server.py --transport http --port 8082
 ```
 
-### Available Tools (25 by default)
+### Available Tools (36 by default)
 
 | Tool | Description |
 | :--- | :--- |
@@ -352,6 +357,9 @@ Both **stdio** and **HTTP** transports are supported for external AI client inte
 | `bio_memory_query` | L1 cache full report retrieval |
 | `bio_memory_write` | Write to L1 cache |
 | `bio_register_sample` | Register a new sample |
+| `bio_lookup_sample` | Look up a sample by new ID, old ID (alias), or fuzzy match |
+| `bio_sample_list` | List registered samples, filterable by data_type/tissue/condition |
+| `bio_sample_compare` | Compare analysis-history summaries across two or more samples |
 | `bio_read_report` | Read raw analysis report |
 | `bio_artifact_search` | ENGRAM 3-way RRF semantic search |
 | `bio_artifact_summary` | ENGRAM artifact summary |
@@ -359,6 +367,7 @@ Both **stdio** and **HTTP** transports are supported for external AI client inte
 | `bio_get_figure` | Retrieve a single figure by ID via MCP ImageContent (on-demand VLM loading) |
 | `bio_check_l2_sufficiency` | Check L2 readiness status |
 | `bio_find_tool` | Semantic search for reusable analysis functions (tool discovery before writing code) |
+| `bio_get_playbook` | Fetch the standard step-by-step playbook for an analysis domain |
 | `bio_run_spatial_eda` | Spatial transcriptomics EDA analysis |
 | `bio_run_bulk_eda` | Bulk RNA-seq EDA analysis |
 | `bio_run_deg` | Differential expression analysis (DEG) + volcano plot |
@@ -366,13 +375,21 @@ Both **stdio** and **HTTP** transports are supported for external AI client inte
 | `bio_run_heatmaps` | Expression heatmap generation |
 | `bio_tool_health` | HELIX tool health report |
 | `bio_failure_summary` | Aggregate analysis failure diagnostics (HELIX PM1 self-diagnosis) |
-| `bio_impact` | Change blast-radius assessment |
+| `bio_impact` | Change blast-radius assessment (by tool/artifact/sample) |
+| `bio_cascade_impact` | Downstream-dependency lookup from a given analysis_id |
+| `bio_compare_versions` | Cross-version result comparison for a tool (Jaccard/Spearman/Procrustes) |
 | `bio_run_mcseg_roi` † | Visium HD ROI multi-scale cell segmentation (GPU, 30–90 min) |
 | `bio_run_mcseg_fullslide` † | Full-slide tiled cell segmentation (GPU, hours) |
+| `bio_run_mcseg_qc` † | MCseg segmentation QC visualization from existing masks |
 | `bio_compute_crc_metrics` † | CRC Visium HD spatial metrics computation |
+| `bio_get_marker_genes` † | Marker-gene export from an MCseg ROI's UMAP clusters |
+| `bio_relabel_clusters` † | Manually relabel MCseg ROI clusters |
+| `bio_run_celltypist` | CellTypist automated cell-type annotation for an MCseg ROI |
+| `bio_run_mcseg_merge` † | Merge multiple MCseg ROIs into an integrated Scanpy pipeline |
+| `bio_export_loupe` | Export MCseg segmentation results to Loupe Browser format (GeoJSON + CSV; native Loupe format needs `loupepy`, not bundled) |
 | `bio_execute_code` ⚠️ | Sandboxed Python execution (requires `MCP_ENABLE_DANGEROUS_TOOLS=true`) |
 
-> † Requires the MCseg backend (`scripts/msseg/`) which is not included in this repository. These tools appear in the tool list but will return an import error if called without the backend installed.
+> † MCseg tools import `MSseg/backend` in-process (`analysis/mcseg_wrapper.py`, `sys.path` insert — not a subprocess/separate venv) and need `cellpose` (declared under the `mcseg` extra, not a core dependency — install with `uv sync --extra mcseg` or `docker build`'s default extras). As of 2026-07-15, `cellpose`/`omicverse`/`gseapy` are confirmed importable and `bio_run_spatial_eda` (EDA, not MCseg segmentation) has been verified end-to-end against real Visium HD data; the MCseg cell-segmentation tools themselves (`bio_run_mcseg_roi` etc.) have not yet been run end-to-end — treat as "dependencies installed, not yet fully verified" rather than confirmed working.
 
 For detailed configuration, see [MCP_JSON_SETUP.md](docs/guides/MCP_JSON_SETUP.md) and [MCP_HTTP_GUIDE.md](docs/guides/MCP_HTTP_GUIDE.md).
 

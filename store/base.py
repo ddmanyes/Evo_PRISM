@@ -14,6 +14,27 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Iterator, Protocol, runtime_checkable
 
+# Whitelist of mutable columns for dynamic UPDATE queries (H1 fix).
+# 2026-07-24 架構審查（候選 4）：這兩個 store/duckdb_store.py 與 store/postgres_store.py
+# 逐字複製過，有雙後端行為漂移風險（改一邊漏改另一邊，兩後端對「哪些欄位可被 update」
+# 答案不一致）。收斂到 Protocol 檔案，兩個實作都 import 這裡的版本。
+_HISTORY_MUTABLE_COLS = frozenset({
+    "status", "result_path", "completed_at", "summary", "tool_id",
+    "failure_diagnosis", "tags", "parameter_hash", "summary_metrics",
+    "analysis_version", "tool_version", "user_approval", "parent_analysis_id",
+})
+_SAMPLE_MUTABLE_COLS = frozenset({
+    "project", "data_type", "platform", "species", "tissue", "l3_path",
+    "l2_ready", "analysis_done", "added_by", "notes", "last_updated",
+    "condition", "time_point", "batch", "donor_id", "tags", "alias",
+})
+
+
+def _validate_cols(cols: set[str], allowed: frozenset[str], ctx: str) -> None:
+    unknown = cols - allowed
+    if unknown:
+        raise ValueError(f"{ctx}: unknown or immutable columns {sorted(unknown)}")
+
 
 @runtime_checkable
 class RegistryStore(Protocol):
@@ -112,6 +133,18 @@ class RegistryStore(Protocol):
         self, analysis_id: str, sample_id: str, analysis_type: str
     ) -> None:
         """Mark analysis_id canonical; demote previous canonical to superseded."""
+        ...
+
+    def supersede_by_id(
+        self, analysis_id: str, superseded_analysis_id: str
+    ) -> None:
+        """Mark analysis_id canonical; demote one *named* prior row to superseded.
+
+        Unlike mark_canonical (which demotes whatever is currently canonical for
+        the whole sample+analysis_type), this targets a specific corrected run —
+        the caller already knows which row this one replaces. Used by
+        external_import when registering a fix for a known-wrong result.
+        """
         ...
 
     # ------------------------------------------------------------------

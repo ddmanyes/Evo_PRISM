@@ -14,10 +14,7 @@ Main function:
 
 from __future__ import annotations
 
-import json
 import logging
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +26,7 @@ from analysis.path_utils import results_dir  # noqa: E402
 from analysis.viz_utils import fig_to_b64_md  # noqa: E402
 from analysis.validators import validate_sample_id  # noqa: E402
 from analysis.tool_registry import register_tool_on_import  # noqa: E402
+from analysis.run_context import analysis_run  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -107,18 +105,16 @@ def run_mcseg_merge(
             + "\n".join(missing)
         )
 
-    analysis_id = str(uuid.uuid4())
-    started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
+    _params = {
         "roi_names": roi_names, "merged_name": merged_name, "integrate": integrate,
-    })
+    }
 
-    from store.factory import get_store as _get_store
-    _get_store().insert_history(
-        analysis_id, sample_id, "mcseg_merge", params_json, "running", requested_by, started_at
-    )
-
-    try:
+    with analysis_run(
+        sample_id, "mcseg_merge",
+        params=_params,
+        requested_by=requested_by,
+        tool_name="bio_run_mcseg_merge",
+    ) as run:
         import anndata
         import matplotlib
         matplotlib.use("Agg")
@@ -156,7 +152,7 @@ def run_mcseg_merge(
         out_dir = results_dir(sample_id, "mcseg_merge")
         merged_dir = out_dir / merged_name
         merged_dir.mkdir(parents=True, exist_ok=True)
-        ts = started_at.strftime("%Y%m%d_%H%M%S")
+        ts = run.started_at.strftime("%Y%m%d_%H%M%S")
 
         h5ad_out = merged_dir / "merged.h5ad"
         merged.write_h5ad(str(h5ad_out))
@@ -182,7 +178,7 @@ def run_mcseg_merge(
         cell_counts = merged.obs["roi_name"].value_counts().to_string()
         report_text = (
             f"# Multi-ROI Merge — {sample_id} / {merged_name}\n\n"
-            f"**生成時間**：{started_at.isoformat()}\n"
+            f"**生成時間**：{run.started_at.isoformat()}\n"
             f"**ROI**：{roi_names}\n"
             f"**整合策略**：{integration_used}"
             + (" ⚠️（fallback，無 batch correction）" if integration_used == "none" else "")
@@ -198,41 +194,11 @@ def run_mcseg_merge(
         summary = (
             f"{sample_id} merge {len(roi_names)} ROIs→{merged.n_obs} cells [{integration_used}]"
         )[:50]
-        completed_at = datetime.now(timezone.utc)
+        run.artifact(h5ad_out, "data", "merged.h5ad", "h5ad_merged")
+        run.artifact(umap_roi_path, "figure", "UMAP（by ROI）", "umap_roi")
+        run.artifact(umap_leiden_path, "figure", "UMAP（Leiden）", "umap_leiden")
+        run.artifact(report_path, "report", "Merge 報告", "merge_report")
+        run.complete(report_path, summary)
 
-        with _get_store().write_conn() as con:
-            from analysis.tool_registry import get_active_tool_id
-            tool_id = get_active_tool_id(con, "bio_run_mcseg_merge")
-            con.execute(
-                """UPDATE analysis_history
-                      SET status='completed', result_path=?, completed_at=?, summary=?, tool_id=?
-                    WHERE analysis_id=?""",
-                [str(report_path), completed_at, summary, tool_id, analysis_id],
-            )
-            from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
-            write_diagnosis(con, analysis_id, success_diagnosis())
-            try:
-                from analysis.artifact_registry import register_artifact
-                register_artifact(con, analysis_id, h5ad_out, "data", "merged.h5ad",
-                                  artifact_subtype="h5ad_merged")
-                register_artifact(con, analysis_id, umap_roi_path, "figure", "UMAP（by ROI）",
-                                  artifact_subtype="umap_roi")
-                register_artifact(con, analysis_id, umap_leiden_path, "figure", "UMAP（Leiden）",
-                                  artifact_subtype="umap_leiden")
-                register_artifact(con, analysis_id, report_path, "report", "Merge 報告",
-                                  artifact_subtype="merge_report")
-            except Exception as _exc:
-                logger.warning("mcseg_merge: register_artifact 失敗（非致命）: %s", _exc)
-
-    except Exception as _exc:
-        logger.exception("mcseg_merge 失敗  analysis_id=%s", analysis_id)
-        with _get_store().write_conn() as con:
-            con.execute(
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id])
-            from analysis.failure_diagnosis import classify_exception, write_diagnosis
-            write_diagnosis(con, analysis_id, classify_exception(_exc))
-        raise
-
-    logger.info("mcseg_merge 完成  analysis_id=%s", analysis_id)
-    return analysis_id, str(report_path)
+    logger.info("mcseg_merge 完成  analysis_id=%s", run.analysis_id)
+    return run.analysis_id, str(report_path)

@@ -49,6 +49,14 @@ def _check_env_hash_col(con: duckdb.DuckDBPyConnection) -> bool:
     ).fetchone() is not None
 
 
+def _check_affected_params_col(con: duckdb.DuckDBPyConnection) -> bool:
+    """Return True if tools.affected_params column exists (v25+ schema)."""
+    return con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'tools' AND column_name = 'affected_params' LIMIT 1"
+    ).fetchone() is not None
+
+
 # ---------------------------------------------------------------------------
 # HELIX Eq.(2) — HealthScore
 # ---------------------------------------------------------------------------
@@ -185,6 +193,7 @@ def register_tool(
     description: str,
     *,
     env_hash: str | None = None,
+    affected_params: list[str] | None = None,
 ) -> str:
     """Register *fn* in the ``tools`` table and return its ``tool_id``.
 
@@ -197,17 +206,23 @@ def register_tool(
     4. Insert new row with ``status='active'`` and return the new ``tool_id``.
 
     Args:
-        con:         Open DuckDB connection (must have write access).
-        tool_name:   Logical name matching ``tools/registry.json`` (e.g.
-                     ``"bio_run_spatial_eda"``).
-        fn:          The Python callable whose source will be hashed.
-        version:     Semver string, e.g. ``"1.0.0"``.
-        description: Human-readable description stored in the row.
-        env_hash:    SHA256[:16] of ``uv.lock`` at registration time — use
-                     ``config.settings.ENV_HASH``.  Records the package
-                     environment so analyses can be traced back to a specific
-                     dependency set.  Stored in ``tools.env_hash`` (v27+);
-                     silently omitted on pre-v27 schemas.
+        con:             Open DuckDB connection (must have write access).
+        tool_name:       Logical name matching ``tools/registry.json`` (e.g.
+                         ``"bio_run_spatial_eda"``).
+        fn:              The Python callable whose source will be hashed.
+        version:         Semver string, e.g. ``"1.0.0"``.
+        description:     Human-readable description stored in the row.
+        env_hash:        SHA256[:16] of ``uv.lock`` at registration time — use
+                         ``config.settings.ENV_HASH``.  Records the package
+                         environment so analyses can be traced back to a specific
+                         dependency set.  Stored in ``tools.env_hash`` (v27+);
+                         silently omitted on pre-v27 schemas.
+        affected_params: List of parameter key names changed in this version
+                         (diff-level tagging, P3).  When set, ``bio_impact``
+                         narrows impact to analyses that actually used these
+                         params, reducing version-level false positives.
+                         Stored in ``tools.affected_params`` (v25+);
+                         silently omitted on older schemas.
 
     Returns:
         UUID string of the active ``tool_id`` for this tool.
@@ -263,7 +278,24 @@ def register_tool(
 
     # --- insert new active row ---
     new_tool_id = str(uuid.uuid4())
-    if _check_env_hash_col(con):
+    has_env_hash = _check_env_hash_col(con)
+    has_affected_params = _check_affected_params_col(con)
+    affected_params_json = json.dumps(affected_params) if affected_params is not None else None
+
+    if has_env_hash and has_affected_params:
+        con.execute(
+            """
+            INSERT INTO tools
+                (tool_id, tool_name, version, content_hash,
+                 module_path, function_name, description, status,
+                 created_at, revision_count, env_hash, affected_params)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+            """,
+            [new_tool_id, tool_name, version, content_hash,
+             module_path, function_name, description, now, next_revision,
+             env_hash, affected_params_json],
+        )
+    elif has_env_hash:
         con.execute(
             """
             INSERT INTO tools
@@ -274,6 +306,19 @@ def register_tool(
             """,
             [new_tool_id, tool_name, version, content_hash,
              module_path, function_name, description, now, next_revision, env_hash],
+        )
+    elif has_affected_params:
+        logger.warning("register_tool: env_hash column absent (run migration v27 to add it)")
+        con.execute(
+            """
+            INSERT INTO tools
+                (tool_id, tool_name, version, content_hash,
+                 module_path, function_name, description, status,
+                 created_at, revision_count, affected_params)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+            """,
+            [new_tool_id, tool_name, version, content_hash,
+             module_path, function_name, description, now, next_revision, affected_params_json],
         )
     else:
         logger.warning("register_tool: env_hash column absent (run 00_init_db.py to migrate)")

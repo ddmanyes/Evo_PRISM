@@ -1,3 +1,7 @@
+# ── macOS/exFAT AppleDouble metadata (breaks buildkit xattr read on exFAT) ─────
+._*
+.DS_Store
+
 # ── Large data directories (never ship raw data in image) ─────────────────────
 crc_visium_data/
 bulk_rna_data/

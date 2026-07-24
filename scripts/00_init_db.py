@@ -9,9 +9,13 @@ import duckdb
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import L3_ROOT
+from config.settings import DUCKDB_PATH, L3_ROOT
 
-DB_PATH = Path(__file__).parent.parent / "bio_memory.duckdb"
+# Was hardcoded to Path(__file__).parent.parent / "bio_memory.duckdb", ignoring
+# BIO_DB_ROOT/DUCKDB_PATH entirely (every other NN_migrate_schema_*.py script uses
+# settings.DUCKDB_PATH as its default) — broke BIO_DB_ROOT-based deployments (e.g.
+# Docker, where the db is meant to live on a mounted volume, not inside the image).
+DB_PATH = DUCKDB_PATH
 
 
 def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.DuckDBPyConnection:

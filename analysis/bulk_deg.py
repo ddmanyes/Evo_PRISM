@@ -21,8 +21,6 @@ import json
 import logging
 import re
 import sys
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -34,12 +32,11 @@ import pandas as pd
 matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.db_utils import connect_db
-from store.factory import get_store
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH, SUMMARY_MAX_CHARS
+from config.settings import BIO_DB_ROOT, SUMMARY_MAX_CHARS
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.tool_registry import register_tool_on_import
+from analysis.run_context import analysis_run
 
 logger = logging.getLogger(__name__)
 
@@ -479,8 +476,6 @@ def run_deg_analysis(
     counts_path = Path(counts_path)
     coldata_path = Path(coldata_path)
 
-    analysis_id = str(uuid.uuid4())
-    started_at = datetime.now(timezone.utc)
     def _rel(p: Path) -> str:
         try:
             return str(p.relative_to(BIO_DB_ROOT))
@@ -495,28 +490,21 @@ def run_deg_analysis(
         "fc_threshold": fc_threshold,
         "pval_threshold": pval_threshold,
     }
-    params_json = json.dumps(_params)
 
-    from config.db_utils import param_hash
-
-    store = get_store()
-
-    try:
-        if parent_analysis_id is None:
-            parent_analysis_id = store.get_canonical_id(sample_id, "bulk_deg")
-
-        store.insert_history(
-            analysis_id, sample_id, "bulk_deg", params_json, "running",
-            requested_by, started_at,
-            parameter_hash=param_hash(_params),
-        )
-
+    with analysis_run(
+        sample_id, "bulk_deg",
+        params=_params,
+        requested_by=requested_by,
+        parent_analysis_id=parent_analysis_id,
+        tool_name="bio_run_deg",
+        canonical=True,
+    ) as run:
         counts, coldata = load_deg_inputs(counts_path, coldata_path)
         n_genes_before = len(counts)
         counts = filter_low_expression(counts)
         n_genes_after = len(counts)
         out_dir = results_dir(sample_id, "bulk_deg")
-        ts = started_at.strftime("%Y%m%d_%H%M%S")
+        ts = run.started_at.strftime("%Y%m%d_%H%M%S")
 
         # Mean-Variance plot（對所有過濾後 counts 只畫一次）
         mv_png = out_dir / f"MeanVariance_{sample_id}_{ts}.png"
@@ -656,9 +644,9 @@ def run_deg_analysis(
         report_path = out_dir / f"bulk_deg_{sample_id}_{ts}.md"
         report_path.write_text(
             _REPORT_TEMPLATE.format(
-                analysis_id=analysis_id,
+                analysis_id=run.analysis_id,
                 sample_id=sample_id,
-                timestamp=started_at.isoformat(),
+                timestamp=run.started_at.isoformat(),
                 method=method,
                 comparisons_str=comparisons_str,
                 fc_thr=fc_threshold,
@@ -695,54 +683,13 @@ def run_deg_analysis(
             "quality_flags": deg_quality_flags,
         })
 
-        completed_at = datetime.now(timezone.utc)
-        store.complete_history(
-            analysis_id, str(report_path), summary, completed_at,
+        # 生命週期收尾（complete/canonical/diagnosis/artifact flush/snapshot）由 seam 統一處理。
+        for path, atype, label, subtype in artifact_files:
+            run.artifact(path, atype, label, subtype)
+        run.complete(
+            report_path, summary,
             summary_metrics=json.loads(summary_metrics),
         )
-        store.mark_canonical(analysis_id, sample_id, "bulk_deg")
 
-        from analysis.failure_diagnosis import success_diagnosis
-
-        store.update_history(
-            analysis_id, failure_diagnosis=json.dumps(success_diagnosis())
-        )
-        # register_artifact still uses DuckDB VSS/HNSW — not yet migrated to RegistryStore.
-        try:
-            from analysis.artifact_registry import register_artifact
-
-            _artifact_con = connect_db(DUCKDB_PATH)
-            try:
-                for path, atype, label, subtype in artifact_files:
-                    if path.exists():
-                        register_artifact(
-                            _artifact_con, analysis_id, path, atype, label,
-                            artifact_subtype=subtype,
-                        )
-            finally:
-                _artifact_con.close()
-        except Exception as _exc:
-            logger.warning("bulk_deg: register_artifact 失敗（非致命）: %s", _exc)
-
-    except Exception as _exc_outer:
-        logger.exception("bulk_deg 分析失敗  analysis_id=%s", analysis_id)
-        from analysis.failure_diagnosis import classify_exception
-
-        try:
-            store.fail_history(
-                analysis_id, datetime.now(timezone.utc),
-                failure_diagnosis=json.dumps(classify_exception(_exc_outer)),
-            )
-        except Exception:
-            pass
-        raise
-
-    # store 不需要 close() — 連線由 store 自行管理
-    try:
-        from scripts.export_registry import export_snapshot
-        export_snapshot()
-    except Exception as _exp_exc:
-        logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
-
-    logger.info("bulk_deg 完成  analysis_id=%s  report=%s", analysis_id, report_path)
-    return analysis_id, str(report_path)
+    logger.info("bulk_deg 完成  analysis_id=%s  report=%s", run.analysis_id, report_path)
+    return run.analysis_id, str(report_path)

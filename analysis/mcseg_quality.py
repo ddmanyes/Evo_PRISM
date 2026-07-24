@@ -19,10 +19,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -46,6 +43,7 @@ MCSEG_QC_DIR = BIO_DB_ROOT / "results" / "mcseg_qc"
 
 from analysis.validators import validate_sample_id
 from analysis.tool_registry import register_tool_on_import
+from analysis.run_context import analysis_run
 
 
 # ── 量化 ──────────────────────────────────────────────────────────────────────
@@ -148,6 +146,115 @@ def comparison_plot(
     return _save(fig, output_path)
 
 
+def celltype_overlay_plot(
+    mask: np.ndarray,
+    image: np.ndarray,
+    cell_id_to_label: dict[int, str],
+    output_path: Path,
+    palette: Optional[dict[str, tuple[str, float]]] = None,
+    default_label: str = "Other",
+    title: str = "cell-type overlay",
+    scale_um_per_px: Optional[float] = None,
+    scale_bar_um: int = 50,
+) -> dict:
+    """在 H&E 上依細胞類型/cluster 著色填滿疊圖(非僅邊界線)。
+
+    與 mask_overlay_plot() 的差異：後者只畫分割邊界(單色)，這個函數把每個
+    細胞的內部依其類型/cluster 標籤填色(半透明疊在H&E上)，再疊邊界線，
+    才是真正的「annotation 疊圖」——回答「這個空間位置的細胞是什麼類型」，
+    而不只是「這裡有沒有分割出一個細胞」。
+
+    cell_id_to_label: mask 標籤值(int, 對應 mask 陣列中的細胞ID) -> 類型字串。
+    未在此字典出現、但 mask 中確實存在的前景像素(例如QC濾除或未分類的細胞)
+    一律歸為 default_label，用低透明度灰色顯示(仍看得到邊界，但不誤導成"已分類")。
+    palette: 類型字串 -> (hex色碼, alpha)；未提供的類型用預設灰階低透明度。
+    回傳 {"output_path", "label_counts": {類型: 細胞數}}。
+    """
+    if palette is None:
+        palette = {}
+    default_color: tuple[str, float] = ("#AAAAAA", 0.25)
+
+    def _hex_to_rgb(hexcolor: str) -> tuple[float, float, float]:
+        h = hexcolor.lstrip("#")
+        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+        return (r, g, b)
+
+    # 只統計/著色「這個mask裡實際存在」的細胞ID——cell_id_to_label是全片的全域字典，
+    # 若直接照字典算n=會把裁切視窗外、剛好id<=id_max的細胞也算進來(id不保證按空間排列)。
+    all_fg_ids = np.unique(mask)
+    all_fg_ids = all_fg_ids[all_fg_ids > 0]
+    id_max = int(mask.max()) if all_fg_ids.size else 0
+    lut_rgb = np.zeros((id_max + 1, 3), dtype=np.float32)
+    lut_alpha = np.zeros(id_max + 1, dtype=np.float32)
+
+    unlabeled_key = f"{default_label}(unlabeled)"
+    label_counts: dict[str, int] = {}
+    for cid in all_fg_ids.tolist():
+        label = cell_id_to_label.get(cid, unlabeled_key)
+        hexcolor, alpha = palette.get(label, default_color)
+        lut_rgb[cid] = _hex_to_rgb(hexcolor)
+        lut_alpha[cid] = alpha
+        label_counts[label] = label_counts.get(label, 0) + 1
+
+    img_f = image.astype(np.float32)
+    if img_f.max() > 1.0:
+        img_f = img_f / 255.0
+    if img_f.ndim == 2:
+        img_f = np.stack([img_f] * 3, axis=-1)
+    img_f = img_f[..., :3]
+
+    cell_rgb = lut_rgb[mask]
+    cell_a = lut_alpha[mask, None]
+    fg = (mask > 0)[:, :, None]
+    blended = np.where(fg, (1 - cell_a) * img_f + cell_a * cell_rgb, img_f)
+
+    bnd = _boundaries(mask)
+    blended[bnd] = [0.15, 0.15, 0.15]
+    comp_img = np.clip(blended * 255, 0, 255).astype(np.uint8)
+
+    h_px, w_px = mask.shape
+    # 兩邊都設上限(不只固定寬度讓高度隨長寬比無限長)，避免極端長寬比的裁切窗格
+    # (例如稀疏異常天的細胞散佈在很長一段範圍)產生超大檔案的圖片
+    max_dim_in = 14.0
+    aspect = h_px / w_px
+    if aspect >= 1:
+        fig_h = max_dim_in
+        fig_w = max(3.0, max_dim_in / aspect)
+    else:
+        fig_w = max_dim_in
+        fig_h = max(3.0, max_dim_in * aspect)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    ax.imshow(comp_img, interpolation="nearest")
+    ax.axis("off")
+    n_cells_in_view = len(all_fg_ids)
+    ax.set_title(f"{title}  (cells in view={n_cells_in_view})", fontsize=11)
+
+    import matplotlib.patches as mpatches
+    handles = [
+        mpatches.Patch(color=palette.get(lbl.replace("(unlabeled)", ""), default_color)[0],
+                       label=f"{lbl} (n={n})")
+        for lbl, n in sorted(label_counts.items(), key=lambda kv: -kv[1])
+    ]
+    ax.legend(handles=handles, fontsize=7, loc="lower right", framealpha=0.85)
+
+    if scale_um_per_px:
+        px_per_um = 1 / scale_um_per_px
+        scale_px = scale_bar_um * px_per_um
+        margin_x = w_px * 0.04
+        margin_y = h_px * 0.05
+        bar_y = h_px - margin_y
+        bar_x0 = margin_x
+        bar_x1 = bar_x0 + scale_px
+        ax.plot([bar_x0, bar_x1], [bar_y, bar_y], color="white", linewidth=3,
+                solid_capstyle="butt", zorder=10)
+        ax.text((bar_x0 + bar_x1) / 2, bar_y - h_px * 0.02, f"{scale_bar_um} µm",
+                color="white", ha="center", va="bottom", fontsize=8,
+                fontweight="bold", zorder=10)
+
+    _save(fig, output_path)
+    return {"output_path": str(output_path), "label_counts": label_counts}
+
+
 def size_distribution_plot(
     masks: dict[str, np.ndarray],
     output_path: Path,
@@ -210,18 +317,14 @@ def generate_mcseg_qc_report(
     if not pairs:
         raise FileNotFoundError(f"{qc_dir} 下找不到成對的 *_nuc.npy / *_mcseg.npy")
 
-    analysis_id = str(uuid.uuid4())
-    started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({"qc_dir": str(qc_dir)})
-
-    from store.factory import get_store as _get_store
-    _get_store().insert_history(
-        analysis_id, sample_id, "mcseg_qc", params_json, "running", requested_by, started_at
-    )
-
-    try:
+    with analysis_run(
+        sample_id, "mcseg_qc",
+        params={"qc_dir": str(qc_dir)},
+        requested_by=requested_by,
+        tool_name="bio_run_mcseg_qc",
+    ) as run:
         out_dir = results_dir(sample_id, "mcseg_qc")
-        ts = started_at.strftime("%Y%m%d_%H%M%S")
+        ts = run.started_at.strftime("%Y%m%d_%H%M%S")
 
         sections: list[str] = []
         artifacts: list[tuple[Path, str, str]] = []
@@ -254,7 +357,7 @@ def generate_mcseg_qc_report(
         total_cells = sum(int(np.load(p).max()) for _, _, p in pairs)
         report_text = (
             f"# MCseg 分割品質報告\n\n"
-            f"**生成時間**：{started_at.isoformat()}\n"
+            f"**生成時間**：{run.started_at.isoformat()}\n"
             f"**樣本**：{sample_id}\n"
             f"**ROI 數**：{len(pairs)}\n"
             f"**MCseg 總細胞數**：{total_cells}\n\n---\n\n"
@@ -268,47 +371,10 @@ def generate_mcseg_qc_report(
 
         summary = (f"MCseg {sample_id}：{len(pairs)} ROI，MCseg 共 {total_cells} 細胞。")[:50]
 
-        completed_at = datetime.now(timezone.utc)
-        with _get_store().write_conn() as con:
-            con.execute(
-                """UPDATE analysis_history
-                      SET status='completed', result_path=?, completed_at=?, summary=?
-                    WHERE analysis_id=?""",
-                [str(report_path), completed_at, summary, analysis_id],
-            )
-            from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+        for path, desc, subtype in artifacts:
+            run.artifact(path, "figure", desc, subtype)
+        run.artifact(report_path, "report", "MCseg QC 報告", "mcseg_report")
+        run.complete(report_path, summary)
 
-            write_diagnosis(con, analysis_id, success_diagnosis())
-            try:
-                from analysis.artifact_registry import register_artifact
-
-                for path, desc, subtype in artifacts:
-                    if path.exists():
-                        register_artifact(
-                            con, analysis_id, path, "figure", desc, artifact_subtype=subtype
-                        )
-                register_artifact(
-                    con,
-                    analysis_id,
-                    report_path,
-                    "report",
-                    "MCseg QC 報告",
-                    artifact_subtype="mcseg_report",
-                )
-            except Exception as _exc:
-                logger.warning("mcseg_quality: register_artifact 失敗（非致命）: %s", _exc)
-
-    except Exception as _exc:
-        logger.exception("mcseg_qc 分析失敗  analysis_id=%s", analysis_id)
-        with _get_store().write_conn() as con:
-            con.execute(
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id],
-            )
-            from analysis.failure_diagnosis import classify_exception, write_diagnosis
-
-            write_diagnosis(con, analysis_id, classify_exception(_exc))
-        raise
-
-    logger.info("mcseg_qc 完成  analysis_id=%s", analysis_id)
-    return analysis_id, str(report_path)
+    logger.info("mcseg_qc 完成  analysis_id=%s", run.analysis_id)
+    return run.analysis_id, str(report_path)

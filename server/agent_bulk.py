@@ -1,5 +1,9 @@
 """
-Evo_PRISM — Bulk Transcriptomics Executor Submodule.
+Evo_PRISM — 計算密集型分析 Executor Submodule（Web UI `_exec_bio_*` handler）。
+
+分檔規則見 server/agent.py 頂端「agent_*.py 家族的分檔規則」。本檔收「計算密集型」
+分析：mcseg 分割、DEG、enrichment、heatmap、clustering、celltypist、geneset score、
+空間鄰距、CRC metrics、loupe 匯出、外部結果登記等。工具→module+func 對照見 tool_catalog.py。
 """
 
 from __future__ import annotations
@@ -285,15 +289,19 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
 
         matplotlib.use("Agg")
 
-        from backend.src.segmentation.cellpose_runner import run_tiled_mcseg_v2  # type: ignore[import]
-        import tifffile  # type: ignore[import]
-        import numpy as np
+        from analysis.mcseg_wrapper import run_mcseg_fullslide
+        from analysis.run_context import analysis_run
 
         out_dir = _Path(output_base) / "fullslide"
-        out_dir.mkdir(parents=True, exist_ok=True)
 
         seg_params = {
+            "sample_id": sample_id,  # tile_cache is keyed by this — without it, run_tiled_mcseg_v2
+            # falls back to a shared "default_sample" bucket and different samples' tile caches collide
             "use_cpsam": use_cpsam,
+            # MPS-safe for full-slide (README: "MPS-safe: tile=1024, batch<=2, cpsam disabled").
+            # batch_size=1 chosen specifically when use_cpsam=True (7-pass) to leave extra
+            # memory headroom on Apple unified memory during long tiled runs.
+            "batch_size": 1 if use_cpsam else 2,
             "use_hematoxylin": True,
             "tile_size": tile_size,
             "overlap": overlap,
@@ -303,58 +311,206 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
             "max_size": 6000,
         }
 
-        import logging as _logging
+        with analysis_run(
+            sample_id,
+            "mcseg_fullslide",
+            params={"tile_size": tile_size, "overlap": overlap, "use_cpsam": use_cpsam},
+            requested_by="agent",
+            tool_name="bio_run_mcseg_fullslide",
+        ) as run:
+            # Dispatched to the host-native mcseg watcher (Docker Desktop on macOS has no
+            # GPU/Metal passthrough, and this container doesn't mount external source data
+            # like /Volumes/KINGSTON/Bioinfo_Projects — the host watcher runs natively and
+            # has neither limitation). See analysis.mcseg_wrapper.run_mcseg_fullslide.
+            result = run_mcseg_fullslide(btf_path, binned_dir, out_dir, seg_params)
 
-        _logging.getLogger("mcseg_fullslide").info(f"Memory-mapping full-slide BTF: {btf_path}")
-        # memmap avoids loading 10–80 GB BTF entirely into RAM;
-        # the OS pages in only the tiles that run_tiled_mcseg_v2 touches.
-        img = tifffile.memmap(str(btf_path), mode="r")
-        mask = run_tiled_mcseg_v2(img, seg_params)
+            n_cells = result["n_cells"]
+            n_bins_total = result["n_bins_total"]
+            n_bins_assigned = result["n_bins_assigned"]
+            mask_path = result["mask_path"]
+            mask_vfr_path = result["mask_vfr_path"]
+            cells_path = result["cells_path"]
+            assign_rate = n_bins_assigned / n_bins_total * 100 if n_bins_total else 0.0
 
-        mask_path = out_dir / "segmentation_masks_fullslide.npy"
-        np.save(str(mask_path), mask)
-        n_cells = int(mask.max())
-
-        # Register in analysis_history (CLAUDE.md: every analysis must be logged)
-        import uuid as _uuid
-        from datetime import datetime as _dt
-        from store.factory import get_store as _get_store
-
-        try:
-            _now = _dt.now().isoformat(timespec="seconds")
-            with _get_store().write_conn() as _con:
-                _con.execute(
-                    """INSERT INTO analysis_history
-                       (analysis_id, sample_id, analysis_type, parameters, status,
-                        result_path, requested_by, started_at, completed_at, summary)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    [
-                        str(_uuid.uuid4()),
-                        sample_id,
-                        "mcseg_fullslide",
-                        f'{{"tile_size":{tile_size},"overlap":{overlap},"use_cpsam":{int(use_cpsam)}}}',
-                        "completed",
-                        str(mask_path),
-                        "bio_run_mcseg_fullslide",
-                        _now,
-                        _now,
-                        f"Full-slide segmentation: {n_cells:,} cells",
-                    ],
-                )
-        except Exception:
-            pass  # DB failure must not block segmentation results
+            summary = (
+                f"Full-slide segmentation + RNA counting: {n_cells:,} cells, "
+                f"{n_bins_assigned:,}/{n_bins_total:,} bins assigned ({assign_rate:.1f}%)"
+            )
+            run.artifact(mask_path, "data", "全片分割 mask", "mcseg_mask")
+            run.artifact(mask_vfr_path, "data", "全片分割 mask（virtual fullres）", "mcseg_mask_vfr")
+            run.artifact(cells_path, "data", "cell×gene AnnData", "mcseg_cells")
+            run.complete(cells_path, summary)
 
         return (
             f"bio_run_mcseg_fullslide 完成。\n"
             f"sample_id: {sample_id}\n"
             f"細胞數: {n_cells:,}\n"
-            f"mask: {mask_path}\n"
-            f"後續請用 bio_run_mcseg_roi（指定已有 mask）執行 Scanpy downstream。"
+            f"bin 分配率: {n_bins_assigned:,}/{n_bins_total:,} ({assign_rate:.1f}%)\n"
+            f"mask (TIFF解析度): {mask_path}\n"
+            f"mask (virtual_fullres): {mask_vfr_path}\n"
+            f"cell×gene AnnData: {cells_path}\n"
+            f"（依範圍設定，僅執行至 RNA counting，未跑 Scanpy QC/clustering。）"
         )
     except Exception as e:
         import traceback
 
         return f"bio_run_mcseg_fullslide 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_register_external_mcseg_result(args: dict) -> str:
+    """登記在 EP 外部完成的 mcseg 全片結果（不重新運算）。"""
+    try:
+        from analysis.mcseg_wrapper import register_external_mcseg_result
+
+        result = register_external_mcseg_result(
+            sample_id=args["sample_id"],
+            mask_path=args["mask_path"],
+            mask_vfr_path=args["mask_vfr_path"],
+            cells_path=args["cells_path"],
+            n_cells=int(args["n_cells"]),
+            n_bins_total=int(args["n_bins_total"]),
+            n_bins_assigned=int(args["n_bins_assigned"]),
+            params=args.get("params") or {},
+            requested_by=args.get("requested_by", "agent"),
+            notes=args.get("notes", ""),
+            overlay_paths=args.get("overlay_paths") or [],
+        )
+        return (
+            f"bio_register_external_mcseg_result 完成。\n"
+            f"analysis_id: {result['analysis_id']}\n"
+            f"artifact_ids: {result['artifact_ids']}\n"
+            f"{result['summary']}"
+        )
+    except Exception as e:
+        import traceback
+
+        return f"bio_register_external_mcseg_result 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_register_external_analysis_result(args: dict) -> str:
+    """登記在 EP 外部完成的任意類型分析結果（不限 mcseg，不重新運算）。"""
+    try:
+        from analysis.external_import import register_external_analysis_result
+
+        result = register_external_analysis_result(
+            sample_id=args["sample_id"],
+            analysis_type=args["analysis_type"],
+            result_path=args["result_path"],
+            summary=args["summary"],
+            params=args.get("params") or {},
+            requested_by=args.get("requested_by", "agent"),
+            artifact_paths=args.get("artifact_paths") or [],
+            supersedes_analysis_id=args.get("supersedes_analysis_id"),
+        )
+        return (
+            f"bio_register_external_analysis_result 完成。\n"
+            f"analysis_id: {result['analysis_id']}\n"
+            f"artifact_ids: {result['artifact_ids']}"
+        )
+    except Exception as e:
+        import traceback
+
+        return f"bio_register_external_analysis_result 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_run_geneset_score(args: dict) -> str:
+    """任意基因模組評分（scanpy score_genes 封裝）。"""
+    try:
+        from analysis.sc_spatial_tools import run_geneset_score
+
+        result = run_geneset_score(
+            sample_id=args["sample_id"],
+            h5ad_path=args["h5ad_path"],
+            modules=args["modules"],
+            out_dir=args["out_dir"],
+            cell_filter=args.get("cell_filter"),
+            group_by=args.get("group_by"),
+            ctrl_size=int(args.get("ctrl_size", 50)),
+            counts_layer=args.get("counts_layer", "counts"),
+            requested_by=args.get("requested_by", "agent"),
+        )
+        return (
+            f"bio_run_geneset_score 完成。\n"
+            f"analysis_id: {result['analysis_id']}\n"
+            f"評分細胞數: {result['n_cells_scored']:,}\n"
+            f"使用的基因（每模組）: {result['genes_used']}\n"
+            f"輸出: {result['out_csv']}"
+        )
+    except Exception as e:
+        import traceback
+
+        return f"bio_run_geneset_score 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_compute_spatial_nn_distance(args: dict) -> str:
+    """任意兩群細胞的空間最近鄰距離。"""
+    try:
+        from analysis.sc_spatial_tools import compute_spatial_nn_distance
+
+        result = compute_spatial_nn_distance(
+            sample_id=args["sample_id"],
+            h5ad_path=args["h5ad_path"],
+            source_filter=args["source_filter"],
+            target_filter=args["target_filter"],
+            out_dir=args["out_dir"],
+            group_by=args.get("group_by"),
+            spatial_key=args.get("spatial_key", "spatial"),
+            distance_scale=float(args.get("distance_scale", 1.0)),
+            distance_unit=args.get("distance_unit", ""),
+            requested_by=args.get("requested_by", "agent"),
+        )
+        return (
+            f"bio_compute_spatial_nn_distance 完成。\n"
+            f"analysis_id: {result['analysis_id']}\n"
+            f"來源細胞數: {result['n_source_cells']:,}　目標細胞數: {result['n_target_cells']:,}\n"
+            f"輸出: {result['out_csv']}"
+        )
+    except Exception as e:
+        import traceback
+
+        return f"bio_compute_spatial_nn_distance 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_run_sc_clustering(args: dict) -> str:
+    """任意單細胞 h5ad 的 QC + Leiden clustering + UMAP。"""
+    try:
+        from analysis.sc_clustering import run_sc_clustering
+
+        result = run_sc_clustering(
+            sample_id=args["sample_id"],
+            h5ad_path=args["h5ad_path"],
+            out_dir=args["out_dir"],
+            min_counts=args.get("min_counts"),
+            min_genes=args.get("min_genes"),
+            qc_percentile=int(args.get("qc_percentile", 10)),
+            min_bins=int(args.get("min_bins", 0)),
+            n_top_genes=int(args.get("n_top_genes", 1000)),
+            n_pcs=int(args.get("n_pcs", 15)),
+            n_neighbors=int(args.get("n_neighbors", 15)),
+            resolution=float(args.get("resolution", 0.5)),
+            n_top_markers=int(args.get("n_top_markers", 10)),
+            marker_gene_sets=args.get("marker_gene_sets"),
+            score_threshold=float(args.get("score_threshold", 0.05)),
+            unassigned_label=args.get("unassigned_label", "Unassigned"),
+            requested_by=args.get("requested_by", "agent"),
+        )
+        cluster_lines = "\n".join(
+            f"  cluster {cl}: {n:,} cells"
+            + (f" → {result['cell_type_assignment'][cl]}" if result.get("cell_type_assignment") else "")
+            for cl, n in result["cluster_sizes"].items()
+        )
+        return (
+            f"bio_run_sc_clustering 完成。\n"
+            f"analysis_id: {result['analysis_id']}\n"
+            f"細胞數: {result['n_cells_before']:,} → {result['n_cells_after']:,}（QC 後）\n"
+            f"Cluster 數: {result['n_clusters']}\n{cluster_lines}\n"
+            f"h5ad_out: {result['h5ad_out']}\n"
+            f"report: {result['report_path']}"
+        )
+    except Exception as e:
+        import traceback
+
+        return f"bio_run_sc_clustering 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_run_deg(args: dict) -> str:
@@ -643,6 +799,36 @@ def _exec_bio_get_marker_genes(args: dict) -> str:
     except Exception as e:
         import traceback
         return f"bio_get_marker_genes 失敗：{e}\n{traceback.format_exc()[-2000:]}"
+
+
+def _exec_bio_convert_ndpi_to_tiff(args: dict) -> str:
+    """Convert a Hamamatsu .ndpi whole-slide image to a pyramidal BigTIFF."""
+    sample_id = args["sample_id"]
+    input_ndpi = args["input_ndpi"]
+    output_tiff = args.get("output_tiff")
+    compression = str(args.get("compression", "jpeg"))
+    quality = int(args.get("quality", 85))
+    tile_size = int(args.get("tile_size", 256))
+    requested_by = str(args.get("requested_by", "agent"))
+
+    try:
+        from analysis.image_conversion import convert_ndpi_to_tiff
+        analysis_id, out_path = convert_ndpi_to_tiff(
+            sample_id=sample_id, input_ndpi=input_ndpi, output_tiff=output_tiff,
+            compression=compression, quality=quality, tile_size=tile_size,
+            requested_by=requested_by,
+        )
+        # 注意：out_path 是 GB 級二進位 TIFF，不可像其他 handler 那樣 read_text() 內嵌預覽。
+        return (
+            f"bio_convert_ndpi_to_tiff 完成。\n"
+            f"sample_id: {sample_id}\n"
+            f"analysis_id: {analysis_id}\n"
+            f"input_ndpi: {input_ndpi}\n"
+            f"output_tiff: {out_path}\n"
+        )
+    except Exception as e:
+        import traceback
+        return f"bio_convert_ndpi_to_tiff 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_relabel_clusters(args: dict) -> str:

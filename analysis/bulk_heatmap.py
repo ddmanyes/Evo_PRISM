@@ -11,15 +11,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Sequence
 
-import duckdb
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,10 +25,10 @@ import seaborn as sns
 matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.db_utils import safe_write, connect_db
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.tool_registry import register_tool_on_import
+from analysis.run_context import analysis_run
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +239,6 @@ def run_bulk_heatmaps(
     pval_threshold: float = 0.05,
     coldata_path: Optional[Path] = None,
     requested_by: str = "agent",
-    con: Optional[duckdb.DuckDBPyConnection] = None,
 ) -> tuple[str, str]:
     """產出顯著基因 heatmap + top variable heatmap，寫入 analysis_history。
 
@@ -252,32 +247,20 @@ def run_bulk_heatmaps(
     validate_sample_id(sample_id)
     counts_path = Path(counts_path)
 
-    analysis_id = str(uuid.uuid4())
-    started_at = datetime.now(timezone.utc)
-    params_json = json.dumps(
-        {
-            "counts_path": str(counts_path),
-            "deg_tables": [str(p) for p in deg_tables],
-            "top_n": top_n,
-            "fc_threshold": fc_threshold,
-            "pval_threshold": pval_threshold,
-        }
-    )
+    _params = {
+        "counts_path": str(counts_path),
+        "deg_tables": [str(p) for p in deg_tables],
+        "top_n": top_n,
+        "fc_threshold": fc_threshold,
+        "pval_threshold": pval_threshold,
+    }
 
-    _own_con = con is None
-    if con is None:
-        con = connect_db()
-
-    try:
-        safe_write(
-            con,
-            """INSERT INTO analysis_history
-                   (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at)
-               VALUES (?, ?, 'bulk_heatmap', ?, 'running', ?, ?)""",
-            [analysis_id, sample_id, params_json, requested_by, started_at],
-        )
-
+    with analysis_run(
+        sample_id, "bulk_heatmap",
+        params=_params,
+        requested_by=requested_by,
+        tool_name="bio_run_heatmaps",
+    ) as run:
         counts = pd.read_csv(counts_path, index_col=0)
 
         col_colors: Optional[pd.DataFrame] = None
@@ -300,7 +283,7 @@ def run_bulk_heatmaps(
         )
 
         out_dir = results_dir(sample_id, "bulk_heatmap")
-        ts = started_at.strftime("%Y%m%d_%H%M%S")
+        ts = run.started_at.strftime("%Y%m%d_%H%M%S")
         sig_png = out_dir / f"Heatmap_Significant_Genes_{ts}.png"
         var_png = out_dir / f"Heatmap_Top{top_n}_Variable_Genes_{ts}.png"
 
@@ -320,9 +303,9 @@ def run_bulk_heatmaps(
         deg_sources = ", ".join(f"`{Path(p).name}`" for p in deg_tables) or "（無）"
         report_path.write_text(
             _REPORT_TEMPLATE.format(
-                analysis_id=analysis_id,
+                analysis_id=run.analysis_id,
                 sample_id=sample_id,
-                timestamp=started_at.isoformat(),
+                timestamp=run.started_at.isoformat(),
                 counts_path=str(counts_path),
                 n_deg=len(deg_tables),
                 deg_sources=deg_sources,
@@ -338,53 +321,17 @@ def run_bulk_heatmaps(
             :80
         ]
 
-        completed_at = datetime.now(timezone.utc)
-        safe_write(
-            con,
-            """UPDATE analysis_history
-                  SET status='completed', result_path=?, completed_at=?, summary=?
-                WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, analysis_id],
-        )
-        from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
-
-        write_diagnosis(con, analysis_id, success_diagnosis())
-        try:
-            from analysis.artifact_registry import register_artifact
-
-            artifact_files: list[tuple[Path, str, str, str]] = []
-            if sig_file:
-                artifact_files.append((sig_file, "figure", "顯著基因熱圖", "heatmap_sig"))
-            if var_file:
-                artifact_files.append(
-                    (var_file, "figure", f"Top {top_n} 變異基因熱圖", "heatmap_var")
-                )
-            artifact_files.append((report_path, "report", "Bulk Heatmap 報告", "heatmap_report"))
-            for path, atype, label, subtype in artifact_files:
-                if path.exists():
-                    register_artifact(
-                        con, analysis_id, path, atype, label, artifact_subtype=subtype
-                    )
-        except Exception as _exc:
-            logger.warning("bulk_heatmap: register_artifact 失敗（非致命）: %s", _exc)
-
-    except Exception as _exc_outer:
-        logger.exception("bulk_heatmap 失敗  analysis_id=%s", analysis_id)
-        from analysis.failure_diagnosis import classify_exception, write_diagnosis
-
-        try:
-            safe_write(
-                con,
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id],
+        artifact_files: list[tuple[Path, str, str, str]] = []
+        if sig_file:
+            artifact_files.append((sig_file, "figure", "顯著基因熱圖", "heatmap_sig"))
+        if var_file:
+            artifact_files.append(
+                (var_file, "figure", f"Top {top_n} 變異基因熱圖", "heatmap_var")
             )
-            write_diagnosis(con, analysis_id, classify_exception(_exc_outer))
-        finally:
-            if _own_con:
-                con.close()
-        raise
+        artifact_files.append((report_path, "report", "Bulk Heatmap 報告", "heatmap_report"))
+        for path, atype, label, subtype in artifact_files:
+            run.artifact(path, atype, label, subtype)
+        run.complete(report_path, summary)
 
-    if _own_con:
-        con.close()
-    logger.info("bulk_heatmap 完成  analysis_id=%s", analysis_id)
-    return analysis_id, str(report_path)
+    logger.info("bulk_heatmap 完成  analysis_id=%s", run.analysis_id)
+    return run.analysis_id, str(report_path)

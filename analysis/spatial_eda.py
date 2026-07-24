@@ -10,10 +10,7 @@ Phase 2B — 空間轉錄體基礎探索分析。
 
 from __future__ import annotations
 
-import uuid
-import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -29,10 +26,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import L2_ROOT, DUCKDB_PATH
-from config.db_utils import safe_write
 from analysis.viz_utils import fig_to_b64_md as _fig_to_b64_md
 from analysis.path_utils import results_dir as _results_dir
 from analysis.validators import validate_sample_id
+from analysis.run_context import record_completed_run
 
 logger = logging.getLogger(__name__)
 
@@ -67,68 +64,8 @@ def _l2_obs_path(sample_id: str) -> str:
     return path
 
 
-def _record_analysis(
-    con: duckdb.DuckDBPyConnection,
-    sample_id: str,
-    analysis_type: str,
-    parameters: dict,
-    result_path: str,
-    summary: str,
-    status: str = "completed",
-    requested_by: str = "spatial_eda",
-) -> str:
-    """Write analysis record and return analysis_id."""
-    analysis_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
-    safe_write(
-        con,
-        """
-        INSERT INTO analysis_history
-            (analysis_id, sample_id, analysis_type, parameters, status,
-             result_path, requested_by, started_at, completed_at, summary)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            analysis_id,
-            sample_id,
-            analysis_type,
-            json.dumps(parameters),
-            status,
-            result_path,
-            requested_by,
-            now,
-            now,
-            summary,
-        ],
-    )
-    return analysis_id
-
-
-def _backfill(con: duckdb.DuckDBPyConnection, analysis_id: str) -> None:
-    try:
-        from analysis.tool_registry import backfill_tool_id
-        backfill_tool_id(con, _TOOL_NAME, analysis_id)
-    except Exception as exc:
-        logger.warning("backfill_tool_id failed (non-fatal): %s", exc)
-
-
-def _register(
-    con: duckdb.DuckDBPyConnection,
-    analysis_id: str,
-    file_path: str,
-    artifact_type: str,
-    label: str,
-    subtype: str,
-    producing_fn=None,
-) -> None:
-    try:
-        from analysis.artifact_registry import register_artifact
-        register_artifact(
-            con, analysis_id, file_path, artifact_type, label,
-            artifact_subtype=subtype, producing_fn=producing_fn,
-        )
-    except Exception as exc:
-        logger.warning("register_artifact failed (non-fatal): %s", exc)
+# 生命週期記錄統一走 analysis_run seam 的 record_completed_run（讀取型分析：唯讀查詢+繪圖後
+# 一次記錄）。原本的 _record_analysis / _backfill / _register 三個 raw-DuckDB 助手已移除。
 
 
 # ── 公開 API ──────────────────────────────────────────────────────────────────
@@ -208,18 +145,15 @@ def gene_spatial_map(
 
         n_expr = int((df["expr"] > 0).sum())
         summary = f"{gene_name} 空間圖：{n_expr:,} bins 有表達，vmax={vmax:.1f}"
-        with duckdb.connect(str(db_path)) as write_con:
-            analysis_id = _record_analysis(
-                write_con, sample_id, "spatial_gene_map",
-                {"gene": gene_name, "vmax_pct": vmax_pct},
-                out_path, summary, requested_by=requested_by,
-            )
-            _backfill(write_con, analysis_id)
-            _register(
-                write_con, analysis_id, out_path, "figure",
-                f"{gene_name} 空間表達圖 — {n_expr:,} bins 有表達",
-                "spatial_gene_map", producing_fn=gene_spatial_map,
-            )
+        record_completed_run(
+            sample_id, "spatial_gene_map",
+            params={"gene": gene_name, "vmax_pct": vmax_pct},
+            result_path=out_path, summary=summary, requested_by=requested_by,
+            tool_name=_TOOL_NAME, producing_fn=gene_spatial_map,
+            artifacts=[(out_path, "figure",
+                        f"{gene_name} 空間表達圖 — {n_expr:,} bins 有表達",
+                        "spatial_gene_map")],
+        )
     else:
         plt.close(fig)
 
@@ -285,22 +219,17 @@ def qc_stats(
         median_umi = float(df["total_counts"].median())
         summary = f"QC：中位 genes/bin={median_genes:.0f}，中位 UMI/bin={median_umi:.0f}，共 {len(df):,} bins"
 
-        with duckdb.connect(str(db_path)) as write_con:
-            analysis_id = _record_analysis(
-                write_con, sample_id, "qc_stats", {},
-                parquet_path, summary, requested_by=requested_by,
-            )
-            _backfill(write_con, analysis_id)
-            _register(
-                write_con, analysis_id, parquet_path, "csv",
-                f"QC stats parquet — {len(df):,} bins",
-                "qc_stats", producing_fn=qc_stats,
-            )
-            _register(
-                write_con, analysis_id, fig_path, "figure",
-                f"QC 分布圖（n_genes + total_counts）— 中位 genes={median_genes:.0f}，UMI={median_umi:.0f}",
-                "qc_distributions", producing_fn=qc_stats,
-            )
+        record_completed_run(
+            sample_id, "qc_stats",
+            params={}, result_path=parquet_path, summary=summary,
+            requested_by=requested_by, tool_name=_TOOL_NAME, producing_fn=qc_stats,
+            artifacts=[
+                (parquet_path, "csv", f"QC stats parquet — {len(df):,} bins", "qc_stats"),
+                (fig_path, "figure",
+                 f"QC 分布圖（n_genes + total_counts）— 中位 genes={median_genes:.0f}，UMI={median_umi:.0f}",
+                 "qc_distributions"),
+            ],
+        )
 
     return df
 
@@ -341,12 +270,12 @@ def top_genes(
         csv_path = str(out_dir / f"top_{n}_genes.csv")
         df.to_csv(csv_path, index=False)
         top3 = ", ".join(df["gene_name"].head(3).tolist())
-        with duckdb.connect(str(db_path)) as write_con:
-            _record_analysis(
-                write_con, sample_id, "top_genes", {"n": n},
-                csv_path, f"Top {n} genes：{top3}…",
-                requested_by=requested_by,
-            )
+        record_completed_run(
+            sample_id, "top_genes",
+            params={"n": n}, result_path=csv_path,
+            summary=f"Top {n} genes：{top3}…",
+            requested_by=requested_by, tool_name=_TOOL_NAME,
+        )
 
     return df
 
@@ -450,18 +379,15 @@ def gene_coexpression(
 
         n_both = int(((df["gene_a"] > 0) & (df["gene_b"] > 0)).sum())
         summary = f"{gene_a}×{gene_b} 共表達：{n_both:,} bins 同時有表達"
-        with duckdb.connect(str(db_path)) as write_con:
-            analysis_id = _record_analysis(
-                write_con, sample_id, "gene_coexpression",
-                {"gene_a": gene_a, "gene_b": gene_b},
-                out_path, summary, requested_by=requested_by,
-            )
-            _backfill(write_con, analysis_id)
-            _register(
-                write_con, analysis_id, out_path, "figure",
-                f"{gene_a}×{gene_b} 空間共表達圖 — {n_both:,} bins 同時有表達",
-                "gene_coexpression", producing_fn=gene_coexpression,
-            )
+        record_completed_run(
+            sample_id, "gene_coexpression",
+            params={"gene_a": gene_a, "gene_b": gene_b},
+            result_path=out_path, summary=summary, requested_by=requested_by,
+            tool_name=_TOOL_NAME, producing_fn=gene_coexpression,
+            artifacts=[(out_path, "figure",
+                        f"{gene_a}×{gene_b} 空間共表達圖 — {n_both:,} bins 同時有表達",
+                        "gene_coexpression")],
+        )
     else:
         plt.close(fig)
 

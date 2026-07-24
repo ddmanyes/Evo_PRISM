@@ -59,6 +59,7 @@ dependencies = [
     "tqdm>=4.65.0",
     "requests>=2.34.2",
     "anthropic>=0.102.0",
+    "openai>=1.0.0",
     "fastapi>=0.136.1",
     "uvicorn>=0.47.0",
     "mistune>=3.2.1",
@@ -97,6 +98,18 @@ embedding-openai = [
 
 embedding-local = [
     "sentence-transformers>=3.0.0",
+]
+
+# MCseg cell segmentation (bio_run_mcseg_roi/fullslide) — analysis/mcseg_wrapper.py
+# imports MSseg/backend in-process (sys.path insert, not a subprocess/separate venv),
+# whose segmentation step (MSseg/backend/src/segmentation/cellpose_runner.py) needs
+# cellpose. Not previously declared anywhere in this pyproject.
+# squidpy: added 2026-07-21 for post-mcseg single-cell spatial tools (neighborhood
+# enrichment etc.) — analysis/sc_spatial_tools.py, built off the 康育 wound-mechanism
+# bundle. Kept in the same extra as cellpose since both ship in the mcseg-capable image.
+mcseg = [
+    "cellpose>=3.0.0",
+    "squidpy>=1.4.0",
 ]
 
 # === Agent 大腦 ===

@@ -21,13 +21,9 @@ import json
 import logging
 import re
 import sys
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import Optional, Sequence
 
-if TYPE_CHECKING:
-    import duckdb
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,11 +32,11 @@ import pandas as pd
 matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.db_utils import safe_write
-from config.settings import BIO_DB_ROOT, DUCKDB_PATH
+from config.settings import BIO_DB_ROOT
 from analysis.path_utils import results_dir
 from analysis.viz_utils import file_to_b64_md as _file_to_b64_md
 from analysis.tool_registry import register_tool_on_import
+from analysis.run_context import analysis_run
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +263,6 @@ def run_ora(
     pval_threshold: float = 0.05,
     top_term: int = 10,
     requested_by: str = "agent",
-    con: Optional[duckdb.DuckDBPyConnection] = None,
     parent_analysis_id: Optional[str] = None,
 ) -> tuple[str, str]:
     """對一張 DEG 表跑 ORA（up / down × N 個 library），產出彙整報告。
@@ -289,8 +284,6 @@ def run_ora(
     if not deg_table_path.exists():
         raise FileNotFoundError(f"找不到 DEG 表：{deg_table_path}")
 
-    analysis_id = str(uuid.uuid4())
-    started_at = datetime.now(timezone.utc)
     def _rel(p: Path) -> str:
         try:
             return str(p.relative_to(BIO_DB_ROOT))
@@ -305,28 +298,15 @@ def run_ora(
         "pval_threshold": pval_threshold,
         "top_term": top_term,
     }
-    params_json = json.dumps(_params)
 
-    from config.db_utils import connect_db, get_canonical_id, mark_canonical, param_hash
-
-    _own_con = con is None
-    if con is None:
-        con = connect_db(DUCKDB_PATH)
-
-    try:
-        if parent_analysis_id is None:
-            parent_analysis_id = get_canonical_id(con, sample_id, "bulk_enrichment")
-
-        safe_write(
-            con,
-            """INSERT INTO analysis_history
-                   (analysis_id, sample_id, analysis_type, parameters, status,
-                    requested_by, started_at, parent_analysis_id, parameter_hash)
-               VALUES (?, ?, 'bulk_enrichment', ?, 'running', ?, ?, ?, ?)""",
-            [analysis_id, sample_id, params_json, requested_by, started_at,
-             parent_analysis_id, param_hash(_params)],
-        )
-
+    with analysis_run(
+        sample_id, "bulk_enrichment",
+        params=_params,
+        requested_by=requested_by,
+        parent_analysis_id=parent_analysis_id,
+        tool_name="bio_run_enrichment",
+        canonical=True,
+    ) as run:
         deg = pd.read_csv(deg_table_path, index_col=0)
         directions = split_deg_genes(
             deg,
@@ -335,7 +315,7 @@ def run_ora(
         )
 
         out_dir = results_dir(sample_id, "bulk_enrichment")
-        ts = started_at.strftime("%Y%m%d_%H%M%S")
+        ts = run.started_at.strftime("%Y%m%d_%H%M%S")
         prefix = deg_table_path.stem  # 例：DEG_pw24hr_vs_ctrl_20260521_093045
 
         summary_rows: list[dict] = []
@@ -406,9 +386,9 @@ def run_ora(
         report_path = out_dir / f"bulk_enrichment_{sample_id}_{ts}.md"
         report_path.write_text(
             _REPORT_TEMPLATE.format(
-                analysis_id=analysis_id,
+                analysis_id=run.analysis_id,
                 sample_id=sample_id,
-                timestamp=started_at.isoformat(),
+                timestamp=run.started_at.isoformat(),
                 deg_source=deg_table_path.name,
                 organism=organism,
                 libraries=", ".join(libraries),
@@ -436,55 +416,13 @@ def run_ora(
             "n_sig_pathways": total_sig,
         })
 
-        completed_at = datetime.now(timezone.utc)
-        safe_write(
-            con,
-            """UPDATE analysis_history
-                  SET status='completed', result_path=?, completed_at=?, summary=?,
-                      summary_metrics=?
-                WHERE analysis_id=?""",
-            [str(report_path), completed_at, summary, summary_metrics, analysis_id],
+        # 生命週期收尾（complete/canonical/diagnosis/artifact flush/snapshot）由 seam 統一處理。
+        for path, atype, label, subtype in artifact_files:
+            run.artifact(path, atype, label, subtype)
+        run.complete(
+            report_path, summary,
+            summary_metrics=json.loads(summary_metrics),
         )
-        mark_canonical(con, analysis_id, sample_id, "bulk_enrichment")
-        from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
 
-        write_diagnosis(con, analysis_id, success_diagnosis())
-        try:
-            from analysis.artifact_registry import register_artifact
-
-            for path, atype, label, subtype in artifact_files:
-                if path.exists():
-                    register_artifact(
-                        con, analysis_id, path, atype, label, artifact_subtype=subtype
-                    )
-        except Exception as _exc:
-            logger.warning("ora: register_artifact 失敗（非致命）: %s", _exc)
-
-    except Exception as _exc_outer:
-        logger.exception("bulk_enrichment 失敗  analysis_id=%s", analysis_id)
-        from analysis.failure_diagnosis import classify_exception, write_diagnosis
-
-        try:
-            safe_write(
-                con,
-                "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id],
-            )
-            write_diagnosis(con, analysis_id, classify_exception(_exc_outer))
-        finally:
-            if _own_con:
-                con.close()
-        raise
-
-    if _own_con:
-        con.close()
-
-    # con 已關閉 — 安全地開啟新連線產生快照
-    try:
-        from scripts.export_registry import export_snapshot
-        export_snapshot()
-    except Exception as _exp_exc:
-        logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)
-
-    logger.info("bulk_enrichment 完成  analysis_id=%s", analysis_id)
-    return analysis_id, str(report_path)
+    logger.info("bulk_enrichment 完成  analysis_id=%s", run.analysis_id)
+    return run.analysis_id, str(report_path)
