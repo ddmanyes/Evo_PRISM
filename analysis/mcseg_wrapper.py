@@ -86,8 +86,21 @@ def crop_visium_hd_roi(
     logger.info(f"Loading 2µm Visium HD AnnData from {binned_dir}")
     adata = load_visium_adata(binned_dir, bin_size="002")
 
+    # 2026-08-05: MSseg 的 subset_anndata_roi() 簽名從 binned_dir= 改成
+    # config=（見 K:/plan_a/MSseg commit e3b853b），這裡刻意**不傳 config**。
+    #
+    # 原因：`config` 觸發的是「roi.x/y 是 he_image（raw TIFF）px、要反投影回
+    # virtual_fullres 才能跟 pxl_col_in_fullres 比對」這條路徑（MSseg 自己
+    # UI 拉框的慣例）。但 EP 這裡 roi_dict['x']/['y'] 本來就是
+    # **virtual_fullres px**（見 playbooks/mcseg.md「必要參數：roi_x, roi_y
+    # （virtual_fullres px）」，`roi_to_fullres_px()` 直接透傳這兩個值 —
+    # 跟 pxl_col/row_in_fullres 已經是同一個座標系，本來就不需要轉換。
+    # 傳 config 反而會多套一次不該套的變換。config=None（預設）會退回原本
+    # 的直接比較，行為與這次修復前完全一致，只是修掉參數名不相容 —— TIFF
+    # 空間的裁切（下面的 _compute_tiff_scale）維持原樣，是刻意分開的兩件事
+    # （見 sb「EP-MSseg IF 多通道分割與相容性修復計畫」Phase 0）。
     logger.info(f"Subsetting AnnData to ROI: {roi_dict['name']}")
-    sub = subset_anndata_roi(adata, roi_dict, binned_dir=binned_dir)
+    sub = subset_anndata_roi(adata, roi_dict)
 
     adata_out_path = out_roi_dir / "adata_002um.h5ad"
     sub.write_h5ad(str(adata_out_path))
