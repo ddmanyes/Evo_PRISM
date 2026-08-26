@@ -41,7 +41,7 @@ Evo_PRISM/
   - 相關檔案：`README.md`、`README_zh.md`、`docs/guides/OPTIONAL_SSD_MOUNT.md`
   - 提交：`docs(compose): document optional SSD workflow`
 
-- [ ] 任務 4：重建並驗證核心 MCP
+- [x] 任務 4：重建並驗證核心 MCP
   - 預期行為：容器使用基礎 Compose 重建後為 healthy，主資料仍掛載自 KINGSTON，容器掛載列表不含 `/Volumes/SSD`，`/health` 回覆 200，授權 MCP initialize 成功。
   - 驗證指令：
     - `docker compose up -d --force-recreate`
@@ -58,8 +58,9 @@ Evo_PRISM/
     不包含 frontend、Tauri、資料、結果、快取或任何 host venv。
   - 安全措施：先備份目前 backend；不使用 `--delete`，不修改既有
     `analysis/mcseg_wrapper.py` 工作樹變更。
-  - 驗證指令：對兩個目的端執行 `rsync -ainc --delete` checksum dry-run，除目錄
-    時戳外應無檔案差異；再執行 MSseg backend 與 Evo PRISM MCseg 相關測試。
+  - 驗證指令：對兩個目的端執行排除 `__pycache__`、`*.pyc` 與 `.pytest_cache`
+    的 `rsync -ainc --delete` checksum dry-run，原始碼應無差異；再執行 MSseg
+    backend 與 Evo PRISM MCseg 相關測試。
   - 相關目錄：`MSseg/backend/`、`/Users/lab_center/evo_prism_build/MSseg/backend/`、
     容器 `/app/MSseg/backend`
   - 提交：runtime 副本受 `.gitignore` 排除；以本計畫的完成勾選記錄同步作業。
