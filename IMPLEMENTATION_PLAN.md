@@ -52,6 +52,16 @@ Evo_PRISM/
   - 相關檔案：無額外檔案變更。
   - 提交：不建立額外提交；記錄驗證結果於交付摘要。
 
+- [x] 任務 5：同步 SSD 的 MSseg runtime backend
+  - 預期行為：以乾淨的 `/Volumes/SSD/plan_a/MSseg/backend` 為來源，更新 KINGSTON
+    的嵌入副本與 APFS Docker build mirror；不包含 frontend、Tauri、資料、結果或快取。
+  - 安全措施：先備份目前 backend；不使用 `--delete`，不修改既有
+    `analysis/mcseg_wrapper.py` 工作樹變更。
+  - 驗證指令：對兩個目的端執行 `rsync -ainc --delete` checksum dry-run，除目錄
+    時戳外應無檔案差異；再執行 MSseg backend 與 Evo PRISM MCseg 相關測試。
+  - 相關目錄：`MSseg/backend/`、`/Users/lab_center/evo_prism_build/MSseg/backend/`
+  - 提交：runtime 副本受 `.gitignore` 排除；以本計畫的完成勾選記錄同步作業。
+
 ## 邊界條件
 
 - 不修改或提交既有的 `analysis/mcseg_wrapper.py` 工作樹變更。
