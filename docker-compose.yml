@@ -24,7 +24,9 @@
 # backups of the pre-migration state live in ~/evo_prism_backups/ on the host.
 #
 # Commands:
-#   docker compose up -d --build
+#   docker compose up -d --build  # core mode; KINGSTON only
+#   docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d
+#                                  # SSD mode; opt-in raw L3 access for MCseg
 #   docker compose logs -f evo-prism
 #   docker compose down
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,11 +80,9 @@ services:
       # image data crosses this mount, the actual he_crop/mask files already live
       # under ./results (mounted above) and are shared with the host as-is.
       - ./mcseg_jobs:/data/bio_db/mcseg_jobs
-      # Raw L3 source data for samples that live outside KINGSTON (added 2026-07-23:
-      # dpcp01_vh_v114_02_hd_r004's raw binned_outputs/TIFF are on this drive, not
-      # KINGSTON — bio_run_mcseg_roi/bio_run_mcseg_fullslide need it mounted to read
-      # the source h5/tiff. Read-only: this container never writes back to raw L3.
-      - /Volumes/SSD:/data/external_ssd:ro
+      # Raw L3 data on /Volumes/SSD is intentionally not a core dependency.
+      # Opt in with docker-compose.ssd.yml only while SSD-backed MCseg inputs are
+      # needed; the default service must remain restartable with that drive absent.
       # Analysis playbooks (2026-07-23): playbooks/*.md already existed on disk
       # (bulk_rnaseq, mcseg, spatial_visium, visium_hd_onboarding) but were never
       # mounted, so bio_get_playbook always reported "playbooks/ 為空" even though

@@ -19,13 +19,13 @@ Evo_PRISM/
 
 ## 任務列表
 
-- [ ] 任務 1：建立可驗證的 Compose 行為基線
+- [x] 任務 1：建立可驗證的 Compose 行為基線
   - 預期行為：目前基礎設定包含 `/Volumes/SSD:/data/external_ssd:ro`，作為紅燈證據。
   - 驗證指令：`docker compose config | rg '/Volumes/SSD|/data/external_ssd'`
   - 相關檔案：`docker-compose.yml`
   - 提交：`docs(plan): define optional SSD mount rollout`
 
-- [ ] 任務 2：將 SSD 掛載拆成 opt-in override
+- [x] 任務 2：將 SSD 掛載拆成 opt-in override
   - 紅燈：基礎 Compose 仍包含 SSD 掛載，無 SSD 時容器建立失敗。
   - 綠燈：基礎 Compose 不包含 `/Volumes/SSD`；合併 `docker-compose.ssd.yml` 後才包含唯讀掛載。
   - 重構：保留主資料掛載順序與註解，讓核心／SSD 模式的責任清楚分離。
