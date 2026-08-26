@@ -215,6 +215,25 @@ docker compose up -d
 curl -s http://localhost:8000/health
 ```
 
+The default command is **core mode**: all persistent project data comes from the
+Evo_PRISM directory on KINGSTON, and the service does not depend on
+`/Volumes/SSD`. To opt in to read-only SSD-backed raw L3 inputs for MCseg:
+
+```bash
+test -d /Volumes/SSD
+docker compose -f docker-compose.yml -f docker-compose.ssd.yml \
+  up -d --force-recreate
+```
+
+Before unplugging the SSD, recreate the service in core mode:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+See [Optional SSD Mount](docs/guides/OPTIONAL_SSD_MOUNT.md) for verification and
+recovery commands.
+
 > ⚠️ **Don't manually loop over every `scripts/[0-9][0-9]_migrate_*.py`** — `entrypoint.sh` already runs only the migrations that are actually pending (via `scripts/run_pending_migrations.py`, gated on `schema_migrations`'s current max version), on every start. Blindly re-running *all* migration scripts against an already-migrated database is unsafe: later migrations restructure what earlier ones created (e.g. a later migration moved an early one's `inline_data` column into a separate table), so an early script's own post-migration check can fail against an already-newer schema and crash-loop the container.
 
 Done! Both the Web UI and MCP (mounted at `/mcp`) are served from the **same port**, **<http://localhost:8000>** — there is no separate `:8080` MCP endpoint in the default `web` entrypoint mode.

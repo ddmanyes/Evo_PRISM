@@ -35,7 +35,7 @@ Evo_PRISM/
   - 相關檔案：`docker-compose.yml`、`docker-compose.ssd.yml`
   - 提交：`fix(compose): make external SSD mount optional`
 
-- [ ] 任務 3：文件化兩種啟動模式與安全切換
+- [x] 任務 3：文件化兩種啟動模式與安全切換
   - 預期行為：使用者能區分預設核心模式與 SSD/MCseg 模式，並知道拔除 SSD 前要切回核心模式。
   - 驗證指令：`rg -n 'docker-compose.ssd.yml|核心模式|SSD mode' README.md README_zh.md docs/guides/OPTIONAL_SSD_MOUNT.md`
   - 相關檔案：`README.md`、`README_zh.md`、`docs/guides/OPTIONAL_SSD_MOUNT.md`

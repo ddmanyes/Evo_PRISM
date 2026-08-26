@@ -180,14 +180,33 @@ mkdir -p models
 # 2. 複製環境設定（MCP 模式不需填入 API Key）
 cp .env.example .env
 
-# 3. 啟動所有服務（首次會下載映像，約 343 MB）
+# 3. 以核心模式啟動（只依賴 KINGSTON；首次會下載映像）
 docker compose up -d
 
-# 4. 初始化資料庫（只需執行一次）
-docker compose exec evo-prism python scripts/00_init_db.py
+# 4. 驗證；資料庫初始化與待執行 migration 會在容器啟動時自動完成
+curl -s http://localhost:8000/health
 ```
 
-完成！MCP HTTP 就緒：**<http://localhost:8080>** · Web UI：<http://localhost:8000>
+預設核心模式的程式、DuckDB 與分析結果都來自 KINGSTON，且不依賴
+`/Volumes/SSD`。只有 MCseg 需要讀取 SSD 上的唯讀原始 L3 資料時，才切換成
+SSD 模式：
+
+```bash
+test -d /Volumes/SSD
+docker compose -f docker-compose.yml -f docker-compose.ssd.yml \
+  up -d --force-recreate
+```
+
+拔除 SSD 前，先重建回核心模式：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+完整驗證與故障復原方式請見
+[可選 SSD 掛載指南](docs/guides/OPTIONAL_SSD_MOUNT.md)。
+
+完成！Web UI 與 MCP（`/mcp/`）共用 **<http://localhost:8000>**。
 
 > 或直接使用預建映像：`docker pull ddmann375000/evo-prism:0.1.0`
 >
