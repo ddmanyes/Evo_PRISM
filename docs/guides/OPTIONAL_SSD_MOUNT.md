@@ -4,6 +4,11 @@ Evo PRISM 的主專案、DuckDB、分析結果、工作佇列與 playbooks 均�
 `/Volumes/KINGSTON/Evo_PRISM`。`/Volumes/SSD` 只保存部分 MCseg 任務需要的
 外部原始 L3 資料，不是核心服務的持久化來源。
 
+MSseg 的 runtime backend 會先從獨立來源 repo 同步到
+`/Volumes/KINGSTON/Evo_PRISM/MSseg/backend`，再由 Compose 唯讀掛入
+`/app/MSseg/backend`。Docker 使用 image 內自己的 Linux Python 依賴；macOS 的
+`.venv` 不會也不應進入容器。
+
 ## 核心模式（預設）
 
 核心模式不建立 `/data/external_ssd` 掛載，因此 Docker 或電腦重啟時不要求
