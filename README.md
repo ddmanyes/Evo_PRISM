@@ -197,8 +197,8 @@ No Python setup needed — everything runs inside the container.
 - [Docker Engine ≥ 24 + Docker Compose v2](https://docs.docker.com/get-docker/)
 - **`scikit-misc` (an `omicverse` dependency, pulled in by the `bulk-analysis`/`mcseg` extras) has no Linux arm64 wheel on PyPI** — only macOS arm64 and Linux x86_64. A native arm64 build (e.g. on Apple Silicon Docker Desktop) falls back to a source build whose meson script fails outright. If you need those extras, build/run with `--platform linux/amd64` (works under Rosetta emulation, just slower).
 - Embedding backend, pick one:
-  - **Bundled sidecar**: `bge-m3-Q8_0.gguf` (605 MB — download the Q8_0 quantized version from [HuggingFace BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)) into `models/`, and add the `embedding` service back to `docker-compose.yml` (see the file's comments for the exact block)
-  - **Reuse an existing OpenAI-compatible embedding endpoint** (e.g. another llama-server instance already running somewhere reachable): skip the sidecar and just point `LLAMACPP_BASE_URL` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` at it — this is what the checked-in `docker-compose.yml` currently does (points at an external nomic-embed-text instance)
+  - **Bundled sidecar**: `bge-m3-Q8_0.gguf` (605 MB — download the Q8_0 GGUF from [HuggingFace ggml-org/bge-m3-Q8_0-GGUF](https://huggingface.co/ggml-org/bge-m3-Q8_0-GGUF); `BAAI/bge-m3` itself has no GGUF) into `models/`, and add the `embedding` service back to `docker-compose.yml` (see the file's comments for the exact block)
+  - **Reuse an existing OpenAI-compatible embedding endpoint** (e.g. another llama-server instance already running somewhere reachable): skip the sidecar and just point `LLAMACPP_BASE_URL` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` at it — this is what the checked-in `docker-compose.yml` currently does (points at the shared bge-m3:8081 instance that sb/lcdda also use)
 
 ```bash
 # 1. If using the bundled sidecar, place the model into models/ (skip if reusing an existing endpoint)

@@ -52,8 +52,13 @@ LLAMACPP_MODEL_PATH = os.path.expanduser(
     os.getenv("LLAMACPP_MODEL_PATH", "~/llama.cpp/models/bge-m3-Q8_0.gguf")
 )
 
-# Matryoshka dual-layer index (9D): coarse index uses first MATRYOSHKA_DIM dims
-# bge-m3 supports Matryoshka — truncating to 256 dims retains ~95% recall
+# Matryoshka dual-layer index (9D): coarse index uses first MATRYOSHKA_DIM dims.
+# ⚠️ 2026-09-03: the claim below ("bge-m3 supports Matryoshka") is wrong — bge-m3
+# is not MRL-trained, so embedding[:256] is not a valid coarse sub-embedding
+# (three primary sources cross-checked in second-brain's chunking/embedding plan,
+# Phase A). Defaults to disabled below; analysis/artifact_registry.py's write
+# path no longer populates embedding_256 either. Do not re-enable without
+# switching to a genuinely Matryoshka-trained embedding model.
 MATRYOSHKA_DIM = int(os.getenv("MATRYOSHKA_DIM", "256"))
 MATRYOSHKA_ENABLED = os.getenv("MATRYOSHKA_ENABLED", "false").lower() == "true"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

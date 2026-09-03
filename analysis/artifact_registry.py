@@ -490,11 +490,16 @@ def register_artifact(
             code_hash = _hash_function_source(producing_fn)
         env_hash = _hash_env()
 
-    # Matryoshka 256-dim sub-vector (migration v17, 9D-1)
+    # Matryoshka 256-dim sub-vector (migration v17, 9D-1) — DISABLED 2026-09-03.
+    # bge-m3 is not MRL-trained, so embedding[:256] is not a valid coarse
+    # sub-embedding (three primary sources cross-checked in second-brain's
+    # chunking/embedding plan, Phase A — this is not PCA and we're not doing that
+    # either). The read side already defaults MATRYOSHKA_ENABLED=false
+    # (config/settings.py); this stops the write side from computing and storing
+    # the invalid truncated vector too, so nothing in analysis_artifacts implies
+    # this data is usable. Do not re-enable without a Matryoshka-trained model.
     embedding_256: Optional[list[float]] = None
-    use_matryoshka = _matryoshka_col_exists(con)
-    if use_matryoshka and embedding is not None:
-        embedding_256 = embedding[:256]
+    use_matryoshka = False
 
     use_provenance = _provenance_col_exists(con)
 
@@ -815,7 +820,7 @@ def _hnsw_rows_standard(
         {sample_join}
         WHERE  aa.embedding IS NOT NULL
                {sample_where}
-        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[768])
+        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
         LIMIT  ?
         """,
         sample_params + [embedding, n * 2],
@@ -854,7 +859,7 @@ def _hnsw_rows_matryoshka(
         FROM   analysis_artifacts aa
         WHERE  aa.artifact_id::VARCHAR IN ({id_placeholders})
           AND  aa.embedding IS NOT NULL
-        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[768])
+        ORDER  BY array_cosine_distance(aa.embedding, ?::FLOAT[1024])
         LIMIT  ?
         """,
         coarse_ids + [embedding, n * 2],
