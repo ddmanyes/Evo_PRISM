@@ -40,7 +40,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from config.settings import BIO_DB_ROOT
+from config.settings import BIO_DB_ROOT, LLAMACPP_BASE_URL
 from config.db_utils import db_health_check
 
 logger = logging.getLogger(__name__)
@@ -755,12 +755,23 @@ async def report_page(analysis_id: str):
 # ── 路由：API ─────────────────────────────────────────────────────────────────
 
 
-def _check_llama_server(port: int, timeout: float = 1.5) -> bool:
-    """探活 llama-server，回 True 表示 /health 200。"""
+def _check_llama_server(base_url: str, timeout: float = 1.5) -> bool:
+    """探活 llama-server，回 True 表示 /health 200。
+
+    base_url 是實際呼叫用的 OpenAI-compatible 端點（如
+    http://host.docker.internal:8081/v1）—— 必須跟真實呼叫路徑同一個
+    host，容器內 127.0.0.1 是自己的 loopback，打不到宿主機上的
+    llama-server（曾經因此讓 /health 永遠回報 embedding/multimodal
+    離線，但實際查詢其實正常）。llama-server 的 /health 掛在 root，
+    要剝掉 /v1 只留 scheme+host+port。
+    """
     try:
         import httpx
+        from urllib.parse import urlsplit
 
-        r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=timeout)
+        parts = urlsplit(base_url)
+        root = f"{parts.scheme}://{parts.netloc}"
+        r = httpx.get(f"{root}/health", timeout=timeout)
         return r.status_code == 200
     except Exception:
         return False
@@ -799,8 +810,11 @@ def _disk_free_gb(path: Path) -> float | None:
 @app.get("/health")
 async def health():
     backup = _read_backup_status()
-    embedding_ok = _check_llama_server(8081)
-    multimodal_ok = _check_llama_server(8080)
+    # multimodal 端點跟 server/agent.py:LLAMA_BASE_URL 用同一個 env var/預設值，
+    # 維持跟真實呼叫路徑一致（不在這裡另外寫死一組會漂移的 host/port）。
+    llama_base_url = os.getenv("LLAMA_BASE_URL", "http://localhost:8080/v1")
+    embedding_ok = _check_llama_server(LLAMACPP_BASE_URL)
+    multimodal_ok = _check_llama_server(llama_base_url)
     disk_free = _disk_free_gb(BIO_DB_ROOT)
     age_h = backup.get("last_success_age_hours")
     # 健康準則：DB OK + embedding OK + 最近 36 小時內有成功備份
