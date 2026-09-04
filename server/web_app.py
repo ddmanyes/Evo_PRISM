@@ -778,8 +778,13 @@ def _check_llama_server(base_url: str, timeout: float = 1.5) -> bool:
 
 
 def _read_backup_status() -> dict:
-    """讀 logs/backup_status.json；若不存在/壞檔回 {}。"""
-    p = Path(__file__).parent.parent / "logs" / "backup_status.json"
+    """讀 logs/backup_status.json；若不存在/壞檔回 {}。
+
+    路徑要相對 BIO_DB_ROOT（資料掛載點），不是 __file__ 所在的 repo/image root——
+    容器內兩者不同（/data/bio_db vs /app），backup_db.py 在 host 上寫的檔案落在
+    BIO_DB_ROOT/logs/，之前這裡用 __file__ 反推出 /app/logs/，永遠讀不到。
+    """
+    p = BIO_DB_ROOT / "logs" / "backup_status.json"
     if not p.exists():
         return {}
     try:
@@ -831,7 +836,8 @@ async def health():
     try:
         import json as _json
 
-        _wp = Path(__file__).parent.parent / "logs" / "wal_preflight_status.json"
+        # 同上：相對 BIO_DB_ROOT，不是 __file__（見 _read_backup_status 註解）。
+        _wp = BIO_DB_ROOT / "logs" / "wal_preflight_status.json"
         if _wp.exists():
             wal_status = _json.loads(_wp.read_text())
     except Exception:
