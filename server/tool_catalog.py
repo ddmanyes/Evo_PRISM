@@ -119,7 +119,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         },
                         "required": ["sample_id"],
                     },
-        module="server.agent",
+        module="server.agent_spatial",
         func="_exec_bio_check_l2_sufficiency",
     ),
     "bio_compare_versions": ToolSpec(
@@ -428,7 +428,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         "required": ["query"],
                     },
         rate_limited=True,
-        module="server.agent",
+        module="server.agent_history",
         func="_exec_bio_find_tool",
     ),
     "bio_get_artifact": ToolSpec(
@@ -638,7 +638,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         },
                         "required": [],
                     },
-        module="server.agent",
+        module="server.agent_history",
         func="_exec_bio_impact",
     ),
     "bio_lookup_sample": ToolSpec(
@@ -983,7 +983,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         "required": ["sample_id"],
                     },
         rate_limited=True,
-        module="server.agent",
+        module="server.agent_bulk",
         func="_exec_bio_run_bulk_eda",
     ),
     "bio_run_celltypist": ToolSpec(
@@ -1040,7 +1040,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         "required": ["sample_id", "counts_path", "coldata_path", "comparisons"],
                     },
         rate_limited=True,
-        module="server.agent",
+        module="server.agent_bulk",
         func="_exec_bio_run_deg",
     ),
     "bio_run_enrichment": ToolSpec(
@@ -1061,7 +1061,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         "required": ["sample_id", "deg_table_path"],
                     },
         rate_limited=True,
-        module="server.agent",
+        module="server.agent_bulk",
         func="_exec_bio_run_enrichment",
     ),
     "bio_run_geneset_score": ToolSpec(
@@ -1122,7 +1122,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         "required": ["sample_id", "counts_path", "deg_tables"],
                     },
         rate_limited=True,
-        module="server.agent",
+        module="server.agent_bulk",
         func="_exec_bio_run_heatmaps",
     ),
     "bio_run_mcseg_fullslide": ToolSpec(
@@ -1358,7 +1358,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         "required": ["sample_id"],
                     },
         rate_limited=True,
-        module="server.agent",
+        module="server.agent_spatial",
         func="_exec_bio_run_spatial_eda",
     ),
     "bio_sample_compare": ToolSpec(
@@ -1455,7 +1455,7 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         },
                         "required": ["action"],
                     },
-        module="server.agent",
+        module="server.agent_history",
         func="_exec_bio_tool_health",
     ),
 }
