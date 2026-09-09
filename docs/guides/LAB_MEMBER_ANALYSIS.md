@@ -144,6 +144,8 @@ python scripts/provision_staging_user.py --user-id alice@example.org --apply
 
 `--apply` 只建立 EP actor directory 並設為 `0700`，不會建立 macOS/Linux 帳號，也不會修改 `sshd_config`。若要在 OS 層隱藏不同成員的原始上傳，應另建獨立 SSH 帳號/chroot；EP 本身在 validation/promotion 層強制 actor ownership。
 
+Compose 以共用 named volume 上的 application lock 序列化 DuckDB server/worker 連線，避免多進程同時開啟檔案。實驗室使用人數或同時分析量增加後，應切換 `ER_DB_BACKEND=postgres`，以 PostgreSQL 作為生產佇列metadata後端。Windows 的單機 DuckDB 模式沒有 POSIX inter-process lock，不可用於這種多worker部署。
+
 ## 復原與稽核
 
 - Worker 中斷：job 保留在 `analysis_jobs`；lease 到期後可由同類 CPU/GPU worker 重新領取，最多重試 3 次。

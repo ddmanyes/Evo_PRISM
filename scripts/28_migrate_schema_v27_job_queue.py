@@ -15,6 +15,15 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
     with duckdb.connect(str(db_path)) as con:
         con.execute(
             """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL,
+                description VARCHAR NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
             CREATE TABLE IF NOT EXISTS analysis_jobs (
                 job_id            VARCHAR PRIMARY KEY,
                 tool_name         VARCHAR NOT NULL,

@@ -70,10 +70,12 @@ services:
       LLAMA_MODEL: gemma
       LLAMA_NO_THINK: "1"
       MCP_AUTH_REQUIRED: "true"
+      DUCKDB_APP_LOCK_PATH: /data/locks/bio_memory.app.lock
     extra_hosts: &evo-extra-hosts
       - "host.docker.internal:host-gateway"
     volumes: &evo-volumes
       - ./bio_memory.duckdb:/data/bio_db/bio_memory.duckdb
+      - duckdb-lock:/data/locks
       - ./gold:/data/bio_db/gold
       - ./silver:/data/bio_db/silver
       - ./results:/data/bio_db/results
@@ -134,3 +136,6 @@ services:
     depends_on:
       evo-prism:
         condition: service_healthy
+
+volumes:
+  duckdb-lock:

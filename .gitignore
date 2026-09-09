@@ -73,6 +73,7 @@ bio_db_backups/
 # Temp / scratch files
 file_info_input.md
 *.bak
+*.duckdb.app.lock
 
 # Architecture diagram source files (keep compiled PNG in docs/images/, ignore raw sources)
 # docs/images/*.png  ← intentionally tracked (documentation assets)

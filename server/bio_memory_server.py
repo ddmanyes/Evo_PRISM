@@ -1023,6 +1023,9 @@ async def _handle_bio_manage_api_key(args: dict) -> str:
                 break
         else:  # pragma: no cover - cryptographically implausible
             raise RuntimeError("unable to allocate unique key prefix")
+        staging_dir = settings.STAGING_ROOT / actor_storage_id(user_id)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        staging_dir.chmod(0o700)
         store.register_api_key(
             key_hash=hash_api_key(raw_key),
             key_prefix=display_prefix,
@@ -1030,9 +1033,6 @@ async def _handle_bio_manage_api_key(args: dict) -> str:
             role=role.value,
             created_by=actor.user_id,
         )
-        staging_dir = settings.STAGING_ROOT / actor_storage_id(user_id)
-        staging_dir.mkdir(parents=True, exist_ok=True)
-        staging_dir.chmod(0o700)
         _audit_operation("bio_manage_api_key", user_id, "issued", f"role={role.value}; prefix={display_prefix}")
         return json.dumps(
             {

@@ -198,8 +198,8 @@ class RegistryStore(Protocol):
         added_by: str,
         notes: str,
         **kwargs,
-    ) -> None:
-        """INSERT into sample_registry (idempotent: skip if sample_id exists)."""
+    ) -> bool:
+        """INSERT if absent and return whether a new row was created."""
         ...
 
     def get_sample(self, sample_id: str) -> dict | None:

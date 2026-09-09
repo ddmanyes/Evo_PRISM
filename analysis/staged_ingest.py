@@ -227,7 +227,7 @@ def promote_staged_upload(
         notes = str(manifest.get("notes", "")).strip()
         provenance = f"promoted from staged upload {upload_id}"
         notes = f"{notes}; {provenance}" if notes else provenance
-        store.register_sample(
+        created = store.register_sample(
             manifest["sample_id"],
             str(manifest.get("project", "")),
             manifest["data_type"],
@@ -238,9 +238,8 @@ def promote_staged_upload(
             actor.user_id,
             notes,
         )
-        registered = store.get_sample(manifest["sample_id"])
-        if registered is None or registered.get("l3_path") != str(validated.target_dir):
-            raise RuntimeError("sample registry verification failed")
+        if created is False:
+            raise RuntimeError("sample was registered concurrently")
     except Exception as exc:
         try:
             validated.target_dir.rename(validated.source_dir)

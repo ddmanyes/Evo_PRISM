@@ -9,6 +9,10 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
+from pathlib import Path
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Iterator
 
@@ -24,6 +28,63 @@ from store.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+try:  # POSIX deployment path; Windows local mode falls back to the thread lock.
+    import fcntl
+except ImportError:  # pragma: no cover - Windows only
+    fcntl = None
+
+
+class _InterprocessLock:
+    """Serialize all DuckDB opens across worker/server processes."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self._thread_lock = threading.RLock()
+        self._depth = 0
+        self._fd: int | None = None
+
+    def __enter__(self):
+        self._thread_lock.acquire()
+        try:
+            if self._depth == 0 and fcntl is not None:
+                self._fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+                timeout = max(1.0, float(os.getenv("DUCKDB_APP_LOCK_TIMEOUT", "30")))
+                deadline = time.monotonic() + timeout
+                while True:
+                    try:
+                        fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            os.close(self._fd)
+                            self._fd = None
+                            raise TimeoutError(
+                                f"timed out waiting for DuckDB application lock {self.path}"
+                            )
+                        time.sleep(0.05)
+            self._depth += 1
+            return self
+        except Exception:
+            self._thread_lock.release()
+            raise
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        self._depth -= 1
+        if self._depth == 0 and self._fd is not None and fcntl is not None:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            os.close(self._fd)
+            self._fd = None
+        self._thread_lock.release()
+
+
+_LOCKS: dict[str, _InterprocessLock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: str) -> _InterprocessLock:
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(path, _InterprocessLock(path))
 
 
 def _bootstrap(con: duckdb.DuckDBPyConnection, *, read_only: bool = False) -> None:
@@ -43,15 +104,16 @@ class DuckDBStore:
 
     def __init__(self, db_path: str | None = None) -> None:
         import sys
-        from pathlib import Path
 
         sys.path.insert(0, str(Path(__file__).parent.parent))
         if db_path:
-            from pathlib import Path as P
-            self._path = str(P(db_path))
+            self._path = str(Path(db_path))
         else:
             from config.settings import DUCKDB_PATH
             self._path = str(DUCKDB_PATH)
+        configured_lock = os.getenv("DUCKDB_APP_LOCK_PATH", "").strip()
+        lock_path = configured_lock or f"{Path(self._path).resolve()}.app.lock"
+        self._file_lock = _lock_for(lock_path)
 
     # ------------------------------------------------------------------
     # Low-level escape hatches
@@ -59,25 +121,27 @@ class DuckDBStore:
 
     @contextlib.contextmanager
     def write_conn(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        con = duckdb.connect(self._path)
-        _bootstrap(con)
-        try:
-            yield con
-        finally:
+        with self._file_lock:
+            con = duckdb.connect(self._path)
+            _bootstrap(con)
             try:
-                con.execute("CHECKPOINT")
-            except Exception:
-                pass
-            con.close()
+                yield con
+            finally:
+                try:
+                    con.execute("CHECKPOINT")
+                except Exception:
+                    pass
+                con.close()
 
     @contextlib.contextmanager
     def read_conn(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        con = duckdb.connect(self._path, read_only=True)
-        _bootstrap(con, read_only=True)
-        try:
-            yield con
-        finally:
-            con.close()
+        with self._file_lock:
+            con = duckdb.connect(self._path, read_only=True)
+            _bootstrap(con, read_only=True)
+            try:
+                yield con
+            finally:
+                con.close()
 
     # ------------------------------------------------------------------
     # analysis_history
@@ -322,13 +386,13 @@ class DuckDBStore:
         added_by: str,
         notes: str,
         **kwargs,
-    ) -> None:
+    ) -> bool:
         with self.write_conn() as con:
             existing = con.execute(
                 "SELECT 1 FROM sample_registry WHERE sample_id = ?", [sample_id]
             ).fetchone()
             if existing:
-                return
+                return False
             last_updated = kwargs.get("last_updated", datetime.now(timezone.utc))
             con.execute(
                 """
@@ -342,6 +406,7 @@ class DuckDBStore:
                     l3_path, added_by, notes, last_updated,
                 ],
             )
+        return True
 
     def get_sample(self, sample_id: str) -> dict | None:
         with self.read_conn() as con:

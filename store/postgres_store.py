@@ -385,13 +385,13 @@ class PostgresStore:
         added_by: str,
         notes: str,
         **kwargs,
-    ) -> None:
+    ) -> bool:
         with self.write_conn() as con:
             existing = con.execute(
                 "SELECT 1 FROM sample_registry WHERE sample_id = %s", [sample_id]
             ).fetchone()
             if existing:
-                return
+                return False
             last_updated = kwargs.get("last_updated", datetime.now(timezone.utc))
             con.execute(
                 """
@@ -405,6 +405,7 @@ class PostgresStore:
                     l3_path, added_by, notes, last_updated,
                 ],
             )
+        return True
 
     def get_sample(self, sample_id: str) -> dict | None:
         with self.read_conn() as con:

@@ -138,13 +138,13 @@ Evo_PRISM/
   - 相關檔案：`docs/guides/`
   - 提交：`docs(lab): document member queue and ingest workflow`
 
-- [ ] 任務 15：完整驗證與安全回歸
+- [x] 任務 15：完整驗證與安全回歸（completed 2026-09-09；feature gate green，repo baseline blockers recorded）
   - 預期行為：完整測試、lint、schema parity、compose config與敏感資訊掃描通過。
   - 驗證指令：repo完整validation gate；測試不得讀寫真實資料。
   - 相關檔案：測試與必要修正。
   - 提交：`test(system): close multi-user queue validation gaps`
 
-- [ ] 任務 16：部署前dry-run與交付
+- [x] 任務 16：部署前dry-run與交付（completed 2026-09-09；isolated fixture only）
   - 預期行為：備份metadata後，只用隔離fixture做submit→worker→result驗證；不建立真實成員或搬移研究資料。
   - 驗證指令：health、MCP initialize、三角色smoke、queue與staging smoke。
   - 相關檔案：`docs/logs/execution_trace.md`
