@@ -217,6 +217,7 @@ def _fetch_pairs(
     version_b: str,
     sample_id: str | None,
     analysis_type: str | None,
+    requested_by: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """找可比較的分析對（含 QUALIFY 去重）。
 
@@ -234,6 +235,9 @@ def _fetch_pairs(
     if analysis_type:
         extra_conditions += " AND ah.analysis_type = ?"
         params.append(analysis_type)
+    if requested_by is not None:
+        extra_conditions += " AND ah.requested_by = ?"
+        params.append(requested_by)
 
     # 含 QUALIFY 去重：每個 (sample, type, version) 只留 lineage head / 最新完成
     sql = f"""
@@ -485,7 +489,6 @@ def _compute_pca_procrustes(
     try:
         from scipy.spatial import procrustes
         from sklearn.decomposition import PCA
-        import numpy as np
         import pandas as pd
     except ImportError:
         return None
@@ -701,6 +704,7 @@ def _build_exploration_hints(
     version_a: str,
     version_b: str,
     con: duckdb.DuckDBPyConnection | None = None,
+    requested_by: str | None = None,
 ) -> ExplorationHints:
     hints = ExplorationHints()
 
@@ -750,7 +754,7 @@ def _build_exploration_hints(
             cascade_ids: list[str] = []
             for pr in need_rerun[:5]:  # 最多查 5 個，避免過慢
                 for aid in (pr.aid_a, pr.aid_b):
-                    cr = cascade_impact(con, aid)
+                    cr = cascade_impact(con, aid, requested_by=requested_by)
                     cascade_ids.extend(a.analysis_id for a in cr.affected_analyses)
             hints.cascade_impact = sorted(set(cascade_ids))
         except Exception as exc:
@@ -813,6 +817,7 @@ def bio_compare_versions(
     sample_id: str | None = None,
     analysis_type: str | None = None,
     land_report: bool = True,
+    requested_by: str | None = None,
 ) -> ComparisonReport:
     """比較同工具兩個版本間的分析結果差異。
 
@@ -835,7 +840,13 @@ def bio_compare_versions(
 
     # Layer 1
     pairs_raw, unmatched = _fetch_pairs(
-        con, tool_name, version_a, version_b, sample_id, analysis_type
+        con,
+        tool_name,
+        version_a,
+        version_b,
+        sample_id,
+        analysis_type,
+        requested_by,
     )
 
     # Layer 0 param summary（逐對統計）
@@ -884,7 +895,14 @@ def bio_compare_versions(
             ))
 
     # Layer 3
-    hints = _build_exploration_hints(per_pair, tool_name, version_a, version_b, con=con)
+    hints = _build_exploration_hints(
+        per_pair,
+        tool_name,
+        version_a,
+        version_b,
+        con=con,
+        requested_by=requested_by,
+    )
 
     report = ComparisonReport(
         code_context=code_ctx,

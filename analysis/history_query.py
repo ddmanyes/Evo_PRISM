@@ -253,14 +253,17 @@ def analysis_index(
             df = con.execute(
                 """
                 SELECT sample_id, analysis_type, COUNT(*) AS run_count,
-                       MAX(completed_at) AS last_run_date,
-                       arg_max(summary, completed_at) AS last_summary
+                       MAX(completed_at)::DATE AS last_run_date,
+                       MIN(started_at)::DATE AS first_run_date,
+                       ? AS run_by_members,
+                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS success_count,
+                       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS fail_count
                 FROM analysis_history
                 WHERE requested_by = ?
                 GROUP BY sample_id, analysis_type
                 ORDER BY sample_id, last_run_date DESC
                 """,
-                [requested_by],
+                [requested_by, requested_by],
             ).fetchdf()
 
     return df

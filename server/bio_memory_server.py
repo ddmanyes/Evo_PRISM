@@ -722,6 +722,8 @@ async def _handle_bio_lookup_sample(args: dict) -> str:
 
 
 async def _handle_bio_cascade_impact(args: dict) -> str:
+    from server.auth import visible_requested_by
+
     analysis_id = args.get("analysis_id", "").strip()
     if not analysis_id:
         return "錯誤：analysis_id 為必填參數。"
@@ -731,13 +733,17 @@ async def _handle_bio_cascade_impact(args: dict) -> str:
         from analysis.impact import cascade_impact, render_impact_md
 
         with get_store().read_conn() as con:
-            report = cascade_impact(con, analysis_id)
+            report = cascade_impact(
+                con, analysis_id, requested_by=visible_requested_by()
+            )
         return render_impact_md(report)
 
     return await asyncio.to_thread(_sync)
 
 
 async def _handle_bio_compare_versions(args: dict) -> str:
+    from server.auth import visible_requested_by
+
     tool_name = args.get("tool_name", "").strip()
     version_a = args.get("version_a", "").strip()
     version_b = args.get("version_b", "").strip()
@@ -746,6 +752,8 @@ async def _handle_bio_compare_versions(args: dict) -> str:
 
     if not tool_name or not version_a or not version_b:
         return "錯誤：tool_name、version_a、version_b 為必填參數。"
+
+    owner = visible_requested_by()
 
     def _sync() -> str:
         from store.factory import get_store
@@ -759,7 +767,12 @@ async def _handle_bio_compare_versions(args: dict) -> str:
                 version_b=version_b,
                 sample_id=sample_id,
                 analysis_type=analysis_type,
-                land_report=True,
+                # Comparison artifacts have no parent analysis_history row in
+                # the legacy schema, so only the global admin view may persist
+                # them. Members still receive an in-memory comparison of their
+                # own records.
+                land_report=owner is None,
+                requested_by=owner,
             )
         return render_comparison_md(report)
 
@@ -907,7 +920,10 @@ async def _handle_bio_get_figure(args: dict) -> list[types.ImageContent]:
     figure_id = args["figure_id"]
 
     def _sync() -> tuple[str, str]:
-        return load_figure_b64(figure_id, requested_by=visible_requested_by())
+        try:
+            return load_figure_b64(figure_id, requested_by=visible_requested_by())
+        except (FileNotFoundError, ValueError) as exc:
+            raise ValueError("figure not found or not accessible") from exc
 
     b64, mime = await asyncio.to_thread(_sync)
     return [types.ImageContent(type="image", data=b64, mimeType=mime)]

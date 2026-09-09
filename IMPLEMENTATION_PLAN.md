@@ -193,7 +193,7 @@ Evo_PRISM/
   - 相關檔案：`analysis/{artifact_registry,artifact_resources,figure_cache,l1_cache}.py`、`scripts/03_init_l1_cache.py`、新 migration、MCP handlers。
   - 提交：`feat(privacy): protect derived analysis artifacts`
 
-- [ ] 任務 20：補齊跨分析工具與 Tailscale Web record API 邊界
+- [x] 任務 20：補齊跨分析工具與 Tailscale Web record API 邊界（completed 2026-09-09）
   - 預期行為：sample compare、impact、cascade、version compare、failure summary 只使用 own records；對外 REST record endpoints 驗證同一組 Bearer key 並套用 owner filter；admin 維運 dashboard 維持 admin-only。
   - 驗證指令：visibility、HTTP auth、impact/version compare regressions。
   - 相關檔案：`server/{agent_history,bio_memory_server,web_app}.py`、`analysis/{impact,version_compare}.py`

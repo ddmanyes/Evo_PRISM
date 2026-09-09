@@ -259,6 +259,7 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
     tile_size = int(args.get("tile_size", 1024))
     overlap = int(args.get("overlap", 128))
     use_cpsam = bool(args.get("use_cpsam", True))
+    requested_by = args.get("requested_by", "agent")
 
     btf_path = args.get("btf_image_path")
     binned_dir = args.get("binned_dir")
@@ -315,7 +316,7 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
             sample_id,
             "mcseg_fullslide",
             params={"tile_size": tile_size, "overlap": overlap, "use_cpsam": use_cpsam},
-            requested_by="agent",
+            requested_by=requested_by,
             tool_name="bio_run_mcseg_fullslide",
         ) as run:
             # Dispatched to the host-native mcseg watcher (Docker Desktop on macOS has no
@@ -643,7 +644,7 @@ def _exec_bio_compute_crc_metrics(args: dict) -> str:
     requested_by = args.get("requested_by", "agent")
 
     try:
-        from config.settings import DUCKDB_PATH, MCSEG_RESULTS_ROOT
+        from config.settings import MCSEG_RESULTS_ROOT
 
         # Resolve ROI output dir
         roi_dir = _Path(args.get("roi_dir") or MCSEG_RESULTS_ROOT / sample_id / "roi" / roi_name)

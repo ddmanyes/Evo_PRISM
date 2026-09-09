@@ -27,11 +27,14 @@ class DynamicCodeFailure(RuntimeError):
 
 
 def _exec_bio_history_check(args: dict) -> str:
+    from server.auth import visible_requested_by
     from store.factory import get_store
 
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
-    rec = get_store().get_history(sample_id, analysis_type)
+    rec = get_store().get_history(
+        sample_id, analysis_type, requested_by=visible_requested_by()
+    )
     if rec:
         params_str = rec.get("parameters") or "{}"
         return (
@@ -46,14 +49,18 @@ def _exec_bio_history_check(args: dict) -> str:
 
 def _exec_bio_history_lookup(args: dict) -> str:
     from analysis.history_query import recent_analyses, find_by_type
+    from server.auth import visible_requested_by
 
     sample_id = args.get("sample_id")
     analysis_type = args.get("analysis_type")
     limit = int(args.get("limit", 20))
+    owner = visible_requested_by()
     if analysis_type:
-        df = find_by_type(analysis_type, sample_id=sample_id, limit=limit)
+        df = find_by_type(
+            analysis_type, sample_id=sample_id, limit=limit, requested_by=owner
+        )
     else:
-        df = recent_analyses(n=limit, sample_id=sample_id)
+        df = recent_analyses(n=limit, sample_id=sample_id, requested_by=owner)
     if df.empty:
         return f"無分析記錄（sample_id={sample_id!r}）"
     rows = df[["sample_id", "analysis_type", "status", "completed_at", "summary"]].to_dict(
@@ -69,19 +76,26 @@ def _exec_bio_history_lookup(args: dict) -> str:
 
 
 def _exec_bio_history_timeline(args: dict) -> str:
+    from server.auth import visible_requested_by
     from store.factory import get_store
 
     n_days = int(args.get("n_days", 7))
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
+    params: list = [n_days]
+    if owner is not None:
+        params.append(owner)
     with get_store().read_conn() as con:
         rows = con.execute(
-            """
+            f"""
             SELECT sample_id, analysis_type, status,
                    strftime(completed_at,'%Y-%m-%d %H:%M') AS completed_at, summary
             FROM   analysis_history
             WHERE  completed_at >= now() - (? * INTERVAL '1 day')
+                   {owner_clause}
             ORDER  BY completed_at DESC LIMIT 30
             """,
-            [n_days],
+            params,
         ).fetchall()
     if not rows:
         return f"最近 {n_days} 天無分析記錄。"
@@ -93,7 +107,10 @@ def _exec_bio_history_timeline(args: dict) -> str:
 
 def _exec_bio_history_search(args: dict) -> str:
     from analysis.l1_cache import semantic_search
+    from server.auth import visible_requested_by
     from store.factory import get_store
+
+    owner = visible_requested_by()
 
     results = semantic_search(
         args["query"],
@@ -101,6 +118,7 @@ def _exec_bio_history_search(args: dict) -> str:
         threshold=float(args.get("threshold", 0.88)),
         sample_id=args.get("sample_id"),
         analysis_type=args.get("analysis_type"),
+        requested_by=owner,
     )
     if not results:
         return f"語意搜尋 cache miss（query={args['query']!r}）"
@@ -108,13 +126,15 @@ def _exec_bio_history_search(args: dict) -> str:
     l1_ids = [str(r["id"]) for r in results]  # 統一轉 str，避免 DuckDB UUID 物件型別不一致
     placeholders = ", ".join("?" * len(l1_ids))
     with get_store().read_conn() as con:
+        owner_clause = " AND requested_by = ?" if owner is not None else ""
         enrichment_rows = con.execute(
             f"""
             SELECT l1_cache_id, parameters, result_path
             FROM   analysis_history
             WHERE  l1_cache_id IN ({placeholders}) AND status = 'completed'
+                   {owner_clause}
             """,
-            l1_ids,
+            l1_ids + ([owner] if owner is not None else []),
         ).fetchall()
     enrichment = {str(row[0]): (row[1], row[2]) for row in enrichment_rows}
     if not enrichment:
@@ -137,6 +157,7 @@ def _exec_bio_history_search(args: dict) -> str:
 def _exec_bio_memory_query(args: dict) -> str:
     from analysis.l1_cache import SPATIAL_EDA_TOOL_NAME, compute_current_context, semantic_search
     from config.settings import L1_COSINE_THRESHOLD
+    from server.auth import visible_requested_by
 
     sample_id = args.get("sample_id")
     input_fingerprint = context_hash = None
@@ -152,6 +173,7 @@ def _exec_bio_memory_query(args: dict) -> str:
         sample_id=sample_id,
         input_fingerprint=input_fingerprint,
         context_hash=context_hash,
+        requested_by=visible_requested_by(),
     )
     if not results:
         return f"L1 cache miss（threshold={args.get('threshold', L1_COSINE_THRESHOLD)}）。建議執行 bio_run_spatial_eda。"
@@ -229,12 +251,16 @@ def _exec_bio_sample_list(args: dict) -> str:
 def _exec_bio_sample_compare(args: dict) -> str:
     """比較多個樣本的最新各類型分析摘要，回傳對照表。"""
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     sample_ids: list[str] = args.get("sample_ids", [])
     if len(sample_ids) < 2:
         return "[Error] bio_sample_compare requires at least 2 sample_ids."
 
     placeholders = ", ".join("?" * len(sample_ids))
+    owner = visible_requested_by()
+    owner_clause = " AND ah.requested_by = ?" if owner is not None else ""
+    params = sample_ids + ([owner] if owner is not None else [])
 
     with get_store().read_conn() as con:
         # 取每個樣本每種分析類型的最新 completed 紀錄
@@ -253,6 +279,7 @@ def _exec_bio_sample_compare(args: dict) -> str:
                 FROM   analysis_history ah
                 WHERE  ah.sample_id IN ({placeholders})
                   AND  ah.status = 'completed'
+                  {owner_clause}
             )
             SELECT sample_id, analysis_type,
                    strftime(completed_at, '%Y-%m-%d %H:%M') AS completed_at,
@@ -261,7 +288,7 @@ def _exec_bio_sample_compare(args: dict) -> str:
             WHERE  rn = 1
             ORDER  BY sample_id, analysis_type
             """,
-            sample_ids,
+            params,
         ).fetchall()
 
     if not rows:
@@ -651,6 +678,7 @@ def _exec_bio_get_playbook(args: dict) -> str:
 def _exec_bio_impact(args: dict) -> str:
     """影響分析 / 爆炸範圍（read-only，0 token）。"""
     from analysis.impact import compute_impact, render_impact_md
+    from server.auth import visible_requested_by
 
     tool_name = args.get("tool_name") or None
     artifact_id = args.get("artifact_id") or None
@@ -660,6 +688,7 @@ def _exec_bio_impact(args: dict) -> str:
             tool_name=tool_name,
             artifact_id=artifact_id,
             sample_id=sample_id,
+            requested_by=visible_requested_by(),
         )
     except ValueError as e:
         return f"影響分析參數錯誤：{e}"

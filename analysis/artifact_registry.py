@@ -565,6 +565,7 @@ def get_artifacts(
     artifact_type: Optional[str] = None,
     artifact_subtype: Optional[str] = None,
     include_inline: bool = True,
+    requested_by: Optional[str] = None,
 ) -> list[dict]:
     """Return all artifacts for one analysis run.
 
@@ -581,6 +582,11 @@ def get_artifacts(
     if artifact_subtype:
         where.append("aa.artifact_subtype = ?")
         params.append(artifact_subtype)
+    owner_join = ""
+    if requested_by is not None:
+        owner_join = "JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id"
+        where.append("ah.requested_by = ?")
+        params.append(requested_by)
 
     use_blob_table = include_inline and _blob_table_exists(con)
     inline_col = "b.inline_data" if use_blob_table else "NULL AS inline_data"
@@ -596,6 +602,7 @@ def get_artifacts(
                aa.label, aa.file_path, {inline_col}, aa.file_size_kb,
                aa.mime_type, aa.created_at
         FROM   analysis_artifacts aa
+        {owner_join}
         {blob_join}
         WHERE  {" AND ".join(where)}
         ORDER  BY aa.created_at
@@ -624,6 +631,7 @@ def compare_analyses(
     *,
     artifact_subtype: Optional[str] = None,
     include_inline: bool = True,
+    requested_by: Optional[str] = None,
 ) -> dict[str, list[dict]]:
     """Return artifacts grouped by analysis_id for side-by-side comparison."""
     if not analysis_ids:
@@ -644,6 +652,10 @@ def compare_analyses(
     if artifact_subtype:
         subtype_clause = "AND aa.artifact_subtype = ?"
         params.append(artifact_subtype)
+    owner_clause = ""
+    if requested_by is not None:
+        owner_clause = "AND ah.requested_by = ?"
+        params.append(requested_by)
 
     rows = con.execute(
         f"""
@@ -658,6 +670,7 @@ def compare_analyses(
         {blob_join}
         WHERE  aa.analysis_id IN ({placeholders})
                {subtype_clause}
+               {owner_clause}
         ORDER  BY aa.analysis_id, aa.created_at
         """,
         params,
