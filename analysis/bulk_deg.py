@@ -107,7 +107,11 @@ def filter_low_expression(
     n_after = len(filtered)
     logger.info(
         "低表達過濾：%d → %d 基因（移除 %d，min_cpm=%.1f, min_samples=%d）",
-        n_before, n_after, n_before - n_after, min_cpm, min_samples,
+        n_before,
+        n_after,
+        n_before - n_after,
+        min_cpm,
+        min_samples,
     )
     return filtered
 
@@ -226,9 +230,7 @@ def _caption_mv(counts: pd.DataFrame) -> str:
         return "Mean-Variance 不可用"
 
 
-def _caption_volcano(
-    deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float
-) -> str:
+def _caption_volcano(deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float) -> str:
     try:
         fc = deg.get("log2FC", pd.Series(dtype=float))
         q = deg.get("qvalue", pd.Series(dtype=float))
@@ -247,9 +249,7 @@ def _caption_volcano(
         return f"{comparison}：up/down 不可用"
 
 
-def _caption_ma(
-    deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float
-) -> str:
+def _caption_ma(deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float) -> str:
     try:
         fc = deg.get("log2FC", pd.Series(dtype=float))
         q = deg.get("qvalue", pd.Series(dtype=float))
@@ -268,9 +268,16 @@ def _caption_ma(
 
 
 def _version_block() -> str:
-    import importlib as _il, sys as _sys
-    pkgs = [("pandas", "pandas"), ("numpy", "numpy"), ("omicverse", "omicverse"),
-            ("scipy", "scipy"), ("matplotlib", "matplotlib")]
+    import importlib as _il
+    import sys as _sys
+
+    pkgs = [
+        ("pandas", "pandas"),
+        ("numpy", "numpy"),
+        ("omicverse", "omicverse"),
+        ("scipy", "scipy"),
+        ("matplotlib", "matplotlib"),
+    ]
     rows = [f"| Python | {_sys.version.split()[0]} |"]
     for label, pkg in pkgs:
         try:
@@ -357,14 +364,16 @@ def _deg_threshold_summary(deg: pd.DataFrame, comparison: str) -> pd.DataFrame:
     for lfc_thr, padj_thr in thresholds:
         up = int(((fc > lfc_thr) & (pv < padj_thr)).sum())
         dn = int(((fc < -lfc_thr) & (pv < padj_thr)).sum())
-        rows.append({
-            "comparison": comparison,
-            "|log2FC|>": lfc_thr,
-            "padj<": padj_thr,
-            "up": up,
-            "down": dn,
-            "total": up + dn,
-        })
+        rows.append(
+            {
+                "comparison": comparison,
+                "|log2FC|>": lfc_thr,
+                "padj<": padj_thr,
+                "up": up,
+                "down": dn,
+                "total": up + dn,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -481,6 +490,7 @@ def run_deg_analysis(
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
+
     def _rel(p: Path) -> str:
         try:
             return str(p.relative_to(BIO_DB_ROOT))
@@ -506,8 +516,13 @@ def run_deg_analysis(
             parent_analysis_id = store.get_canonical_id(sample_id, "bulk_deg")
 
         store.insert_history(
-            analysis_id, sample_id, "bulk_deg", params_json, "running",
-            requested_by, started_at,
+            analysis_id,
+            sample_id,
+            "bulk_deg",
+            params_json,
+            "running",
+            requested_by,
+            started_at,
             parameter_hash=param_hash(_params),
         )
 
@@ -580,11 +595,14 @@ def run_deg_analysis(
                     pval_threshold=pval_threshold,
                 )
                 volcano_md_parts.append(_file_to_b64_md(volcano_png, f"Volcano {a} vs {b}"))
-                artifact_files.append((
-                    volcano_png, "figure",
-                    f"火山圖 {a} vs {b} — {_caption_volcano(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
-                    "volcano",
-                ))
+                artifact_files.append(
+                    (
+                        volcano_png,
+                        "figure",
+                        f"火山圖 {a} vs {b} — {_caption_volcano(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
+                        "volcano",
+                    )
+                )
             except Exception:
                 logger.warning("火山圖 %s_vs_%s 失敗，跳過", a, b, exc_info=True)
                 volcano_md_parts.append(f"\n（{a} vs {b} 火山圖生成失敗）\n")
@@ -601,11 +619,14 @@ def run_deg_analysis(
                 )
                 if ma_file:
                     ma_md_parts.append(_file_to_b64_md(ma_png, f"MA {a} vs {b}"))
-                    artifact_files.append((
-                        ma_png, "figure",
-                        f"MA 圖 {a} vs {b} — {_caption_ma(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
-                        "ma_plot",
-                    ))
+                    artifact_files.append(
+                        (
+                            ma_png,
+                            "figure",
+                            f"MA 圖 {a} vs {b} — {_caption_ma(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
+                            "ma_plot",
+                        )
+                    )
                 else:
                     ma_md_parts.append(f"\n（{a} vs {b} MA 圖：缺 log2FC 欄）\n")
             except Exception:
@@ -644,9 +665,7 @@ def run_deg_analysis(
 
         if deg_quality_flags:
             warnings_md = (
-                "## ⚠️ 品質警告\n\n"
-                + "\n".join(f"- `{f}`" for f in deg_quality_flags)
-                + "\n\n"
+                "## ⚠️ 品質警告\n\n" + "\n".join(f"- `{f}`" for f in deg_quality_flags) + "\n\n"
             )
         else:
             warnings_md = ""
@@ -685,28 +704,31 @@ def run_deg_analysis(
             f"Bulk DEG {sample_id}：{n_cmp} 對照，共 {total_sig} 顯著基因。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
-        summary_metrics = json.dumps({
-            "n_comparisons": n_cmp,
-            "n_sig_total": total_sig,
-            "n_sig_up": int(summary_df["n_sig_up"].sum()),
-            "n_sig_down": int(summary_df["n_sig_down"].sum()),
-            "n_genes_before_filter": n_genes_before,
-            "n_genes_after_filter": n_genes_after,
-            "quality_flags": deg_quality_flags,
-        })
+        summary_metrics = json.dumps(
+            {
+                "n_comparisons": n_cmp,
+                "n_sig_total": total_sig,
+                "n_sig_up": int(summary_df["n_sig_up"].sum()),
+                "n_sig_down": int(summary_df["n_sig_down"].sum()),
+                "n_genes_before_filter": n_genes_before,
+                "n_genes_after_filter": n_genes_after,
+                "quality_flags": deg_quality_flags,
+            }
+        )
 
         completed_at = datetime.now(timezone.utc)
         store.complete_history(
-            analysis_id, str(report_path), summary, completed_at,
+            analysis_id,
+            str(report_path),
+            summary,
+            completed_at,
             summary_metrics=json.loads(summary_metrics),
         )
         store.mark_canonical(analysis_id, sample_id, "bulk_deg")
 
         from analysis.failure_diagnosis import success_diagnosis
 
-        store.update_history(
-            analysis_id, failure_diagnosis=json.dumps(success_diagnosis())
-        )
+        store.update_history(analysis_id, failure_diagnosis=json.dumps(success_diagnosis()))
         # register_artifact still uses DuckDB VSS/HNSW — not yet migrated to RegistryStore.
         try:
             from analysis.artifact_registry import register_artifact
@@ -716,7 +738,11 @@ def run_deg_analysis(
                 for path, atype, label, subtype in artifact_files:
                     if path.exists():
                         register_artifact(
-                            _artifact_con, analysis_id, path, atype, label,
+                            _artifact_con,
+                            analysis_id,
+                            path,
+                            atype,
+                            label,
                             artifact_subtype=subtype,
                         )
             finally:
@@ -730,7 +756,8 @@ def run_deg_analysis(
 
         try:
             store.fail_history(
-                analysis_id, datetime.now(timezone.utc),
+                analysis_id,
+                datetime.now(timezone.utc),
                 failure_diagnosis=json.dumps(classify_exception(_exc_outer)),
             )
         except Exception:
@@ -740,6 +767,7 @@ def run_deg_analysis(
     # store 不需要 close() — 連線由 store 自行管理
     try:
         from scripts.export_registry import export_snapshot
+
         export_snapshot()
     except Exception as _exp_exc:
         logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)

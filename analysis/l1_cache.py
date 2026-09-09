@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 # 權重總和保持 1.0，確保 perfect score = 1/(_RRF_K+1) 不變（向後相容）。
 # BM25 解決基因別名漂移（PTPRC↔CD45、MS4A1↔CD20）；FTS 不可用時退化為 3-way。
 
-_RRF_K: int = 60       # 標準 RRF 平滑常數
-_W1: float = 0.4       # cosine similarity 權重（原 0.5）
-_W_BM25: float = 0.3   # BM25 全文搜尋權重（新增）
-_W2: float = 0.2       # input fingerprint 匹配權重（原 0.3）
-_W3: float = 0.1       # context hash 匹配權重（原 0.2）
+_RRF_K: int = 60  # 標準 RRF 平滑常數
+_W1: float = 0.4  # cosine similarity 權重（原 0.5）
+_W_BM25: float = 0.3  # BM25 全文搜尋權重（新增）
+_W2: float = 0.2  # input fingerprint 匹配權重（原 0.3）
+_W3: float = 0.1  # context hash 匹配權重（原 0.2）
 _MISMATCH_RANK: int = 9999  # 不匹配時的懲罰 rank
 
 # FTS sidecar schema name（PRAGMA create_fts_index 建立）

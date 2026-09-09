@@ -38,6 +38,7 @@ def _try_integrate(adata, batch_key: str, strategy: str) -> str:
     if strategy in ("auto", "harmony"):
         try:
             import scanpy as sc
+
             sc.external.pp.harmony_integrate(adata, key=batch_key)
             adata.obsm["X_pca_integrated"] = adata.obsm["X_pca_harmony"]
             sc.pp.neighbors(adata, use_rep="X_pca_harmony")
@@ -50,6 +51,7 @@ def _try_integrate(adata, batch_key: str, strategy: str) -> str:
     if strategy in ("auto", "bbknn"):
         try:
             import scanpy as sc
+
             sc.external.pp.bbknn(adata, batch_key=batch_key)
             return "bbknn"
         except Exception as exc:
@@ -58,6 +60,7 @@ def _try_integrate(adata, batch_key: str, strategy: str) -> str:
             logger.warning("bbknn 失敗，使用無 batch correction：%s", exc)
 
     import scanpy as sc
+
     sc.pp.neighbors(adata, use_rep="X_pca")
     return "none"
 
@@ -81,10 +84,9 @@ def run_mcseg_merge(
     """
     validate_sample_id(sample_id)
     import re as _re
-    if not _re.match(r'^[a-zA-Z0-9_\-]+$', merged_name):
-        raise ValueError(
-            f"merged_name 只允許英數字、底線、連字號，收到：{merged_name!r}"
-        )
+
+    if not _re.match(r"^[a-zA-Z0-9_\-]+$", merged_name):
+        raise ValueError(f"merged_name 只允許英數字、底線、連字號，收到：{merged_name!r}")
     if len(roi_names) < 2:
         raise ValueError("至少需要 2 個 ROI 才能執行合併分析。")
     if integrate not in ("auto", "harmony", "bbknn", "none"):
@@ -103,17 +105,21 @@ def run_mcseg_merge(
             missing.append(str(p))
     if missing:
         raise FileNotFoundError(
-            f"以下 cellpose_cells.h5ad 不存在（請先執行 bio_run_mcseg_roi）：\n"
-            + "\n".join(missing)
+            "以下 cellpose_cells.h5ad 不存在（請先執行 bio_run_mcseg_roi）：\n" + "\n".join(missing)
         )
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
-        "roi_names": roi_names, "merged_name": merged_name, "integrate": integrate,
-    })
+    params_json = json.dumps(
+        {
+            "roi_names": roi_names,
+            "merged_name": merged_name,
+            "integrate": integrate,
+        }
+    )
 
     from store.factory import get_store as _get_store
+
     _get_store().insert_history(
         analysis_id, sample_id, "mcseg_merge", params_json, "running", requested_by, started_at
     )
@@ -121,6 +127,7 @@ def run_mcseg_merge(
     try:
         import anndata
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import scanpy as sc
@@ -202,6 +209,7 @@ def run_mcseg_merge(
 
         with _get_store().write_conn() as con:
             from analysis.tool_registry import get_active_tool_id
+
             tool_id = get_active_tool_id(con, "bio_run_mcseg_merge")
             con.execute(
                 """UPDATE analysis_history
@@ -210,17 +218,43 @@ def run_mcseg_merge(
                 [str(report_path), completed_at, summary, tool_id, analysis_id],
             )
             from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
             write_diagnosis(con, analysis_id, success_diagnosis())
             try:
                 from analysis.artifact_registry import register_artifact
-                register_artifact(con, analysis_id, h5ad_out, "data", "merged.h5ad",
-                                  artifact_subtype="h5ad_merged")
-                register_artifact(con, analysis_id, umap_roi_path, "figure", "UMAP（by ROI）",
-                                  artifact_subtype="umap_roi")
-                register_artifact(con, analysis_id, umap_leiden_path, "figure", "UMAP（Leiden）",
-                                  artifact_subtype="umap_leiden")
-                register_artifact(con, analysis_id, report_path, "report", "Merge 報告",
-                                  artifact_subtype="merge_report")
+
+                register_artifact(
+                    con,
+                    analysis_id,
+                    h5ad_out,
+                    "data",
+                    "merged.h5ad",
+                    artifact_subtype="h5ad_merged",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    umap_roi_path,
+                    "figure",
+                    "UMAP（by ROI）",
+                    artifact_subtype="umap_roi",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    umap_leiden_path,
+                    "figure",
+                    "UMAP（Leiden）",
+                    artifact_subtype="umap_leiden",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    report_path,
+                    "report",
+                    "Merge 報告",
+                    artifact_subtype="merge_report",
+                )
             except Exception as _exc:
                 logger.warning("mcseg_merge: register_artifact 失敗（非致命）: %s", _exc)
 
@@ -229,8 +263,10 @@ def run_mcseg_merge(
         with _get_store().write_conn() as con:
             con.execute(
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id])
+                [datetime.now(timezone.utc), analysis_id],
+            )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
             write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 

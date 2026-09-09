@@ -444,7 +444,9 @@ def register_artifact(
                 try:
                     Path(file_path).unlink(missing_ok=True)
                 except OSError as _unlink_exc:
-                    logger.warning("register_artifact: could not remove original after spill: %s", _unlink_exc)
+                    logger.warning(
+                        "register_artifact: could not remove original after spill: %s", _unlink_exc
+                    )
 
                 path = overflow_path
                 size_kb = int(overflow_path.stat().st_size / 1024)

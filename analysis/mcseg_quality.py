@@ -215,6 +215,7 @@ def generate_mcseg_qc_report(
     params_json = json.dumps({"qc_dir": str(qc_dir)})
 
     from store.factory import get_store as _get_store
+
     _get_store().insert_history(
         analysis_id, sample_id, "mcseg_qc", params_json, "running", requested_by, started_at
     )

@@ -107,6 +107,7 @@ def _record_analysis(
 def _backfill(con: duckdb.DuckDBPyConnection, analysis_id: str) -> None:
     try:
         from analysis.tool_registry import backfill_tool_id
+
         backfill_tool_id(con, _TOOL_NAME, analysis_id)
     except Exception as exc:
         logger.warning("backfill_tool_id failed (non-fatal): %s", exc)
@@ -123,9 +124,15 @@ def _register(
 ) -> None:
     try:
         from analysis.artifact_registry import register_artifact
+
         register_artifact(
-            con, analysis_id, file_path, artifact_type, label,
-            artifact_subtype=subtype, producing_fn=producing_fn,
+            con,
+            analysis_id,
+            file_path,
+            artifact_type,
+            label,
+            artifact_subtype=subtype,
+            producing_fn=producing_fn,
         )
     except Exception as exc:
         logger.warning("register_artifact failed (non-fatal): %s", exc)
@@ -210,15 +217,23 @@ def gene_spatial_map(
         summary = f"{gene_name} 空間圖：{n_expr:,} bins 有表達，vmax={vmax:.1f}"
         with duckdb.connect(str(db_path)) as write_con:
             analysis_id = _record_analysis(
-                write_con, sample_id, "spatial_gene_map",
+                write_con,
+                sample_id,
+                "spatial_gene_map",
                 {"gene": gene_name, "vmax_pct": vmax_pct},
-                out_path, summary, requested_by=requested_by,
+                out_path,
+                summary,
+                requested_by=requested_by,
             )
             _backfill(write_con, analysis_id)
             _register(
-                write_con, analysis_id, out_path, "figure",
+                write_con,
+                analysis_id,
+                out_path,
+                "figure",
                 f"{gene_name} 空間表達圖 — {n_expr:,} bins 有表達",
-                "spatial_gene_map", producing_fn=gene_spatial_map,
+                "spatial_gene_map",
+                producing_fn=gene_spatial_map,
             )
     else:
         plt.close(fig)
@@ -287,19 +302,32 @@ def qc_stats(
 
         with duckdb.connect(str(db_path)) as write_con:
             analysis_id = _record_analysis(
-                write_con, sample_id, "qc_stats", {},
-                parquet_path, summary, requested_by=requested_by,
+                write_con,
+                sample_id,
+                "qc_stats",
+                {},
+                parquet_path,
+                summary,
+                requested_by=requested_by,
             )
             _backfill(write_con, analysis_id)
             _register(
-                write_con, analysis_id, parquet_path, "csv",
+                write_con,
+                analysis_id,
+                parquet_path,
+                "csv",
                 f"QC stats parquet — {len(df):,} bins",
-                "qc_stats", producing_fn=qc_stats,
+                "qc_stats",
+                producing_fn=qc_stats,
             )
             _register(
-                write_con, analysis_id, fig_path, "figure",
+                write_con,
+                analysis_id,
+                fig_path,
+                "figure",
                 f"QC 分布圖（n_genes + total_counts）— 中位 genes={median_genes:.0f}，UMI={median_umi:.0f}",
-                "qc_distributions", producing_fn=qc_stats,
+                "qc_distributions",
+                producing_fn=qc_stats,
             )
 
     return df
@@ -343,8 +371,12 @@ def top_genes(
         top3 = ", ".join(df["gene_name"].head(3).tolist())
         with duckdb.connect(str(db_path)) as write_con:
             _record_analysis(
-                write_con, sample_id, "top_genes", {"n": n},
-                csv_path, f"Top {n} genes：{top3}…",
+                write_con,
+                sample_id,
+                "top_genes",
+                {"n": n},
+                csv_path,
+                f"Top {n} genes：{top3}…",
                 requested_by=requested_by,
             )
 
@@ -395,9 +427,7 @@ def gene_coexpression(
     if df.empty:
         raise ValueError(f"No spatial data found for sample '{sample_id}'")
     if df["gene_a"].max() == 0 and df["gene_b"].max() == 0:
-        raise ValueError(
-            f"基因 {gene_a!r} 與 {gene_b!r} 在樣本 {sample_id!r} 中均未偵測到"
-        )
+        raise ValueError(f"基因 {gene_a!r} 與 {gene_b!r} 在樣本 {sample_id!r} 中均未偵測到")
 
     row_min, row_max = int(df["row"].min()), int(df["row"].max())
     col_min, col_max = int(df["col"].min()), int(df["col"].max())
@@ -412,8 +442,12 @@ def gene_coexpression(
 
     # Panel 1: gene_a spatial
     im_a = axes[0].imshow(
-        pivot_a.values, cmap="Blues", vmin=0, vmax=vmax_a,
-        aspect="auto", extent=extent,
+        pivot_a.values,
+        cmap="Blues",
+        vmin=0,
+        vmax=vmax_a,
+        aspect="auto",
+        extent=extent,
     )
     plt.colorbar(im_a, ax=axes[0], label="UMI")
     axes[0].set_title(f"{gene_a}", fontsize=12)
@@ -422,8 +456,12 @@ def gene_coexpression(
 
     # Panel 2: gene_b spatial
     im_b = axes[1].imshow(
-        pivot_b.values, cmap="Reds", vmin=0, vmax=vmax_b,
-        aspect="auto", extent=extent,
+        pivot_b.values,
+        cmap="Reds",
+        vmin=0,
+        vmax=vmax_b,
+        aspect="auto",
+        extent=extent,
     )
     plt.colorbar(im_b, ax=axes[1], label="UMI")
     axes[1].set_title(f"{gene_b}", fontsize=12)
@@ -452,15 +490,23 @@ def gene_coexpression(
         summary = f"{gene_a}×{gene_b} 共表達：{n_both:,} bins 同時有表達"
         with duckdb.connect(str(db_path)) as write_con:
             analysis_id = _record_analysis(
-                write_con, sample_id, "gene_coexpression",
+                write_con,
+                sample_id,
+                "gene_coexpression",
                 {"gene_a": gene_a, "gene_b": gene_b},
-                out_path, summary, requested_by=requested_by,
+                out_path,
+                summary,
+                requested_by=requested_by,
             )
             _backfill(write_con, analysis_id)
             _register(
-                write_con, analysis_id, out_path, "figure",
+                write_con,
+                analysis_id,
+                out_path,
+                "figure",
                 f"{gene_a}×{gene_b} 空間共表達圖 — {n_both:,} bins 同時有表達",
-                "gene_coexpression", producing_fn=gene_coexpression,
+                "gene_coexpression",
+                producing_fn=gene_coexpression,
             )
     else:
         plt.close(fig)

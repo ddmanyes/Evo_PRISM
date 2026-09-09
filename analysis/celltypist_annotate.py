@@ -58,24 +58,26 @@ def run_celltypist(
 
     if not h5ad_path.exists():
         raise FileNotFoundError(
-            f"找不到 umap_computed.h5ad：{h5ad_path}\n"
-            "請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
+            f"找不到 umap_computed.h5ad：{h5ad_path}\n請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
         )
 
     try:
         import celltypist  # noqa: F401
     except ImportError as exc:
-        raise ImportError(
-            "缺少 celltypist，請執行：uv add celltypist"
-        ) from exc
+        raise ImportError("缺少 celltypist，請執行：uv add celltypist") from exc
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
-        "roi_name": roi_name, "model": model, "majority_voting": majority_voting,
-    })
+    params_json = json.dumps(
+        {
+            "roi_name": roi_name,
+            "model": model,
+            "majority_voting": majority_voting,
+        }
+    )
 
     from store.factory import get_store as _get_store
+
     _get_store().insert_history(
         analysis_id, sample_id, "celltypist", params_json, "running", requested_by, started_at
     )
@@ -83,6 +85,7 @@ def run_celltypist(
     try:
         import celltypist
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import scanpy as sc
@@ -100,8 +103,7 @@ def run_celltypist(
         n_overlap = len(adata_genes & model_features) if model_features else None
         n_model = len(model_features) if model_features else None
         overlap_msg = (
-            f"{n_overlap}/{n_model} 基因匹配" if n_overlap is not None
-            else "（無法計算基因匹配數）"
+            f"{n_overlap}/{n_model} 基因匹配" if n_overlap is not None else "（無法計算基因匹配數）"
         )
 
         logger.info("CellTypist: annotating %d cells, gene overlap=%s", adata.n_obs, overlap_msg)
@@ -115,7 +117,6 @@ def run_celltypist(
         adata.obs["celltypist_cell_type"] = pred_df[label_col].values
 
         # Write back h5ad (additive column) — atomic rename to survive crashes
-        import shutil
         tmp_path = h5ad_path.with_suffix(".h5ad.tmp")
         adata.write_h5ad(str(tmp_path))
         tmp_path.replace(h5ad_path)  # POSIX atomic rename
@@ -153,6 +154,7 @@ def run_celltypist(
 
         with _get_store().write_conn() as con:
             from analysis.tool_registry import get_active_tool_id
+
             tool_id = get_active_tool_id(con, "bio_run_celltypist")
             con.execute(
                 """UPDATE analysis_history
@@ -161,16 +163,35 @@ def run_celltypist(
                 [str(report_path), completed_at, summary, tool_id, analysis_id],
             )
             from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
             write_diagnosis(con, analysis_id, success_diagnosis())
             try:
                 from analysis.artifact_registry import register_artifact
-                register_artifact(con, analysis_id, umap_path, "figure",
-                                  "UMAP（celltypist_cell_type）", artifact_subtype="umap_celltypist")
-                register_artifact(con, analysis_id, h5ad_path, "data",
-                                  "umap_computed.h5ad（含 celltypist_cell_type）",
-                                  artifact_subtype="h5ad")
-                register_artifact(con, analysis_id, report_path, "report",
-                                  "CellTypist 報告", artifact_subtype="celltypist_report")
+
+                register_artifact(
+                    con,
+                    analysis_id,
+                    umap_path,
+                    "figure",
+                    "UMAP（celltypist_cell_type）",
+                    artifact_subtype="umap_celltypist",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    h5ad_path,
+                    "data",
+                    "umap_computed.h5ad（含 celltypist_cell_type）",
+                    artifact_subtype="h5ad",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    report_path,
+                    "report",
+                    "CellTypist 報告",
+                    artifact_subtype="celltypist_report",
+                )
             except Exception as _exc:
                 logger.warning("celltypist: register_artifact 失敗（非致命）: %s", _exc)
 
@@ -179,8 +200,10 @@ def run_celltypist(
         with _get_store().write_conn() as con:
             con.execute(
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id])
+                [datetime.now(timezone.utc), analysis_id],
+            )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
             write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 

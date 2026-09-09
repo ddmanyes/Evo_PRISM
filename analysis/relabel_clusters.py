@@ -51,8 +51,7 @@ def run_relabel_clusters(
 
     if not h5ad_path.exists():
         raise FileNotFoundError(
-            f"找不到 umap_computed.h5ad：{h5ad_path}\n"
-            "請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
+            f"找不到 umap_computed.h5ad：{h5ad_path}\n請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
         )
     if not label_map:
         raise ValueError("label_map 不得為空。")
@@ -65,15 +64,16 @@ def run_relabel_clusters(
     params_json = json.dumps({"roi_name": roi_name, "groupby": groupby, "label_map": label_map})
 
     from store.factory import get_store as _get_store
+
     _get_store().insert_history(
         analysis_id, sample_id, "relabel_clusters", params_json, "running", requested_by, started_at
     )
 
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        import pandas as pd
         import scanpy as sc
 
         adata = sc.read_h5ad(str(h5ad_path))
@@ -92,13 +92,10 @@ def run_relabel_clusters(
             )
 
         adata.obs["cell_type_manual"] = (
-            adata.obs[groupby].astype(str)
-            .map(lambda v: label_map.get(v, v))
-            .astype("category")
+            adata.obs[groupby].astype(str).map(lambda v: label_map.get(v, v)).astype("category")
         )
 
         # Write back h5ad (additive column only) — atomic rename to survive crashes
-        import shutil
         tmp_path = h5ad_path.with_suffix(".h5ad.tmp")
         adata.write_h5ad(str(tmp_path))
         tmp_path.replace(h5ad_path)  # POSIX atomic rename
@@ -130,13 +127,13 @@ def run_relabel_clusters(
         report_path.write_text(report_text, encoding="utf-8")
 
         summary = (
-            f"{sample_id}/{roi_name} relabel：{len(label_map)} 個 label，"
-            f"共 {adata.n_obs} 細胞"
+            f"{sample_id}/{roi_name} relabel：{len(label_map)} 個 label，共 {adata.n_obs} 細胞"
         )[:50]
         completed_at = datetime.now(timezone.utc)
 
         with _get_store().write_conn() as con:
             from analysis.tool_registry import get_active_tool_id
+
             tool_id = get_active_tool_id(con, "bio_relabel_clusters")
             con.execute(
                 """UPDATE analysis_history
@@ -145,15 +142,35 @@ def run_relabel_clusters(
                 [str(report_path), completed_at, summary, tool_id, analysis_id],
             )
             from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
             write_diagnosis(con, analysis_id, success_diagnosis())
             try:
                 from analysis.artifact_registry import register_artifact
-                register_artifact(con, analysis_id, umap_path, "figure", "UMAP（cell_type_manual）",
-                                  artifact_subtype="umap_manual")
-                register_artifact(con, analysis_id, h5ad_path, "data", "umap_computed.h5ad（含 cell_type_manual）",
-                                  artifact_subtype="h5ad")
-                register_artifact(con, analysis_id, report_path, "report", "Relabel 報告",
-                                  artifact_subtype="relabel_report")
+
+                register_artifact(
+                    con,
+                    analysis_id,
+                    umap_path,
+                    "figure",
+                    "UMAP（cell_type_manual）",
+                    artifact_subtype="umap_manual",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    h5ad_path,
+                    "data",
+                    "umap_computed.h5ad（含 cell_type_manual）",
+                    artifact_subtype="h5ad",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    report_path,
+                    "report",
+                    "Relabel 報告",
+                    artifact_subtype="relabel_report",
+                )
             except Exception as _exc:
                 logger.warning("relabel_clusters: register_artifact 失敗（非致命）: %s", _exc)
 
@@ -162,8 +179,10 @@ def run_relabel_clusters(
         with _get_store().write_conn() as con:
             con.execute(
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id])
+                [datetime.now(timezone.utc), analysis_id],
+            )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
             write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 

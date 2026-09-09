@@ -8,8 +8,12 @@ import logging
 from pathlib import Path as _Path
 
 import sys as _sys
+
 _sys.path.insert(0, str(_Path(__file__).parent.parent))
-from config.settings import MSSEG_PATH as _MSSEG_PATH, EVO_PRISM_LEGACY_ROOT as _EVO_PRISM_LEGACY_ROOT  # noqa: E402
+from config.settings import (
+    MSSEG_PATH as _MSSEG_PATH,
+    EVO_PRISM_LEGACY_ROOT as _EVO_PRISM_LEGACY_ROOT,
+)  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -487,7 +491,7 @@ def _exec_bio_compute_crc_metrics(args: dict) -> str:
     requested_by = args.get("requested_by", "agent")
 
     try:
-        from config.settings import DUCKDB_PATH, MCSEG_RESULTS_ROOT
+        from config.settings import MCSEG_RESULTS_ROOT
 
         # Resolve ROI output dir
         roi_dir = _Path(args.get("roi_dir") or MCSEG_RESULTS_ROOT / sample_id / "roi" / roi_name)
@@ -613,6 +617,7 @@ def _exec_bio_compute_crc_metrics(args: dict) -> str:
 def _exec_bio_get_marker_genes(args: dict) -> str:
     """Rank marker genes for an existing MCseg ROI umap_computed.h5ad."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     roi_dir = args.get("roi_dir")
@@ -623,10 +628,14 @@ def _exec_bio_get_marker_genes(args: dict) -> str:
 
     try:
         from analysis.marker_genes import run_marker_genes
+
         analysis_id, report_path = run_marker_genes(
-            sample_id=sample_id, roi_name=roi_name,
+            sample_id=sample_id,
+            roi_name=roi_name,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            groupby=groupby, n_genes=n_genes, method=method,
+            groupby=groupby,
+            n_genes=n_genes,
+            method=method,
             requested_by=requested_by,
         )
         try:
@@ -642,12 +651,14 @@ def _exec_bio_get_marker_genes(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_get_marker_genes 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_relabel_clusters(args: dict) -> str:
     """Apply manual label_map to cluster column, regenerate UMAP."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     label_map = args.get("label_map") or {}
@@ -660,10 +671,14 @@ def _exec_bio_relabel_clusters(args: dict) -> str:
 
     try:
         from analysis.relabel_clusters import run_relabel_clusters
+
         analysis_id, report_path = run_relabel_clusters(
-            sample_id=sample_id, roi_name=roi_name, label_map=label_map,
+            sample_id=sample_id,
+            roi_name=roi_name,
+            label_map=label_map,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            groupby=groupby, requested_by=requested_by,
+            groupby=groupby,
+            requested_by=requested_by,
         )
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
@@ -678,12 +693,14 @@ def _exec_bio_relabel_clusters(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_relabel_clusters 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_run_celltypist(args: dict) -> str:
     """CellTypist automated cell type annotation on existing umap_computed.h5ad."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     roi_dir = args.get("roi_dir")
@@ -693,10 +710,13 @@ def _exec_bio_run_celltypist(args: dict) -> str:
 
     try:
         from analysis.celltypist_annotate import run_celltypist
+
         analysis_id, report_path = run_celltypist(
-            sample_id=sample_id, roi_name=roi_name,
+            sample_id=sample_id,
+            roi_name=roi_name,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            model=model, majority_voting=majority_voting,
+            model=model,
+            majority_voting=majority_voting,
             requested_by=requested_by,
         )
         try:
@@ -712,12 +732,14 @@ def _exec_bio_run_celltypist(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_run_celltypist 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_run_mcseg_merge(args: dict) -> str:
     """Merge multiple MCseg ROI cellpose_cells.h5ad and run integrated Scanpy pipeline."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_names = args.get("roi_names") or []
     merged_name = args.get("merged_name", "merged")
@@ -730,10 +752,14 @@ def _exec_bio_run_mcseg_merge(args: dict) -> str:
 
     try:
         from analysis.mcseg_merge import run_mcseg_merge
+
         analysis_id, report_path = run_mcseg_merge(
-            sample_id=sample_id, roi_names=roi_names, merged_name=merged_name,
+            sample_id=sample_id,
+            roi_names=roi_names,
+            merged_name=merged_name,
             output_base=_Path(output_base) if output_base else None,
-            integrate=integrate, requested_by=requested_by,
+            integrate=integrate,
+            requested_by=requested_by,
         )
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
@@ -749,12 +775,14 @@ def _exec_bio_run_mcseg_merge(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_run_mcseg_merge 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_export_loupe(args: dict) -> str:
     """Export MCseg ROI to Loupe Browser GeoJSON + cell_metadata.csv (+ optional .cloupe)."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     roi_dir = args.get("roi_dir")
@@ -763,10 +791,13 @@ def _exec_bio_export_loupe(args: dict) -> str:
 
     try:
         from analysis.loupe_export import run_loupe_export
+
         analysis_id, report_path = run_loupe_export(
-            sample_id=sample_id, roi_name=roi_name,
+            sample_id=sample_id,
+            roi_name=roi_name,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            pixel_size_um=pixel_size_um, requested_by=requested_by,
+            pixel_size_um=pixel_size_um,
+            requested_by=requested_by,
         )
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
@@ -781,4 +812,5 @@ def _exec_bio_export_loupe(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_export_loupe 失敗：{e}\n{traceback.format_exc()[-2000:]}"

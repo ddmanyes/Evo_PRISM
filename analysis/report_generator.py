@@ -149,9 +149,7 @@ def _collect_stats(sample_id: str, db_path: Path) -> dict:
             f"SELECT COUNT(DISTINCT gene_name) FROM read_parquet('{expr_glob}')"
         ).fetchone()
         n_genes: int = row[0] if row else 0
-        row = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')"
-        ).fetchone()
+        row = con.execute(f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')").fetchone()
         n_nonzero: int = row[0] if row else 0
 
     n_bins = len(qc_df)
@@ -222,7 +220,10 @@ def _generate_spatial_figures_md(sample_id: str, top_genes_df, db_path: Path) ->
     for gene in genes:
         try:
             _, fig_md = gene_spatial_map(
-                sample_id, gene, save=True, db_path=db_path,
+                sample_id,
+                gene,
+                save=True,
+                db_path=db_path,
                 requested_by="report_generator",
             )
             if fig_md:

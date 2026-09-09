@@ -169,7 +169,9 @@ def pca_plot(
 
     samples = counts.columns.tolist()
     if coldata is not None and color_by in coldata.columns:
-        groups = [str(coldata.loc[s, color_by]) if s in coldata.index else "unknown" for s in samples]
+        groups = [
+            str(coldata.loc[s, color_by]) if s in coldata.index else "unknown" for s in samples
+        ]
         legend_title = color_by
     else:
         groups = [s.split("_")[0] for s in samples]
@@ -295,6 +297,7 @@ def _caption_pca(counts: pd.DataFrame) -> str:
     try:
         from sklearn.decomposition import PCA
         from sklearn.preprocessing import StandardScaler
+
         top_idx = counts.var(axis=1).sort_values(ascending=False).head(2000).index
         mat = StandardScaler().fit_transform(np.log1p(counts.loc[top_idx].T.values))
         ev = PCA(n_components=min(2, mat.shape[1])).fit(mat).explained_variance_ratio_ * 100
@@ -307,8 +310,15 @@ def _version_block() -> str:
     """Markdown table of key package versions for reproducibility."""
     import importlib as _il
     import sys as _sys
-    pkgs = [("pandas", "pandas"), ("numpy", "numpy"), ("scipy", "scipy"),
-            ("omicverse", "omicverse"), ("seaborn", "seaborn"), ("sklearn", "sklearn")]
+
+    pkgs = [
+        ("pandas", "pandas"),
+        ("numpy", "numpy"),
+        ("scipy", "scipy"),
+        ("omicverse", "omicverse"),
+        ("seaborn", "seaborn"),
+        ("sklearn", "sklearn"),
+    ]
     rows = [f"| Python | {_sys.version.split()[0]} |"]
     for label, pkg in pkgs:
         try:
@@ -439,6 +449,7 @@ def generate_bulk_report(
     store = get_store()
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
+
     def _rel(p: Optional[Path]) -> str:
         if p is None:
             return "auto"
@@ -457,8 +468,13 @@ def generate_bulk_report(
             parent_analysis_id = store.get_canonical_id(sample_id, "bulk_eda")
 
         store.insert_history(
-            analysis_id, sample_id, "bulk_eda", params_json, "running",
-            requested_by, started_at,
+            analysis_id,
+            sample_id,
+            "bulk_eda",
+            params_json,
+            "running",
+            requested_by,
+            started_at,
             parameter_hash=param_hash(_params),
         )
 
@@ -513,9 +529,7 @@ def generate_bulk_report(
 
         if quality_flags:
             warnings_md = (
-                "## ⚠️ 品質警告\n\n"
-                + "\n".join(f"- `{f}`" for f in quality_flags)
-                + "\n\n---\n"
+                "## ⚠️ 品質警告\n\n" + "\n".join(f"- `{f}`" for f in quality_flags) + "\n\n---\n"
             )
         else:
             warnings_md = ""
@@ -558,25 +572,28 @@ def generate_bulk_report(
             f"均 {avg_genes:,} 基因，avg_total={avg_total:,.0f}。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
-        summary_metrics = json.dumps({
-            "n_samples": n_samples,
-            "avg_detected_genes": avg_genes,
-            "avg_total_counts": int(avg_total),
-            "quality_flags": quality_flags,
-        })
+        summary_metrics = json.dumps(
+            {
+                "n_samples": n_samples,
+                "avg_detected_genes": avg_genes,
+                "avg_total_counts": int(avg_total),
+                "quality_flags": quality_flags,
+            }
+        )
 
         completed_at = datetime.now(timezone.utc)
         store.complete_history(
-            analysis_id, str(report_path), summary, completed_at,
+            analysis_id,
+            str(report_path),
+            summary,
+            completed_at,
             summary_metrics=json.loads(summary_metrics),
         )
         store.mark_canonical(analysis_id, sample_id, "bulk_eda")
 
         from analysis.failure_diagnosis import success_diagnosis
 
-        store.update_history(
-            analysis_id, failure_diagnosis=json.dumps(success_diagnosis())
-        )
+        store.update_history(analysis_id, failure_diagnosis=json.dumps(success_diagnosis()))
         # register_artifact still uses DuckDB VSS/HNSW — not yet migrated to RegistryStore.
         # Open a separate DuckDB connection for artifact writes only.
         try:
@@ -637,8 +654,10 @@ def generate_bulk_report(
         logger.exception("bulk_eda 分析失敗  analysis_id=%s", analysis_id)
         try:
             from analysis.failure_diagnosis import classify_exception
+
             store.fail_history(
-                analysis_id, datetime.now(timezone.utc),
+                analysis_id,
+                datetime.now(timezone.utc),
                 failure_diagnosis=json.dumps(classify_exception(_exc)),
             )
         except Exception:
@@ -648,6 +667,7 @@ def generate_bulk_report(
     # store 不需要 close() — 連線由 store 自行管理
     try:
         from scripts.export_registry import export_snapshot
+
         export_snapshot()
     except Exception as _exp_exc:
         logger.warning("export_registry 失敗（非致命）: %s", _exp_exc)

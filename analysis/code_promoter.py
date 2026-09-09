@@ -91,7 +91,9 @@ def compute_code_complexity(code: str) -> int:
 # ── 掃描候選 ──────────────────────────────────────────────────────────────────
 
 
-def scan_candidates(min_reuse: int = 1, *, con: "duckdb.DuckDBPyConnection | None" = None) -> list[dict]:
+def scan_candidates(
+    min_reuse: int = 1, *, con: "duckdb.DuckDBPyConnection | None" = None
+) -> list[dict]:
     """掃描 promotion_candidates，以 HELIX Eq.(1) 計算 f_promote，回傳 ≥ θ_promote 的清單。
 
     Parameters

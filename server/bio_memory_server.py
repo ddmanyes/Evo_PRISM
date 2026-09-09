@@ -154,7 +154,9 @@ def _record_metric(
         from store.factory import get_store
 
         get_store().record_metric(
-            tool_name, duration_ms, status,
+            tool_name,
+            duration_ms,
+            status,
             error_class=error_class,
             requested_by=requested_by,
         )
@@ -234,14 +236,18 @@ async def read_resource(uri):  # uri: pydantic AnyUrl
     if uri_str == "registry://snapshot":
         snapshot_path = Path(BIO_DB_ROOT) / "docs" / "registry_snapshot.md"
         if not snapshot_path.exists():
-            return [ReadResourceContents(
-                content="[ERROR] registry_snapshot.md 尚未產生，請先執行 scripts/export_registry.py",
-                mime_type="text/plain",
-            )]
-        return [ReadResourceContents(
-            content=snapshot_path.read_text(encoding="utf-8"),
-            mime_type="text/markdown",
-        )]
+            return [
+                ReadResourceContents(
+                    content="[ERROR] registry_snapshot.md 尚未產生，請先執行 scripts/export_registry.py",
+                    mime_type="text/plain",
+                )
+            ]
+        return [
+            ReadResourceContents(
+                content=snapshot_path.read_text(encoding="utf-8"),
+                mime_type="text/markdown",
+            )
+        ]
 
     # artifact://
     from store.factory import get_store as _get_store
@@ -1256,7 +1262,7 @@ def _build_all_tools() -> list[types.Tool]:
             name="bio_relabel_clusters",
             description=(
                 "依 label_map 手動重標 MCseg ROI 的 cluster，寫入 cell_type_manual 欄位並重繪 UMAP。"
-                "label_map 格式：{\"0\": \"Keratinocyte\", \"1\": \"Fibroblast\", ...}。"
+                'label_map 格式：{"0": "Keratinocyte", "1": "Fibroblast", ...}。'
                 "未在 label_map 中的 cluster 保留原標籤。需先完成 bio_run_mcseg_roi。"
             ),
             inputSchema={
@@ -1477,8 +1483,7 @@ async def _handle_bio_history_timeline(args: dict) -> str:
         ).fetchall()
         cols = ["sample_id", "analysis_type", "status", "requested_by", "completed_at", "summary"]
         result_rows = [
-            {**dict(zip(cols, r)), "completed_at": str(r[4])[:16] if r[4] else ""}
-            for r in rows
+            {**dict(zip(cols, r)), "completed_at": str(r[4])[:16] if r[4] else ""} for r in rows
         ]
 
     if not result_rows:
@@ -2010,49 +2015,58 @@ async def _handle_bio_get_artifact(args: dict) -> str:
 async def _handle_bio_get_playbook(args: dict) -> str:
     """取得分析領域技能說明書（playbook）。"""
     from server.agent_history import _exec_bio_get_playbook
+
     return await asyncio.to_thread(_exec_bio_get_playbook, args)
 
 
 async def _handle_bio_sample_list(args: dict) -> str:
     """列出 sample_registry 中已登記的樣本。"""
     from server.agent_history import _exec_bio_sample_list
+
     return await asyncio.to_thread(_exec_bio_sample_list, args)
 
 
 async def _handle_bio_sample_compare(args: dict) -> str:
     """比較多個樣本的分析歷史摘要。"""
     from server.agent_history import _exec_bio_sample_compare
+
     return await asyncio.to_thread(_exec_bio_sample_compare, args)
 
 
 async def _handle_bio_run_mcseg_qc(args: dict) -> str:
     """MCseg 細胞分割品質視覺化。"""
     from server.agent_bulk import _exec_bio_run_mcseg_qc
+
     return await asyncio.to_thread(_exec_bio_run_mcseg_qc, args)
 
 
 async def _handle_bio_get_marker_genes(args: dict) -> str:
     from server.agent_bulk import _exec_bio_get_marker_genes
+
     return await asyncio.to_thread(_exec_bio_get_marker_genes, args)
 
 
 async def _handle_bio_relabel_clusters(args: dict) -> str:
     from server.agent_bulk import _exec_bio_relabel_clusters
+
     return await asyncio.to_thread(_exec_bio_relabel_clusters, args)
 
 
 async def _handle_bio_run_celltypist(args: dict) -> str:
     from server.agent_bulk import _exec_bio_run_celltypist
+
     return await asyncio.to_thread(_exec_bio_run_celltypist, args)
 
 
 async def _handle_bio_run_mcseg_merge(args: dict) -> str:
     from server.agent_bulk import _exec_bio_run_mcseg_merge
+
     return await asyncio.to_thread(_exec_bio_run_mcseg_merge, args)
 
 
 async def _handle_bio_export_loupe(args: dict) -> str:
     from server.agent_bulk import _exec_bio_export_loupe
+
     return await asyncio.to_thread(_exec_bio_export_loupe, args)
 
 

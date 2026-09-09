@@ -51,18 +51,22 @@ def run_marker_genes(
 
     if not h5ad_path.exists():
         raise FileNotFoundError(
-            f"找不到 umap_computed.h5ad：{h5ad_path}\n"
-            "請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
+            f"找不到 umap_computed.h5ad：{h5ad_path}\n請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
         )
 
     analysis_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
-    params_json = json.dumps({
-        "roi_name": roi_name, "groupby": groupby,
-        "n_genes": n_genes, "method": method,
-    })
+    params_json = json.dumps(
+        {
+            "roi_name": roi_name,
+            "groupby": groupby,
+            "n_genes": n_genes,
+            "method": method,
+        }
+    )
 
     from store.factory import get_store as _get_store
+
     _get_store().insert_history(
         analysis_id, sample_id, "marker_genes", params_json, "running", requested_by, started_at
     )
@@ -74,10 +78,7 @@ def run_marker_genes(
 
         if groupby not in adata.obs.columns:
             available = list(adata.obs.columns)
-            raise ValueError(
-                f"groupby='{groupby}' 不在 obs 欄位中。\n"
-                f"可用欄位：{available}"
-            )
+            raise ValueError(f"groupby='{groupby}' 不在 obs 欄位中。\n可用欄位：{available}")
         if adata.obs[groupby].nunique() < 2:
             raise ValueError(
                 f"'{groupby}' 只有 {adata.obs[groupby].nunique()} 個群組，"
@@ -86,13 +87,15 @@ def run_marker_genes(
 
         sc.tl.rank_genes_groups(adata, groupby=groupby, method=method, n_genes=n_genes)
         df = sc.get.rank_genes_groups_df(adata, group=None)
-        df = df.rename(columns={
-            "group": "cluster",
-            "names": "gene",
-            "scores": "score",
-            "logfoldchanges": "logfoldchange",
-            "pvals_adj": "pval_adj",
-        })[["cluster", "gene", "score", "logfoldchange", "pval_adj"]]
+        df = df.rename(
+            columns={
+                "group": "cluster",
+                "names": "gene",
+                "scores": "score",
+                "logfoldchanges": "logfoldchange",
+                "pvals_adj": "pval_adj",
+            }
+        )[["cluster", "gene", "score", "logfoldchange", "pval_adj"]]
 
         out_dir = results_dir(sample_id, "marker_genes")
         ts = started_at.strftime("%Y%m%d_%H%M%S")
@@ -117,11 +120,16 @@ def run_marker_genes(
         report_path = out_dir / f"marker_genes_{sample_id}_{roi_name}_{ts}.md"
         report_path.write_text(report_text, encoding="utf-8")
 
-        summary = f"{sample_id}/{roi_name} markers：{len(clusters)} 群，top gene={df['gene'].iloc[0]}"[:50]
+        summary = (
+            f"{sample_id}/{roi_name} markers：{len(clusters)} 群，top gene={df['gene'].iloc[0]}"[
+                :50
+            ]
+        )
         completed_at = datetime.now(timezone.utc)
 
         with _get_store().write_conn() as con:
             from analysis.tool_registry import get_active_tool_id
+
             tool_id = get_active_tool_id(con, "bio_get_marker_genes")
             con.execute(
                 """UPDATE analysis_history
@@ -130,13 +138,27 @@ def run_marker_genes(
                 [str(report_path), completed_at, summary, tool_id, analysis_id],
             )
             from analysis.failure_diagnosis import success_diagnosis, write_diagnosis
+
             write_diagnosis(con, analysis_id, success_diagnosis())
             try:
                 from analysis.artifact_registry import register_artifact
-                register_artifact(con, analysis_id, csv_path, "table", "Marker genes CSV",
-                                  artifact_subtype="marker_genes")
-                register_artifact(con, analysis_id, report_path, "report", "Marker genes 報告",
-                                  artifact_subtype="marker_genes_report")
+
+                register_artifact(
+                    con,
+                    analysis_id,
+                    csv_path,
+                    "table",
+                    "Marker genes CSV",
+                    artifact_subtype="marker_genes",
+                )
+                register_artifact(
+                    con,
+                    analysis_id,
+                    report_path,
+                    "report",
+                    "Marker genes 報告",
+                    artifact_subtype="marker_genes_report",
+                )
             except Exception as _exc:
                 logger.warning("marker_genes: register_artifact 失敗（非致命）: %s", _exc)
 
@@ -145,8 +167,10 @@ def run_marker_genes(
         with _get_store().write_conn() as con:
             con.execute(
                 "UPDATE analysis_history SET status='failed', completed_at=? WHERE analysis_id=?",
-                [datetime.now(timezone.utc), analysis_id])
+                [datetime.now(timezone.utc), analysis_id],
+            )
             from analysis.failure_diagnosis import classify_exception, write_diagnosis
+
             write_diagnosis(con, analysis_id, classify_exception(_exc))
         raise
 
