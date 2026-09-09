@@ -1,4 +1,4 @@
-"""Migration v27: durable analysis job queue."""
+"""Migration v28: durable analysis job queue."""
 
 from __future__ import annotations
 
@@ -13,6 +13,12 @@ from config.settings import DUCKDB_PATH  # noqa: E402
 
 def migrate(db_path: Path = DUCKDB_PATH) -> None:
     with duckdb.connect(str(db_path)) as con:
+        try:
+            con.execute("LOAD vss")
+            con.execute("SET hnsw_enable_experimental_persistence = true")
+        except Exception as exc:
+            print(f"WARNING: VSS load failed ({exc}) — CHECKPOINT may fail")
+
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -57,13 +63,13 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
             "ON analysis_jobs(requested_by, created_at)"
         )
         exists = con.execute(
-            "SELECT 1 FROM schema_migrations WHERE version = 27"
+            "SELECT 1 FROM schema_migrations WHERE version = 28"
         ).fetchone()
         if not exists:
             con.execute(
                 """
                 INSERT INTO schema_migrations(version, applied_at, description)
-                VALUES (27, now(), 'Durable analysis job queue with leases and cancellation')
+                VALUES (28, now(), 'Durable analysis job queue with leases and cancellation')
                 """
             )
         con.execute("CHECKPOINT")

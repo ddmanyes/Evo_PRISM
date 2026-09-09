@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS engram_search_metrics (
 );
 
 -- ---------------------------------------------------------------------------
--- api_keys + access_audit_log  (v26 multi-user authentication)
+-- api_keys + access_audit_log  (v27 multi-user authentication)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS api_keys (
     key_hash    TEXT PRIMARY KEY,
@@ -267,7 +267,7 @@ CREATE INDEX IF NOT EXISTS idx_access_audit_user_time
     ON access_audit_log (user_id, occurred_at);
 
 -- ---------------------------------------------------------------------------
--- analysis_jobs  (v27 durable analysis queue)
+-- analysis_jobs  (v28 durable analysis queue)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS analysis_jobs (
     job_id            TEXT PRIMARY KEY,

@@ -14,7 +14,7 @@
 
 ## 管理員：發行與撤銷 key
 
-1. 先套用 schema v26（key/audit）與 v27（job queue）migration。容器 entrypoint 會用 `scripts/run_pending_migrations.py` 依版本處理。
+1. 先套用 schema v27（key/audit）與 v28（job queue）migration。容器 entrypoint 會用 `scripts/run_pending_migrations.py` 依版本處理；既有 v26 是 embedding migration，不得重用。
 2. 用 admin 身分呼叫：
 
 ```json

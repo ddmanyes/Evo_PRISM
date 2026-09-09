@@ -23,8 +23,8 @@
 Evo_PRISM/
 ├── IMPLEMENTATION_PLAN.md
 ├── config/settings.py
-├── scripts/27_migrate_schema_v26_auth.py
-├── scripts/28_migrate_schema_v27_job_queue.py
+├── scripts/27_migrate_schema_v27_auth.py
+├── scripts/28_migrate_schema_v28_job_queue.py
 ├── scripts/pg_schema.sql
 ├── store/{base,duckdb_store,postgres_store}.py
 ├── server/{auth,identity,tool_catalog,bio_memory_server}.py
@@ -218,11 +218,12 @@ Evo_PRISM/
   - 預期行為：確認實際 backend、容器／服務狀態、DB/L1 路徑、mount 類型與容量；依 backend 建立時間戳備份並驗證可開啟，不讀取或輸出 key secret。
   - 安全界線：若 active DuckDB 無法取得一致備份，停在 maintenance-window 閘門，不直接停止服務。
 
-- [~] 任務 24：暫存副本 migration 與 Alice／Bob／admin smoke（in progress 2026-09-09）
-  - 預期行為：在隔離副本重跑 v26/v27 與 L1 owner migration；驗證 own-only、admin-all、shared sample registry、queue ownership、revocation 與 staging promotion。
+- [x] 任務 24：暫存副本 migration 與 Alice／Bob／admin smoke（completed 2026-09-09）
+  - 預期行為：在隔離副本重跑 auth v27／job queue v28 與 L1 owner migration；驗證 own-only、admin-all、shared sample registry、queue ownership、revocation 與 staging promotion。
   - 安全界線：只用 fixture key／資料，不建立真實成員或改寫正式資料。
+  - 已排除阻擋：從正式 EXPORT 還原的主庫含 HNSW index，且既有 version 26 屬於 embedding migration。auth/job migration 已改為 v27/v28 並補上 VSS 初始化；乾淨副本、冪等與角色 smoke 均已通過。
 
-- [ ] 任務 25：readiness 報告與 Second Brain 回寫
+- [~] 任務 25：readiness 報告與 Second Brain 回寫（in progress 2026-09-09）
   - 預期行為：列出已通過項目、阻擋、實際部署／重啟命令與 rollback 點；中央 SB 原計畫追加續行結果並讀回驗證。
   - 安全界線：正式 rebuild/restart、發真實 key 與資料搬移另以 readiness 結果為閘門。
 

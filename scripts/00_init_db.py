@@ -209,7 +209,7 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     """)
     print("View:  analysis_index — OK")
 
-    # v26 multi-user authentication: raw keys are never stored.
+    # v27 multi-user authentication: raw keys are never stored.
     con.execute("""
         CREATE TABLE IF NOT EXISTS api_keys (
             key_hash     VARCHAR PRIMARY KEY,
