@@ -176,4 +176,4 @@ extend-exclude = [
 "tests/*" = ["E402"]                        # 測試常在中段重組 import（mock 邊界）
 
 [tool.hatch.build.targets.wheel]
-packages = ["analysis", "server", "config", "scheduler"]
+packages = ["analysis", "server", "config", "scheduler", "store", "worker"]

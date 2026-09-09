@@ -102,13 +102,13 @@ Evo_PRISM/
   - 相關檔案：`server/tool_catalog.py`、`server/bio_memory_server.py`
   - 提交：`feat(queue): expose analysis job tools`
 
-- [ ] 任務 9：以失敗測試定義worker dispatch、失敗與取消
+- [x] 任務 9：以失敗測試定義worker dispatch、失敗與取消（completed 2026-09-09）
   - 預期行為：worker只走既有handler；完成／失敗正確落庫；取消與lease過期安全處理。
   - 驗證指令：`python -m pytest tests/test_worker_dispatch.py -v`
   - 相關檔案：`tests/test_worker_dispatch.py`
   - 提交：`test(worker): define safe queued dispatch`
 
-- [ ] 任務 10：實作獨立analysis worker與Docker service
+- [x] 任務 10：實作獨立analysis worker與Docker service（completed 2026-09-09）
   - 預期行為：worker可恢復lease，CPU/GPU資源類別限流，不阻塞MCP server。
   - 驗證指令：worker tests與`docker compose config`。
   - 相關檔案：`worker/`、`docker-compose.yml`

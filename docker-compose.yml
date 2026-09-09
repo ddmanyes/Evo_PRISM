@@ -35,7 +35,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 services:
   evo-prism:
-    build:
+    build: &evo-build
       # NOT `.` (KINGSTON/exFAT) — BuildKit's context "sender" fails reading AppleDouble
       # (._*) xattrs on exFAT ("failed to xattr ...: operation not permitted"), and BuildKit
       # is required for --platform (the legacy DOCKER_BUILDKIT=0 builder silently ignores
@@ -52,7 +52,7 @@ services:
     restart: unless-stopped
     command: ["web"]   # entrypoint.sh: uvicorn server.web_app:app (mounts /mcp), not the stdio-default "server" mode
     env_file: .env
-    environment:
+    environment: &evo-environment
       BIO_DB_ROOT: /data/bio_db
       # Pre-existing bug found 2026-07-16: config/settings.py's MSSEG_PATH default
       # ("K:/plan_a/MSseg", a Windows path) doesn't exist in this container even
@@ -69,9 +69,9 @@ services:
       LLAMA_BASE_URL: http://host.docker.internal:11434/v1
       LLAMA_MODEL: gemma
       LLAMA_NO_THINK: "1"
-    extra_hosts:
+    extra_hosts: &evo-extra-hosts
       - "host.docker.internal:host-gateway"
-    volumes:
+    volumes: &evo-volumes
       - ./bio_memory.duckdb:/data/bio_db/bio_memory.duckdb
       - ./gold:/data/bio_db/gold
       - ./silver:/data/bio_db/silver
@@ -104,3 +104,29 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  analysis-worker-cpu:
+    build: *evo-build
+    platform: linux/amd64
+    restart: unless-stopped
+    command: ["worker", "cpu"]
+    env_file: .env
+    environment: *evo-environment
+    extra_hosts: *evo-extra-hosts
+    volumes: *evo-volumes
+    depends_on:
+      evo-prism:
+        condition: service_healthy
+
+  analysis-worker-gpu:
+    build: *evo-build
+    platform: linux/amd64
+    restart: unless-stopped
+    command: ["worker", "gpu"]
+    env_file: .env
+    environment: *evo-environment
+    extra_hosts: *evo-extra-hosts
+    volumes: *evo-volumes
+    depends_on:
+      evo-prism:
+        condition: service_healthy

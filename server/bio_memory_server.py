@@ -1030,6 +1030,23 @@ assert set(_HANDLERS) == set(_TOOL_CATALOG), (
 )
 
 
+async def dispatch_queued_tool(name: str, arguments: dict, identity) -> Any:
+    """Execute one already-claimed queueable tool without re-entering queue gating."""
+    from server.auth import authorize_tool, identity_scope, trusted_tool_arguments
+
+    spec = _TOOL_CATALOG.get(name)
+    if spec is None or not spec.queueable or spec.dangerous:
+        raise ValueError(f"target tool {name!r} is not queueable")
+    decision = authorize_tool(identity, spec, via_queue=True)
+    if not decision.accepted:
+        raise PermissionError(
+            f"{name} requires {spec.required_role.value}; got {identity.role.value}"
+        )
+    trusted = trusted_tool_arguments(arguments, identity)
+    with identity_scope(identity):
+        return await _HANDLERS[name](trusted)
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent]:
     from server.auth import authorize_tool, current_identity, trusted_tool_arguments
