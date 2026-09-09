@@ -14,8 +14,10 @@ JSON Schema、handler 對應關係收斂成一份，兩端都從這裡生成，�
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
+
+from server.identity import Role
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,9 @@ class ToolSpec:
     module: Optional[str] = None
     func: Optional[str] = None
     mcp_handler: Optional[str] = None
+    required_role: Role = Role.VIEWER
+    queueable: bool = False
+    resource_class: str = "cpu"
 
     def __post_init__(self) -> None:
         has_delegate = self.module is not None and self.func is not None
@@ -35,6 +40,8 @@ class ToolSpec:
             raise ValueError(
                 "ToolSpec 必須恰好指定 (module+func) 或 mcp_handler 其中一種呼叫方式"
             )
+        if self.dangerous and self.queueable:
+            raise ValueError("Dangerous tools must never be queueable")
 
 
 TOOL_CATALOG: dict[str, "ToolSpec"] = {
@@ -1459,3 +1466,67 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
         func="_exec_bio_tool_health",
     ),
 }
+
+# Access and queue policy is kept beside the catalog, so MCP and Web UI do not
+# grow separate hand-maintained authorization lists. Query/read tools retain the
+# ToolSpec defaults (viewer, immediate). Heavy analysis tools require analyst
+# and must enter through bio_submit_analysis for non-admin callers.
+_QUEUEABLE_CPU_TOOLS = frozenset(
+    {
+        "bio_compute_crc_metrics",
+        "bio_compute_spatial_nn_distance",
+        "bio_export_loupe",
+        "bio_relabel_clusters",
+        "bio_run_bulk_eda",
+        "bio_run_celltypist",
+        "bio_run_deg",
+        "bio_run_enrichment",
+        "bio_run_geneset_score",
+        "bio_run_heatmaps",
+        "bio_run_mcseg_merge",
+        "bio_run_mcseg_qc",
+        "bio_run_sc_clustering",
+        "bio_run_spatial_eda",
+    }
+)
+_QUEUEABLE_GPU_TOOLS = frozenset({"bio_run_mcseg_roi", "bio_run_mcseg_fullslide"})
+_ANALYST_WRITE_TOOLS = frozenset(
+    {
+        "bio_memory_write",
+        "bio_register_external_analysis_result",
+        "bio_register_external_mcseg_result",
+    }
+)
+_ADMIN_ONLY_TOOLS = frozenset(
+    {
+        "bio_convert_ndpi_to_tiff",
+        "bio_execute_code",
+        "bio_register_sample",
+        "bio_tool_health",
+    }
+)
+
+for _tool_name in _QUEUEABLE_CPU_TOOLS:
+    TOOL_CATALOG[_tool_name] = replace(
+        TOOL_CATALOG[_tool_name],
+        required_role=Role.ANALYST,
+        queueable=True,
+        resource_class="cpu",
+    )
+for _tool_name in _QUEUEABLE_GPU_TOOLS:
+    TOOL_CATALOG[_tool_name] = replace(
+        TOOL_CATALOG[_tool_name],
+        required_role=Role.ANALYST,
+        queueable=True,
+        resource_class="gpu",
+    )
+for _tool_name in _ANALYST_WRITE_TOOLS:
+    TOOL_CATALOG[_tool_name] = replace(
+        TOOL_CATALOG[_tool_name], required_role=Role.ANALYST
+    )
+for _tool_name in _ADMIN_ONLY_TOOLS:
+    TOOL_CATALOG[_tool_name] = replace(
+        TOOL_CATALOG[_tool_name], required_role=Role.ADMIN, queueable=False
+    )
+
+del _tool_name

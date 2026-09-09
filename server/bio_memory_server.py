@@ -932,11 +932,28 @@ assert set(_HANDLERS) == set(_TOOL_CATALOG), (
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent]:
-    requested_by = None
-    if isinstance(arguments, dict):
-        requested_by = arguments.get("requested_by")
-    if not requested_by:
-        requested_by = "mcp_client"
+    from server.auth import authorize_tool, current_identity, trusted_tool_arguments
+
+    identity = current_identity()
+    spec = _TOOL_CATALOG.get(name)
+    if spec is None:
+        _record_metric(name, 0, "user_error", requested_by=identity.user_id)
+        return [types.TextContent(type="text", text=f"[ERROR] 未知工具：{name!r}")]
+
+    authorization = authorize_tool(identity, spec)
+    if not authorization.accepted:
+        _record_metric(name, 0, "user_error", requested_by=identity.user_id)
+        if authorization.reason == "queue_required":
+            message = f"[RBAC] {name} 必須透過 bio_submit_analysis 進入分析佇列。"
+        else:
+            message = (
+                f"[RBAC] {name} 需要 {spec.required_role.value} 權限；"
+                f"目前角色為 {identity.role.value}。"
+            )
+        return [types.TextContent(type="text", text=message)]
+
+    arguments = trusted_tool_arguments(arguments, identity)
+    requested_by = identity.user_id
 
     # ── Fast-Path 攔截（AA3）──────────────────────────────────────────────────
     # bio_history_search 接受自然語言查詢，遇到簡單意圖（最近N筆/時間軸/樣本列表）
@@ -981,10 +998,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
             except ImportError:
                 pass  # fast_path module not available; continue normal dispatch
 
-    handler = _HANDLERS.get(name)
-    if handler is None:
-        _record_metric(name, 0, "user_error", requested_by=requested_by)
-        return [types.TextContent(type="text", text=f"[ERROR] 未知工具：{name!r}")]
+    handler = _HANDLERS[name]
 
     # Dangerous tool gate：即使 handler 存在，未開 env flag 也拒絕（defense in depth）
     if name in _DANGEROUS_TOOLS and not _dangerous_tools_enabled():
@@ -1096,6 +1110,19 @@ def _extract_bearer_token(scope: dict) -> str | None:
     return None
 
 
+def _configured_owner_tokens() -> tuple[str, ...]:
+    values: list[str] = []
+    single = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+    if single:
+        values.append(single)
+    values.extend(
+        token.strip()
+        for token in os.environ.get("MCP_AUTH_TOKENS", "").split(",")
+        if token.strip()
+    )
+    return tuple(dict.fromkeys(values))
+
+
 def create_http_app():
     """回傳 (asgi_handler, lifespan_cm)，供父 ASGI app 掛載並驅動 lifespan。
 
@@ -1144,18 +1171,43 @@ def create_http_app():
                     await send({"type": "lifespan.shutdown.complete"})
                     return
         else:
-            auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip() or None
-            if auth_token is not None:
-                presented = _extract_bearer_token(scope)
-                if not presented:
-                    await _send_auth_error(send, 401, "Unauthorized: missing Bearer token")
-                    return
-                import hmac
+            from server.auth import authenticate_token, identity_scope
+            from server.identity import Identity, Role
+            from store.factory import get_store
 
-                if not hmac.compare_digest(presented, auth_token):
-                    await _send_auth_error(send, 401, "Unauthorized: invalid token")
+            store = get_store()
+            owner_tokens = _configured_owner_tokens()
+            try:
+                registered_key_count = store.count_active_api_keys()
+            except Exception as exc:
+                registered_key_count = 0
+                logger.warning("API-key registry unavailable during auth setup: %s", exc)
+
+            if owner_tokens or registered_key_count:
+                presented = _extract_bearer_token(scope)
+
+                def _lookup(digest: str):
+                    try:
+                        return store.get_identity_for_key_hash(digest)
+                    except Exception as exc:
+                        logger.warning("API-key lookup failed: %s", exc)
+                        return None
+
+                decision = authenticate_token(
+                    presented,
+                    lookup_fn=_lookup,
+                    owner_tokens=owner_tokens,
+                )
+                if not decision.accepted or decision.identity is None:
+                    await _send_auth_error(send, 401, "Unauthorized")
                     return
-            await session_manager.handle_request(scope, receive, send)
+                identity = decision.identity
+            else:
+                # Backward-compatible local/development mode when no auth source exists.
+                identity = Identity(user_id="local:http", role=Role.ADMIN)
+
+            with identity_scope(identity):
+                await session_manager.handle_request(scope, receive, send)
 
     return _asgi_handler, _mcp_lifespan
 

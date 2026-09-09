@@ -71,13 +71,13 @@ Evo_PRISM/
   - 相關檔案：`server/identity.py`、`server/auth.py`、雙後端 store與schema。
   - 提交：`feat(auth): add per-key identity lifecycle`
 
-- [ ] 任務 4：以失敗測試定義 viewer／analyst／admin工具權限
+- [x] 任務 4：以失敗測試定義 viewer／analyst／admin工具權限（completed 2026-09-09）
   - 預期行為：viewer不能提交分析；analyst不能管理key或執行危險工具；admin可管理。
   - 驗證指令：`python -m pytest tests/test_auth_rbac.py -v`
   - 相關檔案：`tests/test_auth_rbac.py`
   - 提交：`test(rbac): define tool authorization matrix`
 
-- [ ] 任務 5：在tool catalog加入required_role與queueable單一真相來源
+- [x] 任務 5：在tool catalog加入required_role與queueable單一真相來源（completed 2026-09-09）
   - 預期行為：兩個入口共用權限分類，authenticated identity覆寫`requested_by`。
   - 驗證指令：RBAC與tool catalog parity tests。
   - 相關檔案：`server/tool_catalog.py`、`server/bio_memory_server.py`
