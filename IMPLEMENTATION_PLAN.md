@@ -132,7 +132,7 @@ Evo_PRISM/
   - 相關檔案：tool catalog、MCP server、`scripts/provision_staging_user.py`
   - 提交：`feat(ingest): expose staged dataset workflow`
 
-- [ ] 任務 14：撰寫onboarding、資料傳輸與故障復原文件
+- [x] 任務 14：撰寫onboarding、資料傳輸與故障復原文件（completed 2026-09-09）
   - 預期行為：文件涵蓋發key、SFTP/rsync、manifest、提交、查狀態、撤銷與worker恢復。
   - 驗證指令：文件契約字串檢查。
   - 相關檔案：`docs/guides/`

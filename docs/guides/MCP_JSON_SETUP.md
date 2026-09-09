@@ -34,17 +34,18 @@ Linux 部署時建議移至純 ASCII 路徑（例：`/mnt/space4/bio_lab_db/`）
 | Env Var | 預設 | 說明 |
 | ------- | ---- | ---- |
 | `PYTHONPATH` | — | 必填。指向專案根目錄，讓 `from server.agent import ...` 可解析 |
-| `MCP_AUTH_TOKEN` | 空字串（auth 關閉） | 設定後 HTTP 端必須帶 `Authorization: Bearer <token>`；空字串時為純本機開發模式 |
+| `MCP_AUTH_TOKEN` / `MCP_AUTH_TOKENS` | 空字串（無 owner token） | 管理員相容token；成員應使用DB內個別hashed key。有任一owner/member key後 HTTP必須帶Bearer token |
 | `MCP_BIND_HOST` | `127.0.0.1` | HTTP transport 綁定位址。設 `0.0.0.0` 開放區網**前必須**搭配 `MCP_AUTH_TOKEN` |
+| `MCP_AUTH_REQUIRED` | `false` | 設 `true` 時即使key registry暫時不可用也會fail closed；Tailscale/對外部署必須啟用，Compose已強制 |
 | `MCP_RATE_LIMIT_PER_MIN` | `30` | 重量級工具（embedding/sandbox）每分鐘呼叫上限 |
 | `MCP_ENABLE_DANGEROUS_TOOLS` | 未設（關閉） | 設 `true` 才會將 `bio_execute_code`（沙盒 Python 執行）暴露給 MCP 客戶端。defense in depth — 即使 auth 失誤也不會洩漏沙盒入口 |
 
 ## 安全建議
 
 - **本機開發**：`MCP_BIND_HOST=127.0.0.1` 即可，可不設 token
-- **區網／團隊共用**：必須設 `MCP_AUTH_TOKEN`（建議 32+ char 隨機字串）且不要設 `MCP_ENABLE_DANGEROUS_TOOLS`
+- **區網／團隊共用**：管理員保留owner token，以 `bio_manage_api_key` 為每位成員發行個別key，且不要設 `MCP_ENABLE_DANGEROUS_TOOLS`
 - **真要暴露 `bio_execute_code`**：必須同時 `MCP_AUTH_TOKEN` + `MCP_BIND_HOST=127.0.0.1` + 沙盒白名單嚴格審查
 
 ## 工具列表
 
-預設啟動 13 個 MCP 工具；`MCP_ENABLE_DANGEROUS_TOOLS=true` 才會加上第 14 個 `bio_execute_code`。詳細工具表見 [MCP_HTTP_GUIDE.md](MCP_HTTP_GUIDE.md)。
+工具數量會隨 `server/tool_catalog.py` 演進；`MCP_ENABLE_DANGEROUS_TOOLS=true` 才會顯示 `bio_execute_code`。詳細見 [MCP_HTTP_GUIDE.md](MCP_HTTP_GUIDE.md)，成員key/佇列/資料匯入見 [LAB_MEMBER_ANALYSIS.md](LAB_MEMBER_ANALYSIS.md)。

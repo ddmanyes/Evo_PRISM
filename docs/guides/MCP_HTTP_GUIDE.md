@@ -103,20 +103,9 @@ with httpx.Client(timeout=30) as client:
             print(line[6:])
 ```
 
-## 5. 已暴露的工具（7 個）
+## 5. 工具清單
 
-| 工具 | 用途 |
-|------|------|
-| `bio_history_lookup` | 依 sample_id 查 analysis_history 列表 |
-| `bio_history_timeline` | 時序視圖（GROUP BY 日期） |
-| `bio_history_check` | 檢查是否已分析過某個（sample, analysis_type） |
-| `bio_history_search` | L1 cache 語意搜尋（threshold 預設 0.88，對齊 agent.py Cache Hit Protocol） |
-| `bio_memory_query` | L1 memory_recent 語意查詢 |
-| `bio_memory_write` | 寫入 L1 cache |
-| `bio_register_sample` | 登記新樣本到 sample_registry |
-
-> 分析工具（`bio_run_spatial_eda` / `bio_run_bulk_eda` / `bio_execute_code` / ENGRAM 5 件套）
-> 目前僅 agent.py 內呼叫，未透過 MCP 暴露。PROGRESS.md MCP P0-2 已記錄此覆蓋缺口。
+工具以 `server/tool_catalog.py::TOOL_CATALOG` 為單一來源，MCP 與 Web UI 共用同一份 schema/dispatch。當前包含 52 個查詢、記憶、artifact、分析、佇列、key 與 staging 工具。工具的 `required_role`、`queueable`、`resource_class` 也在同一 catalog 管理；實驗室成員流程見 [LAB_MEMBER_ANALYSIS.md](LAB_MEMBER_ANALYSIS.md)。
 
 ## 6. 常見錯誤排查
 
@@ -130,5 +119,6 @@ with httpx.Client(timeout=30) as client:
 ## 7. 部署注意
 
 - **綁定主機**：env `MCP_BIND_HOST`，預設 `127.0.0.1`（僅本機）；對外開放改 `0.0.0.0`
-- **認證**：目前無 token 驗證（P1 待辦：`MCP_AUTH_TOKEN`），對外開放前務必加上
-- **速率限制**：embedding 與 search 工具每次都打 llama-server，未做 rate limiting（MCP P1-4）
+- **認證**：HTTP 支援舊的 owner `MCP_AUTH_TOKEN`/`MCP_AUTH_TOKENS` 與 DB 內每人 hashed key；有任一認證來源時就必須帶 Bearer token。Tailscale/對外部署另設 `MCP_AUTH_REQUIRED=true` 保證 registry 故障時 fail closed
+- **授權**：`viewer`/`analyst`/`admin` 以 tool catalog 執行；分析者的重量工具必須進佇列
+- **速率限制**：需要 embedding/search 的工具共用 `MCP_RATE_LIMIT_PER_MIN` 限制

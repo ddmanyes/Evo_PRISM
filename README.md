@@ -472,6 +472,8 @@ See [docs/guides/TESTING.md](docs/guides/TESTING.md) for the full per-file break
 
 ## Documentation
 
+- [實驗室成員連線、排隊分析與資料匯入](docs/guides/LAB_MEMBER_ANALYSIS.md)
+
 | Document                                                                    | Description                                               |
 | :-------------------------------------------------------------------------- | :-------------------------------------------------------- |
 | [CLAUDE.md](CLAUDE.md)                                                         | Project constitution (development rules + schema + paths) |
