@@ -205,6 +205,27 @@ Evo_PRISM/
   - 相關檔案：`docs/guides/LAB_MEMBER_ANALYSIS.md`、`docs/logs/execution_trace.md`
   - 提交：`docs(privacy): document member record isolation`
 
+## 部署前整合續行（2026-09-09 已批准）
+
+正式 checkout 目前包含既有未提交的 `analysis/mcseg_wrapper.py` 與未追蹤 `scripts/start_webserver.py`。為避免把使用者工作混入整合，先以隔離檢查證明 feature 可由目前正式 HEAD 安全 fast-forward，並確認檔案集合不重疊；只有通過後才更新正式分支指標，且不自動啟停服務。
+
+- [x] 任務 22：隔離整合演練與 fast-forward 安全檢查（completed 2026-09-09）
+  - 預期行為：確認 base／HEAD ancestry、合併衝突與 dirty-path overlap；正式 checkout 的既有修改保持原樣。
+  - 驗證指令：`git merge-base --is-ancestor`、變更路徑交集、隔離 worktree feature gate。
+  - 完成條件：可證明 fast-forward 且無 dirty-path overlap，才允許正式 branch pointer 前進。
+
+- [~] 任務 23：正式環境唯讀盤點與可恢復備份（in progress 2026-09-09）
+  - 預期行為：確認實際 backend、容器／服務狀態、DB/L1 路徑、mount 類型與容量；依 backend 建立時間戳備份並驗證可開啟，不讀取或輸出 key secret。
+  - 安全界線：若 active DuckDB 無法取得一致備份，停在 maintenance-window 閘門，不直接停止服務。
+
+- [ ] 任務 24：暫存副本 migration 與 Alice／Bob／admin smoke
+  - 預期行為：在隔離副本重跑 v26/v27 與 L1 owner migration；驗證 own-only、admin-all、shared sample registry、queue ownership、revocation 與 staging promotion。
+  - 安全界線：只用 fixture key／資料，不建立真實成員或改寫正式資料。
+
+- [ ] 任務 25：readiness 報告與 Second Brain 回寫
+  - 預期行為：列出已通過項目、阻擋、實際部署／重啟命令與 rollback 點；中央 SB 原計畫追加續行結果並讀回驗證。
+  - 安全界線：正式 rebuild/restart、發真實 key 與資料搬移另以 readiness 結果為閘門。
+
 ## 實作限制
 
 - 使用`apply_patch`修改文字檔。
