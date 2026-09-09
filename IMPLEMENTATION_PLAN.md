@@ -241,11 +241,11 @@ Evo_PRISM/
   - 預期行為：停止所有 writer 後依序執行 main DB v27/v28 與 L1 owner migration，並以唯讀查詢驗證版本、表、欄位與既有 row counts。
   - 安全界線：任一 migration 或驗證失敗即停止，不啟動不確定 schema 的服務。
 
-- [ ] 任務 29：以三服務 topology 重建並驗證 health（in_progress）
+- [x] 任務 29：以三服務 topology 重建並驗證 health（completed 2026-09-09）
   - 預期行為：使用 `docker compose up -d --force-recreate` 啟動 MCP server、CPU worker、GPU worker；三者狀態與 `/health` 均通過。
   - 安全界線：健康檢查失敗時保留診斷證據並停止續行。
 
-- [ ] 任務 30：live RBAC smoke、撤銷 fixture key 與完成紀錄
+- [ ] 任務 30：live RBAC smoke、撤銷 fixture key 與完成紀錄（in_progress）
   - 預期行為：驗證未授權拒絕、viewer/analyst/admin 權限與 owner visibility；所有 smoke key 在結束前撤銷；將不含 secret 的部署證據追加至 Second Brain。
   - 安全界線：不搬移真實研究資料、不留下可用 fixture key、不把 secret 寫入 Git、log 或 SB。
 
