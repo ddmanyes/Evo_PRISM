@@ -10,7 +10,7 @@
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-green)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-[Why Evo_PRISM](#why-evo_prism) · [Core capabilities](#core-capabilities) · [Quick start](#quick-start) · [Contributing](#contributing)
+[Why Evo_PRISM](#why-evo_prism) · [Quick start](#quick-start) · [Architecture](#architecture) · [Benchmark](#benchmark-snapshot) · [Contributing](#contributing)
 
 Evo_PRISM is a local-first runtime that connects natural-language requests to versioned analysis tools and searchable, provenance-aware memory through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
@@ -112,6 +112,44 @@ Open <http://localhost:8000> after the readiness message appears. The local mode
 [`Dockerfile`](Dockerfile) and [`docker-compose.yml`](docker-compose.yml) are included, but the current Compose entrypoint starts the stdio MCP process while the Compose file exposes Web UI and HTTP ports. Until that transport wiring is aligned, `docker compose up` should not be treated as a verified full-stack quick start.
 
 For environment details, alternative embedding providers, and HPC/Singularity notes, continue with [SETUP.md](SETUP.md).
+
+## Architecture
+
+### Three-layer data and query flow
+
+![Evo_PRISM three-layer data and query architecture](docs/images/figure_1_system_arch.png)
+
+Evo_PRISM separates durable data from derived features and fast retrieval:
+
+| Layer | Role | Typical contents |
+| :---: | :--- | :--- |
+| L3 Bronze | Immutable source data | FASTQ, SpaceRanger outputs, source images |
+| L2 Silver | Structured feature store | DuckDB tables and Parquet features |
+| L1 Gold | Low-latency retrieval | Exact lookup and HNSW semantic cache |
+
+A request checks reusable results and registered tools before it reaches a cold execution path. New results flow back into the memory layers instead of remaining as disconnected files.
+
+### HELIX tool lifecycle
+
+![HELIX discovery, health, stabilization, and memory lifecycle](docs/images/figure_2_system_arch.png)
+
+HELIX searches the active tool registry before new code is generated. A matching tool can run directly; a miss can enter sandboxed ad-hoc execution. Reused candidates and unhealthy tools enter supervised stabilization, where promotion into `analysis/` requires human approval.
+
+The current design uses a semantic discovery threshold of `0.45` and a promotion signal at `f_promote ≥ 3.0`. Health observations, version changes, and visual snapshots remain available for later diagnosis.
+
+### ENGRAM artifact memory
+
+![ENGRAM artifact registration, retrieval, and lineage architecture](docs/images/figure_3_system_arch_1.png)
+
+ENGRAM registers reports, figures, tables, and other analysis outputs with semantic vectors and tool-version provenance. Retrieval combines structured lookup with semantic search and reciprocal-rank fusion. Artifact relationships form an impact graph that can trace which historical results may become stale after a HELIX tool change.
+
+Together, HELIX and ENGRAM create a closed loop: tool evolution updates provenance, provenance identifies affected artifacts, and accumulated history improves future retrieval and review.
+
+## Benchmark snapshot
+
+![Evo_PRISM semantic-search flywheel benchmark](docs/images/Figure8_Flywheel_Evolution.png)
+
+The tracked R10 benchmark figure reports semantic-search hit rate increasing from **20% with 2 active tools** to **100% with 25 tools**, while average HNSW lookup latency changes from **1.40 ms** to **1.96 ms** across the same catalog sizes. These are project-reported benchmark results; the paper source and raw benchmark bundle are not included in this public checkout.
 
 ## Contributing
 

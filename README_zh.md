@@ -10,7 +10,7 @@
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-green)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-[為什麼選擇 Evo_PRISM](#為什麼選擇-evo_prism) · [核心能力](#核心能力) · [快速開始](#快速開始) · [參與貢獻](#參與貢獻)
+[為什麼選擇 Evo_PRISM](#為什麼選擇-evo_prism) · [快速開始](#快速開始) · [系統架構](#系統架構) · [基準測試](#基準測試摘要) · [參與貢獻](#參與貢獻)
 
 Evo_PRISM 是一套 local-first 執行環境，透過 [Model Context Protocol（MCP）](https://modelcontextprotocol.io/)把自然語言需求連接到具版本管理的分析工具與可搜尋、可追溯的永久記憶。
 
@@ -112,6 +112,44 @@ VENV_PYTHON="$PWD/.venv/bin/python" bash start_bioagent.sh --claude
 Repo 內包含 [`Dockerfile`](Dockerfile) 與 [`docker-compose.yml`](docker-compose.yml)，但目前 Compose entrypoint 會啟動 stdio MCP，而 Compose 檔案暴露的是 Web UI 與 HTTP ports。在 transport wiring 完成對齊前，不應把 `docker compose up` 視為已驗證的完整服務快速啟動方式。
 
 更多環境細節、其他 embedding provider 與 HPC／Singularity 說明，請繼續閱讀 [SETUP.md](SETUP.md)。
+
+## 系統架構
+
+### 三層資料與查詢流程
+
+![Evo_PRISM 三層資料與查詢架構](docs/images/figure_1_system_arch.png)
+
+Evo_PRISM 把持久資料、衍生特徵與快速檢索分成三層：
+
+| 層級 | 角色 | 常見內容 |
+| :---: | :--- | :--- |
+| L3 Bronze | 不可變來源資料 | FASTQ、SpaceRanger 輸出、來源影像 |
+| L2 Silver | 結構化特徵庫 | DuckDB tables 與 Parquet features |
+| L1 Gold | 低延遲檢索 | 精確查詢與 HNSW 語意快取 |
+
+每次請求會先檢查可重用結果與已登記工具，只有未命中的需求才進入冷啟動執行路徑。新結果會回流到記憶層，而不是留在不相連的檔案中。
+
+### HELIX 工具生命週期
+
+![HELIX 工具探索、健康監測、穩定化與記憶生命週期](docs/images/figure_2_system_arch.png)
+
+HELIX 會在生成新程式碼前先搜尋 active tool registry。命中的工具可直接執行；未命中時才進入沙盒中的 ad-hoc execution。被重複使用的候選工具與不健康工具會進入 supervised stabilization，而晉升至 `analysis/` 前必須通過人工審核。
+
+目前設計使用 `0.45` 作為語意探索門檻，並以 `f_promote ≥ 3.0` 作為晉升訊號。健康觀測、版本變更與視覺快照都會保留，供後續診斷使用。
+
+### ENGRAM 產物記憶
+
+![ENGRAM 產物登記、檢索與血緣架構](docs/images/figure_3_system_arch_1.png)
+
+ENGRAM 為報告、圖表、資料表及其他分析輸出登記語意向量與工具版本來源。檢索會結合結構化查詢、語意搜尋及 RRF 排序融合。產物之間的關係形成 impact graph，可在 HELIX 工具變更後追蹤哪些歷史結果可能已經過時。
+
+HELIX 與 ENGRAM 因此形成閉合迴路：工具演化更新 provenance，provenance 找出受影響產物，累積的歷史則改善後續檢索與審查。
+
+## 基準測試摘要
+
+![Evo_PRISM 語意搜尋飛輪基準測試](docs/images/Figure8_Flywheel_Evolution.png)
+
+Repo 追蹤的 R10 圖表顯示：語意搜尋命中率由 **2 個 active tools 時的 20%**，提升至 **25 個工具時的 100%**；相同 catalog sizes 下，HNSW 平均查詢延遲由 **1.40 ms** 變為 **1.96 ms**。這些數值是專案回報的 benchmark 結果；論文來源與原始 benchmark bundle 並未包含在此公開 checkout 中。
 
 ## 參與貢獻
 
