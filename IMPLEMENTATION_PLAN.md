@@ -114,13 +114,13 @@ Evo_PRISM/
   - 相關檔案：`worker/`、`docker-compose.yml`
   - 提交：`feat(worker): execute queued analyses out of process`
 
-- [ ] 任務 11：以失敗測試定義staging manifest與路徑安全
+- [x] 任務 11：以失敗測試定義staging manifest與路徑安全（completed 2026-09-09）
   - 預期行為：接受支援格式；拒絕checksum不符、未知類型、traversal、symlink escape與重複sample。
   - 驗證指令：`python -m pytest tests/test_staged_ingest.py -v`
   - 相關檔案：`tests/test_staged_ingest.py`
   - 提交：`test(ingest): define staging trust boundary`
 
-- [ ] 任務 12：實作staging驗證與atomic L3 promotion
+- [x] 任務 12：實作staging驗證與atomic L3 promotion（completed 2026-09-09）
   - 預期行為：驗證成功才移入L3並由store登記；失敗保留staging且不寫registry。
   - 驗證指令：staged ingest tests與sample registry assertions。
   - 相關檔案：`analysis/staged_ingest.py`、`config/settings.py`

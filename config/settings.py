@@ -36,6 +36,8 @@ DATA_ROOT = BIO_DB_ROOT / "data_ana"
 ANALYSIS_JOB_MAX_PENDING = int(os.getenv("ANALYSIS_JOB_MAX_PENDING", "3"))
 ANALYSIS_JOB_LEASE_SECONDS = int(os.getenv("ANALYSIS_JOB_LEASE_SECONDS", "300"))
 ANALYSIS_JOB_POLL_SECONDS = float(os.getenv("ANALYSIS_JOB_POLL_SECONDS", "2"))
+STAGING_ROOT = Path(os.getenv("STAGING_ROOT", BIO_DB_ROOT / "staging"))
+INGESTED_L3_ROOT = Path(os.getenv("INGESTED_L3_ROOT", L3_ROOT / "lab_uploads"))
 
 # ── 外部轉檔工具 ───────────────────────────────────────────
 # Bio-Formats bfconvert：libvips 不可用時的 NDPI→BigTIFF 降級工具（見 analysis/image_conversion.py）
