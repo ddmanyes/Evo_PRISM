@@ -233,16 +233,23 @@ class PostgresStore:
         sample_id: str,
         analysis_type: str,
         status: str = "completed",
+        *,
+        requested_by: str | None = None,
     ) -> dict | None:
+        owner_clause = " AND requested_by = %s" if requested_by is not None else ""
+        params = [sample_id, analysis_type, status]
+        if requested_by is not None:
+            params.append(requested_by)
         with self.read_conn() as con:
             row = con.execute(
-                """
+                f"""
                 SELECT analysis_id, completed_at, result_path, summary, parameters
                 FROM   analysis_history
                 WHERE  sample_id = %s AND analysis_type = %s AND status = %s
+                       {owner_clause}
                 ORDER  BY completed_at DESC LIMIT 1
                 """,
-                [sample_id, analysis_type, status],
+                params,
             ).fetchone()
         if not row:
             return None
@@ -261,6 +268,7 @@ class PostgresStore:
         analysis_type: str | None = None,
         n_days: int | None = None,
         status: str | None = None,
+        requested_by: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         clauses: list[str] = []
@@ -274,6 +282,9 @@ class PostgresStore:
         if status:
             clauses.append("status = %s")
             params.append(status)
+        if requested_by is not None:
+            clauses.append("requested_by = %s")
+            params.append(requested_by)
         if n_days:
             clauses.append("completed_at >= now() - %s * INTERVAL '1 day'")
             params.append(int(n_days))

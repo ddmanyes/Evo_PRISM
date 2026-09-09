@@ -88,6 +88,16 @@ def current_identity() -> Identity:
     return _current_identity.get()
 
 
+def visible_requested_by(identity: Identity | None = None) -> str | None:
+    """Return the analysis owner filter for an authenticated identity.
+
+    ``None`` is deliberately reserved for the admin/global view.  Every
+    non-admin role is mapped to its exact user_id, including viewer accounts.
+    """
+    actor = identity or current_identity()
+    return None if actor.role is Role.ADMIN else actor.user_id
+
+
 @contextmanager
 def identity_scope(identity: Identity) -> Iterator[None]:
     token = _current_identity.set(identity)

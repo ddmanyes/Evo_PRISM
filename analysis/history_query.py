@@ -41,6 +41,7 @@ def recent_analyses(
     *,
     sample_id: Optional[str] = None,
     status: Optional[str] = None,
+    requested_by: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """
@@ -65,6 +66,9 @@ def recent_analyses(
     if status:
         filters.append("status = ?")
         params.append(status)
+    if requested_by is not None:
+        filters.append("requested_by = ?")
+        params.append(requested_by)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     params.append(n)
@@ -93,6 +97,7 @@ def recent_analyses(
 def sample_summary(
     sample_id: str,
     *,
+    requested_by: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> dict:
     """
@@ -112,29 +117,33 @@ def sample_summary(
         if sample_rows.empty:
             raise ValueError(f"Sample '{sample_id}' not found in sample_registry")
 
+        owner_clause = " AND requested_by = ?" if requested_by is not None else ""
+        owner_params = [requested_by] if requested_by is not None else []
         counts = con.execute(
-            """
+            f"""
             SELECT analysis_type,
                    COUNT(*)                             AS run_count,
                    MAX(completed_at)                   AS last_run,
                    SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed
             FROM   analysis_history
             WHERE  sample_id = ?
+                   {owner_clause}
             GROUP BY analysis_type
             ORDER BY last_run DESC
             """,
-            [sample_id],
+            [sample_id] + owner_params,
         ).fetchdf()
 
         last = con.execute(
-            """
+            f"""
             SELECT analysis_type, completed_at, summary
             FROM   analysis_history
             WHERE  sample_id = ? AND status = 'completed'
+                   {owner_clause}
             ORDER BY completed_at DESC
             LIMIT 5
             """,
-            [sample_id],
+            [sample_id] + owner_params,
         ).fetchdf()
 
     return {
@@ -149,6 +158,7 @@ def find_by_type(
     *,
     sample_id: Optional[str] = None,
     limit: int = 50,
+    requested_by: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """
@@ -164,6 +174,9 @@ def find_by_type(
     if sample_id:
         filters.append("sample_id = ?")
         params.append(sample_id)
+    if requested_by is not None:
+        filters.append("requested_by = ?")
+        params.append(requested_by)
 
     params.append(limit)
     where = "WHERE " + " AND ".join(filters)
@@ -191,6 +204,7 @@ def find_by_type(
 def get_analysis(
     analysis_id: str,
     *,
+    requested_by: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> Optional[dict]:
     """
@@ -202,9 +216,10 @@ def get_analysis(
     db_path = db_path or DUCKDB_PATH
 
     with _con(db_path) as con:
+        owner_clause = " AND requested_by = ?" if requested_by is not None else ""
+        params = [analysis_id] + ([requested_by] if requested_by is not None else [])
         row = con.execute(
-            "SELECT * FROM analysis_history WHERE analysis_id = ?",
-            [analysis_id],
+            f"SELECT * FROM analysis_history WHERE analysis_id = ?{owner_clause}", params
         ).fetchdf()
 
     if row.empty:
@@ -214,6 +229,7 @@ def get_analysis(
 
 def analysis_index(
     *,
+    requested_by: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """
@@ -228,14 +244,24 @@ def analysis_index(
     db_path = db_path or DUCKDB_PATH
 
     with _con(db_path) as con:
-        # analysis_index 是 00_init_db.py 建立的 view
-        df = con.execute(
-            """
-            SELECT *
-            FROM   analysis_index
-            ORDER BY sample_id, last_run_date DESC
-            """
-        ).fetchdf()
+        if requested_by is None:
+            # analysis_index 是 00_init_db.py 建立的全域 view，僅供 admin 使用。
+            df = con.execute(
+                "SELECT * FROM analysis_index ORDER BY sample_id, last_run_date DESC"
+            ).fetchdf()
+        else:
+            df = con.execute(
+                """
+                SELECT sample_id, analysis_type, COUNT(*) AS run_count,
+                       MAX(completed_at) AS last_run_date,
+                       arg_max(summary, completed_at) AS last_summary
+                FROM analysis_history
+                WHERE requested_by = ?
+                GROUP BY sample_id, analysis_type
+                ORDER BY sample_id, last_run_date DESC
+                """,
+                [requested_by],
+            ).fetchdf()
 
     return df
 
@@ -244,6 +270,7 @@ def search_summaries(
     keyword: str,
     *,
     limit: int = 20,
+    requested_by: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """
@@ -256,15 +283,19 @@ def search_summaries(
     db_path = db_path or DUCKDB_PATH
 
     with _con(db_path) as con:
+        owner_clause = " AND requested_by = ?" if requested_by is not None else ""
+        params = [f"%{keyword}%"] + ([requested_by] if requested_by is not None else [])
+        params.append(limit)
         df = con.execute(
-            """
+            f"""
             SELECT analysis_id, sample_id, analysis_type, completed_at, summary
             FROM   analysis_history
             WHERE  summary ILIKE ?
+                   {owner_clause}
             ORDER BY completed_at DESC
             LIMIT ?
             """,
-            [f"%{keyword}%", limit],
+            params,
         ).fetchdf()
 
     return df

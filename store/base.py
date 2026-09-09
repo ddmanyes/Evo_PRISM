@@ -140,8 +140,10 @@ class RegistryStore(Protocol):
         sample_id: str,
         analysis_type: str,
         status: str = "completed",
+        *,
+        requested_by: str | None = None,
     ) -> dict | None:
-        """Return latest completed row for (sample_id, analysis_type), or None."""
+        """Return latest matching row, optionally restricted to one owner."""
         ...
 
     def list_history(
@@ -151,6 +153,7 @@ class RegistryStore(Protocol):
         analysis_type: str | None = None,
         n_days: int | None = None,
         status: str | None = None,
+        requested_by: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """Return recent analysis_history rows, newest first."""

@@ -163,6 +163,48 @@ Evo_PRISM/
 9. DuckDB與Postgres schema／store contract一致。
 10. 不修改既有未提交的`analysis/mcseg_wrapper.py`與`scripts/start_webserver.py`。
 
+## 分析紀錄可見性補強（2026-09-09 已批准）
+
+### 已批准的權限契約
+
+- `viewer`／`analyst` 僅可讀取 `analysis_history.requested_by` 等於自己 `user_id` 的分析紀錄與衍生內容。
+- `admin` 可讀取所有成員與既有 legacy 紀錄。
+- 樣本基本資料（`sample_registry`、alias、L2/L3 readiness）維持實驗室共用，不依分析 owner 切割。
+- 直接以 `analysis_id`、`artifact_id`、`figure_id` 或 `result_path` 取用時，必須套用與列表相同的 owner 檢查；拒絕訊息不得洩漏目標是否屬於他人。
+- L1 語意快取必須保存 owner；未歸屬的 legacy cache 對非 admin 視為 cache miss。
+- Tailscale 對外的 Web record API 與 MCP 使用同一套 key 身分；健康檢查與靜態入口可維持公開，分析紀錄 API 不可匿名讀取。
+
+### 補強任務
+
+- [x] 任務 17：以失敗測試定義 owner visibility contract（completed 2026-09-09）
+  - 預期行為：Alice 看不到 Bob 的歷史、cache、artifact、report、figure、impact／compare 結果；admin 全部可見；sample registry 仍共用。
+  - 驗證指令：`python -m pytest tests/test_analysis_record_visibility.py -v`
+  - 相關檔案：`tests/test_analysis_record_visibility.py`、`docs/logs/execution_trace.md`
+
+- [x] 任務 18：建立共用 record visibility seam 並補齊雙 store／歷史查詢（completed 2026-09-09）
+  - 預期行為：角色轉換只在認證邊界發生；下層查詢接收可選 `requested_by`，`None` 代表 admin 全域視圖。
+  - 驗證指令：visibility contract + store parity tests。
+  - 相關檔案：`server/auth.py`、`store/`、`analysis/history_query.py`
+  - 提交：`feat(privacy): scope analysis history by owner`
+
+- [ ] 任務 19：封住 artifact／report／figure／resource 與 L1 cache 直接取用旁路
+  - 預期行為：搜尋、摘要、直接 ID、路徑讀取及 MCP resources 都只回 own records；figure handle 持久記錄可存取 owner；L1 migration 將 legacy rows 標為不可供一般成員讀取。
+  - 驗證指令：visibility、artifact resources、figure cache、L1 cache tests。
+  - 相關檔案：`analysis/{artifact_registry,artifact_resources,figure_cache,l1_cache}.py`、`scripts/03_init_l1_cache.py`、新 migration、MCP handlers。
+  - 提交：`feat(privacy): protect derived analysis artifacts`
+
+- [ ] 任務 20：補齊跨分析工具與 Tailscale Web record API 邊界
+  - 預期行為：sample compare、impact、cascade、version compare、failure summary 只使用 own records；對外 REST record endpoints 驗證同一組 Bearer key 並套用 owner filter；admin 維運 dashboard 維持 admin-only。
+  - 驗證指令：visibility、HTTP auth、impact/version compare regressions。
+  - 相關檔案：`server/{agent_history,bio_memory_server,web_app}.py`、`analysis/{impact,version_compare}.py`
+  - 提交：`feat(privacy): enforce record visibility across clients`
+
+- [ ] 任務 21：文件、Second Brain 與完整驗證
+  - 預期行為：成員指南清楚說明 own-only、admin-all、legacy 行為與 Bearer 下載方式；SB 計畫追加成果；feature gate 維持全綠。
+  - 驗證指令：完整 feature suite、scoped Ruff、migration dry-run、文件契約檢查。
+  - 相關檔案：`docs/guides/LAB_MEMBER_ANALYSIS.md`、`docs/logs/execution_trace.md`
+  - 提交：`docs(privacy): document member record isolation`
+
 ## 實作限制
 
 - 使用`apply_patch`修改文字檔。

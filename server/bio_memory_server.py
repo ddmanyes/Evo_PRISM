@@ -294,16 +294,20 @@ def _fmt_table(rows: list[dict]) -> str:
 
 async def _handle_bio_history_lookup(args: dict) -> str:
     from analysis.history_query import recent_analyses, find_by_type
+    from server.auth import visible_requested_by
 
     sample_id = args.get("sample_id")
     analysis_type = args.get("analysis_type")
     limit = int(args.get("limit", 20))
     fmt = _resolve_format_mode(args)
+    owner = visible_requested_by()
 
     if analysis_type:
-        rows = find_by_type(analysis_type, sample_id=sample_id, limit=limit)
+        rows = find_by_type(
+            analysis_type, sample_id=sample_id, limit=limit, requested_by=owner
+        )
     else:
-        rows = recent_analyses(n=limit, sample_id=sample_id)
+        rows = recent_analyses(n=limit, sample_id=sample_id, requested_by=owner)
 
     # rows is a pandas DataFrame
     if rows.empty:
@@ -349,11 +353,18 @@ async def _handle_bio_history_lookup(args: dict) -> str:
 
 
 async def _handle_bio_history_timeline(args: dict) -> str:
+    from server.auth import visible_requested_by
     from store.factory import get_store
 
     n_days = int(args.get("n_days", 7))
     limit = max(1, min(int(args.get("limit", 50)), 500))
     fmt = _resolve_format_mode(args)
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
+    params: list = [n_days]
+    if owner is not None:
+        params.append(owner)
+    params.append(limit)
     with get_store().read_conn() as con:
         rows = con.execute(
             """
@@ -365,10 +376,11 @@ async def _handle_bio_history_timeline(args: dict) -> str:
                    summary
             FROM   analysis_history
             WHERE  completed_at >= now() - (? * INTERVAL '1 day')
+                   {owner_clause}
             ORDER  BY completed_at DESC
             LIMIT  ?
-            """,
-            [n_days, limit],
+            """.format(owner_clause=owner_clause),
+            params,
         ).fetchall()
         cols = ["sample_id", "analysis_type", "status", "requested_by", "completed_at", "summary"]
         result_rows = [
@@ -415,21 +427,28 @@ async def _handle_bio_history_timeline(args: dict) -> str:
 
 
 async def _handle_bio_history_check(args: dict) -> str:
+    from server.auth import visible_requested_by
     from store.factory import get_store
 
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
     fmt = _resolve_format_mode(args)
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
+    params: list = [sample_id, analysis_type]
+    if owner is not None:
+        params.append(owner)
     with get_store().read_conn() as con:
         row = con.execute(
             """
             SELECT analysis_id, completed_at, result_path, summary
             FROM   analysis_history
             WHERE  sample_id = ? AND analysis_type = ? AND status = 'completed'
+                   {owner_clause}
             ORDER  BY completed_at DESC
             LIMIT  1
-            """,
-            [sample_id, analysis_type],
+            """.format(owner_clause=owner_clause),
+            params,
         ).fetchone()
 
     if row:
@@ -720,11 +739,13 @@ async def _handle_bio_compare_versions(args: dict) -> str:
 async def _handle_bio_failure_summary(args: dict) -> str:
     """PM1: Aggregate failure_diagnosis from analysis_history (EvolveMem-inspired)."""
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     sample_id = args.get("sample_id", "").strip() or None
     analysis_type = args.get("analysis_type", "").strip() or None
     since_days = int(args.get("since_days", 30))
     top_n = int(args.get("top_n", 5))
+    owner = visible_requested_by()
 
     def _sync() -> str:
         with get_store().read_conn() as con:
@@ -740,6 +761,9 @@ async def _handle_bio_failure_summary(args: dict) -> str:
             if analysis_type:
                 conditions.append("analysis_type = ?")
                 params.append(analysis_type)
+            if owner is not None:
+                conditions.append("requested_by = ?")
+                params.append(owner)
             where = " AND ".join(conditions)
 
             # 1. Type distribution
