@@ -245,6 +245,39 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     """)
     print("Table: access_audit_log — OK")
 
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS analysis_jobs (
+            job_id            VARCHAR PRIMARY KEY,
+            tool_name         VARCHAR NOT NULL,
+            arguments         JSON NOT NULL,
+            requested_by      VARCHAR NOT NULL,
+            resource_class    VARCHAR NOT NULL CHECK (resource_class IN ('cpu', 'gpu')),
+            priority          INTEGER NOT NULL DEFAULT 0,
+            status            VARCHAR NOT NULL DEFAULT 'queued'
+                              CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+            created_at        TIMESTAMP NOT NULL DEFAULT now(),
+            started_at        TIMESTAMP,
+            completed_at      TIMESTAMP,
+            lease_owner       VARCHAR,
+            lease_expires_at  TIMESTAMP,
+            heartbeat_at      TIMESTAMP,
+            retry_count       INTEGER NOT NULL DEFAULT 0,
+            max_retries       INTEGER NOT NULL DEFAULT 1,
+            cancel_requested  BOOLEAN NOT NULL DEFAULT FALSE,
+            result             JSON,
+            error              VARCHAR
+        )
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_analysis_jobs_claim
+        ON analysis_jobs(resource_class, status, priority, created_at)
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_analysis_jobs_owner
+        ON analysis_jobs(requested_by, created_at)
+    """)
+    print("Table: analysis_jobs — OK")
+
     return con
 
 

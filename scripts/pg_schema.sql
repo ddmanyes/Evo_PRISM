@@ -265,3 +265,33 @@ CREATE TABLE IF NOT EXISTS access_audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_access_audit_user_time
     ON access_audit_log (user_id, occurred_at);
+
+-- ---------------------------------------------------------------------------
+-- analysis_jobs  (v27 durable analysis queue)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS analysis_jobs (
+    job_id            TEXT PRIMARY KEY,
+    tool_name         TEXT        NOT NULL,
+    arguments         JSONB       NOT NULL,
+    requested_by      TEXT        NOT NULL,
+    resource_class    TEXT        NOT NULL CHECK (resource_class IN ('cpu', 'gpu')),
+    priority          INTEGER     NOT NULL DEFAULT 0,
+    status            TEXT        NOT NULL DEFAULT 'queued'
+                      CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at        TIMESTAMPTZ,
+    completed_at      TIMESTAMPTZ,
+    lease_owner       TEXT,
+    lease_expires_at  TIMESTAMPTZ,
+    heartbeat_at      TIMESTAMPTZ,
+    retry_count       INTEGER     NOT NULL DEFAULT 0,
+    max_retries       INTEGER     NOT NULL DEFAULT 1,
+    cancel_requested  BOOLEAN     NOT NULL DEFAULT FALSE,
+    result            JSONB,
+    error             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_claim
+    ON analysis_jobs (resource_class, status, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_owner
+    ON analysis_jobs (requested_by, created_at DESC);

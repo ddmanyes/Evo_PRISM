@@ -15,7 +15,13 @@ from typing import Iterator
 import duckdb
 
 from server.identity import Identity, KeyState, Role
-from store.base import _HISTORY_MUTABLE_COLS, _SAMPLE_MUTABLE_COLS, _validate_cols
+from store.base import (
+    _HISTORY_MUTABLE_COLS,
+    _JOB_COLUMNS,
+    _SAMPLE_MUTABLE_COLS,
+    _job_row_to_dict,
+    _validate_cols,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -489,6 +495,200 @@ class DuckDBStore:
                 "SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL"
             ).fetchone()
         return int(row[0]) if row else 0
+
+    # ------------------------------------------------------------------
+    # Durable analysis jobs
+    # ------------------------------------------------------------------
+
+    def enqueue_job(self, **job) -> None:
+        with self.write_conn() as con:
+            con.execute(
+                """
+                INSERT INTO analysis_jobs
+                    (job_id, tool_name, arguments, requested_by, resource_class,
+                     priority, max_retries, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    job["job_id"],
+                    job["tool_name"],
+                    job["arguments_json"],
+                    job["requested_by"],
+                    job["resource_class"],
+                    int(job.get("priority", 0)),
+                    int(job.get("max_retries", 1)),
+                    job["created_at"],
+                ],
+            )
+
+    def get_job(self, job_id: str) -> dict | None:
+        columns = ", ".join(_JOB_COLUMNS)
+        with self.read_conn() as con:
+            row = con.execute(
+                f"SELECT {columns} FROM analysis_jobs WHERE job_id = ?",
+                [job_id],
+            ).fetchone()
+        return _job_row_to_dict(row) if row else None
+
+    def list_jobs(
+        self,
+        *,
+        requested_by: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list = []
+        if requested_by:
+            clauses.append("requested_by = ?")
+            params.append(requested_by)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        columns = ", ".join(_JOB_COLUMNS)
+        with self.read_conn() as con:
+            rows = con.execute(
+                f"SELECT {columns} FROM analysis_jobs {where} "
+                f"ORDER BY created_at DESC LIMIT {max(1, min(int(limit), 500))}",
+                params,
+            ).fetchall()
+        return [_job_row_to_dict(row) for row in rows]
+
+    def count_pending_jobs(self, requested_by: str) -> int:
+        with self.read_conn() as con:
+            row = con.execute(
+                """
+                SELECT COUNT(*) FROM analysis_jobs
+                WHERE requested_by = ? AND status IN ('queued', 'running')
+                """,
+                [requested_by],
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def claim_next_job(
+        self, worker_id: str, resource_class: str, lease_seconds: int
+    ) -> dict | None:
+        columns = ", ".join(_JOB_COLUMNS)
+        with self.write_conn() as con:
+            con.execute("BEGIN TRANSACTION")
+            try:
+                con.execute(
+                    """
+                    UPDATE analysis_jobs
+                    SET status = 'failed', completed_at = now(),
+                        error = 'worker lease expired after maximum retries'
+                    WHERE status = 'running'
+                      AND lease_expires_at <= now()
+                      AND retry_count >= max_retries
+                    """
+                )
+                candidate = con.execute(
+                    """
+                    SELECT job_id FROM analysis_jobs
+                    WHERE resource_class = ?
+                      AND cancel_requested = FALSE
+                      AND (
+                        status = 'queued'
+                        OR (status = 'running' AND lease_expires_at <= now()
+                            AND retry_count < max_retries)
+                      )
+                    ORDER BY priority DESC, created_at
+                    LIMIT 1
+                    """,
+                    [resource_class],
+                ).fetchone()
+                if candidate is None:
+                    con.execute("COMMIT")
+                    return None
+                row = con.execute(
+                    f"""
+                    UPDATE analysis_jobs
+                    SET retry_count = CASE WHEN status = 'running'
+                                           THEN retry_count + 1 ELSE retry_count END,
+                        status = 'running',
+                        started_at = COALESCE(started_at, now()),
+                        lease_owner = ?,
+                        heartbeat_at = now(),
+                        lease_expires_at = now() + (? * INTERVAL '1 second')
+                    WHERE job_id = ?
+                      AND cancel_requested = FALSE
+                      AND (status = 'queued'
+                           OR (status = 'running' AND lease_expires_at <= now()))
+                    RETURNING {columns}
+                    """,
+                    [worker_id, max(1, int(lease_seconds)), candidate[0]],
+                ).fetchone()
+                con.execute("COMMIT")
+            except Exception:
+                con.execute("ROLLBACK")
+                raise
+        return _job_row_to_dict(row) if row else None
+
+    def heartbeat_job(self, job_id: str, worker_id: str, lease_seconds: int) -> bool:
+        with self.write_conn() as con:
+            rows = con.execute(
+                """
+                UPDATE analysis_jobs
+                SET heartbeat_at = now(),
+                    lease_expires_at = now() + (? * INTERVAL '1 second')
+                WHERE job_id = ? AND status = 'running' AND lease_owner = ?
+                  AND cancel_requested = FALSE
+                RETURNING job_id
+                """,
+                [max(1, int(lease_seconds)), job_id, worker_id],
+            ).fetchall()
+        return bool(rows)
+
+    def finish_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        *,
+        status: str,
+        result_json: str | None,
+        error: str | None,
+    ) -> bool:
+        if status not in {"succeeded", "failed", "canceled"}:
+            raise ValueError(f"invalid terminal job status: {status}")
+        with self.write_conn() as con:
+            rows = con.execute(
+                """
+                UPDATE analysis_jobs
+                SET status = ?, result = ?, error = ?, completed_at = now(),
+                    lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = now()
+                WHERE job_id = ? AND status = 'running' AND lease_owner = ?
+                RETURNING job_id
+                """,
+                [status, result_json, error, job_id, worker_id],
+            ).fetchall()
+        return bool(rows)
+
+    def request_cancel_job(self, job_id: str, requested_by: str | None) -> str | None:
+        owner_clause = " AND requested_by = ?" if requested_by else ""
+        owner_params = [requested_by] if requested_by else []
+        with self.write_conn() as con:
+            rows = con.execute(
+                f"""
+                UPDATE analysis_jobs
+                SET status = 'canceled', cancel_requested = TRUE, completed_at = now()
+                WHERE job_id = ? AND status = 'queued'{owner_clause}
+                RETURNING job_id
+                """,
+                [job_id, *owner_params],
+            ).fetchall()
+            if rows:
+                return "canceled"
+            rows = con.execute(
+                f"""
+                UPDATE analysis_jobs
+                SET cancel_requested = TRUE
+                WHERE job_id = ? AND status = 'running'{owner_clause}
+                RETURNING job_id
+                """,
+                [job_id, *owner_params],
+            ).fetchall()
+        return "cancel_requested" if rows else None
 
     # ------------------------------------------------------------------
     # Utils

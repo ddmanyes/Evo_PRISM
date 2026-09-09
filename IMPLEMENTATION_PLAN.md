@@ -23,7 +23,8 @@
 Evo_PRISM/
 ├── IMPLEMENTATION_PLAN.md
 ├── config/settings.py
-├── scripts/27_migrate_schema_v26_multiuser_queue.py
+├── scripts/27_migrate_schema_v26_auth.py
+├── scripts/28_migrate_schema_v27_job_queue.py
 ├── scripts/pg_schema.sql
 ├── store/{base,duckdb_store,postgres_store}.py
 ├── server/{auth,identity,tool_catalog,bio_memory_server}.py
@@ -83,13 +84,13 @@ Evo_PRISM/
   - 相關檔案：`server/tool_catalog.py`、`server/bio_memory_server.py`
   - 提交：`feat(rbac): enforce catalog roles and actor identity`
 
-- [ ] 任務 6：以失敗測試定義analysis_jobs狀態機與配額
+- [x] 任務 6：以失敗測試定義analysis_jobs狀態機與配額（completed 2026-09-09）
   - 預期行為：合法轉移、所有權、每人上限、取消與lease reclaim均可驗證。
   - 驗證指令：`python -m pytest tests/test_job_queue.py -v`
   - 相關檔案：`tests/test_job_queue.py`
   - 提交：`test(queue): define durable job lifecycle`
 
-- [ ] 任務 7：新增雙後端job schema與store API
+- [x] 任務 7：新增雙後端job schema與store API（completed 2026-09-09）
   - 預期行為：DuckDB與Postgres具等價enqueue、claim、heartbeat、finish、cancel、list。
   - 驗證指令：store parity與job queue tests。
   - 相關檔案：migration、`scripts/pg_schema.sql`、`store/`、`analysis/job_queue.py`

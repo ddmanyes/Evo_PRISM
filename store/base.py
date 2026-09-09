@@ -12,9 +12,42 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime
+import json
 from typing import Iterator, Protocol, runtime_checkable
 
 from server.identity import Identity, KeyState
+
+_JOB_COLUMNS = (
+    "job_id",
+    "tool_name",
+    "arguments",
+    "requested_by",
+    "resource_class",
+    "priority",
+    "status",
+    "created_at",
+    "started_at",
+    "completed_at",
+    "lease_owner",
+    "lease_expires_at",
+    "heartbeat_at",
+    "retry_count",
+    "max_retries",
+    "cancel_requested",
+    "result",
+    "error",
+)
+
+
+def _job_row_to_dict(row) -> dict:
+    item = dict(zip(_JOB_COLUMNS, row))
+    for field in ("arguments", "result"):
+        value = item.get(field)
+        if isinstance(value, str):
+            item[field] = json.loads(value)
+    item["job_id"] = str(item["job_id"])
+    item["cancel_requested"] = bool(item["cancel_requested"])
+    return item
 
 # Whitelist of mutable columns for dynamic UPDATE queries (H1 fix).
 # 2026-07-24 架構審查（候選 4）：這兩個 store/duckdb_store.py 與 store/postgres_store.py
@@ -242,4 +275,49 @@ class RegistryStore(Protocol):
 
     def count_active_api_keys(self) -> int:
         """Return the number of non-revoked registered keys."""
+        ...
+
+    # ------------------------------------------------------------------
+    # Durable analysis jobs
+    # ------------------------------------------------------------------
+
+    def enqueue_job(self, **job) -> None:
+        """Persist a new queued analysis job."""
+        ...
+
+    def get_job(self, job_id: str) -> dict | None:
+        ...
+
+    def list_jobs(
+        self,
+        *,
+        requested_by: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        ...
+
+    def count_pending_jobs(self, requested_by: str) -> int:
+        ...
+
+    def claim_next_job(
+        self, worker_id: str, resource_class: str, lease_seconds: int
+    ) -> dict | None:
+        ...
+
+    def heartbeat_job(self, job_id: str, worker_id: str, lease_seconds: int) -> bool:
+        ...
+
+    def finish_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        *,
+        status: str,
+        result_json: str | None,
+        error: str | None,
+    ) -> bool:
+        ...
+
+    def request_cancel_job(self, job_id: str, requested_by: str | None) -> str | None:
         ...
