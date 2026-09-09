@@ -99,7 +99,10 @@ ExFAT／同步資料夾、Google 或 OpenAI embedding、Web UI backend 與 HPC�
 <details>
 <summary><strong>HELIX 工具生命週期</strong></summary>
 
-![HELIX 工具探索、健康監測、穩定化與記憶生命週期](docs/images/figure_2_system_arch.png)
+<picture>
+  <source srcset="docs/images/figure_2_system_arch.svg" type="image/svg+xml">
+  <img src="docs/images/figure_2_system_arch.png" alt="HELIX 由上往下的工具探索、健康監測、穩定化與記憶生命週期" width="100%">
+</picture>
 
 HELIX 在生成程式碼前先搜尋 active registry。被重用的候選工具與不健康工具會進入 supervised stabilization，而晉升至 `analysis/` 前必須通過人工審核。
 

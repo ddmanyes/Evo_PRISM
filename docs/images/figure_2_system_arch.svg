@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1580" role="img" aria-labelledby="helix-lifecycle-title helix-lifecycle-desc">
+  <title id="helix-lifecycle-title">HELIX supervised tool lifecycle</title>
+  <desc id="helix-lifecycle-desc">A top-to-bottom flow showing HELIX tool discovery and execution, health monitoring, supervised stabilization, promotion, and long-term visual memory with feedback into future drafts.</desc>
+  <defs>
+    <marker id="helix-lifecycle-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#4f5d75"/>
+    </marker>
+    <marker id="helix-lifecycle-arrow-blue" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#2e5aa8"/>
+    </marker>
+    <marker id="helix-lifecycle-arrow-orange" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#eb6c36"/>
+    </marker>
+  </defs>
+  <style>
+    .title { font: 600 30px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64748b; }
+    .lane { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 1.4px; fill: #64748b; }
+    .phase-num { font: 700 14px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #ffffff; }
+    .node-title { font: 600 19px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+    .node-copy { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+    .node-mono { font: 500 13px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #475569; }
+    .node-mono-small { font: 500 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #475569; }
+    .edge-label { font: 600 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #475569; }
+    .edge { fill: none; stroke: #4f5d75; stroke-width: 2; marker-end: url(#helix-lifecycle-arrow); }
+    .edge-blue { fill: none; stroke: #2e5aa8; stroke-width: 2.2; marker-end: url(#helix-lifecycle-arrow-blue); }
+    .edge-orange { fill: none; stroke: #eb6c36; stroke-width: 2.2; marker-end: url(#helix-lifecycle-arrow-orange); }
+    .feedback { fill: none; stroke: #2e5aa8; stroke-width: 2; stroke-dasharray: 8 7; marker-end: url(#helix-lifecycle-arrow-blue); }
+    .rework { fill: none; stroke: #eb6c36; stroke-width: 2; stroke-dasharray: 7 6; marker-end: url(#helix-lifecycle-arrow-orange); }
+  </style>
+
+  <rect width="1200" height="1580" fill="#ffffff"/>
+  <text x="48" y="54" class="title">HELIX — Supervised Tool Lifecycle</text>
+  <text x="48" y="82" class="subtitle">Discover first · monitor every revision · promote only after human review</text>
+
+  <!-- Lifecycle sections. -->
+  <rect x="40" y="110" width="1120" height="360" rx="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <circle cx="66" cy="140" r="14" fill="#eb6c36"/>
+  <text x="66" y="145" text-anchor="middle" class="phase-num">1</text>
+  <text x="90" y="145" class="lane">DISCOVERY &amp; EXECUTION</text>
+
+  <rect x="40" y="494" width="1120" height="250" rx="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <circle cx="66" cy="524" r="14" fill="#eb6c36"/>
+  <text x="66" y="529" text-anchor="middle" class="phase-num">2</text>
+  <text x="90" y="529" class="lane">HEALTH MONITORING</text>
+
+  <rect x="40" y="768" width="1120" height="500" rx="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <circle cx="66" cy="798" r="14" fill="#eb6c36"/>
+  <text x="66" y="803" text-anchor="middle" class="phase-num">3</text>
+  <text x="90" y="803" class="lane">SUPERVISED STABILIZATION</text>
+
+  <rect x="40" y="1292" width="1120" height="240" rx="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <circle cx="66" cy="1322" r="14" fill="#2e5aa8"/>
+  <text x="66" y="1327" text-anchor="middle" class="phase-num">4</text>
+  <text x="90" y="1327" class="lane">MEMORY &amp; FORGETTING</text>
+
+  <!-- Connections are intentionally drawn before nodes. -->
+  <path class="edge" d="M300 229 H400"/>
+  <path class="edge-orange" d="M500 294 V312 H205 V332"/>
+  <path class="edge-blue" d="M620 294 V312 H995 V332"/>
+  <path class="edge-orange" d="M340 387 H465"/>
+  <path class="edge-blue" d="M735 387 H860"/>
+  <path class="edge-blue" d="M995 442 V478 H600 V544"/>
+  <path class="edge" d="M600 630 V654"/>
+  <path class="edge-orange" d="M600 728 V820"/>
+  <path class="edge" d="M600 900 V934"/>
+  <path class="edge-orange" d="M600 1022 V1056"/>
+  <path class="edge-blue" d="M600 1144 V1178"/>
+  <path class="edge-blue" d="M600 1250 V1280 H360 V1360"/>
+  <path class="edge-blue" d="M550 1415 H700"/>
+  <path class="rework" d="M380 1100 H250 V978 H380"/>
+  <path class="feedback" d="M1030 1415 H1140 V978 H820"/>
+
+  <!-- Connector labels use open-space capsules. -->
+  <rect x="315" y="209" width="70" height="25" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="350" y="226" text-anchor="middle" class="edge-label">request</text>
+  <rect x="286" y="299" width="58" height="25" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="315" y="316" text-anchor="middle" class="edge-label">miss</text>
+  <rect x="774" y="299" width="52" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="800" y="316" text-anchor="middle" class="edge-label">hit</text>
+  <rect x="360" y="374" width="85" height="25" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="402" y="391" text-anchor="middle" class="edge-label">execute</text>
+  <rect x="753" y="374" width="88" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="797" y="391" text-anchor="middle" class="edge-label">approved</text>
+  <rect x="620" y="754" width="70" height="25" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="655" y="771" text-anchor="middle" class="edge-label">trigger</text>
+  <rect x="616" y="904" width="68" height="25" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="650" y="921" text-anchor="middle" class="edge-label">assess</text>
+  <rect x="616" y="1026" width="58" height="25" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="645" y="1043" text-anchor="middle" class="edge-label">draft</text>
+  <rect x="616" y="1148" width="88" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="660" y="1165" text-anchor="middle" class="edge-label">approved</text>
+  <rect x="154" y="1020" width="78" height="25" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="193" y="1037" text-anchor="middle" class="edge-label">rejected</text>
+  <rect x="862" y="962" width="106" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="915" y="979" text-anchor="middle" class="edge-label">VLM context</text>
+  <rect x="580" y="1402" width="90" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="625" y="1419" text-anchor="middle" class="edge-label">archive</text>
+
+  <!-- Discovery and execution nodes. -->
+  <rect x="70" y="174" width="230" height="110" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="96" y="211" class="node-title">Agent / LLM</text>
+  <text x="96" y="244" class="node-copy">Analysis request</text>
+  <text x="96" y="266" class="node-copy">or tool call</text>
+
+  <rect x="400" y="164" width="320" height="130" rx="16" fill="#fff7ed" stroke="#eb6c36" stroke-width="2.4"/>
+  <text x="428" y="202" class="node-title">Find a reusable tool</text>
+  <text x="428" y="235" class="node-copy">Search the active registry</text>
+  <text x="428" y="258" class="node-mono">bio_find_tool()</text>
+  <text x="428" y="279" class="node-copy">cosine hit threshold ≥ 0.45</text>
+
+  <rect x="70" y="332" width="270" height="110" rx="16" fill="#fff7ed" stroke="#eb6c36" stroke-width="2.4"/>
+  <text x="96" y="369" class="node-title">Ad-hoc code + sandbox</text>
+  <text x="96" y="402" class="node-copy">Generate only on a miss</text>
+  <text x="96" y="425" class="node-mono">sandboxed execution</text>
+
+  <rect x="465" y="332" width="270" height="110" rx="16" fill="#ffffff" stroke="#eb6c36" stroke-width="2.4"/>
+  <text x="491" y="369" class="node-title">User approval</text>
+  <text x="491" y="402" class="node-copy">Human gate before reuse</text>
+  <text x="491" y="425" class="node-mono">review generated code</text>
+
+  <rect x="860" y="332" width="270" height="110" rx="16" fill="#eff6ff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <text x="886" y="369" class="node-title">Active MCP tools</text>
+  <text x="886" y="402" class="node-copy">Registered and reusable</text>
+  <text x="886" y="425" class="node-mono">analysis/*.py</text>
+
+  <!-- Monitoring nodes. -->
+  <rect x="380" y="544" width="440" height="86" rx="16" fill="#ffffff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <text x="408" y="578" class="node-title">Record tool health signals</text>
+  <text x="408" y="608" class="node-mono">tool_change_log · mcp_tool_metrics</text>
+
+  <rect x="380" y="654" width="440" height="74" rx="16" fill="#fff7ed" stroke="#eb6c36" stroke-width="2.4"/>
+  <text x="408" y="684" class="node-title">Detect a revision hotspot</text>
+  <text x="408" y="711" class="node-copy">revision_count ≥ 3 opens stabilization</text>
+
+  <!-- Supervised stabilization nodes. -->
+  <rect x="380" y="820" width="440" height="80" rx="16" fill="#ffffff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <text x="408" y="853" class="node-title">Assess tool health</text>
+  <text x="408" y="882" class="node-mono">HealthScore · f_promote</text>
+
+  <rect x="380" y="934" width="440" height="88" rx="16" fill="#fff7ed" stroke="#eb6c36" stroke-width="2.4"/>
+  <text x="408" y="968" class="node-title">Claude Haiku draft</text>
+  <text x="408" y="999" class="node-copy">Write a supervised candidate into candidates/</text>
+
+  <rect x="380" y="1056" width="440" height="88" rx="16" fill="#ffffff" stroke="#eb6c36" stroke-width="2.4"/>
+  <text x="408" y="1090" class="node-title">Human review</text>
+  <text x="408" y="1121" class="node-mono-small">approve_candidate() · reject to revise</text>
+
+  <rect x="380" y="1178" width="440" height="72" rx="16" fill="#eff6ff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <text x="408" y="1209" class="node-title">Promote the approved tool</text>
+  <text x="408" y="1236" class="node-mono">analysis/*.py</text>
+
+  <!-- Memory nodes. -->
+  <rect x="170" y="1360" width="380" height="110" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="198" y="1396" class="node-title">VLM snapshot</text>
+  <text x="198" y="1427" class="node-copy">Visual diagnosis memory</text>
+  <text x="198" y="1452" class="node-mono-small">180d → 0.5× · 365d → 0.25×</text>
+
+  <rect x="700" y="1360" width="330" height="110" rx="16" fill="#eff6ff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <text x="728" y="1396" class="node-title">ENGRAM memory</text>
+  <text x="728" y="1427" class="node-copy">Long-term tool context</text>
+  <text x="728" y="1452" class="node-mono">bio_memory.duckdb</text>
+
+  <!-- Legend. -->
+  <rect x="54" y="1548" width="14" height="14" rx="3" fill="#eb6c36"/>
+  <text x="78" y="1560" class="node-copy">Control or review</text>
+  <rect x="250" y="1548" width="14" height="14" rx="3" fill="#2e5aa8"/>
+  <text x="274" y="1560" class="node-copy">Registry or memory</text>
+  <path d="M466 1555 H502" class="feedback"/>
+  <text x="516" y="1560" class="node-copy">Feedback into future drafts</text>
+</svg>

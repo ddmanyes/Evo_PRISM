@@ -99,7 +99,10 @@ Requests move from L3 immutable sources to L2 structured features and L1 low-lat
 <details>
 <summary><strong>HELIX tool lifecycle</strong></summary>
 
-![HELIX discovery, health, stabilization, and memory lifecycle](docs/images/figure_2_system_arch.png)
+<picture>
+  <source srcset="docs/images/figure_2_system_arch.svg" type="image/svg+xml">
+  <img src="docs/images/figure_2_system_arch.png" alt="HELIX top-to-bottom discovery, health, stabilization, and memory lifecycle" width="100%">
+</picture>
 
 HELIX searches the active registry before generating code. Reused candidates and unhealthy tools enter supervised stabilization, and promotion into `analysis/` requires human approval.
 
