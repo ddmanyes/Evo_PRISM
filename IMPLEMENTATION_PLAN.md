@@ -214,11 +214,11 @@ Evo_PRISM/
   - 驗證指令：`git merge-base --is-ancestor`、變更路徑交集、隔離 worktree feature gate。
   - 完成條件：可證明 fast-forward 且無 dirty-path overlap，才允許正式 branch pointer 前進。
 
-- [~] 任務 23：正式環境唯讀盤點與可恢復備份（in progress 2026-09-09）
+- [x] 任務 23：正式環境唯讀盤點與可恢復備份（completed 2026-09-09）
   - 預期行為：確認實際 backend、容器／服務狀態、DB/L1 路徑、mount 類型與容量；依 backend 建立時間戳備份並驗證可開啟，不讀取或輸出 key secret。
   - 安全界線：若 active DuckDB 無法取得一致備份，停在 maintenance-window 閘門，不直接停止服務。
 
-- [ ] 任務 24：暫存副本 migration 與 Alice／Bob／admin smoke
+- [~] 任務 24：暫存副本 migration 與 Alice／Bob／admin smoke（in progress 2026-09-09）
   - 預期行為：在隔離副本重跑 v26/v27 與 L1 owner migration；驗證 own-only、admin-all、shared sample registry、queue ownership、revocation 與 staging promotion。
   - 安全界線：只用 fixture key／資料，不建立真實成員或改寫正式資料。
 
