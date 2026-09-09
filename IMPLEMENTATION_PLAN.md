@@ -256,3 +256,82 @@ Evo_PRISM/
 - Repo 的 `.gitignore` 明定 `tests/` 為本機測試、不上傳 GitHub；因此純 Red 測試任務只建立本機驗證 checkpoint，不強制加入 Git。對應 Green 任務的正式程式 commit 必須附上通過的測試證據。
 - 驗證失敗時先保留證據、修正計畫，再繼續。
 - 部署、服務重啟、建立OS/SFTP帳號與真實資料搬移需獨立驗證；測試fixture不得寫入正式資料庫。
+
+## EP 分析流程圖與 MCP 對話取圖（2026-09-10 已批准）
+
+### 目標摘要
+
+建立一份繁體中文、可存取且可縮放的 EP 分析流程指南，讓第一次使用系統的人能從總覽理解 Bulk RNA-seq、空間轉錄體、單細胞與 Visium HD／MCseg 的分析順序，並在每個步驟看見實際會產生的資料檔與圖檔。圖中加入 PCA、火山圖、熱圖、UMAP、空間 QC 與 segmentation overlay 的示意縮圖，全部標示為示意而非真實研究結果。新增唯讀 MCP 方法 `bio_get_analysis_workflow`，讓使用者可透過自然語言取得總覽或指定領域的流程說明與圖片。
+
+### 文件架構圖
+
+```text
+Evo_PRISM/
+├── IMPLEMENTATION_PLAN.md
+├── analysis/
+│   └── workflow_guide.py
+├── server/
+│   ├── bio_memory_server.py
+│   └── tool_catalog.py
+├── docs/
+│   ├── analysis_workflows.html
+│   ├── guides/
+│   │   └── ANALYSIS_WORKFLOW_GUIDE.md
+│   └── images/
+│       ├── analysis_workflows.svg
+│       └── analysis_workflows.png
+└── tests/
+    ├── test_workflow_guide.py
+    └── test_tool_catalog_parity.py
+```
+
+### 已批准的設計決策
+
+1. 主圖採用「共通入口＋四條領域泳道」的 Flowchart／Data-flow 混合模式，白底、由左至右閱讀。
+2. HTML 是完整單檔指南；SVG 是可縮放圖；PNG 是 MCP 多模態對話的主要預覽圖；Markdown 提供可搜尋的純文字說明。
+3. 每個分析節點同時標示 MCP 方法、必要輸入、主要資料檔、主要圖檔與下一步，不把查詢、佇列或管理工具混入核心分析方法數量。
+4. 圖片 sample 使用合成示意資料，不讀取真實研究樣本，也不暗示任何生物結論。
+5. `bio_get_analysis_workflow` 為 viewer 可用、唯讀、不可排隊且不需 embedding server；接受 `overview`、`bulk`、`spatial`、`single_cell`、`mcseg`。
+6. MCP 方法回傳文字索引、HTML／SVG／PNG 絕對路徑與 inline PNG；統一 MCP 邊界會將 inline 圖轉為 `figure_id`，使用者可再呼叫 `bio_get_figure` 取得圖片。
+7. 原始資產隨程式碼版本管理；正式部署副本的同步與服務重啟分開驗證，避免直接改寫執行中容器。
+
+### 任務列表
+
+- [ ] 任務 31：以失敗測試定義流程指南與 MCP 契約
+  - 預期行為：五個 domain 均可查詢；非法 domain 被拒絕；回傳包含輸出檔說明、示意聲明與 inline PNG；catalog 工具數更新為 53，兩端 dispatch 保持一致。
+  - 驗證指令：`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py -q`
+  - 相關檔案：`tests/test_workflow_guide.py`、`tests/test_tool_catalog_parity.py`
+  - 提交：`test(workflow): define MCP diagram retrieval contract`
+
+- [ ] 任務 32：產生流程圖、結果示意縮圖與文字指南
+  - 預期行為：HTML／SVG／PNG／Markdown 完整涵蓋四個領域；檔名以現有分析程式實作為準；HTML 通過 Diagram Design 自檢，PNG 以有效內容邊界緊湊裁切。
+  - 驗證指令：`python3 /Users/lab_center/.agents/skills/diagram-design/scripts/self_check.py docs/analysis_workflows.html`，並實際渲染檢視 PNG。
+  - 相關檔案：`docs/analysis_workflows.html`、`docs/images/analysis_workflows.svg`、`docs/images/analysis_workflows.png`、`docs/guides/ANALYSIS_WORKFLOW_GUIDE.md`
+  - 提交：`docs(diagrams): add EP analysis workflow guide`
+
+- [ ] 任務 33：實作唯讀 MCP 流程圖工具
+  - 預期行為：`bio_get_analysis_workflow` 從版本化資產讀取資料，依 domain 回傳對應章節、檔案位置與 inline PNG；不連線研究資料庫、不寫 analysis_history，也不繞過 owner visibility。
+  - 驗證指令：`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py tests/test_auth_rbac.py -q`
+  - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`、`server/bio_memory_server.py`
+  - 提交：`feat(mcp): expose analysis workflow diagrams`
+
+- [ ] 任務 34：完成結構、視覺與 MCP 端到端驗證
+  - 預期行為：HTML 結構與安全檢查通過；SVG／PNG 無文字截斷、箭頭遮蓋或多餘空白；MCP 呼叫會產生可由 `bio_get_figure` 讀回的 owner-scoped `figure_id`；既有核心測試不回歸。
+  - 驗證指令：Diagram Design self-check、HTML 瀏覽器渲染、`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py tests/test_phase4.py -q`、`uv run ruff check analysis/workflow_guide.py server/tool_catalog.py tests/test_workflow_guide.py`
+  - 相關檔案：上述所有新增與修改檔案、`docs/logs/execution_trace.md`
+  - 提交：`test(workflow): verify diagram rendering and MCP retrieval`
+
+- [ ] 任務 35：同步部署副本並執行正式服務 smoke test
+  - 預期行為：只同步本功能的已提交檔案至 `/Users/lab_center/evo_prism_build`；服務重啟後 `tools/list` 可見新方法，`bio_get_analysis_workflow` 與 `bio_get_figure` 實際可用。
+  - 驗證指令：tracked-file hash 比對、MCP `tools/list`、總覽與單一領域取圖 smoke test。
+  - 相關檔案：部署副本中的對應檔案、`docs/logs/execution_trace.md`
+  - 提交：部署副本不是 Git worktree；正式來源的部署證據追加至 `docs/logs/execution_trace.md` 後提交 `docs(deploy): verify workflow guide retrieval`。
+
+### 驗收標準
+
+1. 使用者可用 MCP 對話取得總覽或四個領域之一，且不需要知道檔案路徑。
+2. 圖上每個核心分析方法都有輸入、資料檔輸出、圖檔輸出與下游方向。
+3. 六種圖形 sample 清楚標示為示意，不包含真實樣本或個資。
+4. HTML、SVG、PNG 與 Markdown 的內容一致，HTML 通過自檢與實際渲染檢查。
+5. 新工具為 viewer-safe、唯讀、不可排隊；MCP 與 Web UI 兩端 schema／dispatch 不漂移。
+6. 正式服務重啟前保留部署邊界；未經獨立確認不自動中斷執行中的分析工作。
