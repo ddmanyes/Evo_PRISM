@@ -74,6 +74,29 @@ Authorization: Bearer epk_...
 
 `analyst` 只看得到並只能取消自己的 job。已排隊的 job 會立即變成 `canceled`；執行中 job 是協作式取消，現有分析函式不保證在中間強制終止，但完成後不會以成功結案。
 
+## 分析紀錄可見性
+
+`viewer` 與 `analyst` 的 key 都採 own-only：只能列出、搜尋或直接開啟 `requested_by` 等於本人 `user_id` 的分析紀錄，以及由這些分析產生的 artifact、report、figure、L1 語意快取、impact／version compare 結果與 job。即使知道別人的 `analysis_id`、`artifact_id`、`figure_id` 或結果路徑，也只會收到與「不存在」相同的回應，不會透露目標是否存在。`admin` 可讀取所有人的紀錄。
+
+樣本基本資料是實驗室共用資料，不按 owner 切割；一般成員仍可使用 sample registry、alias 與 L2/L3 readiness 查詢。查詢依舊是即時執行、不進佇列，但查詢結果會先套用上述可見性規則。
+
+啟用任一 owner/member key 或 `MCP_AUTH_REQUIRED=true` 後，Tailscale 對外的 `/api/*` 紀錄端點與 `/results/*` 下載也必須帶相同的 Bearer key：
+
+```bash
+curl -H 'Authorization: Bearer epk_...' \
+  'http://<tailscale-host>:8000/api/history?limit=20'
+```
+
+`/api/chat` 與 `/api/dashboard*` 僅限 admin。`/health`、`/api/backend` 與靜態入口頁可公開，但公開頁不等於可以匿名取得紀錄；用瀏覽器直接開啟 report URL 時若無法附加 Authorization header，請改用支援 Bearer header 的 MCP client 或 HTTP client 下載。
+
+既有 L1 cache 在升級時必須由管理員執行一次（可重複執行）：
+
+```bash
+python scripts/29_migrate_l1_cache_owner.py
+```
+
+舊 cache row 會標為 `legacy:unattributed`，只供 admin 使用；舊的 `analysis_history` 若沒有 owner，同樣不會出現在一般成員結果中。這是刻意的 fail-closed 行為，不會猜測或自動重派舊紀錄的擁有者。
+
 ## 資料傳入：Tailscale SFTP 或 rsync
 
 先呼叫 `bio_staging_info`取得自己的 actor directory。每次上傳建立獨立 `upload_id`：

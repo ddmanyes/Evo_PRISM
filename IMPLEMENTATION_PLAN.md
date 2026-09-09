@@ -199,7 +199,7 @@ Evo_PRISM/
   - 相關檔案：`server/{agent_history,bio_memory_server,web_app}.py`、`analysis/{impact,version_compare}.py`
   - 提交：`feat(privacy): enforce record visibility across clients`
 
-- [ ] 任務 21：文件、Second Brain 與完整驗證
+- [x] 任務 21：文件、Second Brain 與完整驗證（completed 2026-09-09）
   - 預期行為：成員指南清楚說明 own-only、admin-all、legacy 行為與 Bearer 下載方式；SB 計畫追加成果；feature gate 維持全綠。
   - 驗證指令：完整 feature suite、scoped Ruff、migration dry-run、文件契約檢查。
   - 相關檔案：`docs/guides/LAB_MEMBER_ANALYSIS.md`、`docs/logs/execution_trace.md`

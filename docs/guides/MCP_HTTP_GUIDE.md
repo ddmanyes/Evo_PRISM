@@ -34,6 +34,7 @@ Accept: application/json, text/event-stream
 ### 3.1 Initialize（必先呼叫）
 ```bash
 curl -N -X POST http://localhost:8000/mcp/ \
+  -H "Authorization: Bearer epk_..." \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{
@@ -57,6 +58,7 @@ data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05",...,"serv
 ### 3.2 列出所有工具
 ```bash
 curl -N -X POST http://localhost:8000/mcp/ \
+  -H "Authorization: Bearer epk_..." \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
@@ -65,6 +67,7 @@ curl -N -X POST http://localhost:8000/mcp/ \
 ### 3.3 呼叫工具
 ```bash
 curl -N -X POST http://localhost:8000/mcp/ \
+  -H "Authorization: Bearer epk_..." \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{
@@ -84,6 +87,7 @@ curl -N -X POST http://localhost:8000/mcp/ \
 import httpx
 
 HEADERS = {
+    "Authorization": "Bearer epk_...",
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
 }
@@ -121,4 +125,6 @@ with httpx.Client(timeout=30) as client:
 - **綁定主機**：env `MCP_BIND_HOST`，預設 `127.0.0.1`（僅本機）；對外開放改 `0.0.0.0`
 - **認證**：HTTP 支援舊的 owner `MCP_AUTH_TOKEN`/`MCP_AUTH_TOKENS` 與 DB 內每人 hashed key；有任一認證來源時就必須帶 Bearer token。Tailscale/對外部署另設 `MCP_AUTH_REQUIRED=true` 保證 registry 故障時 fail closed
 - **授權**：`viewer`/`analyst`/`admin` 以 tool catalog 執行；分析者的重量工具必須進佇列
+- **紀錄隔離**：`viewer`/`analyst` 只能讀自己的 analysis history、artifact、report、figure、L1 cache 與跨分析結果；`admin` 可讀全部，sample registry 維持共用。直接 ID 與路徑取用也套用相同規則
+- **Web record API**：啟用認證後，`/api/*` 與 `/results/*` 使用相同 Bearer key；`/api/chat`、`/api/dashboard*` 僅限 admin。`/health`、`/api/backend` 與靜態入口不要求 key
 - **速率限制**：需要 embedding/search 的工具共用 `MCP_RATE_LIMIT_PER_MIN` 限制
