@@ -513,6 +513,11 @@ class DuckDBStore:
             ).fetchone()
         return int(row[0]) if row else 0
 
+    def count_api_keys(self) -> int:
+        with self.read_conn() as con:
+            row = con.execute("SELECT COUNT(*) FROM api_keys").fetchone()
+        return int(row[0]) if row else 0
+
     def record_access_audit(
         self,
         *,

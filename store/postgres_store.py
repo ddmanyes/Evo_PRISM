@@ -579,6 +579,13 @@ class PostgresStore:
             ).fetchone()
         return int(row[0]) if row else 0
 
+    def count_api_keys(self) -> int:
+        with self.read_conn() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM api_keys")
+                row = cur.fetchone()
+        return int(row[0]) if row else 0
+
     def record_access_audit(
         self,
         *,

@@ -69,6 +69,7 @@ services:
       LLAMA_BASE_URL: http://host.docker.internal:11434/v1
       LLAMA_MODEL: gemma
       LLAMA_NO_THINK: "1"
+      MCP_AUTH_REQUIRED: "true"
     extra_hosts: &evo-extra-hosts
       - "host.docker.internal:host-gateway"
     volumes: &evo-volumes

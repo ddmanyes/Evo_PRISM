@@ -1416,9 +1416,9 @@ def create_http_app():
 
     session_manager 以 stateless=True 運行，每次請求獨立，不需要 session affinity。
 
-    認證：若 env `MCP_AUTH_TOKEN` 已設定，所有非 lifespan 請求必須帶
-    `Authorization: Bearer <token>`；缺失或不符回 401。未設定 token 時 auth 關閉，
-    維持向後相容（Web UI mount /mcp 時可不啟用）。
+    認證：若有 owner token、任何已登記（含已撤銷）的 member key，或
+    `MCP_AUTH_REQUIRED=true`，所有非 lifespan 請求必須帶 Bearer token。
+    只有本機開發模式在三者都不存在時維持無 auth 相容。
 
     用法（FastAPI）：
         mcp_handler, mcp_lifespan = create_http_app()
@@ -1465,13 +1465,18 @@ def create_http_app():
 
             store = get_store()
             owner_tokens = _configured_owner_tokens()
+            auth_required = os.environ.get("MCP_AUTH_REQUIRED", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
             try:
-                registered_key_count = store.count_active_api_keys()
+                registered_key_count = store.count_api_keys()
             except Exception as exc:
                 registered_key_count = 0
                 logger.warning("API-key registry unavailable during auth setup: %s", exc)
 
-            if owner_tokens or registered_key_count:
+            if owner_tokens or registered_key_count or auth_required:
                 presented = _extract_bearer_token(scope)
 
                 def _lookup(digest: str):

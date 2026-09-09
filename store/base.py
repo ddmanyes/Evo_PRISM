@@ -281,6 +281,10 @@ class RegistryStore(Protocol):
         """Return the number of non-revoked registered keys."""
         ...
 
+    def count_api_keys(self) -> int:
+        """Return all key records, including revoked rows that keep auth enabled."""
+        ...
+
     def record_access_audit(
         self,
         *,
