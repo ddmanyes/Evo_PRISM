@@ -76,6 +76,7 @@ COPY --chown=evoprism:evoprism . .
 RUN chmod +x entrypoint.sh \
     && mkdir -p /data/bio_db/gold /data/bio_db/silver /data/bio_db/results_ana \
                /data/bio_db/data_ana /data/bio_db/results/dynamic_code /data/bio_db/results/mcseg \
+               /data/bio_db/lab_exchange/staging /data/bio_db/lab_exchange/l3_ingested \
     && chown -R evoprism:evoprism /data \
     && chown evoprism:evoprism /app
 

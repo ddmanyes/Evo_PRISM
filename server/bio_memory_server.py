@@ -926,6 +926,7 @@ async def _handle_bio_submit_analysis(args: dict) -> str:
         )
     except JobQueueError as exc:
         raise ValueError(str(exc)) from exc
+    _audit_operation("bio_submit_analysis", job["job_id"], "queued", target_name)
     return json.dumps(_job_public_view(job), ensure_ascii=False, default=str)
 
 
@@ -970,7 +971,171 @@ async def _handle_bio_cancel_job(args: dict) -> str:
         outcome = AnalysisJobQueue(get_store()).cancel(job_id, actor=current_identity())
     except JobQueueError as exc:
         raise ValueError(str(exc)) from exc
+    _audit_operation("bio_cancel_job", job_id, outcome)
     return json.dumps({"job_id": job_id, "outcome": outcome}, ensure_ascii=False)
+
+
+def _audit_operation(tool_name: str, target: str | None, outcome: str, detail: str | None = None) -> None:
+    """Best-effort append-only audit; callers must never include raw keys or payloads."""
+    try:
+        from server.auth import current_identity
+        from store.factory import get_store
+
+        actor = current_identity()
+        get_store().record_access_audit(
+            user_id=actor.user_id,
+            role=actor.role.value,
+            tool_name=tool_name,
+            target=target,
+            outcome=outcome,
+            detail=detail,
+        )
+    except Exception as exc:  # pragma: no cover - audit is best effort by contract
+        logger.error("Access audit write failed for %s: %s", tool_name, exc)
+
+
+async def _handle_bio_manage_api_key(args: dict) -> str:
+    import secrets
+
+    from analysis.staged_ingest import actor_storage_id
+    from config import settings
+    from server.auth import current_identity
+    from server.identity import Role, hash_api_key, key_prefix
+    from store.factory import get_store
+
+    action = str(args.get("action", ""))
+    actor = current_identity()
+    store = get_store()
+    if action == "issue":
+        user_id = str(args.get("user_id", "")).strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@+-]{0,127}", user_id):
+            raise ValueError("user_id contains unsupported characters or is too long")
+        try:
+            role = Role(str(args.get("role", "analyst")))
+        except ValueError as exc:
+            raise ValueError("role must be viewer, analyst, or admin") from exc
+
+        known_prefixes = {row["key_prefix"] for row in store.list_api_keys()}
+        for _ in range(10):
+            raw_key = "epk_" + secrets.token_urlsafe(32)
+            display_prefix = key_prefix(raw_key, 16)
+            if display_prefix not in known_prefixes:
+                break
+        else:  # pragma: no cover - cryptographically implausible
+            raise RuntimeError("unable to allocate unique key prefix")
+        store.register_api_key(
+            key_hash=hash_api_key(raw_key),
+            key_prefix=display_prefix,
+            user_id=user_id,
+            role=role.value,
+            created_by=actor.user_id,
+        )
+        staging_dir = settings.STAGING_ROOT / actor_storage_id(user_id)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        staging_dir.chmod(0o700)
+        _audit_operation("bio_manage_api_key", user_id, "issued", f"role={role.value}; prefix={display_prefix}")
+        return json.dumps(
+            {
+                "user_id": user_id,
+                "role": role.value,
+                "api_key": raw_key,
+                "key_prefix": display_prefix,
+                "staging_directory": str(staging_dir),
+                "warning": "Store this key now; it will not be shown again.",
+            },
+            ensure_ascii=False,
+        )
+    if action == "list":
+        rows = store.list_api_keys(args.get("user_id"))
+        _audit_operation("bio_manage_api_key", str(args.get("user_id") or "all"), "listed")
+        return json.dumps({"keys": rows}, ensure_ascii=False, default=str)
+    if action == "revoke":
+        display_prefix = str(args.get("key_prefix", "")).strip()
+        if len(display_prefix) < 12:
+            raise ValueError("key_prefix must be at least 12 characters")
+        changed = store.revoke_api_key_by_prefix(display_prefix)
+        _audit_operation(
+            "bio_manage_api_key",
+            display_prefix,
+            "revoked" if changed else "not_found",
+        )
+        return json.dumps({"key_prefix": display_prefix, "revoked": changed})
+    raise ValueError("action must be issue, list, or revoke")
+
+
+async def _handle_bio_staging_info(args: dict) -> str:
+    from analysis.staged_ingest import actor_storage_id
+    from config import settings
+    from server.auth import current_identity
+
+    actor = current_identity()
+    path = settings.STAGING_ROOT / actor_storage_id(actor.user_id)
+    return json.dumps(
+        {
+            "user_id": actor.user_id,
+            "staging_directory": str(path),
+            "layout": "<staging_directory>/<upload_id>/MANIFEST.json",
+            "transfer": "Use Tailscale SFTP or rsync; upload MANIFEST.json last.",
+        },
+        ensure_ascii=False,
+    )
+
+
+async def _handle_bio_validate_staged_upload(args: dict) -> str:
+    from analysis.staged_ingest import StagedIngestError, validate_staged_upload
+    from config import settings
+    from server.auth import current_identity
+    from store.factory import get_store
+
+    upload_id = str(args.get("upload_id", ""))
+    try:
+        validated = await asyncio.to_thread(
+            validate_staged_upload,
+            upload_id,
+            actor=current_identity(),
+            store=get_store(),
+            staging_root=settings.STAGING_ROOT,
+            ingested_root=settings.INGESTED_L3_ROOT,
+        )
+    except StagedIngestError as exc:
+        _audit_operation("bio_validate_staged_upload", upload_id, "rejected", str(exc))
+        raise ValueError(str(exc)) from exc
+    _audit_operation("bio_validate_staged_upload", upload_id, "validated")
+    return json.dumps(
+        {
+            "upload_id": upload_id,
+            "sample_id": validated.manifest["sample_id"],
+            "data_type": validated.manifest["data_type"],
+            "platform": validated.manifest["platform"],
+            "file_count": validated.file_count,
+            "total_bytes": validated.total_bytes,
+            "valid": True,
+        },
+        ensure_ascii=False,
+    )
+
+
+async def _handle_bio_promote_staged_upload(args: dict) -> str:
+    from analysis.staged_ingest import StagedIngestError, promote_staged_upload
+    from config import settings
+    from server.auth import current_identity
+    from store.factory import get_store
+
+    upload_id = str(args.get("upload_id", ""))
+    try:
+        result = await asyncio.to_thread(
+            promote_staged_upload,
+            upload_id,
+            actor=current_identity(),
+            store=get_store(),
+            staging_root=settings.STAGING_ROOT,
+            ingested_root=settings.INGESTED_L3_ROOT,
+        )
+    except StagedIngestError as exc:
+        _audit_operation("bio_promote_staged_upload", upload_id, "rejected", str(exc))
+        raise ValueError(str(exc)) from exc
+    _audit_operation("bio_promote_staged_upload", result["sample_id"], "promoted")
+    return json.dumps(result, ensure_ascii=False)
 
 
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
@@ -1021,6 +1186,10 @@ _HANDLERS.update(
         "bio_job_status": _handle_bio_job_status,
         "bio_list_jobs": _handle_bio_list_jobs,
         "bio_cancel_job": _handle_bio_cancel_job,
+        "bio_manage_api_key": _handle_bio_manage_api_key,
+        "bio_staging_info": _handle_bio_staging_info,
+        "bio_validate_staged_upload": _handle_bio_validate_staged_upload,
+        "bio_promote_staged_upload": _handle_bio_promote_staged_upload,
     }
 )
 
@@ -1060,6 +1229,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
     authorization = authorize_tool(identity, spec)
     if not authorization.accepted:
         _record_metric(name, 0, "user_error", requested_by=identity.user_id)
+        _audit_operation(name, None, "denied", authorization.reason)
         if authorization.reason == "queue_required":
             message = f"[RBAC] {name} 必須透過 bio_submit_analysis 進入分析佇列。"
         else:
@@ -1120,6 +1290,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
     # Dangerous tool gate：即使 handler 存在，未開 env flag 也拒絕（defense in depth）
     if name in _DANGEROUS_TOOLS and not _dangerous_tools_enabled():
         _record_metric(name, 0, "user_error", requested_by=requested_by)
+        _audit_operation(name, None, "denied", "dangerous_tools_disabled")
         logger.warning("Dangerous tool %r called but MCP_ENABLE_DANGEROUS_TOOLS not set", name)
         return [
             types.TextContent(

@@ -126,7 +126,7 @@ Evo_PRISM/
   - 相關檔案：`analysis/staged_ingest.py`、`config/settings.py`
   - 提交：`feat(ingest): validate and promote staged datasets`
 
-- [ ] 任務 13：新增資料驗證／提升MCP工具與管理腳本
+- [x] 任務 13：新增資料驗證／提升MCP工具與管理腳本（completed 2026-09-09）
   - 預期行為：analyst只能處理自己的staging；admin可建立受限成員目錄與輸出SFTP/rsync指引。
   - 驗證指令：role、ownership與dry-run provisioning tests。
   - 相關檔案：tool catalog、MCP server、`scripts/provision_staging_user.py`

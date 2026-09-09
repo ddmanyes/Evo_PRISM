@@ -83,6 +83,9 @@ services:
       # image data crosses this mount, the actual he_crop/mask files already live
       # under ./results (mounted above) and are shared with the host as-is.
       - ./mcseg_jobs:/data/bio_db/mcseg_jobs
+      # SFTP/rsync intake and promoted L3 data share one bind mount so promotion
+      # is an atomic rename rather than a cross-filesystem copy.
+      - ./lab_exchange:/data/bio_db/lab_exchange
       # MSseg runtime code is synchronized from its standalone SSD repository into
       # KINGSTON before deployment. Mount only the backend package (never a host
       # venv) so the container uses its own Linux dependencies with the synchronized

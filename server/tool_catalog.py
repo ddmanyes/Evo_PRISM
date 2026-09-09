@@ -45,6 +45,56 @@ class ToolSpec:
 
 
 TOOL_CATALOG: dict[str, "ToolSpec"] = {
+    "bio_manage_api_key": ToolSpec(
+        description=(
+            "Admin-only API key lifecycle: issue returns a new plaintext key exactly once; "
+            "list never returns hashes or secrets; revoke uses the displayed prefix."
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["issue", "list", "revoke"]},
+                "user_id": {"type": "string"},
+                "role": {"type": "string", "enum": ["viewer", "analyst", "admin"]},
+                "key_prefix": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+        mcp_handler="_handle_bio_manage_api_key",
+        required_role=Role.ADMIN,
+    ),
+    "bio_staging_info": ToolSpec(
+        description="Return the authenticated analyst's staging directory and manifest workflow.",
+        json_schema={"type": "object", "properties": {}, "required": []},
+        mcp_handler="_handle_bio_staging_info",
+        required_role=Role.ANALYST,
+    ),
+    "bio_validate_staged_upload": ToolSpec(
+        description=(
+            "Validate an owned SFTP/rsync staging upload without moving it: manifest, SHA-256, "
+            "layout, path safety, symlinks, ownership and duplicate sample checks."
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {"upload_id": {"type": "string"}},
+            "required": ["upload_id"],
+        },
+        mcp_handler="_handle_bio_validate_staged_upload",
+        required_role=Role.ANALYST,
+    ),
+    "bio_promote_staged_upload": ToolSpec(
+        description=(
+            "Revalidate an owned upload, atomically move it into immutable L3 intake, and register "
+            "the sample. No FASTQ preprocessing or NDPI conversion is performed."
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {"upload_id": {"type": "string"}},
+            "required": ["upload_id"],
+        },
+        mcp_handler="_handle_bio_promote_staged_upload",
+        required_role=Role.ANALYST,
+    ),
     "bio_submit_analysis": ToolSpec(
         description=(
             "將重量分析工具送入耐久佇列。查詢工具不可排隊；"

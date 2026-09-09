@@ -474,6 +474,23 @@ class DuckDBStore:
             ).fetchall()
         return bool(rows)
 
+    def revoke_api_key_by_prefix(self, key_prefix: str) -> bool:
+        with self.write_conn() as con:
+            matches = con.execute(
+                "SELECT key_hash FROM api_keys WHERE key_prefix = ? AND revoked_at IS NULL",
+                [key_prefix],
+            ).fetchall()
+            if len(matches) > 1:
+                raise ValueError("key prefix is ambiguous")
+            if not matches:
+                return False
+            rows = con.execute(
+                "UPDATE api_keys SET revoked_at = now() "
+                "WHERE key_hash = ? AND revoked_at IS NULL RETURNING key_hash",
+                [matches[0][0]],
+            ).fetchall()
+        return bool(rows)
+
     def list_api_keys(self, user_id: str | None = None) -> list[dict]:
         where = "WHERE user_id = ?" if user_id else ""
         params = [user_id] if user_id else []
@@ -495,6 +512,26 @@ class DuckDBStore:
                 "SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL"
             ).fetchone()
         return int(row[0]) if row else 0
+
+    def record_access_audit(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        tool_name: str,
+        target: str | None,
+        outcome: str,
+        detail: str | None = None,
+    ) -> None:
+        with self.write_conn() as con:
+            con.execute(
+                """
+                INSERT INTO access_audit_log
+                    (user_id, role, tool_name, target, outcome, detail)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [user_id, Role(role).value, tool_name, target, outcome, detail],
+            )
 
     # ------------------------------------------------------------------
     # Durable analysis jobs

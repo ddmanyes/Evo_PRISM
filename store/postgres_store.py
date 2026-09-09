@@ -537,6 +537,26 @@ class PostgresStore:
             ).fetchall()
         return bool(rows)
 
+    def revoke_api_key_by_prefix(self, key_prefix: str) -> bool:
+        with self.write_conn() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    "SELECT key_hash FROM api_keys "
+                    "WHERE key_prefix = %s AND revoked_at IS NULL FOR UPDATE",
+                    [key_prefix],
+                )
+                matches = cur.fetchall()
+                if len(matches) > 1:
+                    raise ValueError("key prefix is ambiguous")
+                if not matches:
+                    return False
+                cur.execute(
+                    "UPDATE api_keys SET revoked_at = now() "
+                    "WHERE key_hash = %s AND revoked_at IS NULL RETURNING key_hash",
+                    [matches[0][0]],
+                )
+                return cur.fetchone() is not None
+
     def list_api_keys(self, user_id: str | None = None) -> list[dict]:
         where = "WHERE user_id = %s" if user_id else ""
         params = [user_id] if user_id else []
@@ -558,6 +578,27 @@ class PostgresStore:
                 "SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL"
             ).fetchone()
         return int(row[0]) if row else 0
+
+    def record_access_audit(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        tool_name: str,
+        target: str | None,
+        outcome: str,
+        detail: str | None = None,
+    ) -> None:
+        with self.write_conn() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO access_audit_log
+                        (user_id, role, tool_name, target, outcome, detail)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    [user_id, Role(role).value, tool_name, target, outcome, detail],
+                )
 
     # ------------------------------------------------------------------
     # Durable analysis jobs

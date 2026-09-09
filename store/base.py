@@ -269,12 +269,29 @@ class RegistryStore(Protocol):
         """Revoke one active key and return whether a row changed."""
         ...
 
+    def revoke_api_key_by_prefix(self, key_prefix: str) -> bool:
+        """Revoke one unambiguous active key by its display prefix."""
+        ...
+
     def list_api_keys(self, user_id: str | None = None) -> list[dict]:
         """List lifecycle metadata without returning key hashes."""
         ...
 
     def count_active_api_keys(self) -> int:
         """Return the number of non-revoked registered keys."""
+        ...
+
+    def record_access_audit(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        tool_name: str,
+        target: str | None,
+        outcome: str,
+        detail: str | None = None,
+    ) -> None:
+        """Append one security-relevant operation without storing secrets."""
         ...
 
     # ------------------------------------------------------------------
