@@ -10,7 +10,7 @@
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-green)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-[Why Evo_PRISM](#why-evo_prism) · [Quick start](#quick-start) · [Architecture](#architecture) · [Benchmark](#benchmark-snapshot) · [Contributing](#contributing)
+[Why Evo_PRISM](#why-evo_prism) · [Quick start](#quick-start) · [Architecture](#architecture) · [MCP tools](#mcp-tool-catalog) · [Benchmark](#benchmark-snapshot) · [Docs](#documentation)
 
 Evo_PRISM is a local-first runtime that connects natural-language requests to versioned analysis tools and searchable, provenance-aware memory through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
@@ -145,11 +145,66 @@ ENGRAM registers reports, figures, tables, and other analysis outputs with seman
 
 Together, HELIX and ENGRAM create a closed loop: tool evolution updates provenance, provenance identifies affected artifacts, and accumulated history improves future retrieval and review.
 
+## MCP tool catalog
+
+The server declares **36 tools**. By default it exposes **35**; `bio_execute_code` is hidden unless `MCP_ENABLE_DANGEROUS_TOOLS=true` is set.
+
+| Group | Tools |
+| :--- | :--- |
+| History and samples | `bio_history_lookup`, `bio_history_timeline`, `bio_history_check`, `bio_history_search`, `bio_lookup_sample`, `bio_register_sample`, `bio_sample_list`, `bio_sample_compare` |
+| Memory and artifacts | `bio_memory_query`, `bio_memory_write`, `bio_artifact_search`, `bio_artifact_summary`, `bio_get_artifact`, `bio_get_figure`, `bio_read_report` |
+| Discovery and governance | `bio_find_tool`, `bio_tool_health`, `bio_failure_summary`, `bio_impact`, `bio_get_playbook` |
+| Core analysis | `bio_check_l2_sufficiency`, `bio_run_spatial_eda`, `bio_run_bulk_eda`, `bio_run_deg`, `bio_run_enrichment`, `bio_run_heatmaps` |
+| MCseg and post-processing | `bio_run_mcseg_roi`, `bio_run_mcseg_fullslide`, `bio_run_mcseg_qc`, `bio_compute_crc_metrics`, `bio_get_marker_genes`, `bio_relabel_clusters`, `bio_run_celltypist`, `bio_run_mcseg_merge`, `bio_export_loupe` |
+| Opt-in high privilege | `bio_execute_code` |
+
+The MCseg execution tools require an external MCseg backend that is not included in this repository. Post-processing tools also require compatible upstream results; CellTypist support has its own optional dependency.
+
+### Safety and lifecycle defaults
+
+| Control | Default behavior |
+| :--- | :--- |
+| Dynamic Python execution | Hidden unless explicitly enabled with `MCP_ENABLE_DANGEROUS_TOOLS=true` |
+| Tool promotion | Requires human review before a candidate moves into the active analysis library |
+| HTTP authentication | Optional bearer token through `MCP_AUTH_TOKEN` |
+| Expensive and embedding-backed tools | Protected by the server's request rate limiter |
+| Result provenance | Analysis and artifact records retain tool-version relationships |
+
 ## Benchmark snapshot
 
 ![Evo_PRISM semantic-search flywheel benchmark](docs/images/Figure8_Flywheel_Evolution.png)
 
 The tracked R10 benchmark figure reports semantic-search hit rate increasing from **20% with 2 active tools** to **100% with 25 tools**, while average HNSW lookup latency changes from **1.40 ms** to **1.96 ms** across the same catalog sizes. These are project-reported benchmark results; the paper source and raw benchmark bundle are not included in this public checkout.
+
+## Project structure
+
+```text
+Evo_PRISM/
+├── analysis/      # Analysis functions, HELIX registry, ENGRAM, and retrieval
+├── server/        # MCP server, agent adapters, and Web UI
+├── store/         # DuckDB/PostgreSQL storage backends
+├── config/        # Settings, paths, and database utilities
+├── scripts/       # Schema migrations, ingestion, export, and maintenance
+├── scheduler/     # Backup, cleanup, index, and scan jobs
+├── playbooks/     # Reusable analysis procedures
+├── gene_sets/     # Example pathway definitions
+└── docs/guides/   # Setup, integration, transport, and operations guides
+```
+
+Runtime databases, raw inputs, feature stores, models, and generated results are local data and are intentionally excluded from version control.
+
+## Documentation
+
+| Guide | Purpose |
+| :--- | :--- |
+| [SETUP.md](SETUP.md) | Manual installation, environment variables, Singularity, and client setup |
+| [MCP JSON setup](docs/guides/MCP_JSON_SETUP.md) | stdio client configuration and path handling |
+| [MCP HTTP guide](docs/guides/MCP_HTTP_GUIDE.md) | HTTP transport, headers, initialization, and request examples |
+| [Data integration guide](docs/guides/DATA_INTEGRATION_GUIDE.md) | Bringing bulk RNA-seq, proteomics, and other data into the project |
+| [L3 data ingest guide](docs/guides/L3_DATA_INGEST_GUIDE.md) | Registering samples and converting L3 sources into L2 features |
+| [Scheduled tasks](docs/guides/SCHEDULED_TASKS.md) | Backup, cache cleanup, HNSW rebuild, and launchd examples |
+| [Star schema](docs/guides/STAR_SCHEMA.md) | Operational views for throughput and tool stability |
+| [Windows setup](docs/guides/WINDOWS_SETUP.md) | Native Windows environment and service setup |
 
 ## Contributing
 

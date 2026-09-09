@@ -10,7 +10,7 @@
 [![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20HTTP-green)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-[為什麼選擇 Evo_PRISM](#為什麼選擇-evo_prism) · [快速開始](#快速開始) · [系統架構](#系統架構) · [基準測試](#基準測試摘要) · [參與貢獻](#參與貢獻)
+[為什麼選擇 Evo_PRISM](#為什麼選擇-evo_prism) · [快速開始](#快速開始) · [系統架構](#系統架構) · [MCP 工具](#mcp-工具目錄) · [基準測試](#基準測試摘要) · [文件](#文件索引)
 
 Evo_PRISM 是一套 local-first 執行環境，透過 [Model Context Protocol（MCP）](https://modelcontextprotocol.io/)把自然語言需求連接到具版本管理的分析工具與可搜尋、可追溯的永久記憶。
 
@@ -145,11 +145,66 @@ ENGRAM 為報告、圖表、資料表及其他分析輸出登記語意向量與�
 
 HELIX 與 ENGRAM 因此形成閉合迴路：工具演化更新 provenance，provenance 找出受影響產物，累積的歷史則改善後續檢索與審查。
 
+## MCP 工具目錄
+
+Server 共宣告 **36 個工具**，預設對外提供 **35 個**；只有設定 `MCP_ENABLE_DANGEROUS_TOOLS=true` 後，才會顯示 `bio_execute_code`。
+
+| 分組 | 工具 |
+| :--- | :--- |
+| 歷史與樣本 | `bio_history_lookup`、`bio_history_timeline`、`bio_history_check`、`bio_history_search`、`bio_lookup_sample`、`bio_register_sample`、`bio_sample_list`、`bio_sample_compare` |
+| 記憶與產物 | `bio_memory_query`、`bio_memory_write`、`bio_artifact_search`、`bio_artifact_summary`、`bio_get_artifact`、`bio_get_figure`、`bio_read_report` |
+| 探索與治理 | `bio_find_tool`、`bio_tool_health`、`bio_failure_summary`、`bio_impact`、`bio_get_playbook` |
+| 核心分析 | `bio_check_l2_sufficiency`、`bio_run_spatial_eda`、`bio_run_bulk_eda`、`bio_run_deg`、`bio_run_enrichment`、`bio_run_heatmaps` |
+| MCseg 與後處理 | `bio_run_mcseg_roi`、`bio_run_mcseg_fullslide`、`bio_run_mcseg_qc`、`bio_compute_crc_metrics`、`bio_get_marker_genes`、`bio_relabel_clusters`、`bio_run_celltypist`、`bio_run_mcseg_merge`、`bio_export_loupe` |
+| 選用高權限 | `bio_execute_code` |
+
+MCseg 執行工具需要此 repo 未包含的外部 MCseg backend。後處理工具也需要相容的上游結果；CellTypist 支援另有選用 dependency。
+
+### 安全與生命週期預設值
+
+| 控制項 | 預設行為 |
+| :--- | :--- |
+| 動態執行 Python | 除非設定 `MCP_ENABLE_DANGEROUS_TOOLS=true`，否則不會對外顯示 |
+| 工具晉升 | 候選工具移入正式 analysis library 前必須通過人工審核 |
+| HTTP 驗證 | 可透過 `MCP_AUTH_TOKEN` 設定 bearer token |
+| 高成本及使用 embedding 的工具 | 受 server request rate limiter 保護 |
+| 結果溯源 | Analysis 與 artifact records 保留工具版本關係 |
+
 ## 基準測試摘要
 
 ![Evo_PRISM 語意搜尋飛輪基準測試](docs/images/Figure8_Flywheel_Evolution.png)
 
 Repo 追蹤的 R10 圖表顯示：語意搜尋命中率由 **2 個 active tools 時的 20%**，提升至 **25 個工具時的 100%**；相同 catalog sizes 下，HNSW 平均查詢延遲由 **1.40 ms** 變為 **1.96 ms**。這些數值是專案回報的 benchmark 結果；論文來源與原始 benchmark bundle 並未包含在此公開 checkout 中。
+
+## 專案結構
+
+```text
+Evo_PRISM/
+├── analysis/      # 分析函式、HELIX registry、ENGRAM 與檢索
+├── server/        # MCP server、agent adapters 與 Web UI
+├── store/         # DuckDB／PostgreSQL 儲存後端
+├── config/        # 設定、路徑與資料庫 utilities
+├── scripts/       # Schema migration、ingestion、export 與維護工具
+├── scheduler/     # 備份、清理、index 與掃描工作
+├── playbooks/     # 可重用分析程序
+├── gene_sets/     # 範例 pathway 定義
+└── docs/guides/   # 安裝、整合、transport 與維運指南
+```
+
+Runtime database、原始輸入、feature stores、models 與生成結果都屬於本機資料，因此刻意排除在版本控制之外。
+
+## 文件索引
+
+| 指南 | 用途 |
+| :--- | :--- |
+| [SETUP.md](SETUP.md) | 手動安裝、環境變數、Singularity 與 client 設定 |
+| [MCP JSON 設定](docs/guides/MCP_JSON_SETUP.md) | stdio client 設定與路徑處理 |
+| [MCP HTTP 指南](docs/guides/MCP_HTTP_GUIDE.md) | HTTP transport、headers、初始化與 request 範例 |
+| [資料整合指南](docs/guides/DATA_INTEGRATION_GUIDE.md) | 匯入 bulk RNA-seq、proteomics 與其他資料 |
+| [L3 資料匯入指南](docs/guides/L3_DATA_INGEST_GUIDE.md) | 登記 sample 並把 L3 source 轉成 L2 features |
+| [排程任務](docs/guides/SCHEDULED_TASKS.md) | 備份、cache 清理、HNSW 重建與 launchd 範例 |
+| [Star schema](docs/guides/STAR_SCHEMA.md) | Throughput 與工具穩定度 operational views |
+| [Windows 安裝](docs/guides/WINDOWS_SETUP.md) | Windows 原生環境與服務設定 |
 
 ## 參與貢獻
 
