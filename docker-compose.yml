@@ -104,12 +104,29 @@ services:
       - ./playbooks:/data/bio_db/playbooks
     ports:
       - "100.87.59.15:8000:8000"   # Tailscale-only, matches lcdda(:9104)/second-brain(:9100) binding pattern
+    depends_on:
+      lock-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # Docker creates named volumes as root:root. Runtime services intentionally run
+  # as UID 1000, so initialize the shared application-lock volume once before any
+  # DuckDB writer starts. Keeping this in Compose makes volume recreation safe.
+  lock-init:
+    image: evo_prism-evo-prism:latest
+    platform: linux/amd64
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - chown -R 1000:1000 /data/locks && chmod 0700 /data/locks
+    volumes:
+      - duckdb-lock:/data/locks
 
   analysis-worker-cpu:
     build: *evo-build
