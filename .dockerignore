@@ -42,6 +42,7 @@ build/
 
 # ── Secrets and local config ──────────────────────────────────────────────────
 .env
+.env.*
 *.key
 *.pem
 

@@ -223,7 +223,7 @@ Evo_PRISM/
   - 安全界線：只用 fixture key／資料，不建立真實成員或改寫正式資料。
   - 已排除阻擋：從正式 EXPORT 還原的主庫含 HNSW index，且既有 version 26 屬於 embedding migration。auth/job migration 已改為 v27/v28 並補上 VSS 初始化；乾淨副本、冪等與角色 smoke 均已通過。
 
-- [~] 任務 25：readiness 報告與 Second Brain 回寫（in progress 2026-09-09）
+- [x] 任務 25：readiness 報告與 Second Brain 回寫（completed 2026-09-09）
   - 預期行為：列出已通過項目、阻擋、實際部署／重啟命令與 rollback 點；中央 SB 原計畫追加續行結果並讀回驗證。
   - 安全界線：正式 rebuild/restart、發真實 key 與資料搬移另以 readiness 結果為閘門。
 

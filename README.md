@@ -473,6 +473,7 @@ See [docs/guides/TESTING.md](docs/guides/TESTING.md) for the full per-file break
 ## Documentation
 
 - [實驗室成員連線、排隊分析與資料匯入](docs/guides/LAB_MEMBER_ANALYSIS.md)
+- [多使用者部署 readiness 與 rollback](docs/guides/MULTIUSER_DEPLOYMENT_READINESS.md)
 
 | Document                                                                    | Description                                               |
 | :-------------------------------------------------------------------------- | :-------------------------------------------------------- |
