@@ -227,6 +227,28 @@ Evo_PRISM/
   - 預期行為：列出已通過項目、阻擋、實際部署／重啟命令與 rollback 點；中央 SB 原計畫追加續行結果並讀回驗證。
   - 安全界線：正式 rebuild/restart、發真實 key 與資料搬移另以 readiness 結果為閘門。
 
+## 正式維護部署（2026-09-09 已批准）
+
+- [ ] 任務 26：建立最新 rollback point（in_progress）
+  - 預期行為：在現行服務仍運作時，重新 EXPORT 主 DB 與 L1 cache 並完成還原驗證；將現行映像另存為具日期的 rollback tag。
+  - 安全界線：備份與舊映像均不得覆寫；不得輸出 `.env` 或任何 raw API key。
+
+- [ ] 任務 27：同步乾淨 build context 並完成 build-before-stop
+  - 預期行為：只從隔離 worktree 同步 Git tracked files 至 APFS build context，保留 `MSseg` 等部署資料；新映像建置成功前不停止正式服務。
+  - 驗證指令：tracked-file hash／migration filename 檢查、`docker compose build`。
+
+- [ ] 任務 28：維護停機與正式 schema migration
+  - 預期行為：停止所有 writer 後依序執行 main DB v27/v28 與 L1 owner migration，並以唯讀查詢驗證版本、表、欄位與既有 row counts。
+  - 安全界線：任一 migration 或驗證失敗即停止，不啟動不確定 schema 的服務。
+
+- [ ] 任務 29：以三服務 topology 重建並驗證 health
+  - 預期行為：使用 `docker compose up -d --force-recreate` 啟動 MCP server、CPU worker、GPU worker；三者狀態與 `/health` 均通過。
+  - 安全界線：健康檢查失敗時保留診斷證據並停止續行。
+
+- [ ] 任務 30：live RBAC smoke、撤銷 fixture key 與完成紀錄
+  - 預期行為：驗證未授權拒絕、viewer/analyst/admin 權限與 owner visibility；所有 smoke key 在結束前撤銷；將不含 secret 的部署證據追加至 Second Brain。
+  - 安全界線：不搬移真實研究資料、不留下可用 fixture key、不把 secret 寫入 Git、log 或 SB。
+
 ## 實作限制
 
 - 使用`apply_patch`修改文字檔。
