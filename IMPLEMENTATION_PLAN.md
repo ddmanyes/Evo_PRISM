@@ -237,11 +237,11 @@ Evo_PRISM/
   - 預期行為：只從隔離 worktree 同步 Git tracked files 至 APFS build context，保留 `MSseg` 等部署資料；新映像建置成功前不停止正式服務。
   - 驗證指令：tracked-file hash／migration filename 檢查、`docker compose build`。
 
-- [ ] 任務 28：維護停機與正式 schema migration（in_progress）
+- [x] 任務 28：維護停機與正式 schema migration（completed 2026-09-09）
   - 預期行為：停止所有 writer 後依序執行 main DB v27/v28 與 L1 owner migration，並以唯讀查詢驗證版本、表、欄位與既有 row counts。
   - 安全界線：任一 migration 或驗證失敗即停止，不啟動不確定 schema 的服務。
 
-- [ ] 任務 29：以三服務 topology 重建並驗證 health
+- [ ] 任務 29：以三服務 topology 重建並驗證 health（in_progress）
   - 預期行為：使用 `docker compose up -d --force-recreate` 啟動 MCP server、CPU worker、GPU worker；三者狀態與 `/health` 均通過。
   - 安全界線：健康檢查失敗時保留診斷證據並停止續行。
 
