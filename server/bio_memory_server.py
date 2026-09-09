@@ -877,6 +877,102 @@ async def _handle_bio_get_artifact(args: dict) -> str:
     return "\n".join(lines)
 
 
+def _job_public_view(job: dict) -> dict:
+    """Return queue metadata without echoing arguments or result blobs."""
+    fields = (
+        "job_id",
+        "tool_name",
+        "status",
+        "requested_by",
+        "resource_class",
+        "priority",
+        "retry_count",
+        "max_retries",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "error",
+    )
+    return {field: job.get(field) for field in fields if job.get(field) is not None}
+
+
+async def _handle_bio_submit_analysis(args: dict) -> str:
+    from analysis.job_queue import AnalysisJobQueue, JobQueueError
+    from config import settings
+    from server.auth import authorize_tool, current_identity
+    from store.factory import get_store
+
+    target_name = str(args.get("tool_name", "")).strip()
+    target_spec = _TOOL_CATALOG.get(target_name)
+    if target_spec is None or not target_spec.queueable or target_spec.dangerous:
+        return f"[ERROR] target tool {target_name!r} is not queueable"
+
+    actor = current_identity()
+    decision = authorize_tool(actor, target_spec, via_queue=True)
+    if not decision.accepted:
+        return f"[RBAC] {target_name} requires {target_spec.required_role.value} role"
+
+    queue = AnalysisJobQueue(
+        get_store(), max_pending_per_user=settings.ANALYSIS_JOB_MAX_PENDING
+    )
+    try:
+        job = queue.submit(
+            target_name,
+            args.get("arguments", {}),
+            actor=actor,
+            resource_class=target_spec.resource_class,
+            priority=args.get("priority", 0),
+            max_retries=args.get("max_retries", 1),
+        )
+    except JobQueueError as exc:
+        raise ValueError(str(exc)) from exc
+    return json.dumps(_job_public_view(job), ensure_ascii=False, default=str)
+
+
+async def _handle_bio_job_status(args: dict) -> str:
+    from analysis.job_queue import AnalysisJobQueue, JobQueueError
+    from server.auth import current_identity
+    from store.factory import get_store
+
+    try:
+        job = AnalysisJobQueue(get_store()).get(
+            str(args.get("job_id", "")), actor=current_identity()
+        )
+    except JobQueueError as exc:
+        raise ValueError(str(exc)) from exc
+    return json.dumps(_job_public_view(job), ensure_ascii=False, default=str)
+
+
+async def _handle_bio_list_jobs(args: dict) -> str:
+    from analysis.job_queue import AnalysisJobQueue
+    from server.auth import current_identity
+    from store.factory import get_store
+
+    jobs = AnalysisJobQueue(get_store()).list(
+        actor=current_identity(),
+        status=args.get("status"),
+        limit=args.get("limit", 100),
+    )
+    return json.dumps(
+        {"jobs": [_job_public_view(job) for job in jobs]},
+        ensure_ascii=False,
+        default=str,
+    )
+
+
+async def _handle_bio_cancel_job(args: dict) -> str:
+    from analysis.job_queue import AnalysisJobQueue, JobQueueError
+    from server.auth import current_identity
+    from store.factory import get_store
+
+    job_id = str(args.get("job_id", ""))
+    try:
+        outcome = AnalysisJobQueue(get_store()).cancel(job_id, actor=current_identity())
+    except JobQueueError as exc:
+        raise ValueError(str(exc)) from exc
+    return json.dumps({"job_id": job_id, "outcome": outcome}, ensure_ascii=False)
+
+
 # ── call_tool 分發 ────────────────────────────────────────────────────────────
 #
 # 兩類工具：
@@ -921,6 +1017,10 @@ _HANDLERS.update(
         "bio_read_report": _handle_bio_read_report,
         "bio_get_figure": _handle_bio_get_figure,
         "bio_get_artifact": _handle_bio_get_artifact,
+        "bio_submit_analysis": _handle_bio_submit_analysis,
+        "bio_job_status": _handle_bio_job_status,
+        "bio_list_jobs": _handle_bio_list_jobs,
+        "bio_cancel_job": _handle_bio_cancel_job,
     }
 )
 

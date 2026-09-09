@@ -96,7 +96,7 @@ Evo_PRISM/
   - 相關檔案：migration、`scripts/pg_schema.sql`、`store/`、`analysis/job_queue.py`
   - 提交：`feat(queue): add durable job storage`
 
-- [ ] 任務 8：新增submit/status/list/cancel MCP工具
+- [x] 任務 8：新增submit/status/list/cancel MCP工具（completed 2026-09-09）
   - 預期行為：只接受queueable allowlist；成員只能操作自己的job；admin可跨使用者查詢。
   - 驗證指令：MCP handler與catalog parity tests。
   - 相關檔案：`server/tool_catalog.py`、`server/bio_memory_server.py`

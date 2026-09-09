@@ -45,6 +45,66 @@ class ToolSpec:
 
 
 TOOL_CATALOG: dict[str, "ToolSpec"] = {
+    "bio_submit_analysis": ToolSpec(
+        description=(
+            "將重量分析工具送入耐久佇列。查詢工具不可排隊；"
+            "requested_by 一律由通過驗證的身分覆寫。"
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {
+                "tool_name": {"type": "string", "description": "要執行的 queueable 工具名稱。"},
+                "arguments": {"type": "object", "description": "傳給目標工具的參數。"},
+                "priority": {
+                    "type": "integer",
+                    "description": "優先度；只有 admin 可設定，其他角色固定為 0。",
+                    "default": 0,
+                },
+                "max_retries": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3,
+                    "default": 1,
+                },
+            },
+            "required": ["tool_name", "arguments"],
+        },
+        mcp_handler="_handle_bio_submit_analysis",
+        required_role=Role.ANALYST,
+    ),
+    "bio_job_status": ToolSpec(
+        description="查詢自己的分析佇列工作狀態；admin 可查詢所有人。",
+        json_schema={
+            "type": "object",
+            "properties": {"job_id": {"type": "string"}},
+            "required": ["job_id"],
+        },
+        mcp_handler="_handle_bio_job_status",
+        required_role=Role.ANALYST,
+    ),
+    "bio_list_jobs": ToolSpec(
+        description="列出自己的分析佇列工作；admin 可列出所有人。",
+        json_schema={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "limit": {"type": "integer", "default": 100, "minimum": 1, "maximum": 500},
+            },
+            "required": [],
+        },
+        mcp_handler="_handle_bio_list_jobs",
+        required_role=Role.ANALYST,
+    ),
+    "bio_cancel_job": ToolSpec(
+        description="取消自己排隊中的工作，或對執行中工作發出協作式取消請求。",
+        json_schema={
+            "type": "object",
+            "properties": {"job_id": {"type": "string"}},
+            "required": ["job_id"],
+        },
+        mcp_handler="_handle_bio_cancel_job",
+        required_role=Role.ANALYST,
+    ),
     "bio_artifact_search": ToolSpec(
         description="搜尋 ENGRAM 分析產出（圖、CSV、報告）— RRF hybrid（exact subtype + HNSW cosine）。"
                 "回傳 artifact 列表含 score、file_path、artifact_subtype、analysis_id；不含檔案內容。"

@@ -32,6 +32,11 @@ L1_ROOT = BIO_DB_ROOT / "gold"
 RESULTS_ROOT = BIO_DB_ROOT / "results_ana"
 DATA_ROOT = BIO_DB_ROOT / "data_ana"
 
+# ── 分析佇列 ───────────────────────────────────────────
+ANALYSIS_JOB_MAX_PENDING = int(os.getenv("ANALYSIS_JOB_MAX_PENDING", "3"))
+ANALYSIS_JOB_LEASE_SECONDS = int(os.getenv("ANALYSIS_JOB_LEASE_SECONDS", "300"))
+ANALYSIS_JOB_POLL_SECONDS = float(os.getenv("ANALYSIS_JOB_POLL_SECONDS", "2"))
+
 # ── 外部轉檔工具 ───────────────────────────────────────────
 # Bio-Formats bfconvert：libvips 不可用時的 NDPI→BigTIFF 降級工具（見 analysis/image_conversion.py）
 BFTOOLS_PATH = Path(os.getenv("BFTOOLS_PATH", BIO_DB_ROOT / "tools" / "bftools" / "bfconvert"))
