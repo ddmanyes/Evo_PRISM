@@ -137,6 +137,12 @@ services:
     environment: *evo-environment
     extra_hosts: *evo-extra-hosts
     volumes: *evo-volumes
+    healthcheck: &worker-healthcheck
+      test: ["CMD", "python", "-c", "import pathlib,sys; sys.exit(0 if b'worker.analysis_worker' in pathlib.Path('/proc/1/cmdline').read_bytes() else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     depends_on:
       evo-prism:
         condition: service_healthy
@@ -150,6 +156,7 @@ services:
     environment: *evo-environment
     extra_hosts: *evo-extra-hosts
     volumes: *evo-volumes
+    healthcheck: *worker-healthcheck
     depends_on:
       evo-prism:
         condition: service_healthy
