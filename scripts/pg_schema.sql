@@ -235,3 +235,33 @@ CREATE TABLE IF NOT EXISTS engram_search_metrics (
     duration_ms  INTEGER,
     recorded_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- api_keys + access_audit_log  (v26 multi-user authentication)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_keys (
+    key_hash    TEXT PRIMARY KEY,
+    key_prefix  TEXT        NOT NULL,
+    user_id     TEXT        NOT NULL,
+    role        TEXT        NOT NULL CHECK (role IN ('viewer', 'analyst', 'admin')),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by  TEXT        NOT NULL,
+    revoked_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_active
+    ON api_keys (user_id, revoked_at);
+
+CREATE TABLE IF NOT EXISTS access_audit_log (
+    audit_id     UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_id      TEXT        NOT NULL,
+    role         TEXT        NOT NULL,
+    tool_name    TEXT        NOT NULL,
+    target       TEXT,
+    outcome      TEXT        NOT NULL,
+    detail       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_access_audit_user_time
+    ON access_audit_log (user_id, occurred_at);

@@ -209,6 +209,42 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     """)
     print("View:  analysis_index — OK")
 
+    # v26 multi-user authentication: raw keys are never stored.
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            key_hash     VARCHAR PRIMARY KEY,
+            key_prefix   VARCHAR NOT NULL,
+            user_id      VARCHAR NOT NULL,
+            role         VARCHAR NOT NULL CHECK (role IN ('viewer', 'analyst', 'admin')),
+            created_at   TIMESTAMP NOT NULL DEFAULT now(),
+            created_by   VARCHAR NOT NULL,
+            revoked_at   TIMESTAMP
+        )
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_api_keys_user_active
+        ON api_keys(user_id, revoked_at)
+    """)
+    print("Table: api_keys — OK")
+
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS access_audit_log (
+            audit_id     UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            occurred_at  TIMESTAMP NOT NULL DEFAULT now(),
+            user_id      VARCHAR NOT NULL,
+            role         VARCHAR NOT NULL,
+            tool_name    VARCHAR NOT NULL,
+            target       VARCHAR,
+            outcome      VARCHAR NOT NULL,
+            detail       VARCHAR
+        )
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_access_audit_user_time
+        ON access_audit_log(user_id, occurred_at)
+    """)
+    print("Table: access_audit_log — OK")
+
     return con
 
 

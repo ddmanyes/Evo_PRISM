@@ -14,6 +14,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Iterator, Protocol, runtime_checkable
 
+from server.identity import Identity, KeyState
+
 # Whitelist of mutable columns for dynamic UPDATE queries (H1 fix).
 # 2026-07-24 架構審查（候選 4）：這兩個 store/duckdb_store.py 與 store/postgres_store.py
 # 逐字複製過，有雙後端行為漂移風險（改一邊漏改另一邊，兩後端對「哪些欄位可被 update」
@@ -208,4 +210,36 @@ class RegistryStore(Protocol):
 
     def health_check(self) -> dict:
         """Return summary statistics (sample_count, history_count, etc.)."""
+        ...
+
+    # ------------------------------------------------------------------
+    # API-key identity lifecycle
+    # ------------------------------------------------------------------
+
+    def register_api_key(
+        self,
+        *,
+        key_hash: str,
+        key_prefix: str,
+        user_id: str,
+        role: str,
+        created_by: str,
+    ) -> None:
+        """Register one hashed member key. Plaintext keys are never accepted here."""
+        ...
+
+    def get_identity_for_key_hash(self, key_hash: str) -> Identity | KeyState | None:
+        """Resolve an active identity, revoked sentinel, or unknown key."""
+        ...
+
+    def revoke_api_key(self, key_hash: str) -> bool:
+        """Revoke one active key and return whether a row changed."""
+        ...
+
+    def list_api_keys(self, user_id: str | None = None) -> list[dict]:
+        """List lifecycle metadata without returning key hashes."""
+        ...
+
+    def count_active_api_keys(self) -> int:
+        """Return the number of non-revoked registered keys."""
         ...

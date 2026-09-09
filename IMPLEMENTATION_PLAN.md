@@ -59,13 +59,13 @@ Evo_PRISM/
   - 相關檔案：`IMPLEMENTATION_PLAN.md`、`docs/logs/execution_trace.md`
   - 提交：`docs(plan): define multi-user queue and ingest rollout`
 
-- [ ] 任務 2：以失敗測試定義 per-key identity與撤銷語意
+- [x] 任務 2：以失敗測試定義 per-key identity與撤銷語意（completed 2026-09-09）
   - 預期行為：DB key 可認證；撤銷 key 回 401；未知 key 不會取得 admin。
   - 驗證指令：`python -m pytest tests/test_auth_rbac.py -v`
   - 相關檔案：`tests/test_auth_rbac.py`
   - 提交：`test(auth): define per-key identity contract`
 
-- [ ] 任務 3：實作 identity、hash key registry與認證 middleware
+- [x] 任務 3：實作 identity、hash key registry與認證 middleware（completed 2026-09-09）
   - 預期行為：owner env key向下相容；registered key可用；revoked key立即失效。
   - 驗證指令：`python -m pytest tests/test_auth_rbac.py -v`
   - 相關檔案：`server/identity.py`、`server/auth.py`、雙後端 store與schema。

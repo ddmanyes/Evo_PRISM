@@ -19,6 +19,7 @@ import re
 from datetime import datetime, timezone
 from typing import Iterator
 
+from server.identity import Identity, KeyState, Role
 from store.base import _HISTORY_MUTABLE_COLS, _SAMPLE_MUTABLE_COLS, _validate_cols
 
 logger = logging.getLogger(__name__)
@@ -480,6 +481,77 @@ class PostgresStore:
                 )
         except Exception as exc:
             logger.debug("metric write failed (%s): %s", tool_name, exc)
+
+    # ------------------------------------------------------------------
+    # API-key identity lifecycle
+    # ------------------------------------------------------------------
+
+    def register_api_key(
+        self,
+        *,
+        key_hash: str,
+        key_prefix: str,
+        user_id: str,
+        role: str,
+        created_by: str,
+    ) -> None:
+        normalized_role = Role(role).value
+        with self.write_conn() as con:
+            con.execute(
+                """
+                INSERT INTO api_keys
+                    (key_hash, key_prefix, user_id, role, created_by)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                [key_hash, key_prefix, user_id, normalized_role, created_by],
+            )
+
+    def get_identity_for_key_hash(self, key_hash: str) -> Identity | KeyState | None:
+        with self.read_conn() as con:
+            row = con.execute(
+                "SELECT user_id, role, revoked_at FROM api_keys WHERE key_hash = %s",
+                [key_hash],
+            ).fetchone()
+        if row is None:
+            return None
+        if row[2] is not None:
+            return KeyState.REVOKED
+        return Identity(user_id=row[0], role=Role(row[1]))
+
+    def revoke_api_key(self, key_hash: str) -> bool:
+        with self.write_conn() as con:
+            rows = con.execute(
+                """
+                UPDATE api_keys
+                SET revoked_at = now()
+                WHERE key_hash = %s AND revoked_at IS NULL
+                RETURNING key_hash
+                """,
+                [key_hash],
+            ).fetchall()
+        return bool(rows)
+
+    def list_api_keys(self, user_id: str | None = None) -> list[dict]:
+        where = "WHERE user_id = %s" if user_id else ""
+        params = [user_id] if user_id else []
+        with self.read_conn() as con:
+            rows = con.execute(
+                f"""
+                SELECT key_prefix, user_id, role, created_at, created_by, revoked_at
+                FROM api_keys {where}
+                ORDER BY created_at
+                """,
+                params,
+            ).fetchall()
+        columns = ["key_prefix", "user_id", "role", "created_at", "created_by", "revoked_at"]
+        return [dict(zip(columns, row)) for row in rows]
+
+    def count_active_api_keys(self) -> int:
+        with self.read_conn() as con:
+            row = con.execute(
+                "SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL"
+            ).fetchone()
+        return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
     # Utils
