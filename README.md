@@ -89,7 +89,10 @@ See [SETUP.md](SETUP.md) for ExFAT/synchronized-folder environments, Google or O
 
 ## Architecture
 
-![Evo_PRISM three-layer data and query architecture](docs/images/figure_1_system_arch.png)
+<picture>
+  <source srcset="docs/images/figure_1_system_arch.svg" type="image/svg+xml">
+  <img src="docs/images/figure_1_system_arch.png" alt="Evo_PRISM request-to-memory architecture" width="100%">
+</picture>
 
 Requests move from L3 immutable sources to L2 structured features and L1 low-latency retrieval. Reusable results and registered tools are checked before cold execution; new results flow back into provenance-aware memory.
 
@@ -105,7 +108,10 @@ HELIX searches the active registry before generating code. Reused candidates and
 <details>
 <summary><strong>ENGRAM artifact memory</strong></summary>
 
-![ENGRAM artifact registration, retrieval, and lineage architecture](docs/images/figure_3_system_arch_1.png)
+<picture>
+  <source srcset="docs/images/figure_3_system_arch_1.svg" type="image/svg+xml">
+  <img src="docs/images/figure_3_system_arch_1.png" alt="ENGRAM artifact registration, retrieval, ranking, and lineage architecture" width="100%">
+</picture>
 
 ENGRAM stores reports, figures, and tables with semantic vectors and tool-version provenance. Its impact graph can identify historical results affected by a HELIX tool change.
 

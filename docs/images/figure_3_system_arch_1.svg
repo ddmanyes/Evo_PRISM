@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="engram-artifact-memory-title engram-artifact-memory-desc">
+  <title id="engram-artifact-memory-title">ENGRAM provenance-aware artifact memory</title>
+  <desc id="engram-artifact-memory-desc">Completed analyses register artifacts, embeddings, hashes, and HELIX tool lineage. User queries run exact SQL, HNSW semantic, and BM25 full-text retrieval in parallel before reciprocal-rank fusion returns an artifact with provenance and impact context.</desc>
+  <defs>
+    <marker id="engram-artifact-memory-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#4f5d75"/>
+    </marker>
+    <marker id="engram-artifact-memory-arrow-blue" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#2e5aa8"/>
+    </marker>
+    <marker id="engram-artifact-memory-arrow-orange" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#eb6c36"/>
+    </marker>
+  </defs>
+  <style>
+    .title { font: 600 32px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64748b; }
+    .lane { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 1.5px; fill: #64748b; }
+    .node-title { font: 600 19px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+    .node-copy { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+    .node-mono { font: 500 13px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #475569; }
+    .edge-label { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #475569; }
+    .step { font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #ffffff; }
+    .edge { fill: none; stroke: #4f5d75; stroke-width: 2; marker-end: url(#engram-artifact-memory-arrow); }
+    .edge-blue { fill: none; stroke: #2e5aa8; stroke-width: 2.2; marker-end: url(#engram-artifact-memory-arrow-blue); }
+    .edge-orange { fill: none; stroke: #eb6c36; stroke-width: 2.2; marker-end: url(#engram-artifact-memory-arrow-orange); }
+    .index-link { fill: none; stroke: #2e5aa8; stroke-width: 2; stroke-dasharray: 8 7; marker-end: url(#engram-artifact-memory-arrow-blue); }
+  </style>
+
+  <rect width="1600" height="900" fill="#ffffff"/>
+  <text x="48" y="56" class="title">ENGRAM — Provenance-Aware Artifact Memory</text>
+  <text x="48" y="86" class="subtitle">Register once · retrieve through three complementary indexes · return every artifact with lineage</text>
+
+  <rect x="40" y="116" width="1520" height="252" rx="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="64" y="146" class="lane">INGESTION &amp; LINEAGE</text>
+  <rect x="40" y="410" width="1520" height="386" rx="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="64" y="440" class="lane">QUERY &amp; RANKING</text>
+
+  <!-- Connections are intentionally drawn before nodes. -->
+  <path class="edge" d="M280 236 H400"/>
+  <path class="edge-orange" d="M640 236 H760"/>
+  <path class="edge-blue" d="M1060 236 H1180"/>
+  <path class="index-link" d="M910 302 V390 H600 V482"/>
+  <path class="edge" d="M260 606 H360"/>
+  <path class="edge-orange" d="M840 606 H960"/>
+  <path class="edge-blue" d="M1180 606 H1300"/>
+  <path class="index-link" d="M1360 302 V390 H1420 V542"/>
+
+  <!-- Connector labels. -->
+  <rect x="294" y="216" width="92" height="25" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="340" y="233" text-anchor="middle" class="edge-label">completed</text>
+  <rect x="660" y="216" width="80" height="25" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="700" y="233" text-anchor="middle" class="edge-label">embed</text>
+  <rect x="1074" y="216" width="92" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="1120" y="233" text-anchor="middle" class="edge-label">link lineage</text>
+  <rect x="510" y="372" width="92" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="556" y="389" text-anchor="middle" class="edge-label">read indexes</text>
+  <rect x="276" y="586" width="68" height="25" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="310" y="603" text-anchor="middle" class="edge-label">query</text>
+  <rect x="864" y="586" width="72" height="25" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="900" y="603" text-anchor="middle" class="edge-label">3 ranks</text>
+  <rect x="1202" y="586" width="76" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="1240" y="603" text-anchor="middle" class="edge-label">top hits</text>
+  <rect x="1380" y="376" width="112" height="25" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="1436" y="393" text-anchor="middle" class="edge-label">impact context</text>
+
+  <!-- Ingestion nodes. -->
+  <rect x="60" y="180" width="220" height="112" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <circle cx="90" cy="207" r="15" fill="#4f5d75"/>
+  <text x="90" y="212" text-anchor="middle" class="step">1</text>
+  <text x="116" y="212" class="node-title">Analysis output</text>
+  <text x="88" y="248" class="node-copy">Report · table · figure</text>
+  <text x="88" y="270" class="node-copy">or other generated file</text>
+
+  <rect x="400" y="180" width="240" height="112" rx="16" fill="#fff7ed" stroke="#eb6c36" stroke-width="2.4"/>
+  <circle cx="430" cy="207" r="15" fill="#eb6c36"/>
+  <text x="430" y="212" text-anchor="middle" class="step">2</text>
+  <text x="456" y="212" class="node-title">Register artifact</text>
+  <text x="428" y="248" class="node-copy">Metadata · hashes · MIME</text>
+  <text x="428" y="270" class="node-mono">register_artifact()</text>
+
+  <rect x="760" y="168" width="300" height="134" rx="16" fill="#eff6ff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <circle cx="792" cy="198" r="15" fill="#2e5aa8"/>
+  <text x="792" y="203" text-anchor="middle" class="step">3</text>
+  <text x="818" y="203" class="node-title">Artifact index</text>
+  <text x="790" y="238" class="node-copy">DuckDB · analysis_artifacts</text>
+  <text x="790" y="261" class="node-copy">HNSW vector + BM25 FTS</text>
+  <text x="790" y="283" class="node-mono">inline bytes ≤ 500 KB · spill above</text>
+
+  <rect x="1180" y="168" width="360" height="134" rx="16" fill="#ffffff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <circle cx="1212" cy="198" r="15" fill="#2e5aa8"/>
+  <text x="1212" y="203" text-anchor="middle" class="step">4</text>
+  <text x="1238" y="203" class="node-title">Lineage &amp; impact graph</text>
+  <text x="1210" y="238" class="node-copy">HELIX tool ID · version · env hash</text>
+  <text x="1210" y="261" class="node-copy">artifact_relations dependency edges</text>
+  <text x="1210" y="283" class="node-mono">recursive CTE → possibly stale results</text>
+
+  <!-- Query nodes. -->
+  <rect x="60" y="550" width="200" height="112" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <circle cx="90" cy="578" r="15" fill="#4f5d75"/>
+  <text x="90" y="583" text-anchor="middle" class="step">1</text>
+  <text x="116" y="583" class="node-title">User query</text>
+  <text x="88" y="620" class="node-copy">Keywords, subtype,</text>
+  <text x="88" y="642" class="node-copy">sample, or intent</text>
+
+  <rect x="360" y="482" width="480" height="248" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <circle cx="392" cy="514" r="15" fill="#eb6c36"/>
+  <text x="392" y="519" text-anchor="middle" class="step">2</text>
+  <text x="418" y="519" class="node-title">Parallel retrieval</text>
+
+  <rect x="392" y="542" width="416" height="48" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="414" y="571" class="node-title">Exact SQL + filters</text>
+  <text x="786" y="571" text-anchor="end" class="node-mono">structured</text>
+  <rect x="392" y="603" width="416" height="48" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="414" y="632" class="node-title">HNSW cosine search</text>
+  <text x="786" y="632" text-anchor="end" class="node-mono">semantic</text>
+  <rect x="392" y="664" width="416" height="48" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="414" y="693" class="node-title">BM25 full-text search</text>
+  <text x="786" y="693" text-anchor="end" class="node-mono">keyword</text>
+
+  <rect x="960" y="550" width="220" height="112" rx="16" fill="#fff7ed" stroke="#eb6c36" stroke-width="2.4"/>
+  <circle cx="990" cy="578" r="15" fill="#eb6c36"/>
+  <text x="990" y="583" text-anchor="middle" class="step">3</text>
+  <text x="1016" y="583" class="node-title">RRF fusion</text>
+  <text x="988" y="620" class="node-copy">Merge ranked lists</text>
+  <text x="988" y="642" class="node-mono">score = Σ 1 / (60 + rank)</text>
+
+  <rect x="1300" y="542" width="240" height="128" rx="16" fill="#eff6ff" stroke="#2e5aa8" stroke-width="2.4"/>
+  <circle cx="1332" cy="572" r="15" fill="#2e5aa8"/>
+  <text x="1332" y="577" text-anchor="middle" class="step">4</text>
+  <text x="1358" y="577" class="node-title">Artifact result</text>
+  <text x="1330" y="613" class="node-copy">File handle + preview</text>
+  <text x="1330" y="635" class="node-copy">tool-version provenance</text>
+  <text x="1330" y="657" class="node-copy">and impact context</text>
+
+  <rect x="54" y="832" width="14" height="14" rx="3" fill="#eb6c36"/>
+  <text x="78" y="844" class="node-copy">Ranking or registration action</text>
+  <rect x="302" y="832" width="14" height="14" rx="3" fill="#2e5aa8"/>
+  <text x="326" y="844" class="node-copy">Index, lineage, or delivery</text>
+  <path d="M554 839 H590" class="index-link"/>
+  <text x="604" y="844" class="node-copy">Index or provenance dependency</text>
+</svg>

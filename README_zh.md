@@ -89,7 +89,10 @@ ExFAT／同步資料夾、Google 或 OpenAI embedding、Web UI backend 與 HPC�
 
 ## 系統架構
 
-![Evo_PRISM 三層資料與查詢架構](docs/images/figure_1_system_arch.png)
+<picture>
+  <source srcset="docs/images/figure_1_system_arch.svg" type="image/svg+xml">
+  <img src="docs/images/figure_1_system_arch.png" alt="Evo_PRISM 請求到記憶的系統架構" width="100%">
+</picture>
 
 請求由 L3 不可變來源進入 L2 結構化特徵，再進入 L1 低延遲檢索。系統會先檢查可重用結果與已登記工具，只有未命中時才冷啟動執行；新結果則回流至具 provenance 的記憶。
 
@@ -105,7 +108,10 @@ HELIX 在生成程式碼前先搜尋 active registry。被重用的候選工具�
 <details>
 <summary><strong>ENGRAM 產物記憶</strong></summary>
 
-![ENGRAM 產物登記、檢索與血緣架構](docs/images/figure_3_system_arch_1.png)
+<picture>
+  <source srcset="docs/images/figure_3_system_arch_1.svg" type="image/svg+xml">
+  <img src="docs/images/figure_3_system_arch_1.png" alt="ENGRAM 產物登記、檢索、排序與血緣架構" width="100%">
+</picture>
 
 ENGRAM 為報告、圖表與資料表保存語意向量及工具版本來源。Impact graph 能找出 HELIX 工具變更所影響的歷史結果。
 
