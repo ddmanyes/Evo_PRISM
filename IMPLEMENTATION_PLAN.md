@@ -229,11 +229,11 @@ Evo_PRISM/
 
 ## 正式維護部署（2026-09-09 已批准）
 
-- [ ] 任務 26：建立最新 rollback point（in_progress）
+- [x] 任務 26：建立最新 rollback point（completed 2026-09-09）
   - 預期行為：在現行服務仍運作時，重新 EXPORT 主 DB 與 L1 cache 並完成還原驗證；將現行映像另存為具日期的 rollback tag。
   - 安全界線：備份與舊映像均不得覆寫；不得輸出 `.env` 或任何 raw API key。
 
-- [ ] 任務 27：同步乾淨 build context 並完成 build-before-stop
+- [ ] 任務 27：同步乾淨 build context 並完成 build-before-stop（in_progress）
   - 預期行為：只從隔離 worktree 同步 Git tracked files 至 APFS build context，保留 `MSseg` 等部署資料；新映像建置成功前不停止正式服務。
   - 驗證指令：tracked-file hash／migration filename 檢查、`docker compose build`。
 
