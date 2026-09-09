@@ -69,22 +69,33 @@ def _is_text_mime(mime: str | None) -> bool:
     return any(mime.startswith(p) for p in _TEXT_MIME_PREFIXES)
 
 
-def list_artifact_resources(con, limit: int = 200) -> list[dict]:
+def list_artifact_resources(
+    con, limit: int = 200, *, requested_by: str | None = None
+) -> list[dict]:
     """
     列出可取的 artifact，回傳供 types.Resource 建構的 dict list。
 
     每筆：{uri, name, mime_type, size_kb, description}
     依 created_at 由新到舊。
     """
+    owner_join = (
+        "JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id"
+        if requested_by is not None
+        else ""
+    )
+    owner_where = "WHERE ah.requested_by = ?" if requested_by is not None else ""
+    params = ([requested_by] if requested_by is not None else []) + [int(limit)]
     rows = con.execute(
-        """
+        f"""
         SELECT artifact_id::VARCHAR, label, mime_type, file_size_kb,
                artifact_subtype, artifact_type
-        FROM analysis_artifacts
-        ORDER BY created_at DESC
+        FROM analysis_artifacts aa
+        {owner_join}
+        {owner_where}
+        ORDER BY aa.created_at DESC
         LIMIT ?
         """,
-        [int(limit)],
+        params,
     ).fetchall()
 
     out: list[dict] = []
@@ -106,7 +117,9 @@ def list_artifact_resources(con, limit: int = 200) -> list[dict]:
     return out
 
 
-def read_artifact_resource(con, uri: str) -> tuple[str | bytes, str]:
+def read_artifact_resource(
+    con, uri: str, *, requested_by: str | None = None
+) -> tuple[str | bytes, str]:
     """
     依 artifact:// URI 取回內容，回傳 (content, mime_type)。
 
@@ -115,9 +128,17 @@ def read_artifact_resource(con, uri: str) -> tuple[str | bytes, str]:
     """
     artifact_id = parse_artifact_uri(uri)
 
+    owner_join = (
+        "JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id"
+        if requested_by is not None
+        else ""
+    )
+    owner_where = " AND ah.requested_by = ?" if requested_by is not None else ""
+    params = [artifact_id] + ([requested_by] if requested_by is not None else [])
     row = con.execute(
-        "SELECT file_path, mime_type FROM analysis_artifacts WHERE artifact_id = ?",
-        [artifact_id],
+        f"SELECT aa.file_path, aa.mime_type FROM analysis_artifacts aa "
+        f"{owner_join} WHERE aa.artifact_id = ?{owner_where}",
+        params,
     ).fetchone()
     if not row:
         raise ArtifactResourceError(f"artifact_id={artifact_id!r} 不存在於 analysis_artifacts")
@@ -149,7 +170,13 @@ def read_artifact_resource(con, uri: str) -> tuple[str | bytes, str]:
     return abs_path.read_bytes(), mime or "application/octet-stream"
 
 
-def get_artifact_handle(con, artifact_id: str, preview_lines: int = 20) -> dict:
+def get_artifact_handle(
+    con,
+    artifact_id: str,
+    preview_lines: int = 20,
+    *,
+    requested_by: str | None = None,
+) -> dict:
     """
     取得 artifact 的「取用 handle」——給任何 MCP client（含不支援 resources 者）的備援。
 
@@ -162,12 +189,22 @@ def get_artifact_handle(con, artifact_id: str, preview_lines: int = 20) -> dict:
     if not _UUID_RE.match(artifact_id or ""):
         raise ArtifactResourceError(f"artifact_id 格式錯誤：{artifact_id!r}")
 
+    owner_join = (
+        "JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id"
+        if requested_by is not None
+        else ""
+    )
+    owner_where = " AND ah.requested_by = ?" if requested_by is not None else ""
+    params = [artifact_id] + ([requested_by] if requested_by is not None else [])
     row = con.execute(
-        """
-        SELECT label, artifact_subtype, mime_type, file_size_kb, file_path
-        FROM analysis_artifacts WHERE artifact_id = ?
+        f"""
+        SELECT aa.label, aa.artifact_subtype, aa.mime_type,
+               aa.file_size_kb, aa.file_path
+        FROM analysis_artifacts aa
+        {owner_join}
+        WHERE aa.artifact_id = ?{owner_where}
         """,
-        [artifact_id],
+        params,
     ).fetchone()
     if not row:
         return {"found": False, "artifact_id": artifact_id}

@@ -46,6 +46,7 @@ _MISMATCH_RANK: int = 9999  # 不匹配時的懲罰 rank
 
 # FTS sidecar schema name（PRAGMA create_fts_index 建立）
 _FTS_SCHEMA_L1 = "fts_main_memory_recent"
+LEGACY_CACHE_OWNER = "legacy:unattributed"
 
 
 def _rrf_score(
@@ -310,6 +311,7 @@ def write_to_l1_cache(
     context_hash: Optional[str] = None,
     cache_path: Optional[Path] = None,
     embedding_provider: Optional[str] = None,
+    requested_by: Optional[str] = None,
 ) -> str:
     """將分析結果寫入 L1 語意快取。
 
@@ -323,6 +325,7 @@ def write_to_l1_cache(
         context_hash:       分析上下文雜湊（由 compute_context_hash() 產生）
         cache_path:         覆蓋預設路徑（測試用）
         embedding_provider: 覆蓋 settings（測試用）
+        requested_by:       擁有此分析結果的認證 user_id；None 為 legacy/internal 寫入
 
     Returns:
         寫入記錄的 UUID (str)
@@ -338,27 +341,28 @@ def write_to_l1_cache(
 
     with duckdb.connect(str(path)) as con:
         _setup_vss(con)
+        has_owner = _has_requested_by_col(con)
+        if requested_by is not None and not has_owner:
+            raise RuntimeError(
+                "memory_recent.requested_by is missing; run "
+                "scripts/29_migrate_l1_cache_owner.py before member writes"
+            )
+        columns = [
+            "id", "sample_id", "query_text", "report_text", "summary",
+            "embedding", "analysis_id", "input_fingerprint", "context_hash",
+            "created_at", "expires_at",
+        ]
+        values = [
+            rec_id, sample_id, query_text, report_text, summary, embedding,
+            analysis_id, input_fingerprint, context_hash, now, expires_at,
+        ]
+        if has_owner:
+            columns.append("requested_by")
+            values.append(requested_by or LEGACY_CACHE_OWNER)
+        placeholders = ", ".join("?" for _ in columns)
         con.execute(
-            """
-            INSERT INTO memory_recent
-                (id, sample_id, query_text, report_text, summary,
-                 embedding, analysis_id, input_fingerprint, context_hash,
-                 created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                rec_id,
-                sample_id,
-                query_text,
-                report_text,
-                summary,
-                embedding,
-                analysis_id,
-                input_fingerprint,
-                context_hash,
-                now,
-                expires_at,
-            ],
+            f"INSERT INTO memory_recent ({', '.join(columns)}) VALUES ({placeholders})",
+            values,
         )
         con.execute("CHECKPOINT")
 
@@ -380,10 +384,23 @@ def _has_analysis_type_col(con: duckdb.DuckDBPyConnection) -> bool:
         return False
 
 
+def _has_requested_by_col(con: duckdb.DuckDBPyConnection) -> bool:
+    try:
+        row = con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'memory_recent' AND column_name = 'requested_by'"
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
 def _build_semantic_filters(
     sample_id: Optional[str],
     analysis_type: Optional[str],
     has_analysis_type_col: bool,
+    requested_by: Optional[str],
+    has_requested_by_col: bool,
 ) -> tuple[str, list]:
     filters: list[str] = []
     params: list = []
@@ -393,6 +410,9 @@ def _build_semantic_filters(
     if analysis_type and has_analysis_type_col:
         filters.append("AND analysis_type = ?")
         params.append(analysis_type)
+    if requested_by is not None and has_requested_by_col:
+        filters.append("AND requested_by = ?")
+        params.append(requested_by)
     return " ".join(filters), params
 
 
@@ -404,6 +424,7 @@ def _exact_match_fallback(
     context_hash: Optional[str],
     n: int,
     cache_path: Path,
+    requested_by: Optional[str],
 ) -> list[dict]:
     """向量服務離線時的降級路徑（Supplementary Note S5.2）。
 
@@ -416,7 +437,12 @@ def _exact_match_fallback(
             return []
 
         has_col = _has_analysis_type_col(con) if analysis_type else False
-        filter_clause, params = _build_semantic_filters(sample_id, analysis_type, has_col)
+        has_owner = _has_requested_by_col(con)
+        if requested_by is not None and not has_owner:
+            return []
+        filter_clause, params = _build_semantic_filters(
+            sample_id, analysis_type, has_col, requested_by, has_owner
+        )
 
         if input_fingerprint is not None:
             filter_clause += " AND input_fingerprint = ?"
@@ -465,6 +491,7 @@ def semantic_search(
     context_hash: Optional[str] = None,
     cache_path: Optional[Path] = None,
     embedding_provider: Optional[str] = None,
+    requested_by: Optional[str] = None,
 ) -> list[dict]:
     """語意搜尋 L1 快取（HNSW cosine similarity，可選 4-way RRF）。
 
@@ -484,6 +511,7 @@ def semantic_search(
         context_hash:       上下文雜湊，提供時啟用 RRF
         cache_path:         覆蓋預設路徑（測試用）
         embedding_provider: 覆蓋 settings（測試用）
+        requested_by:       只搜尋此 user_id 的記錄；None 為 admin 全域搜尋
 
     Returns:
         list of dict，每筆含 id, sample_id, summary, score, report_text,
@@ -513,6 +541,7 @@ def semantic_search(
             context_hash=context_hash,
             n=n,
             cache_path=path,
+            requested_by=requested_by,
         )
 
     use_rrf = input_fingerprint is not None or context_hash is not None
@@ -525,6 +554,13 @@ def semantic_search(
             return []
 
         has_col = _has_analysis_type_col(con) if analysis_type else False
+        has_owner = _has_requested_by_col(con)
+        if requested_by is not None and not has_owner:
+            logger.warning(
+                "semantic_search: owner filter requested but requested_by column is missing; "
+                "returning strict cache miss"
+            )
+            return []
         if analysis_type and not has_col:
             logger.warning(
                 "semantic_search: analysis_type=%r filter requested but column does not "
@@ -532,7 +568,9 @@ def semantic_search(
                 analysis_type,
             )
 
-        filter_clause, extra_params = _build_semantic_filters(sample_id, analysis_type, has_col)
+        filter_clause, extra_params = _build_semantic_filters(
+            sample_id, analysis_type, has_col, requested_by, has_owner
+        )
 
         if use_rrf:
             params: list = [query_vec] + extra_params + [n * 4]

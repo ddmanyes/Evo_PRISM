@@ -6,6 +6,7 @@ import hmac
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 
 from server.identity import Identity, KeyState, Role, hash_api_key
@@ -96,6 +97,86 @@ def visible_requested_by(identity: Identity | None = None) -> str | None:
     """
     actor = identity or current_identity()
     return None if actor.role is Role.ADMIN else actor.user_id
+
+
+def can_read_analysis(con, analysis_id: str, *, requested_by: str | None) -> bool:
+    """Return whether an analysis exists inside the caller's owner scope."""
+    owner_clause = " AND requested_by = ?" if requested_by is not None else ""
+    params = [analysis_id] + ([requested_by] if requested_by is not None else [])
+    row = con.execute(
+        f"SELECT 1 FROM analysis_history WHERE analysis_id = ?{owner_clause}", params
+    ).fetchone()
+    return row is not None
+
+
+def can_read_artifact(con, artifact_id: str, *, requested_by: str | None) -> bool:
+    """Return whether an artifact belongs to a visible analysis record."""
+    owner_clause = " AND ah.requested_by = ?" if requested_by is not None else ""
+    params = [artifact_id] + ([requested_by] if requested_by is not None else [])
+    row = con.execute(
+        f"""
+        SELECT 1
+        FROM analysis_artifacts aa
+        JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id
+        WHERE aa.artifact_id = ?{owner_clause}
+        """,
+        params,
+    ).fetchone()
+    return row is not None
+
+
+def _resolved_record_path(raw_path: str, root: Path) -> Path:
+    path = Path(raw_path)
+    return path.resolve() if path.is_absolute() else (root / path).resolve()
+
+
+def can_read_analysis_path(con, raw_path: str, *, requested_by: str | None) -> bool:
+    """Authorize a result/artifact path without trusting caller-controlled paths.
+
+    Admin callers are still constrained by ``report_reader``'s path sandbox. For
+    members, the resolved target must equal an owned registered file, or be a
+    descendant of an owned directory-style ``result_path``.
+    """
+    if requested_by is None:
+        return True
+
+    from config.settings import BIO_DB_ROOT
+
+    target = _resolved_record_path(raw_path, BIO_DB_ROOT)
+    registered: list[str] = []
+    rows = con.execute(
+        "SELECT result_path FROM analysis_history "
+        "WHERE requested_by = ? AND result_path IS NOT NULL",
+        [requested_by],
+    ).fetchall()
+    registered.extend(str(row[0]) for row in rows if row[0])
+    try:
+        artifact_rows = con.execute(
+            """
+            SELECT aa.file_path
+            FROM analysis_artifacts aa
+            JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id
+            WHERE ah.requested_by = ? AND aa.file_path IS NOT NULL
+            """,
+            [requested_by],
+        ).fetchall()
+        registered.extend(str(row[0]) for row in artifact_rows if row[0])
+    except Exception:
+        # Older/minimal schemas may not have artifact tables; history paths are
+        # still authoritative and a missing optional table must not fail open.
+        pass
+
+    for stored in registered:
+        candidate = _resolved_record_path(stored, BIO_DB_ROOT)
+        if target == candidate:
+            return True
+        if candidate.is_dir():
+            try:
+                target.relative_to(candidate)
+            except ValueError:
+                continue
+            return True
+    return False
 
 
 @contextmanager

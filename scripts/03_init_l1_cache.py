@@ -75,6 +75,7 @@ def init_l1_cache(
             analysis_id        UUID,
             input_fingerprint  VARCHAR,   -- SHA-256[:16] of input data (3-way RRF)
             context_hash       VARCHAR,   -- SHA-256[:17] of analysis context (3-way RRF)
+            requested_by       VARCHAR NOT NULL DEFAULT 'legacy:unattributed',
             created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
             expires_at         TIMESTAMPTZ NOT NULL
         )
@@ -109,6 +110,11 @@ def init_l1_cache(
     for col, ddl in [
         ("input_fingerprint", "ALTER TABLE memory_recent ADD COLUMN input_fingerprint VARCHAR"),
         ("context_hash",      "ALTER TABLE memory_recent ADD COLUMN context_hash VARCHAR"),
+        (
+            "requested_by",
+            "ALTER TABLE memory_recent ADD COLUMN requested_by VARCHAR "
+            "DEFAULT 'legacy:unattributed'",
+        ),
     ]:
         if col not in existing_cols:
             con.execute(ddl)
@@ -141,6 +147,7 @@ def verify_schema(con: duckdb.DuckDBPyConnection) -> dict:
         "summary",
         "embedding",
         "analysis_id",
+        "requested_by",
         "created_at",
         "expires_at",
     }

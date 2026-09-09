@@ -462,6 +462,7 @@ def run_full_eda_report(
             analysis_id=analysis_id,
             input_fingerprint=input_fingerprint,
             context_hash=context_hash,
+            requested_by=requested_by,
         )
         logger.info("L1 cache written (fingerprint=%s, context=%s).", input_fingerprint, context_hash)
     except Exception as e:

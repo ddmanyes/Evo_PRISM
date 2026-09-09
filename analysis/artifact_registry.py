@@ -691,10 +691,14 @@ def compare_analyses(
 def artifact_summary(
     con: duckdb.DuckDBPyConnection,
     sample_id: str,
+    *,
+    requested_by: Optional[str] = None,
 ) -> dict:
     """Return a 0-token metadata overview for all analyses of a sample."""
+    owner_clause = " AND ah.requested_by = ?" if requested_by is not None else ""
+    params = [sample_id] + ([requested_by] if requested_by is not None else [])
     rows = con.execute(
-        """
+        f"""
         SELECT
             ah.analysis_id,
             ah.analysis_type,
@@ -705,10 +709,11 @@ def artifact_summary(
         LEFT   JOIN analysis_artifacts aa ON ah.analysis_id = aa.analysis_id
         WHERE  ah.sample_id = ?
           AND  ah.status    = 'completed'
+          {owner_clause}
         GROUP  BY ah.analysis_id, ah.analysis_type, ah.completed_at
         ORDER  BY ah.completed_at DESC NULLS LAST
         """,
-        [sample_id],
+        params,
     ).fetchall()
 
     if not rows:
@@ -760,14 +765,19 @@ _ARTIFACT_COLS = [
 ]
 
 
-def _build_sample_filter(sample_id: Optional[str]) -> tuple[str, str, list]:
+def _build_sample_filter(
+    sample_id: Optional[str], requested_by: Optional[str]
+) -> tuple[str, str, list]:
+    conditions: list[str] = []
+    params: list = []
     if sample_id:
-        return (
-            "JOIN analysis_history ah ON aa.analysis_id = ah.analysis_id",
-            "AND ah.sample_id = ?",
-            [sample_id],
-        )
-    return "", "", []
+        conditions.append("AND ah.sample_id = ?")
+        params.append(sample_id)
+    if requested_by is not None:
+        conditions.append("AND ah.requested_by = ?")
+        params.append(requested_by)
+    join = "JOIN analysis_history ah ON aa.analysis_id = ah.analysis_id" if conditions else ""
+    return join, " ".join(conditions), params
 
 
 def _layer1_exact_search(
@@ -997,6 +1007,7 @@ def search_artifacts(
     threshold: float = 0.01,
     artifact_subtype: Optional[str] = None,
     sample_id: Optional[str] = None,
+    requested_by: Optional[str] = None,
 ) -> list[dict]:
     """Hybrid RRF search across artifact embeddings (9A-2 + P0-B FTS).
 
@@ -1024,7 +1035,9 @@ def search_artifacts(
         List of artifact dicts with 'score' (RRF) and 'search_layer' fields.
     """
     t_start = time.monotonic()
-    sample_join, sample_where, sample_params = _build_sample_filter(sample_id)
+    sample_join, sample_where, sample_params = _build_sample_filter(
+        sample_id, requested_by
+    )
 
     exact_ranked, exact_rows_map = _layer1_exact_search(
         con, artifact_subtype, sample_join, sample_where, sample_params, n

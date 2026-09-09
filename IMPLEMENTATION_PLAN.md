@@ -187,7 +187,7 @@ Evo_PRISM/
   - 相關檔案：`server/auth.py`、`store/`、`analysis/history_query.py`
   - 提交：`feat(privacy): scope analysis history by owner`
 
-- [ ] 任務 19：封住 artifact／report／figure／resource 與 L1 cache 直接取用旁路
+- [x] 任務 19：封住 artifact／report／figure／resource 與 L1 cache 直接取用旁路（completed 2026-09-09）
   - 預期行為：搜尋、摘要、直接 ID、路徑讀取及 MCP resources 都只回 own records；figure handle 持久記錄可存取 owner；L1 migration 將 legacy rows 標為不可供一般成員讀取。
   - 驗證指令：visibility、artifact resources、figure cache、L1 cache tests。
   - 相關檔案：`analysis/{artifact_registry,artifact_resources,figure_cache,l1_cache}.py`、`scripts/03_init_l1_cache.py`、新 migration、MCP handlers。

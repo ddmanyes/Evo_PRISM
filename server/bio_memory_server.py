@@ -164,10 +164,13 @@ async def list_resources() -> list[types.Resource]:
     from pathlib import Path
 
     from store.factory import get_store
+    from server.auth import visible_requested_by
+
+    owner = visible_requested_by()
 
     def _sync() -> list[dict]:
         with get_store().read_conn() as con:
-            return list_artifact_resources(con)
+            return list_artifact_resources(con, requested_by=owner)
 
     items = await asyncio.to_thread(_sync)
     resources = [
@@ -207,8 +210,10 @@ async def read_resource(uri):  # uri: pydantic AnyUrl
     from analysis.artifact_resources import read_artifact_resource, ArtifactResourceError
     from config.settings import BIO_DB_ROOT
     from pathlib import Path
+    from server.auth import visible_requested_by
 
     uri_str = str(uri)
+    owner = visible_requested_by()
 
     # registry://snapshot
     if uri_str == "registry://snapshot":
@@ -228,7 +233,7 @@ async def read_resource(uri):  # uri: pydantic AnyUrl
 
     def _sync():
         with _get_store().read_conn() as con:
-            return read_artifact_resource(con, uri_str)
+            return read_artifact_resource(con, uri_str, requested_by=owner)
 
     try:
         content, mime = await asyncio.to_thread(_sync)
@@ -486,13 +491,20 @@ async def _handle_bio_history_check(args: dict) -> str:
 async def _handle_bio_history_search(args: dict) -> str:
     from analysis.l1_cache import semantic_search
     from config.settings import L1_COSINE_THRESHOLD
+    from server.auth import visible_requested_by
 
     query = args["query"]
     n = int(args.get("n", 5))
     threshold = float(args.get("threshold", L1_COSINE_THRESHOLD))
     sample_id = args.get("sample_id")
 
-    results = semantic_search(query, n=n, threshold=threshold, sample_id=sample_id)
+    results = semantic_search(
+        query,
+        n=n,
+        threshold=threshold,
+        sample_id=sample_id,
+        requested_by=visible_requested_by(),
+    )
     if not results:
         return f"語意搜尋 cache miss（query={query!r}, threshold={threshold}）"
 
@@ -509,6 +521,7 @@ async def _handle_bio_history_search(args: dict) -> str:
 async def _handle_bio_memory_query(args: dict) -> str:
     from analysis.l1_cache import SPATIAL_EDA_TOOL_NAME, compute_current_context, semantic_search
     from config.settings import L1_COSINE_THRESHOLD
+    from server.auth import visible_requested_by
 
     query = args["query"]
     sample_id = args.get("sample_id")
@@ -527,6 +540,7 @@ async def _handle_bio_memory_query(args: dict) -> str:
         sample_id=sample_id,
         input_fingerprint=input_fingerprint,
         context_hash=context_hash,
+        requested_by=visible_requested_by(),
     )
     if not results:
         return f"L1 cache miss（threshold={threshold}）。建議呼叫分析工具生成新報告。"
@@ -546,6 +560,8 @@ async def _handle_bio_memory_query(args: dict) -> str:
 
 async def _handle_bio_memory_write(args: dict) -> str:
     from analysis.l1_cache import write_to_l1_cache
+    from server.auth import can_read_analysis, current_identity, visible_requested_by
+    from store.factory import get_store
 
     sample_id = args["sample_id"]
     if not _SAMPLE_ID_RE.match(sample_id):
@@ -553,12 +569,21 @@ async def _handle_bio_memory_write(args: dict) -> str:
             f"sample_id {sample_id!r} 格式錯誤：只允許小寫英數字、底線和連字號（對齊 bio_register_sample）"
         )
 
+    owner = visible_requested_by()
+    analysis_id = args.get("analysis_id")
+    if analysis_id and owner is not None:
+        with get_store().read_conn() as con:
+            if not can_read_analysis(con, analysis_id, requested_by=owner):
+                _audit_operation("bio_memory_write", analysis_id, "denied", "not_visible")
+                return "[ERROR] analysis record not found or not accessible."
+
     rec_id = write_to_l1_cache(
         sample_id=sample_id,
         query_text=args["query_text"],
         report_text=args["report_text"],
         summary=args["summary"],
-        analysis_id=args.get("analysis_id"),
+        analysis_id=analysis_id,
+        requested_by=current_identity().user_id,
     )
     return f"L1 快取寫入成功。\nid: {rec_id}\nsample_id: {args['sample_id']}"
 
@@ -593,6 +618,7 @@ async def _handle_bio_register_sample(args: dict) -> str:
 async def _handle_bio_artifact_search(args: dict) -> str:
     from analysis.artifact_registry import search_artifacts
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     query = args["query"]
     n = int(args.get("n", 5))
@@ -608,6 +634,7 @@ async def _handle_bio_artifact_search(args: dict) -> str:
             threshold=threshold,
             artifact_subtype=artifact_subtype,
             sample_id=sample_id,
+            requested_by=visible_requested_by(),
         )
 
     if not results:
@@ -632,10 +659,13 @@ async def _handle_bio_artifact_search(args: dict) -> str:
 async def _handle_bio_artifact_summary(args: dict) -> str:
     from analysis.artifact_registry import artifact_summary
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     sample_id = args["sample_id"]
     with get_store().read_conn() as con:
-        summary = artifact_summary(con, sample_id)
+        summary = artifact_summary(
+            con, sample_id, requested_by=visible_requested_by()
+        )
 
     if summary["total_runs"] == 0:
         return f"樣本 {sample_id!r} 尚無已完成分析或 artifact 記錄。"
@@ -835,8 +865,20 @@ async def _handle_bio_failure_summary(args: dict) -> str:
 
 async def _handle_bio_read_report(args: dict) -> str:
     from analysis.report_reader import read_report, ReportReadError
+    from server.auth import can_read_analysis_path, visible_requested_by
+    from store.factory import get_store
+
+    owner = visible_requested_by()
 
     def _sync() -> str:
+        with get_store().read_conn() as con:
+            if not can_read_analysis_path(
+                con, args["result_path"], requested_by=owner
+            ):
+                _audit_operation(
+                    "bio_read_report", None, "denied", "path_not_visible"
+                )
+                return "[ERROR] bio_read_report: report not found or not accessible."
         try:
             r = read_report(
                 args["result_path"],
@@ -860,11 +902,12 @@ async def _handle_bio_read_report(args: dict) -> str:
 async def _handle_bio_get_figure(args: dict) -> list[types.ImageContent]:
     """依 figure_id 取回快取圖片，回傳 MCP ImageContent（多模態通道，不進文字 context）。"""
     from analysis.figure_cache import load_figure_b64
+    from server.auth import visible_requested_by
 
     figure_id = args["figure_id"]
 
     def _sync() -> tuple[str, str]:
-        return load_figure_b64(figure_id)
+        return load_figure_b64(figure_id, requested_by=visible_requested_by())
 
     b64, mime = await asyncio.to_thread(_sync)
     return [types.ImageContent(type="image", data=b64, mimeType=mime)]
@@ -874,13 +917,19 @@ async def _handle_bio_get_artifact(args: dict) -> str:
     """回傳分析數據檔的取用 handle（路徑 + 下載 URL + 預覽）；任何 client 皆可用。"""
     from analysis.artifact_resources import get_artifact_handle, ArtifactResourceError
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     artifact_id = args["artifact_id"]
     preview_lines = int(args.get("preview_lines", 20))
 
     def _sync() -> dict:
         with get_store().read_conn() as con:
-            return get_artifact_handle(con, artifact_id, preview_lines=preview_lines)
+            return get_artifact_handle(
+                con,
+                artifact_id,
+                preview_lines=preview_lines,
+                requested_by=visible_requested_by(),
+            )
 
     try:
         h = await asyncio.to_thread(_sync)
@@ -1242,7 +1291,12 @@ async def dispatch_queued_tool(name: str, arguments: dict, identity) -> Any:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent]:
-    from server.auth import authorize_tool, current_identity, trusted_tool_arguments
+    from server.auth import (
+        authorize_tool,
+        current_identity,
+        trusted_tool_arguments,
+        visible_requested_by,
+    )
 
     identity = current_identity()
     spec = _TOOL_CATALOG.get(name)
@@ -1391,7 +1445,14 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
     if isinstance(result, list):
         return list(result)  # type: ignore[return-value]
     # 文字結果統一出口：剝除 inline base64 圖片，避免爆 LLM context（換成 bio_get_figure 佔位符）
-    return [types.TextContent(type="text", text=strip_base64_for_llm(result))]
+    return [
+        types.TextContent(
+            type="text",
+            text=strip_base64_for_llm(
+                result, requested_by=visible_requested_by(identity)
+            ),
+        )
+    ]
 
 
 # ── HTTP transport ────────────────────────────────────────────────────────────

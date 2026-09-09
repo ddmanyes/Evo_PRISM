@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from pathlib import Path
 
 from config.settings import L1_ROOT
 
@@ -53,7 +54,14 @@ def _figure_id(b64_payload: str) -> str:
     return hashlib.sha256(b64_payload.encode("utf-8")).hexdigest()[:12]
 
 
-def cache_figure(b64_payload: str, subtype: str = "png") -> str:
+def _owner_marker(figure_id: str, requested_by: str) -> Path:
+    owner_hash = hashlib.sha256(requested_by.encode("utf-8")).hexdigest()
+    return Path(FIGURE_CACHE_DIR) / ".owners" / owner_hash / figure_id
+
+
+def cache_figure(
+    b64_payload: str, subtype: str = "png", *, requested_by: str | None = None
+) -> str:
     """
     將單張 base64 圖片解碼快取到 FIGURE_CACHE_DIR，回傳 figure_id。
 
@@ -69,10 +77,14 @@ def cache_figure(b64_payload: str, subtype: str = "png") -> str:
         # 容忍 b64 內可能夾帶的空白／換行
         raw = base64.b64decode("".join(b64_payload.split()))
         out_path.write_bytes(raw)
+    if requested_by is not None:
+        marker = _owner_marker(fig_id, requested_by)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch(exist_ok=True)
     return fig_id
 
 
-def strip_base64_for_llm(text: str) -> str:
+def strip_base64_for_llm(text: str, *, requested_by: str | None = None) -> str:
     """
     把文字中所有 inline base64 圖片換成緊湊佔位符，並快取原圖供 bio_get_figure 索取。
 
@@ -87,7 +99,7 @@ def strip_base64_for_llm(text: str) -> str:
         subtype = m.group("subtype")
         b64 = m.group("b64")
         try:
-            fig_id = cache_figure(b64, subtype)
+            fig_id = cache_figure(b64, subtype, requested_by=requested_by)
         except Exception:
             # 快取失敗時不要破壞整段文字；仍剝除 base64 避免爆 context
             return f"[圖片:{alt} | (快取失敗，base64 已移除)]"
@@ -96,7 +108,9 @@ def strip_base64_for_llm(text: str) -> str:
     return _INLINE_IMG_RE.sub(_replace, text)
 
 
-def load_figure(figure_id: str) -> tuple[bytes, str]:
+def load_figure(
+    figure_id: str, *, requested_by: str | None = None
+) -> tuple[bytes, str]:
     """
     依 figure_id 讀回快取圖片，回傳 (raw_bytes, mime_type)。
 
@@ -104,6 +118,9 @@ def load_figure(figure_id: str) -> tuple[bytes, str]:
     """
     if not re.fullmatch(r"[0-9a-f]{6,64}", figure_id or ""):
         raise ValueError(f"figure_id 格式錯誤：{figure_id!r}（只允許 hex）")
+
+    if requested_by is not None and not _owner_marker(figure_id, requested_by).is_file():
+        raise FileNotFoundError(f"figure_id={figure_id!r} 不在可存取的快取中。")
 
     matches = sorted(FIGURE_CACHE_DIR.glob(f"{figure_id}.*"))
     if not matches:
@@ -116,11 +133,13 @@ def load_figure(figure_id: str) -> tuple[bytes, str]:
     return path.read_bytes(), mime
 
 
-def load_figure_b64(figure_id: str) -> tuple[str, str]:
+def load_figure_b64(
+    figure_id: str, *, requested_by: str | None = None
+) -> tuple[str, str]:
     """同 load_figure，但回傳 (base64_payload, mime_type)，供 MCP ImageContent 使用。"""
     import base64
 
-    raw, mime = load_figure(figure_id)
+    raw, mime = load_figure(figure_id, requested_by=requested_by)
     return base64.b64encode(raw).decode("ascii"), mime
 
 
@@ -151,4 +170,8 @@ def prune_stale_figures(ttl_days: int, *, dry_run: bool = False) -> tuple[int, i
             deleted += 1
             if not dry_run:
                 f.unlink()
+                owners_root = FIGURE_CACHE_DIR / ".owners"
+                if owners_root.exists():
+                    for marker in owners_root.glob(f"*/{f.stem}"):
+                        marker.unlink(missing_ok=True)
     return deleted, freed
