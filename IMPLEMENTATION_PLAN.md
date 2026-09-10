@@ -480,7 +480,7 @@ Evo_PRISM/
   - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`。
   - 提交：`feat(mcp): retrieve English method workflows`
 
-- [ ] 任務 45：雙語視覺 QA 與部署 smoke（Refactor）
+- [x] 任務 45：雙語視覺 QA 與部署 smoke（Refactor，completed 2026-09-10）
   - 預期行為：英文長字串無碰撞／溢出；生成器重跑無差異；正式 checkout 與 build mirror 同步；只重建 Web，workers 不重啟；live MCP 成功取回英文 PNG。
   - 驗證指令：完整相關測試、30 個 self-check、SVG／PNG 檢查、contact sheet、hash gate、容器 health 與 live MCP smoke。
   - 相關檔案：上述所有檔案與部署驗收紀錄。
