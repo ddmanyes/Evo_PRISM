@@ -462,13 +462,13 @@ Evo_PRISM/
   - 相關檔案：`IMPLEMENTATION_PLAN.md`。
   - 提交：`docs(plan): define English method workflows`
 
-- [ ] 任務 42：以失敗測試定義英文資產與 language 契約（Red）
+- [x] 任務 42：以失敗測試定義英文資產與 language 契約（Red，completed 2026-09-10）
   - 預期行為：15 個英文 HTML／SVG／PNG 必須存在；不含主要中文標籤；中英文互鏈；`method + language=en` 回傳英文獨立圖；不支援語言與缺 method 的英文查詢被拒絕。
   - 驗證指令：`uv run pytest tests/test_workflow_guide.py -q`，確認新增案例在實作前失敗。
   - 相關檔案：`tests/test_workflow_guide.py`。
   - 提交：repo policy 忽略 `tests/`，保留本機 Red checkpoint。
 
-- [ ] 任務 43：建立英文內容模型與 45 個英文資產（Green）
+- [x] 任務 43：建立英文內容模型與 45 個英文資產（Green，completed 2026-09-10）
   - 預期行為：共用布局產生 15 HTML、15 SVG、15 PNG；翻譯涵蓋標題、流程、警示、DATA／FIG 與提取說明，中英文結構一致。
   - 驗證指令：重新執行生成器、30 個 HTML self-check、英文 SVG XML parse、PNG 尺寸／RGB 與視覺檢查。
   - 相關檔案：`scripts/method_workflow_diagrams.py`、`docs/analysis_methods/`、`docs/images/analysis_methods/`。
