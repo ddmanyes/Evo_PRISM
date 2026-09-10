@@ -1632,6 +1632,7 @@ def _startup_cleanup_stale_runs() -> None:
         import analysis.loupe_export  # noqa: F401
         import analysis.sc_spatial_tools  # noqa: F401
         import analysis.sc_clustering  # noqa: F401
+        import analysis.workflow_guide  # noqa: F401
         # 2026-07-24 架構審查（候選 5）：以下 6 個模組也有 @register_tool_on_import，
         # 但先前沒被列在這裡——裝飾器只在模組被 import 時執行，這 6 個工具因此從未真的
         # 寫進 tools 表。`tests/test_lazy_tool_registration_coverage.py` 守住不再漏。

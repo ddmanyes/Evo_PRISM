@@ -45,6 +45,29 @@ class ToolSpec:
 
 
 TOOL_CATALOG: dict[str, "ToolSpec"] = {
+    "bio_get_analysis_workflow": ToolSpec(
+        description=(
+            "取得 Evo-PRISM 主要分析流程圖與輸出檔案指南。"
+            "使用者詢問 EP 能做哪些分析、分析順序、會產生哪些資料檔／圖檔，"
+            "或要求顯示流程圖時使用。domain 可選 overview、bulk、spatial、"
+            "single_cell、mcseg；回傳文字說明與可由 bio_get_figure 取回的示意圖片。"
+            "唯讀、不需 embedding server，也不讀取研究資料。"
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "enum": ["overview", "bulk", "spatial", "single_cell", "mcseg"],
+                    "default": "overview",
+                    "description": "要查看的流程領域；省略時回傳總覽。",
+                }
+            },
+            "required": [],
+        },
+        module="analysis.workflow_guide",
+        func="get_analysis_workflow",
+    ),
     "bio_manage_api_key": ToolSpec(
         description=(
             "Admin-only API key lifecycle: issue returns a new plaintext key exactly once; "

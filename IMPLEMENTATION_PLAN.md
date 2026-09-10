@@ -311,7 +311,7 @@ Evo_PRISM/
   - 相關檔案：`docs/analysis_workflows.html`、`docs/images/analysis_workflows.svg`、`docs/images/analysis_workflows.png`、`docs/guides/ANALYSIS_WORKFLOW_GUIDE.md`
   - 提交：`docs(diagrams): add EP analysis workflow guide`
 
-- [ ] 任務 33：實作唯讀 MCP 流程圖工具
+- [x] 任務 33：實作唯讀 MCP 流程圖工具（completed 2026-09-10）
   - 預期行為：`bio_get_analysis_workflow` 從版本化資產讀取資料，依 domain 回傳對應章節、檔案位置與 inline PNG；不連線研究資料庫、不寫 analysis_history，也不繞過 owner visibility。
   - 驗證指令：`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py tests/test_auth_rbac.py -q`
   - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`、`server/bio_memory_server.py`
