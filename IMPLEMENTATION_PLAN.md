@@ -337,3 +337,86 @@ Evo_PRISM/
 4. HTML、SVG、PNG 與 Markdown 的內容一致，HTML 通過自檢與實際渲染檢查。
 5. 新工具為 viewer-safe、唯讀、不可排隊；MCP 與 Web UI 兩端 schema／dispatch 不漂移。
 6. 正式服務重啟前保留部署邊界；未經獨立確認不自動中斷執行中的分析工作。
+
+## 15 個核心分析方法獨立流程圖（2026-09-10 已批准）
+
+### 目標摘要
+
+將現有總覽中的 15 個核心分析方法，各自產生一張可獨立閱讀、版本化與 MCP 提取的直式流程圖。每張圖以實際工具程式與 catalog 契約為依據，清楚呈現前置條件、分析步驟、失敗／選用分支、資料檔、圖檔、歷史登記與後續方法；視覺語言沿用 `fig-01.png` 的白底、分區、橘色控制線與藍色執行／保存線。
+
+### 文件架構圖
+
+```text
+Evo_PRISM/
+├── IMPLEMENTATION_PLAN.md
+├── analysis/
+│   └── workflow_guide.py
+├── server/
+│   └── tool_catalog.py
+├── scripts/
+│   └── generate_analysis_workflow_guide.py
+├── docs/
+│   ├── analysis_workflows.html
+│   ├── analysis_methods/
+│   │   └── <tool_name>/
+│   │       └── index.html
+│   ├── guides/
+│   │   └── ANALYSIS_WORKFLOW_GUIDE.md
+│   └── images/
+│       └── analysis_methods/
+│           ├── <tool_name>.svg
+│           └── <tool_name>.png
+└── tests/
+    └── test_workflow_guide.py
+```
+
+### 已批准的設計決策
+
+1. 範圍固定為現有總覽中的 15 個核心分析方法，不納入查詢、權限、佇列管理或系統維運工具。
+2. 每張圖採 1600×2107 直式 Flowchart／Data-flow 混合模式，分成「輸入與前置檢查、分析管線、產出與品質檢查、保存與提取」四個編號區域。
+3. 每個方法輸出單檔 HTML、可縮放 SVG 與 PNG；HTML 可連到已確認存在的真實結果圖，研究圖檔只連結、不複製進 Git。
+4. 無直接圖檔輸出的方法明確標示 `DATA ONLY`；選用輸入、外部網路、GPU、跨切片 `group_by` 等限制以分支或警示呈現。
+5. `bio_get_analysis_workflow` 新增選用 `method` 參數；指定方法時回傳該方法的文字說明與獨立 PNG，原有 `domain` 與預設總覽行為維持相容。
+6. 總覽 HTML、Markdown 與 MCP 回應都提供 15 個方法索引；方法名稱以完整 MCP tool name 作為穩定識別碼。
+7. 生成器是唯一內容來源；HTML、SVG、PNG 與索引不可手動分叉維護。
+
+### 任務列表
+
+- [x] 任務 36：寫入獨立方法圖實作計畫（completed 2026-09-10）
+  - 預期行為：記錄範圍、檔案拓樸、相容介面、TDD 與部署邊界。
+  - 驗證指令：`git diff --check`。
+  - 相關檔案：`IMPLEMENTATION_PLAN.md`。
+  - 提交：`docs(plan): define per-method workflow diagrams`
+
+- [ ] 任務 37：以失敗測試定義 15 張圖與 MCP method 契約（Red）
+  - 預期行為：每個方法都有 HTML／SVG／PNG；HTML 與 SVG 安全且互相一致；合法 method 回傳該方法 PNG，非法 method 被拒絕；省略 method 時舊 domain 契約不變。
+  - 驗證指令：`uv run pytest tests/test_workflow_guide.py -q`，確認新增案例在實作前失敗。
+  - 相關檔案：`tests/test_workflow_guide.py`。
+  - 提交：repo policy 忽略 `tests/`，保留本機 Red checkpoint，不建立空提交。
+
+- [ ] 任務 38：建立來源驅動的獨立流程圖產生器與資產（Green）
+  - 預期行為：15 個方法依實際程式定義產生一致的 HTML／SVG／PNG；圖中包含前置條件、實際處理階段、DATA、FIG、失敗／選用分支與保存流程；總覽加入方法連結。
+  - 驗證指令：重新執行生成器、15 個 HTML Diagram Design self-check、SVG XML parse、PNG 尺寸／有效邊界檢查與本機 Red 測試。
+  - 相關檔案：`scripts/generate_analysis_workflow_guide.py`、`docs/analysis_methods/`、`docs/images/analysis_methods/`、既有總覽與 Markdown 指南。
+  - 提交：`docs(diagrams): add per-method EP workflow set`
+
+- [ ] 任務 39：擴充 MCP method 提取且維持 domain 相容（Green）
+  - 預期行為：`bio_get_analysis_workflow(method=<tool_name>)` 回傳指定方法說明、版本化檔案路徑與 inline PNG；MCP 邊界仍轉成 owner-scoped `figure_id`，並可由 `bio_get_figure` 讀回。
+  - 驗證指令：`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py tests/test_auth_rbac.py -q`、Ruff。
+  - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`。
+  - 提交：`feat(mcp): retrieve individual method workflows`
+
+- [ ] 任務 40：重構、完整視覺 QA 與部署 smoke（Refactor）
+  - 預期行為：共用布局無重複漂移；15 張 PNG 皆無溢出、遮掩或大面積空白；來源 checkout、正式 checkout 與 build mirror 資產一致；僅在沒有執行中工作時重建 Web，worker 不重啟；live MCP 能列出並提取方法圖。
+  - 驗證指令：相關測試、Ruff、15 個 self-check、SVG XML、PNG 視覺抽查、`git diff --check`、容器 health 與 live MCP smoke。
+  - 相關檔案：上述所有檔案、`docs/logs/execution_trace.md`。
+  - 提交：`docs(deploy): verify per-method workflow retrieval`
+
+### 驗收標準
+
+1. 15 個方法各自具有可直接開啟的 HTML、SVG 與 PNG，且名稱可穩定對應 MCP tool name。
+2. 每張圖可不依賴總覽獨立理解輸入、分析主線、資料／圖檔產物、失敗條件與後續方向。
+3. 每個 HTML 通過 Diagram Design self-check；SVG 可解析；PNG 為 1600×2107 且內容沒有超出分區或卡片。
+4. `bio_get_analysis_workflow` 同時支援既有 domain 與新的 method 查詢；非法值有清楚錯誤訊息。
+5. MCP 回傳圖片經 `figure_id` 提取，文字 context 不暴露 base64；方法圖為 viewer-safe、唯讀、不寫研究資料。
+6. 正式部署不覆蓋既有使用者 dirty files，不重啟 CPU／GPU worker，並保留可回滾的 Web image。
