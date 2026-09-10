@@ -317,7 +317,7 @@ Evo_PRISM/
   - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`、`server/bio_memory_server.py`
   - 提交：`feat(mcp): expose analysis workflow diagrams`
 
-- [ ] 任務 34：完成結構、視覺與 MCP 端到端驗證
+- [x] 任務 34：完成結構、視覺與 MCP 端到端驗證（completed 2026-09-10）
   - 預期行為：HTML 結構與安全檢查通過；SVG／PNG 無文字截斷、箭頭遮蓋或多餘空白；MCP 呼叫會產生可由 `bio_get_figure` 讀回的 owner-scoped `figure_id`；既有核心測試不回歸。
   - 驗證指令：Diagram Design self-check、HTML 瀏覽器渲染、`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py tests/test_phase4.py -q`、`uv run ruff check analysis/workflow_guide.py server/tool_catalog.py tests/test_workflow_guide.py`
   - 相關檔案：上述所有新增與修改檔案、`docs/logs/execution_trace.md`
