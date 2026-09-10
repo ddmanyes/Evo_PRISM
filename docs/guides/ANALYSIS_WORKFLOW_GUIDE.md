@@ -15,6 +15,24 @@
 - [SPATIAL QC — 真實空間訊號分布](/Volumes/KINGSTON/Evo_PRISM/results/external_import/kangyu_visiumhd_sds_lipolysis/figures/qc_spatial.png)
 - [SEGMENTATION — Human CRC ROI 細胞邊界](/Volumes/KINGSTON/Evo_PRISM/results/mcseg/Human_CRC/roi/crc_roi1/mask_he_overlay.png)
 
+## 個別方法流程圖
+
+- [探索與品質檢查 — `bio_run_bulk_eda`](../analysis_methods/bio_run_bulk_eda/index.html) · [PNG](../images/analysis_methods/bio_run_bulk_eda.png) · [SVG](../images/analysis_methods/bio_run_bulk_eda.svg)
+- [差異表現基因 — `bio_run_deg`](../analysis_methods/bio_run_deg/index.html) · [PNG](../images/analysis_methods/bio_run_deg.png) · [SVG](../images/analysis_methods/bio_run_deg.svg)
+- [基因表現熱圖 — `bio_run_heatmaps`](../analysis_methods/bio_run_heatmaps/index.html) · [PNG](../images/analysis_methods/bio_run_heatmaps.png) · [SVG](../images/analysis_methods/bio_run_heatmaps.svg)
+- [功能與路徑富集 — `bio_run_enrichment`](../analysis_methods/bio_run_enrichment/index.html) · [PNG](../images/analysis_methods/bio_run_enrichment.png) · [SVG](../images/analysis_methods/bio_run_enrichment.svg)
+- [空間探索與 QC — `bio_run_spatial_eda`](../analysis_methods/bio_run_spatial_eda/index.html) · [PNG](../images/analysis_methods/bio_run_spatial_eda.png) · [SVG](../images/analysis_methods/bio_run_spatial_eda.svg)
+- [細胞群最近鄰距離 — `bio_compute_spatial_nn_distance`](../analysis_methods/bio_compute_spatial_nn_distance/index.html) · [PNG](../images/analysis_methods/bio_compute_spatial_nn_distance.png) · [SVG](../images/analysis_methods/bio_compute_spatial_nn_distance.svg)
+- [QC、分群與 UMAP — `bio_run_sc_clustering`](../analysis_methods/bio_run_sc_clustering/index.html) · [PNG](../images/analysis_methods/bio_run_sc_clustering.png) · [SVG](../images/analysis_methods/bio_run_sc_clustering.svg)
+- [Cluster marker genes — `bio_get_marker_genes`](../analysis_methods/bio_get_marker_genes/index.html) · [PNG](../images/analysis_methods/bio_get_marker_genes.png) · [SVG](../images/analysis_methods/bio_get_marker_genes.svg)
+- [CellTypist 自動標注 — `bio_run_celltypist`](../analysis_methods/bio_run_celltypist/index.html) · [PNG](../images/analysis_methods/bio_run_celltypist.png) · [SVG](../images/analysis_methods/bio_run_celltypist.svg)
+- [自訂基因模組評分 — `bio_run_geneset_score`](../analysis_methods/bio_run_geneset_score/index.html) · [PNG](../images/analysis_methods/bio_run_geneset_score.png) · [SVG](../images/analysis_methods/bio_run_geneset_score.svg)
+- [單一 ROI 完整管線 — `bio_run_mcseg_roi`](../analysis_methods/bio_run_mcseg_roi/index.html) · [PNG](../images/analysis_methods/bio_run_mcseg_roi.png) · [SVG](../images/analysis_methods/bio_run_mcseg_roi.svg)
+- [全片細胞分割 — `bio_run_mcseg_fullslide`](../analysis_methods/bio_run_mcseg_fullslide/index.html) · [PNG](../images/analysis_methods/bio_run_mcseg_fullslide.png) · [SVG](../images/analysis_methods/bio_run_mcseg_fullslide.svg)
+- [多 ROI 整合 — `bio_run_mcseg_merge`](../analysis_methods/bio_run_mcseg_merge/index.html) · [PNG](../images/analysis_methods/bio_run_mcseg_merge.png) · [SVG](../images/analysis_methods/bio_run_mcseg_merge.svg)
+- [分割品質 QC — `bio_run_mcseg_qc`](../analysis_methods/bio_run_mcseg_qc/index.html) · [PNG](../images/analysis_methods/bio_run_mcseg_qc.png) · [SVG](../images/analysis_methods/bio_run_mcseg_qc.svg)
+- [CRC RNA 品質指標 — `bio_compute_crc_metrics`](../analysis_methods/bio_compute_crc_metrics/index.html) · [PNG](../images/analysis_methods/bio_compute_crc_metrics.png) · [SVG](../images/analysis_methods/bio_compute_crc_metrics.svg)
+
 ## 共通流程
 
 1. `bio_register_sample` 登記樣本與 L3 路徑。

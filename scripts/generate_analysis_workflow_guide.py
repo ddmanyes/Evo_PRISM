@@ -540,6 +540,13 @@ def build_html(svg: str) -> str:
         f'<code>{esc(sample.path.name)}</code></a></li>'
         for sample in SAMPLES
     )
+    method_links = "".join(
+        f'<li><a href="analysis_methods/{esc(step.tool)}/index.html">'
+        f'<span class="method-domain" style="color:{domain.color}">{esc(domain.title)}</span>'
+        f'<strong>{esc(step.title)}</strong><code>{esc(step.tool)}</code></a></li>'
+        for domain in DOMAINS
+        for step in domain.steps
+    )
     return f'''<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -560,6 +567,11 @@ def build_html(svg: str) -> str:
     .real-links a:hover,.real-links a:focus-visible{{border-color:var(--blue);outline:3px solid #dbeafe}}
     .real-links span,.real-links code{{display:block;margin-top:6px}}
     .real-links span{{color:var(--muted)}}
+    .method-index ul{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;list-style:none;margin:20px 0 0;padding:0}}
+    .method-index a{{display:block;height:100%;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);text-decoration:none}}
+    .method-index a:hover,.method-index a:focus-visible{{border-color:var(--blue);outline:3px solid #dbeafe}}
+    .method-index strong,.method-index code,.method-domain{{display:block}}
+    .method-domain{{font-family:var(--mono);font-size:11px;font-weight:700;margin-bottom:5px}}
     section{{margin-top:32px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:28px}}
     .section-head{{display:grid;grid-template-columns:150px 280px 1fr;align-items:baseline;gap:18px;margin-bottom:22px}}
     .section-head h2{{font-family:var(--serif);font-size:32px;margin:0}}
@@ -575,7 +587,7 @@ def build_html(svg: str) -> str:
     tbody th span{{display:block;font-size:16px;margin-bottom:7px}}
     code{{display:block;color:var(--blue);font-family:var(--mono);font-size:12px;white-space:normal}}
     footer{{padding:34px 8px 0;color:var(--muted);font-size:13px}}
-    @media(max-width:800px){{main{{padding:12px 10px 50px}}.hero,section{{border-radius:14px;padding:14px}}.hero::before{{content:"左右滑動查看完整流程 →";display:block;margin:0 0 10px;color:var(--muted);font-size:13px}}.section-head{{display:block}}.section-head h2{{margin:4px 0}}.real-links ul{{grid-template-columns:1fr}}}}
+    @media(max-width:800px){{main{{padding:12px 10px 50px}}.hero,section{{border-radius:14px;padding:14px}}.hero::before{{content:"左右滑動查看完整流程 →";display:block;margin:0 0 10px;color:var(--muted);font-size:13px}}.section-head{{display:block}}.section-head h2{{margin:4px 0}}.real-links ul,.method-index ul{{grid-template-columns:1fr}}}}
   </style>
 </head>
 <body>
@@ -583,6 +595,7 @@ def build_html(svg: str) -> str:
   <div class="hero">{svg}</div>
   <div class="notice"><strong>SCHEMATIC / 示意：</strong>流程關係是導覽示意；結果範例改為 EP 主機上的真實圖檔連結，沒有把研究影像複製進 Git。連結只適用於可存取該主機與檔案的使用者。</div>
   <section class="real-links" aria-labelledby="real-links-title"><div class="section-head"><p class="eyebrow" style="color:var(--blue)">REAL FILES</p><h2 id="real-links-title">真實圖檔連結</h2><p>開啟 PCA、Volcano、Heatmap、UMAP、Spatial QC 與 Segmentation overlay 原始結果。</p></div><ul>{sample_links}</ul></section>
+  <section class="method-index" aria-labelledby="method-index-title"><div class="section-head"><p class="eyebrow" style="color:var(--orange)">15 METHOD MAPS</p><h2 id="method-index-title">個別方法流程圖</h2><p>每個方法都有獨立 HTML、SVG 與 PNG，可直接閱讀或透過 MCP 依 method 提取。</p></div><ul>{method_links}</ul></section>
   {''.join(sections)}
   <footer>來源：Evo-PRISM 現行分析模組與 MCP tool catalog。帶時間戳記的檔名以 <code>&lt;ts&gt;</code> 表示；實際路徑依部署設定與 sample_id 而定。</footer>
 </main>
@@ -606,6 +619,16 @@ def build_markdown() -> str:
         *(
             f"- [{sample.label} — {sample.caption}]({sample.href})"
             for sample in SAMPLES
+        ),
+        "",
+        "## 個別方法流程圖",
+        "",
+        *(
+            f"- [{step.title} — `{step.tool}`](../analysis_methods/{step.tool}/index.html)"
+            f" · [PNG](../images/analysis_methods/{step.tool}.png)"
+            f" · [SVG](../images/analysis_methods/{step.tool}.svg)"
+            for domain in DOMAINS
+            for step in domain.steps
         ),
         "",
         "## 共通流程",
@@ -819,6 +842,8 @@ def build_png() -> None:
 
 
 def main() -> None:
+    from method_workflow_diagrams import generate_method_assets
+
     SVG_PATH.parent.mkdir(parents=True, exist_ok=True)
     GUIDE_PATH.parent.mkdir(parents=True, exist_ok=True)
     svg = build_svg()
@@ -826,7 +851,8 @@ def main() -> None:
     HTML_PATH.write_text(build_html(svg), encoding="utf-8")
     GUIDE_PATH.write_text(build_markdown(), encoding="utf-8")
     build_png()
-    for path in (HTML_PATH, SVG_PATH, PNG_PATH, GUIDE_PATH):
+    method_paths = generate_method_assets(ROOT, DOMAINS)
+    for path in (HTML_PATH, SVG_PATH, PNG_PATH, GUIDE_PATH, *method_paths):
         print(path.relative_to(ROOT))
 
 

@@ -388,13 +388,13 @@ Evo_PRISM/
   - 相關檔案：`IMPLEMENTATION_PLAN.md`。
   - 提交：`docs(plan): define per-method workflow diagrams`
 
-- [ ] 任務 37：以失敗測試定義 15 張圖與 MCP method 契約（Red）
+- [x] 任務 37：以失敗測試定義 15 張圖與 MCP method 契約（Red，completed 2026-09-10）
   - 預期行為：每個方法都有 HTML／SVG／PNG；HTML 與 SVG 安全且互相一致；合法 method 回傳該方法 PNG，非法 method 被拒絕；省略 method 時舊 domain 契約不變。
   - 驗證指令：`uv run pytest tests/test_workflow_guide.py -q`，確認新增案例在實作前失敗。
   - 相關檔案：`tests/test_workflow_guide.py`。
   - 提交：repo policy 忽略 `tests/`，保留本機 Red checkpoint，不建立空提交。
 
-- [ ] 任務 38：建立來源驅動的獨立流程圖產生器與資產（Green）
+- [x] 任務 38：建立來源驅動的獨立流程圖產生器與資產（Green，completed 2026-09-10）
   - 預期行為：15 個方法依實際程式定義產生一致的 HTML／SVG／PNG；圖中包含前置條件、實際處理階段、DATA、FIG、失敗／選用分支與保存流程；總覽加入方法連結。
   - 驗證指令：重新執行生成器、15 個 HTML Diagram Design self-check、SVG XML parse、PNG 尺寸／有效邊界檢查與本機 Red 測試。
   - 相關檔案：`scripts/generate_analysis_workflow_guide.py`、`docs/analysis_methods/`、`docs/images/analysis_methods/`、既有總覽與 Markdown 指南。
