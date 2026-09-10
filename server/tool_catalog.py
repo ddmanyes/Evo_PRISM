@@ -51,7 +51,8 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
             "使用者詢問 EP 能做哪些分析、分析順序、會產生哪些資料檔／圖檔，"
             "或要求顯示流程圖時使用。domain 可選 overview、bulk、spatial、"
             "single_cell、mcseg；method 可選 15 個核心分析工具並回傳該方法的獨立流程圖。"
-            "指定 method 時優先於 domain。回傳文字說明、可由 bio_get_figure 取回的流程圖片，"
+            "language 可選 zh-Hant 或 en；英文版需指定 method。指定 method 時優先於 domain。"
+            "回傳文字說明、可由 bio_get_figure 取回的流程圖片，"
             "以及 EP 主機真實結果圖檔連結。唯讀、不需 embedding server；"
             "指南只連結、不複製研究圖檔。"
         ),
@@ -84,6 +85,12 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                         "bio_compute_crc_metrics",
                     ],
                     "description": "要查看的個別分析方法；指定時優先於 domain。",
+                },
+                "language": {
+                    "type": "string",
+                    "enum": ["zh-Hant", "en"],
+                    "default": "zh-Hant",
+                    "description": "圖文語言；en 目前需搭配 method 使用。",
                 },
             },
             "required": [],

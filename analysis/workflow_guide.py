@@ -41,6 +41,24 @@ METHOD_NAMES = (
     "bio_compute_crc_metrics",
 )
 VALID_METHODS = frozenset(METHOD_NAMES)
+VALID_LANGUAGES = frozenset({"zh-Hant", "en"})
+ENGLISH_METHOD_TITLES = {
+    "bio_run_bulk_eda": "Exploratory analysis and QC",
+    "bio_run_deg": "Differential expression",
+    "bio_run_heatmaps": "Expression heatmaps",
+    "bio_run_enrichment": "Functional enrichment",
+    "bio_run_spatial_eda": "Spatial exploration and QC",
+    "bio_compute_spatial_nn_distance": "Cell-population nearest-neighbor distance",
+    "bio_run_sc_clustering": "QC, clustering and UMAP",
+    "bio_get_marker_genes": "Cluster marker genes",
+    "bio_run_celltypist": "Automated CellTypist annotation",
+    "bio_run_geneset_score": "Custom gene-module scoring",
+    "bio_run_mcseg_roi": "Complete single-ROI pipeline",
+    "bio_run_mcseg_fullslide": "Whole-slide cell segmentation",
+    "bio_run_mcseg_merge": "Multi-ROI integration",
+    "bio_run_mcseg_qc": "Segmentation quality control",
+    "bio_compute_crc_metrics": "CRC RNA quality metrics",
+}
 
 
 def _require_assets() -> None:
@@ -53,16 +71,17 @@ def _require_assets() -> None:
         raise FileNotFoundError("EP workflow guide assets missing: " + ", ".join(missing))
 
 
-def _method_paths(method: str) -> tuple[Path, Path, Path]:
+def _method_paths(method: str, language: str) -> tuple[Path, Path, Path]:
+    suffix = ".en" if language == "en" else ""
     return (
-        METHOD_HTML_ROOT / method / "index.html",
-        METHOD_IMAGE_ROOT / f"{method}.svg",
-        METHOD_IMAGE_ROOT / f"{method}.png",
+        METHOD_HTML_ROOT / method / f"index{suffix}.html",
+        METHOD_IMAGE_ROOT / f"{method}{suffix}.svg",
+        METHOD_IMAGE_ROOT / f"{method}{suffix}.png",
     )
 
 
-def _require_method_assets(method: str) -> tuple[Path, Path, Path]:
-    paths = _method_paths(method)
+def _require_method_assets(method: str, language: str) -> tuple[Path, Path, Path]:
+    paths = _method_paths(method, language)
     missing = [str(path) for path in (*paths, GUIDE_PATH) if not path.is_file()]
     if missing:
         raise FileNotFoundError(
@@ -104,29 +123,61 @@ def _markdown_method_section(markdown: str, method: str) -> str:
 
 @register_tool_on_import(
     tool_name="bio_get_analysis_workflow",
-    version="1.1.0",
+    version="1.2.0",
     description=(
         "取得 EP 主要分析流程圖與輸出檔案指南。支援 overview、bulk、spatial、"
         "single_cell、mcseg，或用 method 取得 15 個核心分析方法之一的獨立流程圖；"
-        "回傳指定領域／方法說明、流程 PNG 與真實結果圖檔連結。"
+        "個別方法支援繁體中文與英文，回傳指定領域／方法說明、流程 PNG 與真實結果圖檔連結。"
         "唯讀且不複製研究圖檔。"
     ),
 )
 def get_analysis_workflow(args: dict) -> str:
     """Return one workflow section plus an inline PNG for MCP figure extraction."""
+    language = str(args.get("language", "zh-Hant")).strip()
+    if language not in VALID_LANGUAGES:
+        allowed = ", ".join(sorted(VALID_LANGUAGES))
+        raise ValueError(f"language must be one of: {allowed}")
+
     method = str(args.get("method", "")).strip()
     if method:
         if method not in VALID_METHODS:
             allowed = ", ".join(METHOD_NAMES)
             raise ValueError(f"method 必須是以下其中之一：{allowed}")
 
-        html_path, svg_path, png_path = _require_method_assets(method)
+        html_path, svg_path, png_path = _require_method_assets(method, language)
+        png_b64 = base64.b64encode(png_path.read_bytes()).decode("ascii")
+        if language == "en":
+            section = (
+                f"## {ENGLISH_METHOD_TITLES[method]}\n\n"
+                "The diagram covers input and preflight checks, the analysis "
+                "pipeline, data and figure outputs, quality guards, persistence, "
+                "and MCP retrieval. Technical field names and file patterns are "
+                "kept exactly as implemented in EP."
+            )
+            return (
+                "# Evo-PRISM Individual Analysis Workflow\n\n"
+                f"method: {method}\n"
+                "language: en\n"
+                "SCHEMATIC: This guide reflects current EP tool definitions. "
+                "Real research figures are linked from their original paths and "
+                "are not copied into the guide.\n\n"
+                "Input and preflight checks, analysis stages, failure or optional "
+                "branches, output files, persistence and retrieval are included.\n\n"
+                "## Available files\n\n"
+                f"- HTML: `{html_path}`\n"
+                f"- SVG: `{svg_path}`\n"
+                f"- PNG: `{png_path}`\n\n"
+                f"{section}\n\n"
+                "## Image preview\n\n"
+                f"![{method} workflow](data:image/png;base64,{png_b64})\n"
+            )
+
         guide = GUIDE_PATH.read_text(encoding="utf-8")
         section = _markdown_method_section(guide, method)
-        png_b64 = base64.b64encode(png_path.read_bytes()).decode("ascii")
         return (
             "# Evo-PRISM 個別分析方法流程\n\n"
             f"method: {method}\n"
+            "language: zh-Hant\n"
             "SCHEMATIC / 示意：依 EP 現行工具定義整理；真實研究圖只以原始路徑連結，不複製進指南。\n\n"
             "內容包含：前置條件、分析主線、失敗／選用分支、資料檔、圖檔、保存與提取方式。\n\n"
             "## 可用檔案\n\n"
@@ -137,6 +188,9 @@ def get_analysis_workflow(args: dict) -> str:
             "## 圖片預覽\n\n"
             f"![{method} 獨立流程圖](data:image/png;base64,{png_b64})\n"
         )
+
+    if language == "en":
+        raise ValueError("language=en requires an individual method")
 
     domain = str(args.get("domain", "overview")).strip().lower()
     if domain not in VALID_DOMAINS:

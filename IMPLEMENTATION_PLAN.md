@@ -474,7 +474,7 @@ Evo_PRISM/
   - 相關檔案：`scripts/method_workflow_diagrams.py`、`docs/analysis_methods/`、`docs/images/analysis_methods/`。
   - 提交：`docs(diagrams): add English EP method workflows`
 
-- [ ] 任務 44：擴充 MCP language 提取（Green）
+- [x] 任務 44：擴充 MCP language 提取（Green，completed 2026-09-10）
   - 預期行為：預設查詢仍回繁中；`method=<tool>&language=en` 回英文文字與 `.en.png`；MCP 邊界仍以 `figure_id` 取圖且不把 base64 留在文字 context。
   - 驗證指令：workflow、catalog parity、RBAC 與 Phase 4 測試及 Ruff。
   - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`。
