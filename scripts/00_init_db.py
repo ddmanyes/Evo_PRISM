@@ -67,7 +67,7 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     con.execute("""
         CREATE TABLE IF NOT EXISTS analysis_history (
             analysis_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            sample_id        VARCHAR REFERENCES sample_registry(sample_id),
+            sample_id        VARCHAR,    -- 軟引用：刻意不加 REFERENCES sample_registry(sample_id)，見 migration v29
             analysis_type    VARCHAR,    -- 'qc', 'spatial_gene', 'clustering', 'diff_expr'
             parameters       JSON,
             status           VARCHAR,    -- 'running', 'completed', 'failed'

@@ -412,7 +412,7 @@ _REPORT_TEMPLATE = """\
 
 @register_tool_on_import(
     tool_name="bio_run_bulk_eda",
-    version="1.1.0",
+    version="1.1.1",
     description="對 Bulk RNA-seq 樣本執行 EDA（QC / top genes / 相關矩陣 / PCA），支援 coldata 著色",
 )
 def generate_bulk_report(
@@ -542,16 +542,21 @@ def generate_bulk_report(
         avg_total = qc["total_counts"].mean()
         avg_genes = int(qc["n_genes"].mean())
         n_samples = counts.shape[1]
-        # 結構化摘要：前綴含關鍵數字供 SQL 過濾，後接自然語言供語意搜尋
+        n_genes_matrix = counts.shape[0]
+        # 結構化摘要：前綴含關鍵數字供 SQL 過濾，後接自然語言供語意搜尋。
+        # genes 一律寫成「平均偵測/矩陣總數」兩個數字：只寫平均偵測數會跟報告表頭的
+        # 矩陣基因數對不起來，讀 bio_history_timeline 的人會誤以為報告或資料漂移了
+        # （2026-09-10 就有人為此把四份報告全文交叉核對過一輪才確認兩者都對）。
         full_summary = (
-            f"[n={n_samples}|genes={avg_genes}] "
-            f"Bulk RNA {sample_id}：{n_samples} 樣本，"
-            f"均 {avg_genes:,} 基因，avg_total={avg_total:,.0f}。"
+            f"[n={n_samples}|genes={avg_genes}/{n_genes_matrix}] "
+            f"Bulk RNA {sample_id}：{n_samples} 樣本，矩陣 {n_genes_matrix:,} 基因，"
+            f"平均每樣本偵測 {avg_genes:,}，avg_total={avg_total:,.0f}。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
         summary_metrics = json.dumps({
             "n_samples": n_samples,
             "avg_detected_genes": avg_genes,
+            "n_genes_matrix": n_genes_matrix,
             "avg_total_counts": int(avg_total),
             "quality_flags": quality_flags,
         })

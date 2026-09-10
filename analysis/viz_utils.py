@@ -12,6 +12,8 @@ import io
 from pathlib import Path
 from typing import Union
 
+from analysis.path_utils import read_back_bytes
+
 
 def fig_to_b64_md(fig, alt: str = "figure") -> str:
     """matplotlib Figure → inline base64 Markdown。
@@ -26,6 +28,10 @@ def fig_to_b64_md(fig, alt: str = "figure") -> str:
 
 
 def file_to_b64_md(path: Union[Path, str], alt: str = "figure") -> str:
-    """已存的 PNG 路徑 → inline base64 Markdown。"""
-    b64 = base64.b64encode(Path(path).read_bytes()).decode()
+    """已存的 PNG 路徑 → inline base64 Markdown。
+
+    幾乎都是「savefig 完立刻回讀」，故走 read_back_bytes 吸收 bind mount 的
+    可見性延遲（否則圖明明畫好了，報告卻寫成「生成失敗」）。
+    """
+    b64 = base64.b64encode(read_back_bytes(path)).decode()
     return f"\n![{alt}](data:image/png;base64,{b64})\n"

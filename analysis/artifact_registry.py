@@ -43,6 +43,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from analysis.path_utils import read_back_bytes  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 INLINE_SIZE_LIMIT_KB = 500
@@ -120,7 +122,7 @@ def _read_inline(path: Path) -> Optional[str]:
     try:
         if path.stat().st_size > INLINE_SIZE_LIMIT_KB * 1024:
             return None
-        return base64.b64encode(path.read_bytes()).decode()
+        return base64.b64encode(read_back_bytes(path)).decode()
     except OSError:
         return None
 
@@ -425,7 +427,7 @@ def register_artifact(
 
     if path.exists():
         try:
-            raw_bytes = path.read_bytes()
+            raw_bytes = read_back_bytes(path)
             size_kb = len(raw_bytes) // 1024
 
             # Check if base64 encoded size exceeds DuckDB constraint (500KB / 512,000 bytes)
