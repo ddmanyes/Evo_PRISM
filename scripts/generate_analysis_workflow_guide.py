@@ -2,14 +2,13 @@
 """Generate the versioned EP analysis workflow guide assets.
 
 The SVG/HTML/Markdown and raster preview share one semantic data model so their
-tool names and output-file descriptions do not drift. The raster preview uses
-only synthetic marks; it never reads research data.
+tool names and output-file descriptions do not drift. Real result examples are
+linked in place and are never copied into the versioned guide assets.
 """
 
 from __future__ import annotations
 
 import html
-import random
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,7 +22,6 @@ PNG_PATH = ROOT / "docs" / "images" / "analysis_workflows.png"
 GUIDE_PATH = ROOT / "docs" / "guides" / "ANALYSIS_WORKFLOW_GUIDE.md"
 
 WIDTH = 2400
-HEIGHT = 3260
 PAPER = "#ffffff"
 INK = "#0f172a"
 MUTED = "#475569"
@@ -54,6 +52,44 @@ class Domain:
     subtitle: str
     color: str
     steps: tuple[Step, ...]
+
+
+@dataclass(frozen=True)
+class ResultSample:
+    label: str
+    caption: str
+    path: Path
+
+    @property
+    def href(self) -> str:
+        return self.path.as_posix()
+
+
+@dataclass(frozen=True)
+class StepLayout:
+    method_lines: tuple[str, ...]
+    sections: tuple[tuple[str, tuple[str, ...]], ...]
+    content_bottom: int
+
+
+@dataclass(frozen=True)
+class LaneLayout:
+    domain: Domain
+    y: int
+    height: int
+    card_y: int
+    card_height: int
+    card_width: int
+    gap: int
+    start_x: int
+    steps: tuple[StepLayout, ...]
+
+
+@dataclass(frozen=True)
+class DiagramLayout:
+    lanes: tuple[LaneLayout, ...]
+    mcp_y: int
+    height: int
 
 
 DOMAINS = (
@@ -211,13 +247,42 @@ DOMAINS = (
     ),
 )
 
+EP_RESULTS_ROOT = Path("/Volumes/KINGSTON/Evo_PRISM/results")
 SAMPLES = (
-    ("PCA", "樣本分群與離群點", "pca"),
-    ("VOLCANO", "顯著 DEG 與效應量", "volcano"),
-    ("HEATMAP", "基因×樣本群聚", "heatmap"),
-    ("UMAP", "單細胞群集", "umap"),
-    ("SPATIAL QC", "組織上的訊號分布", "spatial"),
-    ("SEGMENTATION", "H&E 細胞邊界 overlay", "segmentation"),
+    ResultSample(
+        "PCA",
+        "Bulk EDA 樣本分群",
+        EP_RESULTS_ROOT / "Kallisto_v1/bulk_eda/pca_Kallisto_v1_20260904_073140.png",
+    ),
+    ResultSample(
+        "VOLCANO",
+        "Bulk DEG 火山圖",
+        EP_RESULTS_ROOT
+        / "Kallisto_v1/bulk_deg/Volcano_pw120hr_vs_ctrl_20260603_004126.png",
+    ),
+    ResultSample(
+        "HEATMAP",
+        "Bulk 基因群聚熱圖",
+        EP_RESULTS_ROOT
+        / "Kallisto_v1/bulk_heatmap/Heatmap_Top50_Variable_Genes_20260603_004417.png",
+    ),
+    ResultSample(
+        "UMAP",
+        "MCseg 全片單細胞分群",
+        EP_RESULTS_ROOT
+        / "mcseg/dpcp01_vh_v114_02_hd_r004/fullslide/clustering/umap_leiden_20260721_102206.png",
+    ),
+    ResultSample(
+        "SPATIAL QC",
+        "真實空間訊號分布",
+        EP_RESULTS_ROOT
+        / "external_import/kangyu_visiumhd_sds_lipolysis/figures/qc_spatial.png",
+    ),
+    ResultSample(
+        "SEGMENTATION",
+        "Human CRC ROI 細胞邊界",
+        EP_RESULTS_ROOT / "mcseg/Human_CRC/roi/crc_roi1/mask_he_overlay.png",
+    ),
 )
 
 
@@ -256,77 +321,90 @@ def wrap_chars(text: str, limit: int) -> list[str]:
     return lines
 
 
-def svg_sample(kind: str, x: int, y: int, w: int, h: int) -> str:
-    rng = random.Random(kind)
-    parts = [f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="16" fill="#ffffff"/>']
-    if kind in {"pca", "volcano", "umap"}:
-        parts += [
-            f'<line x1="{x+34}" y1="{y+h-26}" x2="{x+w-22}" y2="{y+h-26}" stroke="#cbd5e1"/>',
-            f'<line x1="{x+34}" y1="{y+18}" x2="{x+34}" y2="{y+h-26}" stroke="#cbd5e1"/>',
-        ]
-    if kind == "pca":
-        for cx, cy, color in ((x + 105, y + 72, BLUE), (x + 220, y + 105, ORANGE)):
-            for _ in range(13):
-                px = cx + rng.randint(-44, 44)
-                py = cy + rng.randint(-34, 34)
-                parts.append(f'<circle cx="{px}" cy="{py}" r="5" fill="{color}" opacity=".82"/>')
-    elif kind == "volcano":
-        parts.append(f'<line x1="{x+w//2}" y1="{y+18}" x2="{x+w//2}" y2="{y+h-26}" stroke="#cbd5e1" stroke-dasharray="5 5"/>')
-        for _ in range(48):
-            dx = rng.gauss(0, 54)
-            py = y + h - 30 - min(abs(dx) * 0.72 + rng.randint(0, 50), h - 54)
-            color = ORANGE if abs(dx) > 65 else "#94a3b8"
-            parts.append(f'<circle cx="{x+w/2+dx:.1f}" cy="{py:.1f}" r="4" fill="{color}" opacity=".78"/>')
-    elif kind == "heatmap":
-        palette = ["#dbeafe", "#93c5fd", "#2e5aa8", "#fed7aa", "#fb923c", "#eb6c36"]
-        cell_w, cell_h = 29, 19
-        for row in range(6):
-            for col in range(9):
-                color = palette[(row * 2 + col + rng.randint(0, 2)) % len(palette)]
-                parts.append(f'<rect x="{x+38+col*cell_w}" y="{y+22+row*cell_h}" width="26" height="16" rx="2" fill="{color}"/>')
-    elif kind == "umap":
-        for cx, cy, color in ((x + 95, y + 92, PURPLE), (x + 190, y + 62, CYAN), (x + 245, y + 120, ORANGE)):
-            for _ in range(18):
-                px = cx + rng.randint(-35, 35)
-                py = cy + rng.randint(-25, 25)
-                parts.append(f'<circle cx="{px}" cy="{py}" r="4" fill="{color}" opacity=".76"/>')
-    elif kind == "spatial":
-        parts.append(f'<path d="M{x+42},{y+93} C{x+50},{y+27} {x+150},{y+12} {x+240},{y+37} C{x+310},{y+58} {x+298},{y+133} {x+224},{y+144} C{x+142},{y+157} {x+56},{y+145} {x+42},{y+93}Z" fill="#f1f5f9" stroke="#cbd5e1"/>')
-        for _ in range(55):
-            px = x + rng.randint(64, w - 48)
-            py = y + rng.randint(38, h - 32)
-            color = ORANGE if px > x + w * .58 else CYAN
-            parts.append(f'<circle cx="{px}" cy="{py}" r="4" fill="{color}" opacity=".68"/>')
-    elif kind == "segmentation":
-        parts.append(f'<rect x="{x+22}" y="{y+16}" width="{w-44}" height="{h-34}" rx="18" fill="#f6d6cf"/>')
-        colors = ["#2e5aa8", "#0e7490", "#eb6c36", "#7c3aed"]
-        for index in range(24):
-            cx = x + 50 + (index % 8) * 34 + rng.randint(-5, 5)
-            cy = y + 38 + (index // 8) * 42 + rng.randint(-6, 6)
-            color = colors[index % len(colors)]
-            parts.append(f'<ellipse cx="{cx}" cy="{cy}" rx="13" ry="10" fill="none" stroke="{color}" stroke-width="3"/>')
-    return "".join(parts)
+def _card_dimensions(step_count: int) -> tuple[int, int, int]:
+    if step_count == 2:
+        return 920, 210, 175
+    if step_count == 4:
+        return 440, 120, 110
+    return 352, 112, 98
+
+
+def _step_layout(step: Step, step_count: int) -> StepLayout:
+    method_lines = tuple(wrap_chars(step.tool, 31 if step_count == 5 else 38))
+    cursor = 104 + (len(method_lines) - 1) * 19
+    sections: list[tuple[str, tuple[str, ...]]] = []
+    content_bottom = cursor
+    char_limit = 31 if step_count == 5 else (39 if step_count == 4 else 72)
+    max_lines = 3 if step_count == 5 else 4
+
+    for label, values in (
+        ("INPUT", step.inputs),
+        ("DATA", step.data_outputs),
+        ("FIG", step.figure_outputs),
+    ):
+        cursor += 24
+        shown_lines: list[str] = []
+        for value in values:
+            shown_lines.extend(wrap_chars("• " + value, char_limit))
+        if len(shown_lines) > max_lines:
+            shown_lines = shown_lines[: max_lines - 1] + ["• 詳見 HTML／Markdown"]
+        if not shown_lines:
+            shown_lines = ["• —"]
+        content_bottom = cursor + (len(shown_lines) - 1) * 20
+        sections.append((label, tuple(shown_lines)))
+        cursor += len(shown_lines) * 20 + 16
+
+    return StepLayout(method_lines, tuple(sections), content_bottom)
+
+
+def build_layout() -> DiagramLayout:
+    lanes: list[LaneLayout] = []
+    y = 865
+    for domain in DOMAINS:
+        step_count = len(domain.steps)
+        card_width, gap, start_x = _card_dimensions(step_count)
+        step_layouts = tuple(_step_layout(step, step_count) for step in domain.steps)
+        card_height = max(340, max(step.content_bottom + 62 for step in step_layouts))
+        lane_height = card_height + 142
+        lanes.append(
+            LaneLayout(
+                domain=domain,
+                y=y,
+                height=lane_height,
+                card_y=y + 112,
+                card_height=card_height,
+                card_width=card_width,
+                gap=gap,
+                start_x=start_x,
+                steps=step_layouts,
+            )
+        )
+        y += lane_height + 35
+
+    mcp_y = y + 5
+    return DiagramLayout(tuple(lanes), mcp_y=mcp_y, height=mcp_y + 425)
 
 
 def build_svg() -> str:
+    layout = build_layout()
     out: list[str] = [
-        f'<svg viewBox="0 0 {WIDTH} {HEIGHT}" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ep-workflow-title ep-workflow-desc">',
+        f'<svg viewBox="0 0 {WIDTH} {layout.height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ep-workflow-title ep-workflow-desc">',
         '<title id="ep-workflow-title">Evo-PRISM 主要分析流程與輸出檔案</title>',
-        '<desc id="ep-workflow-desc">從資料登記與前置檢查進入 Bulk RNA-seq、空間轉錄體、單細胞與 Visium HD MCseg 四條分析泳道，列出十五個主要工具及其資料檔與圖檔輸出，並附六種合成結果示意圖。</desc>',
+        '<desc id="ep-workflow-desc">從資料登記與前置檢查進入 Bulk RNA-seq、空間轉錄體、單細胞與 Visium HD MCseg 四條分析泳道，列出十五個主要工具、資料檔與圖檔輸出，並提供六個 EP 主機真實結果圖檔連結。</desc>',
         "<defs>",
         '<style>:root{--sans:Geist,"PingFang TC","Noto Sans TC",system-ui,sans-serif;--serif:"Instrument Serif","Songti TC",serif;--mono:"Geist Mono",ui-monospace,monospace}</style>',
         f'<marker id="ep-workflow-arrow" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0,0 L12,5 L0,10 Z" fill="{MUTED}"/></marker>',
-        f'<filter id="ep-workflow-shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0f172a" flood-opacity=".08"/></filter>',
+        '<filter id="ep-workflow-shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0f172a" flood-opacity=".08"/></filter>',
         "</defs>",
-        f'<rect width="{WIDTH}" height="{HEIGHT}" fill="{PAPER}"/>',
+        f'<rect width="{WIDTH}" height="{layout.height}" fill="{PAPER}"/>',
     ]
 
     out.append(svg_text(90, 92, ["EVO-PRISM · ANALYSIS MAP"], size=18, color=BLUE, weight=700, family="mono"))
     out.append(svg_text(90, 160, ["主要分析流程與輸出檔案"], size=54, weight=700, family="serif"))
-    out.append(svg_text(90, 205, ["15 個核心分析方法 · 4 條資料泳道 · 6 種結果示意"], size=22, color=MUTED))
-    out.append(f'<rect x="1900" y="78" width="410" height="116" rx="24" fill="#fff7ed" stroke="#fed7aa"/>')
-    out.append(svg_text(1932, 115, ["SCHEMATIC / 示意"], size=17, color=ORANGE, weight=700, family="mono"))
-    out.append(svg_text(1932, 151, ["所有縮圖皆為合成圖形", "不是任何研究樣本結果"], size=17, color=MUTED, line_height=25))
+    out.append(svg_text(90, 205, ["15 個核心分析方法 · 4 條資料泳道 · 6 個真實圖檔連結"], size=22, color=MUTED))
+    out.append('<rect x="1900" y="78" width="410" height="116" rx="24" fill="#fff7ed" stroke="#fed7aa"/>')
+    out.append(svg_text(1932, 115, ["FLOW / 示意流程"], size=17, color=ORANGE, weight=700, family="mono"))
+    out.append(svg_text(1932, 151, ["結果範例為真實圖檔", "點擊卡片開啟原始檔"], size=17, color=MUTED, line_height=25))
 
     # Common entry flow: connectors first, then nodes.
     out.append(f'<rect x="70" y="250" width="2260" height="235" rx="28" fill="{PANEL}" stroke="{BORDER}"/>')
@@ -347,69 +425,66 @@ def build_svg() -> str:
         out.append(svg_text(x + 24, 362, [title], size=22, weight=700))
         out.append(svg_text(x + 24, 402, [sub], size=15, color=MUTED, family="mono"))
 
-    # Synthetic result samples.
-    out.append(svg_text(90, 548, ["結果預覽 sample"], size=30, weight=700, family="serif"))
-    out.append(svg_text(90, 582, ["只示範圖形長相；真正輸出由使用者資料與參數決定。"], size=17, color=MUTED))
+    # Link to real result files without copying research images into Git.
+    out.append(svg_text(90, 548, ["真實結果圖檔（連結）"], size=30, weight=700, family="serif"))
+    out.append(svg_text(90, 582, ["點擊卡片開啟 EP 主機上的原始圖檔；研究影像不會被複製進本文件。"], size=17, color=MUTED))
     sx, sy, sw, sh, gap = 90, 620, 342, 198, 48
-    for index, (label, caption, kind) in enumerate(SAMPLES):
+    for index, sample in enumerate(SAMPLES):
         x = sx + index * (sw + gap)
+        filename_lines = wrap_chars(sample.path.name, 38)[:2]
+        out.append(
+            f'<a href="{esc(sample.href)}" target="_blank" rel="noopener" '
+            f'aria-label="開啟 {esc(sample.label)} 真實圖檔">'
+        )
         out.append(f'<rect x="{x}" y="{sy}" width="{sw}" height="{sh}" rx="22" fill="{PANEL}" stroke="{BORDER}"/>')
-        out.append(svg_sample(kind, x + 10, sy + 10, sw - 20, 128))
-        out.append(svg_text(x + 20, sy + 158, [label], size=14, color=INK, weight=700, family="mono"))
-        out.append(svg_text(x + 20, sy + 183, [caption], size=15, color=MUTED))
+        out.append(f'<rect x="{x+20}" y="{sy+18}" width="112" height="28" rx="14" fill="#dcfce7"/>')
+        out.append(svg_text(x + 34, sy + 38, ["REAL RESULT"], size=12, color=GREEN, weight=700, family="mono"))
+        out.append(svg_text(x + 20, sy + 76, [sample.label], size=17, color=INK, weight=700, family="mono"))
+        out.append(svg_text(x + 20, sy + 104, [sample.caption], size=14, color=MUTED))
+        out.append(svg_text(x + 20, sy + 128, filename_lines, size=11, color=WEAK, family="mono", line_height=15))
+        out.append(f'<rect x="{x+20}" y="{sy+158}" width="{sw-40}" height="26" rx="13" fill="#dbeafe"/>')
+        out.append(svg_text(x + sw // 2, sy + 177, ["開啟真實圖檔  ↗"], size=12, color=BLUE, weight=700, anchor="middle", family="mono"))
+        out.append("</a>")
 
-    lane_y = {"bulk": 865, "spatial": 1330, "single_cell": 1795, "mcseg": 2260}
-    lane_h = {"bulk": 430, "spatial": 430, "single_cell": 430, "mcseg": 535}
-    for domain in DOMAINS:
-        y = lane_y[domain.key]
-        h = lane_h[domain.key]
+    for lane in layout.lanes:
+        domain = lane.domain
+        y, h = lane.y, lane.height
         out.append(f'<rect x="70" y="{y}" width="2260" height="{h}" rx="30" fill="#ffffff" stroke="{BORDER}"/>')
         out.append(f'<rect x="70" y="{y}" width="18" height="{h}" rx="9" fill="{domain.color}"/>')
         out.append(svg_text(110, y + 49, [domain.title], size=30, color=domain.color, weight=700, family="serif"))
         out.append(svg_text(110, y + 82, [domain.subtitle], size=16, color=MUTED))
 
         count = len(domain.steps)
-        if count == 2:
-            card_w, gap, start_x = 920, 210, 175
-        elif count == 4:
-            card_w, gap, start_x = 440, 120, 110
-        else:
-            card_w, gap, start_x = 352, 112, 98
-        card_y = y + 112
-        card_h = h - 142
+        card_w, gap, start_x = lane.card_width, lane.gap, lane.start_x
+        card_y, card_h = lane.card_y, lane.card_height
         center_y = card_y + card_h // 2
         for index in range(count - 1):
             x1 = start_x + index * (card_w + gap) + card_w + 8
             x2 = start_x + (index + 1) * (card_w + gap) - 20
             out.append(f'<line x1="{x1}" y1="{center_y}" x2="{x2}" y2="{center_y}" stroke="{domain.color}" stroke-width="3" marker-end="url(#ep-workflow-arrow)"/>')
-        for index, step in enumerate(domain.steps):
+        for index, (step, step_layout) in enumerate(zip(domain.steps, lane.steps, strict=True)):
             x = start_x + index * (card_w + gap)
+            card_bottom = card_y + card_h
+            content_bottom = card_y + step_layout.content_bottom
+            out.append(
+                f'<g id="ep-workflow-step-{esc(step.tool)}" '
+                f'data-card-bottom="{card_bottom}" data-content-bottom="{content_bottom}">'
+            )
             out.append(f'<rect x="{x}" y="{card_y}" width="{card_w}" height="{card_h}" rx="24" fill="{PANEL}" stroke="{domain.color}" stroke-width="2"/>')
             out.append(svg_text(x + 22, card_y + 37, [step.title], size=19 if count == 5 else 21, weight=700))
-            method_lines = wrap_chars(step.tool, 31 if count == 5 else 38)
-            out.append(svg_text(x + 22, card_y + 68, method_lines, size=14, color=domain.color, weight=700, family="mono", line_height=19))
-            content_y = card_y + 104 + (len(method_lines) - 1) * 19
-            sections = [
-                ("INPUT", step.inputs),
-                ("DATA", step.data_outputs),
-                ("FIG", step.figure_outputs),
-            ]
-            char_limit = 31 if count == 5 else (39 if count == 4 else 72)
-            for label, values in sections:
+            out.append(svg_text(x + 22, card_y + 68, list(step_layout.method_lines), size=14, color=domain.color, weight=700, family="mono", line_height=19))
+            content_y = card_y + 104 + (len(step_layout.method_lines) - 1) * 19
+            for label, shown_lines in step_layout.sections:
                 out.append(svg_text(x + 22, content_y, [label], size=12, color=WEAK, weight=700, family="mono"))
                 content_y += 24
-                shown_lines: list[str] = []
-                for value in values:
-                    shown_lines.extend(wrap_chars("• " + value, char_limit))
-                max_lines = 3 if count == 5 else 4
-                if len(shown_lines) > max_lines:
-                    shown_lines = shown_lines[: max_lines - 1] + ["• 詳見 HTML／Markdown"]
-                out.append(svg_text(x + 22, content_y, shown_lines, size=14 if count == 5 else 15, color=MUTED, line_height=20))
-                content_y += max(1, len(shown_lines)) * 20 + 16
+                out.append(svg_text(x + 22, content_y, list(shown_lines), size=14 if count == 5 else 15, color=MUTED, line_height=20))
+                content_y += len(shown_lines) * 20 + 16
             out.append(svg_text(x + 22, card_y + card_h - 18, ["NEXT  " + step.next_step], size=12, color=domain.color, weight=700, family="mono"))
+            out.append("</g>")
 
-    out.append(f'<rect x="70" y="2835" width="2260" height="340" rx="30" fill="{INK}"/>')
-    out.append(svg_text(110, 2890, ["如何透過 MCP 對話取圖"], size=31, color="#ffffff", weight=700, family="serif"))
+    mcp_y = layout.mcp_y
+    out.append(f'<rect x="70" y="{mcp_y}" width="2260" height="340" rx="30" fill="{INK}"/>')
+    out.append(svg_text(110, mcp_y + 55, ["如何透過 MCP 對話取圖"], size=31, color="#ffffff", weight=700, family="serif"))
     mcp_steps = [
         ("1", "使用者提問", "「顯示 EP 分析流程」"),
         ("2", "取回指南", "bio_get_analysis_workflow"),
@@ -419,16 +494,16 @@ def build_svg() -> str:
     for index in range(len(mcp_steps) - 1):
         x1 = 140 + index * 540 + 425
         x2 = 140 + (index + 1) * 540 - 32
-        out.append(f'<line x1="{x1}" y1="3025" x2="{x2}" y2="3025" stroke="#94a3b8" stroke-width="3" marker-end="url(#ep-workflow-arrow)"/>')
+        out.append(f'<line x1="{x1}" y1="{mcp_y+190}" x2="{x2}" y2="{mcp_y+190}" stroke="#94a3b8" stroke-width="3" marker-end="url(#ep-workflow-arrow)"/>')
     for index, (number, title, detail) in enumerate(mcp_steps):
         x = 140 + index * 540
-        out.append(f'<circle cx="{x+28}" cy="2974" r="28" fill="{ORANGE}"/>')
-        out.append(svg_text(x + 28, 2982, [number], size=19, color="#ffffff", weight=700, anchor="middle", family="mono"))
-        out.append(svg_text(x + 72, 2975, [title], size=20, color="#ffffff", weight=700))
-        out.append(f'<rect x="{x}" y="3005" width="425" height="84" rx="18" fill="#1e293b" stroke="#334155"/>')
-        out.append(svg_text(x + 22, 3056, [detail], size=16, color="#e2e8f0", family="mono"))
-    out.append(svg_text(110, 3142, ["圖例：INPUT＝輸入 · DATA＝資料檔 · FIG＝圖檔 · —＝目前不直接產圖"], size=16, color="#cbd5e1"))
-    out.append(svg_text(2290, 3202, ["Generated from EP source definitions · 2026-09-10"], size=14, color="#94a3b8", anchor="end", family="mono"))
+        out.append(f'<circle cx="{x+28}" cy="{mcp_y+139}" r="28" fill="{ORANGE}"/>')
+        out.append(svg_text(x + 28, mcp_y + 147, [number], size=19, color="#ffffff", weight=700, anchor="middle", family="mono"))
+        out.append(svg_text(x + 72, mcp_y + 140, [title], size=20, color="#ffffff", weight=700))
+        out.append(f'<rect x="{x}" y="{mcp_y+170}" width="425" height="84" rx="18" fill="#1e293b" stroke="#334155"/>')
+        out.append(svg_text(x + 22, mcp_y + 221, [detail], size=16, color="#e2e8f0", family="mono"))
+    out.append(svg_text(110, mcp_y + 307, ["圖例：INPUT＝輸入 · DATA＝資料檔 · FIG＝圖檔 · —＝目前不直接產圖"], size=16, color="#cbd5e1"))
+    out.append(svg_text(2290, mcp_y + 367, ["Generated from EP source definitions · 2026-09-10"], size=14, color="#94a3b8", anchor="end", family="mono"))
     out.append("</svg>")
     return "".join(out)
 
@@ -459,6 +534,12 @@ def build_html(svg: str) -> str:
             '<th>資料檔輸出</th><th>圖檔輸出</th><th>後續</th></tr></thead><tbody>'
             f'{table_rows(domain)}</tbody></table></div></section>'
         )
+    sample_links = "".join(
+        f'<li><a href="{esc(sample.href)}" target="_blank" rel="noopener">'
+        f'<strong>{esc(sample.label)}</strong><span>{esc(sample.caption)}</span>'
+        f'<code>{esc(sample.path.name)}</code></a></li>'
+        for sample in SAMPLES
+    )
     return f'''<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -471,9 +552,14 @@ def build_html(svg: str) -> str:
     :root{{--ink:#0f172a;--muted:#475569;--line:#dbe3ee;--paper:#fff;--panel:#f8fafc;--blue:#2e5aa8;--orange:#eb6c36;--sans:Geist,"PingFang TC","Noto Sans TC",system-ui,sans-serif;--serif:"Instrument Serif","Songti TC",serif;--mono:"Geist Mono",ui-monospace,monospace}}
     body{{margin:0;background:#f1f5f9;color:var(--ink);font-family:var(--sans);line-height:1.55}}
     main{{max-width:1540px;margin:0 auto;padding:32px 24px 80px}}
-    .hero{{background:#fff;border:1px solid var(--line);border-radius:26px;padding:24px;box-shadow:0 18px 50px rgba(15,23,42,.08);overflow:auto}}
+    .hero{{background:#fff;border:1px solid var(--line);border-radius:26px;padding:24px;box-shadow:0 18px 50px rgba(15,23,42,.08);overflow:auto;-webkit-overflow-scrolling:touch}}
     .hero svg{{display:block;width:100%;min-width:1120px;height:auto}}
     .notice{{margin:24px 0 46px;padding:18px 22px;border-left:6px solid var(--orange);border-radius:12px;background:#fff7ed;color:#7c2d12}}
+    .real-links ul{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;list-style:none;margin:20px 0 0;padding:0}}
+    .real-links a{{display:block;height:100%;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);text-decoration:none}}
+    .real-links a:hover,.real-links a:focus-visible{{border-color:var(--blue);outline:3px solid #dbeafe}}
+    .real-links span,.real-links code{{display:block;margin-top:6px}}
+    .real-links span{{color:var(--muted)}}
     section{{margin-top:32px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:28px}}
     .section-head{{display:grid;grid-template-columns:150px 280px 1fr;align-items:baseline;gap:18px;margin-bottom:22px}}
     .section-head h2{{font-family:var(--serif);font-size:32px;margin:0}}
@@ -489,13 +575,14 @@ def build_html(svg: str) -> str:
     tbody th span{{display:block;font-size:16px;margin-bottom:7px}}
     code{{display:block;color:var(--blue);font-family:var(--mono);font-size:12px;white-space:normal}}
     footer{{padding:34px 8px 0;color:var(--muted);font-size:13px}}
-    @media(max-width:800px){{main{{padding:12px 10px 50px}}.hero,section{{border-radius:14px;padding:14px}}.section-head{{display:block}}.section-head h2{{margin:4px 0}}}}
+    @media(max-width:800px){{main{{padding:12px 10px 50px}}.hero,section{{border-radius:14px;padding:14px}}.hero::before{{content:"左右滑動查看完整流程 →";display:block;margin:0 0 10px;color:var(--muted);font-size:13px}}.section-head{{display:block}}.section-head h2{{margin:4px 0}}.real-links ul{{grid-template-columns:1fr}}}}
   </style>
 </head>
 <body>
 <main>
   <div class="hero">{svg}</div>
-  <div class="notice"><strong>SCHEMATIC / 示意：</strong>圖中的 PCA、火山圖、熱圖、UMAP、空間 QC 與 segmentation overlay 都是合成圖形，只用來說明結果長相，不包含任何研究樣本或生物結論。</div>
+  <div class="notice"><strong>SCHEMATIC / 示意：</strong>流程關係是導覽示意；結果範例改為 EP 主機上的真實圖檔連結，沒有把研究影像複製進 Git。連結只適用於可存取該主機與檔案的使用者。</div>
+  <section class="real-links" aria-labelledby="real-links-title"><div class="section-head"><p class="eyebrow" style="color:var(--blue)">REAL FILES</p><h2 id="real-links-title">真實圖檔連結</h2><p>開啟 PCA、Volcano、Heatmap、UMAP、Spatial QC 與 Segmentation overlay 原始結果。</p></div><ul>{sample_links}</ul></section>
   {''.join(sections)}
   <footer>來源：Evo-PRISM 現行分析模組與 MCP tool catalog。帶時間戳記的檔名以 <code>&lt;ts&gt;</code> 表示；實際路徑依部署設定與 sample_id 而定。</footer>
 </main>
@@ -508,9 +595,18 @@ def build_markdown() -> str:
     lines = [
         "# Evo-PRISM 主要分析流程與輸出檔案",
         "",
-        "> **SCHEMATIC / 示意**：流程圖中的 PCA、火山圖、熱圖、UMAP、空間 QC 與 segmentation overlay 都是合成示意，不是真實研究結果。",
+        "> **SCHEMATIC / 示意**：流程關係是導覽示意；下列結果範例是 EP 主機上的真實圖檔連結，研究影像本身未複製進 Git。",
         "",
         "![Evo-PRISM 主要分析流程](../images/analysis_workflows.png)",
+        "",
+        "## 真實圖檔連結",
+        "",
+        "這些本機連結只適用於可存取 EP 主機與原始結果目錄的使用者。",
+        "",
+        *(
+            f"- [{sample.label} — {sample.caption}]({sample.href})"
+            for sample in SAMPLES
+        ),
         "",
         "## 共通流程",
         "",
@@ -579,63 +675,48 @@ def draw_wrapped(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, *,
     return y
 
 
-def draw_sample_png(draw: ImageDraw.ImageDraw, kind: str, box: tuple[int, int, int, int]) -> None:
+def draw_result_link_card(
+    draw: ImageDraw.ImageDraw,
+    sample: ResultSample,
+    box: tuple[int, int, int, int],
+    *,
+    label_font: ImageFont.ImageFont,
+    text_font: ImageFont.ImageFont,
+    mono_font: ImageFont.ImageFont,
+) -> None:
     x, y, w, h = box
-    rng = random.Random(kind)
-    draw.rounded_rectangle((x, y, x + w, y + h), radius=14, fill="#ffffff")
-    if kind in {"pca", "volcano", "umap"}:
-        draw.line((x + 28, y + h - 22, x + w - 18, y + h - 22), fill="#cbd5e1", width=2)
-        draw.line((x + 28, y + 14, x + 28, y + h - 22), fill="#cbd5e1", width=2)
-    if kind == "pca":
-        for cx, cy, color in ((x + 92, y + 58, BLUE), (x + 205, y + 91, ORANGE)):
-            for _ in range(13):
-                px, py = cx + rng.randint(-38, 38), cy + rng.randint(-28, 28)
-                draw.ellipse((px - 4, py - 4, px + 4, py + 4), fill=color)
-    elif kind == "volcano":
-        draw.line((x + w // 2, y + 14, x + w // 2, y + h - 22), fill="#cbd5e1", width=2)
-        for _ in range(48):
-            dx = rng.gauss(0, 48)
-            py = y + h - 26 - min(abs(dx) * 0.7 + rng.randint(0, 40), h - 44)
-            color = ORANGE if abs(dx) > 55 else "#94a3b8"
-            px = x + w / 2 + dx
-            draw.ellipse((px - 3, py - 3, px + 3, py + 3), fill=color)
-    elif kind == "heatmap":
-        palette = ["#dbeafe", "#93c5fd", BLUE, "#fed7aa", "#fb923c", ORANGE]
-        for row in range(6):
-            for col in range(9):
-                color = palette[(row * 2 + col + rng.randint(0, 2)) % len(palette)]
-                cx, cy = x + 30 + col * 28, y + 18 + row * 18
-                draw.rounded_rectangle((cx, cy, cx + 24, cy + 15), radius=2, fill=color)
-    elif kind == "umap":
-        for cx, cy, color in ((x + 82, y + 78, PURPLE), (x + 175, y + 50, CYAN), (x + 232, y + 100, ORANGE)):
-            for _ in range(18):
-                px, py = cx + rng.randint(-31, 31), cy + rng.randint(-22, 22)
-                draw.ellipse((px - 3, py - 3, px + 3, py + 3), fill=color)
-    elif kind == "spatial":
-        draw.ellipse((x + 32, y + 14, x + w - 20, y + h - 12), fill="#f1f5f9", outline="#cbd5e1", width=2)
-        for _ in range(55):
-            px, py = x + rng.randint(52, w - 38), y + rng.randint(28, h - 26)
-            color = ORANGE if px > x + w * .58 else CYAN
-            draw.ellipse((px - 3, py - 3, px + 3, py + 3), fill=color)
-    elif kind == "segmentation":
-        draw.rounded_rectangle((x + 15, y + 12, x + w - 15, y + h - 15), radius=14, fill="#f6d6cf")
-        colors = [BLUE, CYAN, ORANGE, PURPLE]
-        for index in range(24):
-            cx = x + 40 + (index % 8) * 31 + rng.randint(-4, 4)
-            cy = y + 30 + (index // 8) * 37 + rng.randint(-5, 5)
-            draw.ellipse((cx - 11, cy - 8, cx + 11, cy + 8), outline=colors[index % 4], width=3)
+    draw.rounded_rectangle((x, y, x + w, y + h), radius=22, fill=PANEL, outline=BORDER, width=2)
+    draw.rounded_rectangle((x + 20, y + 18, x + 132, y + 46), radius=14, fill="#dcfce7")
+    draw.text((x + 33, y + 24), "REAL RESULT", font=mono_font, fill=GREEN)
+    draw.text((x + 20, y + 56), sample.label, font=label_font, fill=INK)
+    draw.text((x + 20, y + 87), sample.caption, font=text_font, fill=MUTED)
+    draw_wrapped(
+        draw,
+        (x + 20, y + 112),
+        sample.path.name,
+        font_obj=mono_font,
+        fill=WEAK,
+        max_width=w - 40,
+        line_gap=1,
+        max_lines=2,
+    )
+    draw.rounded_rectangle((x + 20, y + 158, x + w - 20, y + 184), radius=13, fill="#dbeafe")
+    button = "HTML 開啟真實圖檔"
+    bbox = draw.textbbox((0, 0), button, font=mono_font)
+    draw.text((x + w / 2 - (bbox[2] - bbox[0]) / 2, y + 163), button, font=mono_font, fill=BLUE)
 
 
 def build_png() -> None:
-    image = Image.new("RGB", (WIDTH, HEIGHT), PAPER)
+    layout = build_layout()
+    image = Image.new("RGB", (WIDTH, layout.height), PAPER)
     draw = ImageDraw.Draw(image)
     f12, f14, f16, f18, f20, f22, f28, f32, f48 = [font(n) for n in (12, 14, 16, 18, 20, 22, 28, 32, 48)]
     draw.text((90, 68), "EVO-PRISM · ANALYSIS MAP", font=f18, fill=BLUE)
     draw.text((90, 112), "主要分析流程與輸出檔案", font=f48, fill=INK)
-    draw.text((90, 180), "15 個核心分析方法 · 4 條資料泳道 · 6 種結果示意", font=f22, fill=MUTED)
+    draw.text((90, 180), "15 個核心分析方法 · 4 條資料泳道 · 6 個真實圖檔連結", font=f22, fill=MUTED)
     draw.rounded_rectangle((1900, 78, 2310, 194), radius=24, fill="#fff7ed", outline="#fed7aa", width=2)
-    draw.text((1932, 104), "SCHEMATIC / 示意", font=f16, fill=ORANGE)
-    draw.text((1932, 140), "所有縮圖皆為合成圖形\n不是任何研究樣本結果", font=f16, fill=MUTED, spacing=6)
+    draw.text((1932, 104), "FLOW / 示意流程", font=f16, fill=ORANGE)
+    draw.text((1932, 140), "結果範例為真實圖檔\n點擊 HTML 卡片開啟", font=f16, fill=MUTED, spacing=6)
 
     draw.rounded_rectangle((70, 250, 2330, 485), radius=28, fill=PANEL, outline=BORDER, width=2)
     draw.text((100, 270), "共通入口", font=f16, fill=WEAK)
@@ -655,55 +736,65 @@ def build_png() -> None:
         draw.text((x + 24, 342), title, font=f22, fill=INK)
         draw_wrapped(draw, (x + 24, 389), sub, font_obj=f14, fill=MUTED, max_width=282, max_lines=2)
 
-    draw.text((90, 520), "結果預覽 sample", font=f28, fill=INK)
-    draw.text((90, 565), "只示範圖形長相；真正輸出由使用者資料與參數決定。", font=f16, fill=MUTED)
+    draw.text((90, 520), "真實結果圖檔（連結）", font=f28, fill=INK)
+    draw.text((90, 565), "HTML 卡片會開啟 EP 主機原始圖檔；研究影像未複製進本文件。", font=f16, fill=MUTED)
     sx, sy, sw, sh, gap = 90, 620, 342, 198, 48
-    for index, (label, caption, kind) in enumerate(SAMPLES):
+    for index, sample in enumerate(SAMPLES):
         x = sx + index * (sw + gap)
-        draw.rounded_rectangle((x, sy, x + sw, sy + sh), radius=22, fill=PANEL, outline=BORDER, width=2)
-        draw_sample_png(draw, kind, (x + 10, sy + 10, sw - 20, 128))
-        draw.text((x + 20, sy + 150), label, font=f14, fill=INK)
-        draw.text((x + 20, sy + 175), caption, font=f14, fill=MUTED)
+        draw_result_link_card(
+            draw,
+            sample,
+            (x, sy, sw, sh),
+            label_font=f16,
+            text_font=f14,
+            mono_font=f12,
+        )
 
-    lane_y = {"bulk": 865, "spatial": 1330, "single_cell": 1795, "mcseg": 2260}
-    lane_h = {"bulk": 430, "spatial": 430, "single_cell": 430, "mcseg": 535}
-    for domain in DOMAINS:
-        y, h = lane_y[domain.key], lane_h[domain.key]
+    for lane in layout.lanes:
+        domain = lane.domain
+        y, h = lane.y, lane.height
         draw.rounded_rectangle((70, y, 2330, y + h), radius=30, fill="#ffffff", outline=BORDER, width=2)
         draw.rounded_rectangle((70, y, 88, y + h), radius=9, fill=domain.color)
         draw.text((110, y + 18), domain.title, font=f28, fill=domain.color)
         draw.text((110, y + 62), domain.subtitle, font=f16, fill=MUTED)
         count = len(domain.steps)
-        if count == 2:
-            card_w, gap, start_x = 920, 210, 175
-        elif count == 4:
-            card_w, gap, start_x = 440, 120, 110
-        else:
-            card_w, gap, start_x = 352, 112, 98
-        card_y, card_h = y + 112, h - 142
+        card_w, gap, start_x = lane.card_width, lane.gap, lane.start_x
+        card_y, card_h = lane.card_y, lane.card_height
         center_y = card_y + card_h // 2
         for index in range(count - 1):
             x1 = start_x + index * (card_w + gap) + card_w + 8
             x2 = start_x + (index + 1) * (card_w + gap) - 20
             draw.line((x1, center_y, x2, center_y), fill=domain.color, width=3)
             draw.polygon(((x2, center_y), (x2 - 12, center_y - 7), (x2 - 12, center_y + 7)), fill=domain.color)
-        for index, step in enumerate(domain.steps):
+        for index, (step, step_layout) in enumerate(zip(domain.steps, lane.steps, strict=True)):
             x = start_x + index * (card_w + gap)
             draw.rounded_rectangle((x, card_y, x + card_w, card_y + card_h), radius=24, fill=PANEL, outline=domain.color, width=2)
             title_font = f18 if count == 5 else f20
             draw_wrapped(draw, (x + 20, card_y + 18), step.title, font_obj=title_font, fill=INK, max_width=card_w - 40, max_lines=2)
-            method_y = card_y + 62
-            method_y = draw_wrapped(draw, (x + 20, method_y), step.tool, font_obj=f14, fill=domain.color, max_width=card_w - 40, max_lines=2) + 8
-            cursor = method_y
-            for label, values in (("INPUT", step.inputs), ("DATA", step.data_outputs), ("FIG", step.figure_outputs)):
+            draw.multiline_text(
+                (x + 20, card_y + 62),
+                "\n".join(step_layout.method_lines),
+                font=f14,
+                fill=domain.color,
+                spacing=3,
+            )
+            cursor = card_y + 96 + (len(step_layout.method_lines) - 1) * 19
+            for label, shown_lines in step_layout.sections:
                 draw.text((x + 20, cursor), label, font=f12, fill=WEAK)
                 cursor += 22
-                value_text = " · ".join(values)
-                cursor = draw_wrapped(draw, (x + 20, cursor), value_text, font_obj=f14, fill=MUTED, max_width=card_w - 40, line_gap=3, max_lines=3) + 9
+                draw.multiline_text(
+                    (x + 20, cursor),
+                    "\n".join(shown_lines),
+                    font=f14,
+                    fill=MUTED,
+                    spacing=4,
+                )
+                cursor += len(shown_lines) * 20 + 16
             draw.text((x + 20, card_y + card_h - 24), "NEXT  " + step.next_step, font=f12, fill=domain.color)
 
-    draw.rounded_rectangle((70, 2835, 2330, 3175), radius=30, fill=INK)
-    draw.text((110, 2860), "如何透過 MCP 對話取圖", font=f32, fill="#ffffff")
+    mcp_y = layout.mcp_y
+    draw.rounded_rectangle((70, mcp_y, 2330, mcp_y + 340), radius=30, fill=INK)
+    draw.text((110, mcp_y + 25), "如何透過 MCP 對話取圖", font=f32, fill="#ffffff")
     mcp_steps = [
         ("1", "使用者提問", "「顯示 EP 分析流程」"),
         ("2", "取回指南", "bio_get_analysis_workflow"),
@@ -712,18 +803,18 @@ def build_png() -> None:
     ]
     for index in range(3):
         x1, x2 = 140 + index * 540 + 425, 140 + (index + 1) * 540 - 32
-        draw.line((x1, 3025, x2, 3025), fill="#94a3b8", width=3)
-        draw.polygon(((x2, 3025), (x2 - 12, 3018), (x2 - 12, 3032)), fill="#94a3b8")
+        draw.line((x1, mcp_y + 190, x2, mcp_y + 190), fill="#94a3b8", width=3)
+        draw.polygon(((x2, mcp_y + 190), (x2 - 12, mcp_y + 183), (x2 - 12, mcp_y + 197)), fill="#94a3b8")
     for index, (number, title, detail) in enumerate(mcp_steps):
         x = 140 + index * 540
-        draw.ellipse((x, 2946, x + 56, 3002), fill=ORANGE)
+        draw.ellipse((x, mcp_y + 111, x + 56, mcp_y + 167), fill=ORANGE)
         bbox = draw.textbbox((0, 0), number, font=f18)
-        draw.text((x + 28 - (bbox[2] - bbox[0]) / 2, 2961), number, font=f18, fill="#ffffff")
-        draw.text((x + 72, 2955), title, font=f20, fill="#ffffff")
-        draw.rounded_rectangle((x, 3005, x + 425, 3089), radius=18, fill="#1e293b", outline="#334155", width=2)
-        draw_wrapped(draw, (x + 20, 3030), detail, font_obj=f16, fill="#e2e8f0", max_width=385, max_lines=2)
-    draw.text((110, 3120), "圖例：INPUT＝輸入 · DATA＝資料檔 · FIG＝圖檔 · —＝目前不直接產圖", font=f16, fill="#cbd5e1")
-    draw.text((1680, 3208), "Generated from EP source definitions · 2026-09-10", font=f14, fill="#94a3b8")
+        draw.text((x + 28 - (bbox[2] - bbox[0]) / 2, mcp_y + 126), number, font=f18, fill="#ffffff")
+        draw.text((x + 72, mcp_y + 120), title, font=f20, fill="#ffffff")
+        draw.rounded_rectangle((x, mcp_y + 170, x + 425, mcp_y + 254), radius=18, fill="#1e293b", outline="#334155", width=2)
+        draw_wrapped(draw, (x + 20, mcp_y + 195), detail, font_obj=f16, fill="#e2e8f0", max_width=385, max_lines=2)
+    draw.text((110, mcp_y + 285), "圖例：INPUT＝輸入 · DATA＝資料檔 · FIG＝圖檔 · —＝目前不直接產圖", font=f16, fill="#cbd5e1")
+    draw.text((1680, mcp_y + 373), "Generated from EP source definitions · 2026-09-10", font=f14, fill="#94a3b8")
     image.save(PNG_PATH, format="PNG", optimize=True)
 
 

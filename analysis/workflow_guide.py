@@ -52,10 +52,11 @@ def _markdown_section(markdown: str, domain: str) -> str:
 
 @register_tool_on_import(
     tool_name="bio_get_analysis_workflow",
-    version="1.0.0",
+    version="1.0.1",
     description=(
         "取得 EP 主要分析流程圖與輸出檔案指南。支援 overview、bulk、spatial、"
-        "single_cell、mcseg；回傳指定領域說明與合成示意 PNG。唯讀且不存取研究資料。"
+        "single_cell、mcseg；回傳指定領域說明、流程 PNG 與真實結果圖檔連結。"
+        "唯讀且不複製研究圖檔。"
     ),
 )
 def get_analysis_workflow(args: dict) -> str:
@@ -73,7 +74,7 @@ def get_analysis_workflow(args: dict) -> str:
     return (
         "# Evo-PRISM 分析流程指南\n\n"
         f"domain: {domain}\n"
-        "SCHEMATIC / 示意：圖中的結果縮圖為合成圖形，不是真實研究結果。\n\n"
+        "SCHEMATIC / 示意：流程關係為導覽示意；結果範例使用 EP 主機上的真實圖檔連結，研究影像本身不會複製進指南。\n\n"
         "內容包含：分析順序、輸入條件、資料檔、圖檔與建議後續步驟。\n\n"
         "## 可用檔案\n\n"
         f"- HTML：`{HTML_PATH}`\n"

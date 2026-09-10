@@ -1,8 +1,19 @@
 # Evo-PRISM 主要分析流程與輸出檔案
 
-> **SCHEMATIC / 示意**：流程圖中的 PCA、火山圖、熱圖、UMAP、空間 QC 與 segmentation overlay 都是合成示意，不是真實研究結果。
+> **SCHEMATIC / 示意**：流程關係是導覽示意；下列結果範例是 EP 主機上的真實圖檔連結，研究影像本身未複製進 Git。
 
 ![Evo-PRISM 主要分析流程](../images/analysis_workflows.png)
+
+## 真實圖檔連結
+
+這些本機連結只適用於可存取 EP 主機與原始結果目錄的使用者。
+
+- [PCA — Bulk EDA 樣本分群](/Volumes/KINGSTON/Evo_PRISM/results/Kallisto_v1/bulk_eda/pca_Kallisto_v1_20260904_073140.png)
+- [VOLCANO — Bulk DEG 火山圖](/Volumes/KINGSTON/Evo_PRISM/results/Kallisto_v1/bulk_deg/Volcano_pw120hr_vs_ctrl_20260603_004126.png)
+- [HEATMAP — Bulk 基因群聚熱圖](/Volumes/KINGSTON/Evo_PRISM/results/Kallisto_v1/bulk_heatmap/Heatmap_Top50_Variable_Genes_20260603_004417.png)
+- [UMAP — MCseg 全片單細胞分群](/Volumes/KINGSTON/Evo_PRISM/results/mcseg/dpcp01_vh_v114_02_hd_r004/fullslide/clustering/umap_leiden_20260721_102206.png)
+- [SPATIAL QC — 真實空間訊號分布](/Volumes/KINGSTON/Evo_PRISM/results/external_import/kangyu_visiumhd_sds_lipolysis/figures/qc_spatial.png)
+- [SEGMENTATION — Human CRC ROI 細胞邊界](/Volumes/KINGSTON/Evo_PRISM/results/mcseg/Human_CRC/roi/crc_roi1/mask_he_overlay.png)
 
 ## 共通流程
 
