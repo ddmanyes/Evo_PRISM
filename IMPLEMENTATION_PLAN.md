@@ -323,7 +323,7 @@ Evo_PRISM/
   - 相關檔案：上述所有新增與修改檔案、`docs/logs/execution_trace.md`
   - 提交：`test(workflow): verify diagram rendering and MCP retrieval`
 
-- [ ] 任務 35：同步部署副本並執行正式服務 smoke test
+- [x] 任務 35：同步部署副本並執行正式服務 smoke test（completed 2026-09-10）
   - 預期行為：只同步本功能的已提交檔案至 `/Users/lab_center/evo_prism_build`；服務重啟後 `tools/list` 可見新方法，`bio_get_analysis_workflow` 與 `bio_get_figure` 實際可用。
   - 驗證指令：tracked-file hash 比對、MCP `tools/list`、總覽與單一領域取圖 smoke test。
   - 相關檔案：部署副本中的對應檔案、`docs/logs/execution_trace.md`
