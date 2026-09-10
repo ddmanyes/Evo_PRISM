@@ -297,7 +297,7 @@ Evo_PRISM/
 
 ### 任務列表
 
-- [ ] 任務 31：以失敗測試定義流程指南與 MCP 契約
+- [x] 任務 31：以失敗測試定義流程指南與 MCP 契約（completed 2026-09-10）
   - 預期行為：五個 domain 均可查詢；非法 domain 被拒絕；回傳包含輸出檔說明、示意聲明與 inline PNG；catalog 工具數更新為 53，兩端 dispatch 保持一致。
   - 驗證指令：`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py -q`
   - 相關檔案：`tests/test_workflow_guide.py`、`tests/test_tool_catalog_parity.py`
