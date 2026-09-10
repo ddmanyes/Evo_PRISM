@@ -50,7 +50,8 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
             "取得 Evo-PRISM 主要分析流程圖與輸出檔案指南。"
             "使用者詢問 EP 能做哪些分析、分析順序、會產生哪些資料檔／圖檔，"
             "或要求顯示流程圖時使用。domain 可選 overview、bulk、spatial、"
-            "single_cell、mcseg；回傳文字說明、可由 bio_get_figure 取回的流程圖片，"
+            "single_cell、mcseg；method 可選 15 個核心分析工具並回傳該方法的獨立流程圖。"
+            "指定 method 時優先於 domain。回傳文字說明、可由 bio_get_figure 取回的流程圖片，"
             "以及 EP 主機真實結果圖檔連結。唯讀、不需 embedding server；"
             "指南只連結、不複製研究圖檔。"
         ),
@@ -62,7 +63,28 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                     "enum": ["overview", "bulk", "spatial", "single_cell", "mcseg"],
                     "default": "overview",
                     "description": "要查看的流程領域；省略時回傳總覽。",
-                }
+                },
+                "method": {
+                    "type": "string",
+                    "enum": [
+                        "bio_run_bulk_eda",
+                        "bio_run_deg",
+                        "bio_run_heatmaps",
+                        "bio_run_enrichment",
+                        "bio_run_spatial_eda",
+                        "bio_compute_spatial_nn_distance",
+                        "bio_run_sc_clustering",
+                        "bio_get_marker_genes",
+                        "bio_run_celltypist",
+                        "bio_run_geneset_score",
+                        "bio_run_mcseg_roi",
+                        "bio_run_mcseg_fullslide",
+                        "bio_run_mcseg_merge",
+                        "bio_run_mcseg_qc",
+                        "bio_compute_crc_metrics",
+                    ],
+                    "description": "要查看的個別分析方法；指定時優先於 domain。",
+                },
             },
             "required": [],
         },

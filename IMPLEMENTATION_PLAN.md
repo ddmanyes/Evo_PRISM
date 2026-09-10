@@ -400,7 +400,7 @@ Evo_PRISM/
   - 相關檔案：`scripts/generate_analysis_workflow_guide.py`、`docs/analysis_methods/`、`docs/images/analysis_methods/`、既有總覽與 Markdown 指南。
   - 提交：`docs(diagrams): add per-method EP workflow set`
 
-- [ ] 任務 39：擴充 MCP method 提取且維持 domain 相容（Green）
+- [x] 任務 39：擴充 MCP method 提取且維持 domain 相容（Green，completed 2026-09-10）
   - 預期行為：`bio_get_analysis_workflow(method=<tool_name>)` 回傳指定方法說明、版本化檔案路徑與 inline PNG；MCP 邊界仍轉成 owner-scoped `figure_id`，並可由 `bio_get_figure` 讀回。
   - 驗證指令：`uv run pytest tests/test_workflow_guide.py tests/test_tool_catalog_parity.py tests/test_auth_rbac.py -q`、Ruff。
   - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`。
