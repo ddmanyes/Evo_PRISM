@@ -406,7 +406,7 @@ Evo_PRISM/
   - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`。
   - 提交：`feat(mcp): retrieve individual method workflows`
 
-- [ ] 任務 40：重構、完整視覺 QA 與部署 smoke（Refactor）
+- [x] 任務 40：重構、完整視覺 QA 與部署 smoke（Refactor，completed 2026-09-10）
   - 預期行為：共用布局無重複漂移；15 張 PNG 皆無溢出、遮掩或大面積空白；來源 checkout、正式 checkout 與 build mirror 資產一致；僅在沒有執行中工作時重建 Web，worker 不重啟；live MCP 能列出並提取方法圖。
   - 驗證指令：相關測試、Ruff、15 個 self-check、SVG XML、PNG 視覺抽查、`git diff --check`、容器 health 與 live MCP smoke。
   - 相關檔案：上述所有檔案、`docs/logs/execution_trace.md`。
