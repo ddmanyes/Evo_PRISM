@@ -273,6 +273,8 @@ Evo_PRISM/
 ├── server/
 │   ├── bio_memory_server.py
 │   └── tool_catalog.py
+├── scripts/
+│   └── generate_analysis_workflow_guide.py
 ├── docs/
 │   ├── analysis_workflows.html
 │   ├── guides/
@@ -303,7 +305,7 @@ Evo_PRISM/
   - 相關檔案：`tests/test_workflow_guide.py`、`tests/test_tool_catalog_parity.py`
   - 提交：`test(workflow): define MCP diagram retrieval contract`
 
-- [ ] 任務 32：產生流程圖、結果示意縮圖與文字指南
+- [x] 任務 32：產生流程圖、結果示意縮圖與文字指南（completed 2026-09-10）
   - 預期行為：HTML／SVG／PNG／Markdown 完整涵蓋四個領域；檔名以現有分析程式實作為準；HTML 通過 Diagram Design 自檢，PNG 以有效內容邊界緊湊裁切。
   - 驗證指令：`python3 /Users/lab_center/.agents/skills/diagram-design/scripts/self_check.py docs/analysis_workflows.html`，並實際渲染檢視 PNG。
   - 相關檔案：`docs/analysis_workflows.html`、`docs/images/analysis_workflows.svg`、`docs/images/analysis_workflows.png`、`docs/guides/ANALYSIS_WORKFLOW_GUIDE.md`
