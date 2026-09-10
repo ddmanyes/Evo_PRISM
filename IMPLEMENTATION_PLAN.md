@@ -420,3 +420,76 @@ Evo_PRISM/
 4. `bio_get_analysis_workflow` 同時支援既有 domain 與新的 method 查詢；非法值有清楚錯誤訊息。
 5. MCP 回傳圖片經 `figure_id` 提取，文字 context 不暴露 base64；方法圖為 viewer-safe、唯讀、不寫研究資料。
 6. 正式部署不覆蓋既有使用者 dirty files，不重啟 CPU／GPU worker，並保留可回滾的 Web image。
+
+## 15 個核心分析方法英文流程圖（2026-09-10 已批准）
+
+### 目標摘要
+
+為既有 15 個繁體中文方法流程圖建立內容一一對應的英文版本，保留同一工具名稱、流程階段、輸入／產出檔名、品質警示與真實結果連結。英文資產可獨立閱讀並透過 MCP 依 `method + language` 提取；既有繁體中文路徑與預設行為不變。
+
+### 文件架構圖
+
+```text
+Evo_PRISM/
+├── IMPLEMENTATION_PLAN.md
+├── analysis/workflow_guide.py
+├── server/tool_catalog.py
+├── scripts/method_workflow_diagrams.py
+├── docs/analysis_methods/<tool_name>/
+│   ├── index.html
+│   └── index.en.html
+└── docs/images/analysis_methods/
+    ├── <tool_name>.svg
+    ├── <tool_name>.png
+    ├── <tool_name>.en.svg
+    └── <tool_name>.en.png
+```
+
+### 已批准的設計決策
+
+1. 英文版只翻譯讀者文字；MCP tool name、資料欄位、檔名 pattern 與分析語意不變。
+2. 英文圖沿用 1600×2107、四分區直式版型與既有色彩；較長英文標題／警示必須重新換行並保留卡片安全區。
+3. 每個方法的英文 HTML 為 `index.en.html`，英文 SVG／PNG 使用 `.en` 後綴；中英文頁面提供互相切換入口。
+4. `bio_get_analysis_workflow` 新增 `language`，可選 `zh-Hant` 或 `en`、預設 `zh-Hant`；英文查詢需同時指定 method，避免把中文版領域總覽誤標為英文。
+5. 真實研究圖沿用既有原始路徑，只建立連結、不複製內容；DATA-only 方法維持明確標示。
+6. 翻譯內容與中文版共用相同 15 方法集合；生成時若 method key 漂移即失敗。
+
+### 任務列表
+
+- [x] 任務 41：寫入英文方法圖實作計畫（completed 2026-09-10）
+  - 預期行為：定義雙語檔名、語言參數、相容性與驗證邊界。
+  - 驗證指令：`git diff --check`。
+  - 相關檔案：`IMPLEMENTATION_PLAN.md`。
+  - 提交：`docs(plan): define English method workflows`
+
+- [ ] 任務 42：以失敗測試定義英文資產與 language 契約（Red）
+  - 預期行為：15 個英文 HTML／SVG／PNG 必須存在；不含主要中文標籤；中英文互鏈；`method + language=en` 回傳英文獨立圖；不支援語言與缺 method 的英文查詢被拒絕。
+  - 驗證指令：`uv run pytest tests/test_workflow_guide.py -q`，確認新增案例在實作前失敗。
+  - 相關檔案：`tests/test_workflow_guide.py`。
+  - 提交：repo policy 忽略 `tests/`，保留本機 Red checkpoint。
+
+- [ ] 任務 43：建立英文內容模型與 45 個英文資產（Green）
+  - 預期行為：共用布局產生 15 HTML、15 SVG、15 PNG；翻譯涵蓋標題、流程、警示、DATA／FIG 與提取說明，中英文結構一致。
+  - 驗證指令：重新執行生成器、30 個 HTML self-check、英文 SVG XML parse、PNG 尺寸／RGB 與視覺檢查。
+  - 相關檔案：`scripts/method_workflow_diagrams.py`、`docs/analysis_methods/`、`docs/images/analysis_methods/`。
+  - 提交：`docs(diagrams): add English EP method workflows`
+
+- [ ] 任務 44：擴充 MCP language 提取（Green）
+  - 預期行為：預設查詢仍回繁中；`method=<tool>&language=en` 回英文文字與 `.en.png`；MCP 邊界仍以 `figure_id` 取圖且不把 base64 留在文字 context。
+  - 驗證指令：workflow、catalog parity、RBAC 與 Phase 4 測試及 Ruff。
+  - 相關檔案：`analysis/workflow_guide.py`、`server/tool_catalog.py`。
+  - 提交：`feat(mcp): retrieve English method workflows`
+
+- [ ] 任務 45：雙語視覺 QA 與部署 smoke（Refactor）
+  - 預期行為：英文長字串無碰撞／溢出；生成器重跑無差異；正式 checkout 與 build mirror 同步；只重建 Web，workers 不重啟；live MCP 成功取回英文 PNG。
+  - 驗證指令：完整相關測試、30 個 self-check、SVG／PNG 檢查、contact sheet、hash gate、容器 health 與 live MCP smoke。
+  - 相關檔案：上述所有檔案與部署驗收紀錄。
+  - 提交：`docs(deploy): verify English workflow retrieval`
+
+### 驗收標準
+
+1. 15 個核心方法各有 `index.en.html`、`.en.svg` 與 `.en.png`，且中英文互相可達。
+2. 英文圖完整表達原中文圖的流程與限制，不翻譯或改寫穩定的 tool name、檔名與欄位。
+3. 所有英文 HTML 通過 Diagram Design self-check，PNG 為 RGB 1600×2107，英文標題及右側 resource pill 不重疊。
+4. `language` 預設保持 `zh-Hant`；英文 method 經 `figure_id` 成功取回；既有 domain／method 查詢不回歸。
+5. 部署完成後三服務健康、running_count=0，且原有正式 checkout dirty files 完整保留。
