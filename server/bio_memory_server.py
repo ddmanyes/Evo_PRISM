@@ -1,7 +1,7 @@
 """
 Phase 4 — BioAgent MCP Server
 
-公開 14 個 MCP 工具供 Claude Code / Hermes Agent 呼叫：
+公開 37 個 MCP 工具供 Claude Code / Hermes Agent 呼叫（預設隱藏高權限工具）：
 
 歷史查詢（0 token，SQL 直接回傳）：
     bio_history_lookup        — 查詢樣本分析歷史表
@@ -29,6 +29,11 @@ Phase 4 — BioAgent MCP Server
     bio_tool_health           — HELIX 工具庫健康報告與穩定化迭代管理
     bio_failure_summary       — PM1 診斷彙整：failure_diagnosis 類型分佈統計（EvolveMem 啟發）
 
+明確結果交付：
+    bio_get_figure            — 圖片 ImageContent + figure:// ResourceLink
+    bio_get_artifact          — 單一 artifact:// ResourceLink + 預覽
+    bio_deliver_results       — 依使用者要求交付圖片／數據，支援多檔 ZIP
+
 啟動方式：
     # stdio（Claude Code CLI，.mcp.json 設定）
     python server/bio_memory_server.py
@@ -44,6 +49,7 @@ Phase 4 — BioAgent MCP Server
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -65,7 +71,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
 
-server = Server("bio-memory")
+_DELIVERY_INSTRUCTIONS = """
+Evo_PRISM 的分析與檔案位於 MCP server 主機。只有當使用者明確要求「查看、給我、
+附上、下載、全部或打包」圖片或數據時，才呼叫 bio_deliver_results；一般分析與摘要
+不可自動傳送二進位內容。交付前使用對話中已知的 analysis_id、artifact_id 或 figure_id，
+無法唯一判定時先請使用者澄清，不可跨樣本猜測。使用者要求打包時 package=zip；單一
+數據檔使用 package=never；多個數據檔可使用 package=auto。依需求設定 include=data、
+images 或 all。只有使用者明確要求圖片也打包時，才設定 include_images_in_zip=true。
+server_local_path 只是 MCP 主機路徑，絕不代表遠端使用者已取得附件；成功交付必須以
+ImageContent 或 ResourceLink 為準。
+""".strip()
+
+server = Server("bio-memory", instructions=_DELIVERY_INSTRUCTIONS)
 
 # sample_id 驗證規則，與 _handle_bio_register_sample 對齊
 _SAMPLE_ID_RE = re.compile(r"^[a-z0-9_-]+$")
@@ -224,7 +241,7 @@ async def list_resources() -> list[types.Resource]:
 
 @server.read_resource()
 async def read_resource(uri):  # uri: pydantic AnyUrl
-    """依 URI 取回 resource 內容：artifact:// 或 registry://snapshot。"""
+    """依 URI 取回 resource 內容：artifact://、figure://、delivery:// 或 registry://。"""
     from mcp.server.lowlevel.helper_types import ReadResourceContents
     from analysis.artifact_resources import read_artifact_resource, ArtifactResourceError
     from config.settings import BIO_DB_ROOT
@@ -248,6 +265,27 @@ async def read_resource(uri):  # uri: pydantic AnyUrl
                 mime_type="text/markdown",
             )
         ]
+
+    # figure://<figure_id> — 報告中的 content-addressed 圖片快取
+    if uri_str.startswith("figure://"):
+        from analysis.figure_cache import load_figure
+
+        figure_id = uri_str[len("figure://") :].strip("/")
+        try:
+            content, mime = await asyncio.to_thread(load_figure, figure_id)
+        except (ValueError, FileNotFoundError) as exc:
+            return [ReadResourceContents(content=f"[ERROR] {exc}", mime_type="text/plain")]
+        return [ReadResourceContents(content=content, mime_type=mime)]
+
+    # delivery://<sha256> — bio_deliver_results 產生的 deterministic ZIP
+    if uri_str.startswith("delivery://"):
+        from analysis.result_delivery import read_delivery_resource, ResultDeliveryError
+
+        try:
+            content, mime, _path = await asyncio.to_thread(read_delivery_resource, uri_str)
+        except ResultDeliveryError as exc:
+            return [ReadResourceContents(content=f"[ERROR] {exc}", mime_type="text/plain")]
+        return [ReadResourceContents(content=content, mime_type=mime)]
 
     # artifact://
     from store.factory import get_store as _get_store
@@ -915,7 +953,7 @@ def _build_all_tools() -> list[types.Tool]:
         types.Tool(
             name="bio_get_figure",
             description=(
-                "依 figure_id 取回單張圖片（MCP image content，供多模態模型視覺推理）。"
+                "依 figure_id 取回單張圖片，直接回傳 MCP ImageContent + figure:// ResourceLink。"
                 "報告類工具回傳的文字裡，圖片以佔位符 [圖片:... | id=<figure_id> | 用 bio_get_figure 索取] 呈現——"
                 "base64 已從文字 context 剝除以節省 token。需要看某張圖時，用該 figure_id 呼叫此工具單張取回。"
             ),
@@ -933,8 +971,8 @@ def _build_all_tools() -> list[types.Tool]:
         types.Tool(
             name="bio_get_artifact",
             description=(
-                "取得分析數據檔的取用 handle（任何 client 皆可用，含不支援 MCP resources 者）。"
-                "回傳檔案 metadata + 本地絕對路徑 + web_app 下載 URL + 文字檔的前幾行預覽。"
+                "取得單一分析數據檔，回傳 metadata + artifact:// ResourceLink + 文字檔預覽。"
+                "server_local_path 只供主機診斷，不可當作遠端附件交付成功。"
                 "用於：使用者想下載/取得分析產出的 csv/parquet/報告等數據檔。"
                 "artifact_id 由 bio_artifact_search 取得。"
                 "（支援 resources 的 client 可改用 resources/read artifact://<id> 直接取回內容。）"
@@ -954,6 +992,75 @@ def _build_all_tools() -> list[types.Tool]:
                 },
                 "required": ["artifact_id"],
             },
+        ),
+        types.Tool(
+            name="bio_deliver_results",
+            description=(
+                "只在使用者明確要求查看、給我、附上、下載或打包分析圖片／數據時使用。"
+                "以 analysis_id、artifact_ids、figure_ids 選取已登記結果，一次回傳文字摘要、"
+                "ImageContent、ResourceLink 與小檔 EmbeddedResource；多個數據檔可依 package 設定"
+                "建立 deterministic ZIP。"
+                "至少提供一種 selector；無法唯一確認分析批次時不要猜測，應先詢問使用者。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "analysis_id": {
+                        "type": "string",
+                        "pattern": (
+                            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                            "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                        ),
+                        "description": "一次分析的 UUID；交付該次 analysis_artifacts。",
+                    },
+                    "artifact_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "pattern": (
+                                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                                "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                            ),
+                        },
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "description": "明確指定的一或多個 artifact UUID。",
+                    },
+                    "figure_ids": {
+                        "type": "array",
+                        "items": {"type": "string", "pattern": "^[0-9a-f]{6,64}$"},
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "description": "報告圖片佔位符中的 figure_id。",
+                    },
+                    "package": {
+                        "type": "string",
+                        "enum": ["auto", "never", "zip"],
+                        "default": "auto",
+                        "description": "auto=多個數據檔打包；never=逐檔；zip=強制打包。",
+                    },
+                    "include": {
+                        "type": "string",
+                        "enum": ["data", "images", "all"],
+                        "default": "all",
+                        "description": "依使用者明確需求只交付數據、圖片或兩者。",
+                    },
+                    "include_images_in_zip": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "只有使用者明確要求圖片也打包時才設 true。",
+                    },
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            annotations=types.ToolAnnotations(
+                title="交付分析圖片與數據",
+                readOnlyHint=False,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
+            ),
         ),
         types.Tool(
             name="bio_run_mcseg_roi",
@@ -1968,21 +2075,88 @@ async def _handle_bio_read_report(args: dict) -> str:
     return await asyncio.to_thread(_sync)
 
 
-async def _handle_bio_get_figure(args: dict) -> list[types.ImageContent]:
-    """依 figure_id 取回快取圖片，回傳 MCP ImageContent（多模態通道，不進文字 context）。"""
-    from analysis.figure_cache import load_figure_b64
+def _extension_for_mime(mime_type: str) -> str:
+    return {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/svg+xml": ".svg",
+        "text/csv": ".csv",
+        "text/tab-separated-values": ".tsv",
+        "application/json": ".json",
+        "application/zip": ".zip",
+    }.get(mime_type, "")
+
+
+def _user_annotations() -> types.Annotations:
+    """Mark delivery blocks as user-facing rather than model-only context."""
+    return types.Annotations(audience=["user"], priority=1.0)
+
+
+def _embedded_resource(
+    *, uri: str, mime_type: str, raw: bytes, annotations: types.Annotations
+) -> types.EmbeddedResource:
+    """Embed a bounded result for clients that do not render ResourceLink yet."""
+    if mime_type.startswith("text/") or mime_type in {"application/json"}:
+        resource: types.TextResourceContents | types.BlobResourceContents = (
+            types.TextResourceContents(
+                uri=uri,
+                mimeType=mime_type,
+                text=raw.decode("utf-8", errors="replace"),
+            )
+        )
+    else:
+        resource = types.BlobResourceContents(
+            uri=uri,
+            mimeType=mime_type,
+            blob=base64.b64encode(raw).decode("ascii"),
+        )
+    return types.EmbeddedResource(
+        type="resource",
+        resource=resource,
+        annotations=annotations,
+    )
+
+
+async def _handle_bio_get_figure(args: dict) -> list[types.ContentBlock]:
+    """Return a cached figure as both visible image content and a resource link."""
+    from analysis.figure_cache import load_figure
 
     figure_id = args["figure_id"]
 
-    def _sync() -> tuple[str, str]:
-        return load_figure_b64(figure_id)
+    def _sync() -> tuple[bytes, str]:
+        return load_figure(figure_id)
 
-    b64, mime = await asyncio.to_thread(_sync)
-    return [types.ImageContent(type="image", data=b64, mimeType=mime)]
+    raw, mime = await asyncio.to_thread(_sync)
+    filename = f"figure-{figure_id}{_extension_for_mime(mime)}"
+    annotations = _user_annotations()
+    return [
+        types.TextContent(
+            type="text",
+            text=f"圖片已交付：{filename} | {mime} | {len(raw)} bytes",
+            annotations=annotations,
+        ),
+        types.ImageContent(
+            type="image",
+            data=base64.b64encode(raw).decode("ascii"),
+            mimeType=mime,
+            annotations=annotations,
+        ),
+        types.ResourceLink(
+            type="resource_link",
+            uri=f"figure://{figure_id}",
+            name=filename,
+            description="Evo_PRISM 報告圖片；可由 MCP resources/read 下載。",
+            mimeType=mime,
+            size=len(raw),
+            annotations=annotations,
+        ),
+    ]
 
 
-async def _handle_bio_get_artifact(args: dict) -> str:
-    """回傳分析數據檔的取用 handle（路徑 + 下載 URL + 預覽）；任何 client 皆可用。"""
+async def _handle_bio_get_artifact(args: dict) -> list[types.ContentBlock]:
+    """Return one registered artifact with a native resource link and text fallback."""
     from analysis.artifact_resources import get_artifact_handle, ArtifactResourceError
     from store.factory import get_store
 
@@ -1996,20 +2170,257 @@ async def _handle_bio_get_artifact(args: dict) -> str:
     try:
         h = await asyncio.to_thread(_sync)
     except ArtifactResourceError as exc:
-        return f"[ERROR] bio_get_artifact: {exc}"
+        return [types.TextContent(type="text", text=f"[ERROR] bio_get_artifact: {exc}")]
 
     if not h.get("found"):
-        return f"artifact_id={artifact_id!r} 不存在於 analysis_artifacts。"
+        return [
+            types.TextContent(
+                type="text",
+                text=f"artifact_id={artifact_id!r} 不存在於 analysis_artifacts。",
+            )
+        ]
 
     lines = [
         f"label: {h['label']}",
         f"subtype: {h['subtype']} | mime: {h['mime_type']} | size: {h['size_kb']} KB",
-        f"local_path: {h['local_path']}",
-        f"web_url: {h['web_url']}",
+        f"resource_uri: artifact://{artifact_id}",
+        f"server_local_path: {h['local_path']}（僅供主機診斷，遠端客戶端不可直接存取）",
     ]
     if h.get("preview"):
         lines.append(f"\n--- 預覽（前 {preview_lines} 行）---\n{h['preview']}")
-    return "\n".join(lines)
+    size_bytes = int(h["size_bytes"])
+    filename = Path(h["local_path"]).name if h.get("local_path") else str(h["label"])
+    annotations = _user_annotations()
+    return [
+        types.TextContent(type="text", text="\n".join(lines), annotations=annotations),
+        types.ResourceLink(
+            type="resource_link",
+            uri=f"artifact://{artifact_id}",
+            name=filename,
+            description=str(h["label"] or filename),
+            mimeType=h["mime_type"] or "application/octet-stream",
+            size=size_bytes,
+            annotations=annotations,
+        ),
+    ]
+
+
+async def _handle_bio_deliver_results(args: dict) -> list[types.ContentBlock]:
+    """Deliver explicitly requested analysis outputs through native MCP content blocks."""
+    from analysis.figure_cache import load_figure
+    from analysis.result_delivery import (
+        DeliveryFigure,
+        ResultDeliveryError,
+        create_delivery_bundle,
+        select_delivery_artifacts,
+    )
+    from config.settings import ARTIFACT_RESOURCE_MAX_MB, DELIVERY_MAX_ITEMS
+    from store.factory import get_store
+
+    analysis_id = args.get("analysis_id") or None
+    artifact_ids = args.get("artifact_ids") or []
+    figure_ids = args.get("figure_ids") or []
+    package_mode = args.get("package", "auto")
+    include = args.get("include", "all")
+    include_images_in_zip = bool(args.get("include_images_in_zip", False))
+
+    if package_mode not in {"auto", "never", "zip"}:
+        raise ResultDeliveryError(f"package 格式錯誤：{package_mode!r}")
+    if include not in {"data", "images", "all"}:
+        raise ResultDeliveryError(f"include 格式錯誤：{include!r}")
+    if not analysis_id and not artifact_ids and not figure_ids:
+        raise ResultDeliveryError(
+            "至少需要 analysis_id、artifact_ids 或 figure_ids 其中一種 selector；"
+            "無法唯一確認分析批次時請先詢問使用者"
+        )
+    if not isinstance(artifact_ids, list) or not isinstance(figure_ids, list):
+        raise ResultDeliveryError("artifact_ids 與 figure_ids 必須是陣列")
+    if len(figure_ids) > DELIVERY_MAX_ITEMS:
+        raise ResultDeliveryError(f"figure_ids 超過上限 {DELIVERY_MAX_ITEMS} 筆")
+
+    def _select():
+        with get_store().read_conn() as con:
+            return select_delivery_artifacts(
+                con,
+                analysis_id=analysis_id,
+                artifact_ids=artifact_ids,
+                max_items=DELIVERY_MAX_ITEMS,
+            )
+
+    artifacts = await asyncio.to_thread(_select)
+
+    figures: list[DeliveryFigure] = []
+    seen_figures: set[str] = set()
+    for raw_figure_id in figure_ids:
+        figure_id = str(raw_figure_id or "").strip()
+        if figure_id in seen_figures:
+            continue
+        seen_figures.add(figure_id)
+        raw, mime = await asyncio.to_thread(load_figure, figure_id)
+        figures.append(
+            DeliveryFigure(
+                figure_id=figure_id,
+                filename=f"figure-{figure_id}{_extension_for_mime(mime)}",
+                mime_type=mime,
+                data=raw,
+            )
+        )
+
+    if not artifacts and not figures:
+        raise ResultDeliveryError("selector 沒有找到可交付的 artifact 或 figure")
+
+    image_artifacts = [item for item in artifacts if item.is_image]
+    data_artifacts = [item for item in artifacts if not item.is_image]
+    if include == "data":
+        image_artifacts = []
+        figures = []
+    elif include == "images":
+        data_artifacts = []
+
+    if not data_artifacts and not image_artifacts and not figures:
+        raise ResultDeliveryError(f"selector 找到結果，但沒有符合 include={include!r} 的項目")
+    bundle_artifacts = list(data_artifacts)
+    bundle_figures: list[DeliveryFigure] = []
+    if include_images_in_zip:
+        bundle_artifacts.extend(image_artifacts)
+        bundle_figures.extend(figures)
+
+    bundle_item_count = len(bundle_artifacts) + len(bundle_figures)
+    should_bundle = package_mode == "zip" or (package_mode == "auto" and bundle_item_count > 1)
+    if should_bundle and bundle_item_count == 0:
+        should_bundle = False
+
+    annotations = _user_annotations()
+    inline_limit = int(ARTIFACT_RESOURCE_MAX_MB * 1_048_576)
+    content: list[types.ContentBlock] = []
+    delivery_lines = [
+        "Evo_PRISM 交付完成。請在最終回覆中向使用者呈現下列附件，不要只重述主機路徑。",
+        f"data_artifact_count: {len(data_artifacts)}",
+        f"image_artifact_count: {len(image_artifacts)}",
+        f"figure_count: {len(figures)}",
+        f"package: {'zip' if should_bundle else 'individual'}",
+    ]
+
+    if should_bundle:
+        bundle = await asyncio.to_thread(
+            create_delivery_bundle,
+            bundle_artifacts,
+            bundle_figures,
+        )
+        delivery_lines.extend(
+            [
+                f"bundle_uri: {bundle.resource_uri}",
+                f"bundle_size_bytes: {bundle.size_bytes}",
+                f"bundle_sha256: {bundle.sha256}",
+                f"bundle_entries: {len(bundle.manifest['entries'])}",
+            ]
+        )
+        content.append(
+            types.ResourceLink(
+                type="resource_link",
+                uri=bundle.resource_uri,
+                name=f"evo-prism-results-{bundle.bundle_id[:12]}.zip",
+                description="依使用者要求打包的 Evo_PRISM 分析結果；內含 manifest.json。",
+                mimeType="application/zip",
+                size=bundle.size_bytes,
+                annotations=annotations,
+            )
+        )
+        if bundle.size_bytes <= inline_limit:
+            bundle_raw = await asyncio.to_thread(bundle.path.read_bytes)
+            content.append(
+                _embedded_resource(
+                    uri=bundle.resource_uri,
+                    mime_type="application/zip",
+                    raw=bundle_raw,
+                    annotations=annotations,
+                )
+            )
+    else:
+        for item in data_artifacts:
+            content.append(
+                types.ResourceLink(
+                    type="resource_link",
+                    uri=item.resource_uri,
+                    name=item.path.name,
+                    description=item.label,
+                    mimeType=item.mime_type,
+                    size=item.size_bytes,
+                    annotations=annotations,
+                )
+            )
+            if item.size_bytes <= inline_limit:
+                raw = await asyncio.to_thread(item.path.read_bytes)
+                content.append(
+                    _embedded_resource(
+                        uri=item.resource_uri,
+                        mime_type=item.mime_type,
+                        raw=raw,
+                        annotations=annotations,
+                    )
+                )
+
+    skipped_inline: list[str] = []
+    for item in image_artifacts:
+        if item.size_bytes <= inline_limit:
+            raw = await asyncio.to_thread(item.path.read_bytes)
+            content.append(
+                types.ImageContent(
+                    type="image",
+                    data=base64.b64encode(raw).decode("ascii"),
+                    mimeType=item.mime_type,
+                    annotations=annotations,
+                )
+            )
+        else:
+            skipped_inline.append(item.path.name)
+        content.append(
+            types.ResourceLink(
+                type="resource_link",
+                uri=item.resource_uri,
+                name=item.path.name,
+                description=item.label,
+                mimeType=item.mime_type,
+                size=item.size_bytes,
+                annotations=annotations,
+            )
+        )
+
+    for item in figures:
+        if len(item.data) <= inline_limit:
+            content.append(
+                types.ImageContent(
+                    type="image",
+                    data=base64.b64encode(item.data).decode("ascii"),
+                    mimeType=item.mime_type,
+                    annotations=annotations,
+                )
+            )
+        else:
+            skipped_inline.append(item.filename)
+        content.append(
+            types.ResourceLink(
+                type="resource_link",
+                uri=f"figure://{item.figure_id}",
+                name=item.filename,
+                description="Evo_PRISM 報告圖片",
+                mimeType=item.mime_type,
+                size=len(item.data),
+                annotations=annotations,
+            )
+        )
+
+    if skipped_inline:
+        delivery_lines.append("inline_skipped_over_limit: " + ", ".join(skipped_inline))
+    content.insert(
+        0,
+        types.TextContent(
+            type="text",
+            text="\n".join(delivery_lines),
+            annotations=annotations,
+        ),
+    )
+    return content
 
 
 async def _handle_bio_get_playbook(args: dict) -> str:
@@ -2100,6 +2511,7 @@ _HANDLERS = {
     "bio_read_report": _handle_bio_read_report,
     "bio_get_figure": _handle_bio_get_figure,
     "bio_get_artifact": _handle_bio_get_artifact,
+    "bio_deliver_results": _handle_bio_deliver_results,
     "bio_get_playbook": _handle_bio_get_playbook,
     "bio_sample_list": _handle_bio_sample_list,
     "bio_sample_compare": _handle_bio_sample_compare,
@@ -2113,7 +2525,7 @@ _HANDLERS = {
 
 
 @server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent]:
+async def call_tool(name: str, arguments: dict) -> list[types.ContentBlock]:
     requested_by = None
     if isinstance(arguments, dict):
         requested_by = arguments.get("requested_by")
@@ -2243,9 +2655,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
             )
         ]
     _record_metric(name, int((time.monotonic() - t0) * 1000), "ok", requested_by=requested_by)
-    # 圖片類工具回傳 content block list（如 bio_get_figure 的 ImageContent）→ 直接送出
+    # 附件工具回傳混合 content blocks（Text/Image/ResourceLink）→ 直接送出
     if isinstance(result, list):
-        return list(result)  # type: ignore[return-value]
+        return list(result)
     # 文字結果統一出口：剝除 inline base64 圖片，避免爆 LLM context（換成 bio_get_figure 佔位符）
     return [types.TextContent(type="text", text=strip_base64_for_llm(result))]
 

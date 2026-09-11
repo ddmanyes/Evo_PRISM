@@ -38,6 +38,9 @@ Linux 部署時建議移至純 ASCII 路徑（例：`/mnt/space4/bio_lab_db/`）
 | `MCP_BIND_HOST` | `127.0.0.1` | HTTP transport 綁定位址。設 `0.0.0.0` 開放區網**前必須**搭配 `MCP_AUTH_TOKEN` |
 | `MCP_RATE_LIMIT_PER_MIN` | `30` | 重量級工具（embedding/sandbox）每分鐘呼叫上限 |
 | `MCP_ENABLE_DANGEROUS_TOOLS` | 未設（關閉） | 設 `true` 才會將 `bio_execute_code`（沙盒 Python 執行）暴露給 MCP 客戶端。defense in depth — 即使 auth 失誤也不會洩漏沙盒入口 |
+| `ARTIFACT_RESOURCE_MAX_MB` | `25` | 單一 artifact／圖片透過 MCP inline 讀取的大小上限 |
+| `DELIVERY_MAX_ITEMS` | `50` | `bio_deliver_results` 單次選取或打包的項目數上限 |
+| `DELIVERY_MAX_TOTAL_MB` | `1024` | 單一交付 ZIP 的來源檔案總量上限（MB） |
 
 ## 安全建議
 
@@ -47,4 +50,6 @@ Linux 部署時建議移至純 ASCII 路徑（例：`/mnt/space4/bio_lab_db/`）
 
 ## 工具列表
 
-預設啟動 13 個 MCP 工具；`MCP_ENABLE_DANGEROUS_TOOLS=true` 才會加上第 14 個 `bio_execute_code`。詳細工具表見 [MCP_HTTP_GUIDE.md](MCP_HTTP_GUIDE.md)。
+預設啟動 36 個安全 MCP 工具；`MCP_ENABLE_DANGEROUS_TOOLS=true` 才會再加入
+`bio_execute_code`。工具清單以 MCP `tools/list` 回應為準，分類與使用方式見
+[MCP_HTTP_GUIDE.md](MCP_HTTP_GUIDE.md)。

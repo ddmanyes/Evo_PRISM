@@ -122,12 +122,12 @@ ENGRAM stores reports, figures, and tables with semantic vectors and tool-versio
 
 ## MCP tools
 
-The server declares **36 tools** and exposes **35 by default**; `bio_execute_code` remains hidden unless explicitly enabled.
+The server declares **37 tools** and exposes **36 by default**; `bio_execute_code` remains hidden unless explicitly enabled.
 
 | Group | Count | Examples |
 | :--- | :---: | :--- |
 | History and samples | 8 | lookup, timeline, registration, comparison |
-| Memory and artifacts | 7 | semantic search, reports, figures, artifact retrieval |
+| Memory and artifacts | 8 | semantic search, reports, figures, artifact retrieval and explicit delivery |
 | Discovery and governance | 5 | tool search, health, failure diagnosis, impact |
 | Core analysis | 6 | spatial/bulk EDA, DEG, enrichment, heatmaps |
 | MCseg and post-processing | 9 | ROI/full-slide runs, QC, annotation, Loupe export |

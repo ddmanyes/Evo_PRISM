@@ -105,6 +105,12 @@ FIGURE_CACHE_TTL_DAYS = int(os.getenv("FIGURE_CACHE_TTL_DAYS", "14"))
 # 引導改用 web_app 下載端點（避免大型 parquet base64 灌爆傳輸/context）。
 ARTIFACT_RESOURCE_MAX_MB = float(os.getenv("ARTIFACT_RESOURCE_MAX_MB", "25"))
 
+# MCP 明確交付：只在使用者要求查看／下載結果時，由 bio_deliver_results 使用。
+# bundle 是 server 端的暫存交付物，不寫入 analysis_artifacts，也不改動原始分析結果。
+DELIVERY_BUNDLE_ROOT = BIO_DB_ROOT / "results" / "delivery"
+DELIVERY_MAX_ITEMS = int(os.getenv("DELIVERY_MAX_ITEMS", "50"))
+DELIVERY_MAX_TOTAL_MB = float(os.getenv("DELIVERY_MAX_TOTAL_MB", "1024"))
+
 # web_app 對外基底 URL（bio_get_artifact 組下載連結用；web_app 預設跑 port 8000）
 WEB_APP_BASE_URL = os.getenv("WEB_APP_BASE_URL", "http://localhost:8000").rstrip("/")
 

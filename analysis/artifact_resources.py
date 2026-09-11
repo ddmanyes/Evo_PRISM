@@ -21,6 +21,7 @@ MCP Resources — 讓使用者透過 MCP 原生 resources 通道取得「分析�
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from config.settings import (
     ARTIFACT_RESOURCE_MAX_MB,
@@ -67,6 +68,22 @@ def _is_text_mime(mime: str | None) -> bool:
     if mime in _TEXT_MIME_EXACT:
         return True
     return any(mime.startswith(p) for p in _TEXT_MIME_PREFIXES)
+
+
+def _resolve_artifact_file(file_path: str) -> Path:
+    """Resolve one registered file and enforce the BIO_DB_ROOT sandbox."""
+    if not file_path:
+        raise ArtifactResourceError("artifact 無 file_path 記錄")
+    raw_path = resolve_artifact_path(file_path)
+    if raw_path.is_symlink():
+        raise ArtifactResourceError(f"拒絕讀取符號連結：{file_path!r}")
+    abs_path = raw_path.resolve()
+    root = BIO_DB_ROOT.resolve()
+    if root not in abs_path.parents:
+        raise ArtifactResourceError(f"路徑越界，拒絕讀取：{file_path!r}")
+    if not abs_path.is_file():
+        raise ArtifactResourceError(f"檔案不存在或非一般檔：{file_path!r}")
+    return abs_path
 
 
 def list_artifact_resources(con, limit: int = 200) -> list[dict]:
@@ -123,17 +140,7 @@ def read_artifact_resource(con, uri: str) -> tuple[str | bytes, str]:
         raise ArtifactResourceError(f"artifact_id={artifact_id!r} 不存在於 analysis_artifacts")
 
     file_path, mime = row
-    if not file_path:
-        raise ArtifactResourceError(f"artifact_id={artifact_id!r} 無 file_path 記錄")
-
-    abs_path = resolve_artifact_path(file_path).resolve()
-
-    # 沙盒：解析後必須落在 BIO_DB_ROOT 內（防 ../ 越界）
-    root = BIO_DB_ROOT.resolve()
-    if root not in abs_path.parents:
-        raise ArtifactResourceError(f"路徑越界，拒絕讀取：{file_path!r}")
-    if not abs_path.is_file():
-        raise ArtifactResourceError(f"檔案不存在或非一般檔：{file_path!r}")
+    abs_path = _resolve_artifact_file(file_path)
 
     size = abs_path.stat().st_size
     max_bytes = int(ARTIFACT_RESOURCE_MAX_MB * 1_048_576)
@@ -173,10 +180,10 @@ def get_artifact_handle(con, artifact_id: str, preview_lines: int = 20) -> dict:
         return {"found": False, "artifact_id": artifact_id}
 
     label, subtype, mime, size_kb, file_path = row
-    abs_path = resolve_artifact_path(file_path).resolve() if file_path else None
+    abs_path = _resolve_artifact_file(file_path)
 
     preview = None
-    if abs_path and abs_path.is_file() and _is_text_mime(mime):
+    if _is_text_mime(mime):
         with abs_path.open("r", encoding="utf-8", errors="replace") as fh:
             head = [next(fh, "") for _ in range(preview_lines)]
         preview = "".join(head).rstrip()
@@ -188,7 +195,9 @@ def get_artifact_handle(con, artifact_id: str, preview_lines: int = 20) -> dict:
         "subtype": subtype,
         "mime_type": mime,
         "size_kb": size_kb,
-        "local_path": str(abs_path) if abs_path else None,
+        "size_bytes": abs_path.stat().st_size,
+        "resource_uri": f"{ARTIFACT_URI_SCHEME}{artifact_id}",
+        "local_path": str(abs_path),
         "web_url": f"{WEB_APP_BASE_URL}/api/engram/artifact/{artifact_id}/inline",
         "preview": preview,
     }

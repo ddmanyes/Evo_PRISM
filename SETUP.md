@@ -221,7 +221,7 @@ bash start_bioagent.sh
 
 ## 步驟八：設定 MCP Server（讓 Claude Code / Antigravity / Web UI 共用）
 
-MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 17 個工具（啟用沙盒後 18 個），跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
+MCP（Model Context Protocol）讓 IDE 端 AI 直接呼叫 bio_DB 的 36 個安全工具（啟用沙盒後 37 個），跳過 web_app 雙輪 Agent，回應更快、不會發生列表截斷。同一份 `bio_memory_server.py` 同時支援三種客戶端，差別在 transport 與設定檔位置。
 
 ### 共通前置：建 symlink 避開含空格 / 中文路徑（macOS Google Drive 必做）
 
@@ -296,7 +296,7 @@ cp .mcp.json.example .mcp.json
 }
 ```
 
-存檔後 **重啟 Antigravity**。Tool palette 應出現 `bio_*` 工具列表（預設 25 個，啟用 dangerous tools 後 26 個）。
+存檔後 **重啟 Antigravity**。Tool palette 應出現 `bio_*` 工具列表（預設 36 個，啟用 dangerous tools 後 37 個）。其中 `bio_deliver_results` 只在使用者明確要求查看、下載或打包圖片／數據時使用，可用 `include=data|images|all` 控制交付內容，並回傳 MCP 圖片與 resource links；一般分析不會自動夾帶二進位內容。
 
 ### 想啟用 `bio_execute_code` 沙盒（dangerous）
 
