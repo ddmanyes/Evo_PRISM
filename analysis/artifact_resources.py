@@ -21,6 +21,7 @@ MCP Resources — 讓使用者透過 MCP 原生 resources 通道取得「分析�
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from config.settings import (
     ARTIFACT_RESOURCE_MAX_MB,
@@ -48,6 +49,20 @@ _UUID_RE = re.compile(
 
 class ArtifactResourceError(Exception):
     """resource 取用失敗（不存在 / 路徑越界 / 過大）。"""
+
+
+def _resolve_artifact_file(file_path: str) -> Path:
+    """Resolve one registered artifact without following unsafe paths."""
+    raw_path = resolve_artifact_path(file_path)
+    if raw_path.is_symlink():
+        raise ArtifactResourceError(f"拒絕讀取符號連結：{file_path!r}")
+    abs_path = raw_path.resolve()
+    root = BIO_DB_ROOT.resolve()
+    if root not in abs_path.parents:
+        raise ArtifactResourceError(f"路徑越界，拒絕讀取：{file_path!r}")
+    if not abs_path.is_file():
+        raise ArtifactResourceError(f"檔案不存在或非一般檔：{file_path!r}")
+    return abs_path
 
 
 def parse_artifact_uri(uri: str) -> str:
@@ -147,14 +162,7 @@ def read_artifact_resource(
     if not file_path:
         raise ArtifactResourceError(f"artifact_id={artifact_id!r} 無 file_path 記錄")
 
-    abs_path = resolve_artifact_path(file_path).resolve()
-
-    # 沙盒：解析後必須落在 BIO_DB_ROOT 內（防 ../ 越界）
-    root = BIO_DB_ROOT.resolve()
-    if root not in abs_path.parents:
-        raise ArtifactResourceError(f"路徑越界，拒絕讀取：{file_path!r}")
-    if not abs_path.is_file():
-        raise ArtifactResourceError(f"檔案不存在或非一般檔：{file_path!r}")
+    abs_path = _resolve_artifact_file(file_path)
 
     size = abs_path.stat().st_size
     max_bytes = int(ARTIFACT_RESOURCE_MAX_MB * 1_048_576)
@@ -210,7 +218,7 @@ def get_artifact_handle(
         return {"found": False, "artifact_id": artifact_id}
 
     label, subtype, mime, size_kb, file_path = row
-    abs_path = resolve_artifact_path(file_path).resolve() if file_path else None
+    abs_path = _resolve_artifact_file(file_path) if file_path else None
 
     preview = None
     if abs_path and abs_path.is_file() and _is_text_mime(mime):
@@ -225,6 +233,8 @@ def get_artifact_handle(
         "subtype": subtype,
         "mime_type": mime,
         "size_kb": size_kb,
+        "size_bytes": abs_path.stat().st_size if abs_path else 0,
+        "resource_uri": f"{ARTIFACT_URI_SCHEME}{artifact_id}",
         "local_path": str(abs_path) if abs_path else None,
         "web_url": f"{WEB_APP_BASE_URL}/api/engram/artifact/{artifact_id}/inline",
         "preview": preview,

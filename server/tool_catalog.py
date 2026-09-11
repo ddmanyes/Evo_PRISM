@@ -602,8 +602,8 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
         func="_exec_bio_find_tool",
     ),
     "bio_get_artifact": ToolSpec(
-        description="取得分析數據檔的取用 handle（任何 client 皆可用，含不支援 MCP resources 者）。"
-                "回傳檔案 metadata + 本地絕對路徑 + web_app 下載 URL + 文字檔的前幾行預覽。"
+        description="取得單一分析數據檔，回傳 metadata + artifact:// ResourceLink + 文字檔預覽。"
+                "server_local_path 只供主機診斷，不可當作遠端附件交付成功。"
                 "用於：使用者想下載/取得分析產出的 csv/parquet/報告等數據檔。"
                 "artifact_id 由 bio_artifact_search 取得。"
                 "（支援 resources 的 client 可改用 resources/read artifact://<id> 直接取回內容。）",
@@ -621,11 +621,73 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                             },
                         },
                         "required": ["artifact_id"],
-                    },
+        },
         mcp_handler="_handle_bio_get_artifact",
     ),
+    "bio_deliver_results": ToolSpec(
+        description=(
+            "只在使用者明確要求查看、給我、附上、下載或打包分析圖片／數據時使用。"
+            "以 analysis_id、artifact_ids、figure_ids 選取已登記且有權讀取的結果，一次回傳"
+            "文字摘要、ImageContent、ResourceLink 與小檔 EmbeddedResource；多個數據檔可依"
+            "package 設定建立 deterministic ZIP。至少提供一種 selector；無法唯一確認分析"
+            "批次時不要猜測，應先詢問使用者。"
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {
+                "analysis_id": {
+                    "type": "string",
+                    "pattern": (
+                        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                        "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    ),
+                    "description": "一次分析的 UUID；交付該次 analysis_artifacts。",
+                },
+                "artifact_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "pattern": (
+                            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                            "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                        ),
+                    },
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "description": "明確指定的一或多個 artifact UUID。",
+                },
+                "figure_ids": {
+                    "type": "array",
+                    "items": {"type": "string", "pattern": "^[0-9a-f]{6,64}$"},
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "description": "報告圖片佔位符中的 figure_id。",
+                },
+                "package": {
+                    "type": "string",
+                    "enum": ["auto", "never", "zip"],
+                    "default": "auto",
+                    "description": "auto=多個數據檔打包；never=逐檔；zip=強制打包。",
+                },
+                "include": {
+                    "type": "string",
+                    "enum": ["data", "images", "all"],
+                    "default": "all",
+                    "description": "依使用者明確需求只交付數據、圖片或兩者。",
+                },
+                "include_images_in_zip": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "只有使用者明確要求圖片也打包時才設 true。",
+                },
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+        mcp_handler="_handle_bio_deliver_results",
+    ),
     "bio_get_figure": ToolSpec(
-        description="依 figure_id 取回單張圖片（MCP image content，供多模態模型視覺推理）。"
+        description="依 figure_id 取回單張圖片（MCP ImageContent + figure:// ResourceLink）。"
                 "報告類工具回傳的文字裡，圖片以佔位符 [圖片:... | id=<figure_id> | 用 bio_get_figure 索取] 呈現——"
                 "base64 已從文字 context 剝除以節省 token。需要看某張圖時，用該 figure_id 呼叫此工具單張取回。",
         json_schema={
