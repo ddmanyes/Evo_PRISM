@@ -165,7 +165,13 @@ def find_by_type(
     按 analysis_type 篩選歷史記錄。
 
     Returns:
-        DataFrame: analysis_id, sample_id, completed_at, summary, result_path, parameters
+        DataFrame: analysis_id, sample_id, analysis_type, status, completed_at,
+                   summary, result_path, parameters
+
+        analysis_type/status 雖然對篩選查詢而言是已知的，仍一併回傳 —— 呼叫端
+        （server/agent_history.py 的 text 路徑、bio_memory_server.py 的 json 路徑）
+        預期與 recent_analyses() 同一組欄位。缺這兩欄會讓 json 路徑靜默回傳空字串、
+        text 路徑直接 KeyError。2026-09-17 修。
     """
     db_path = db_path or DUCKDB_PATH
     filters = ["analysis_type = ?"]
@@ -186,6 +192,8 @@ def find_by_type(
             f"""
             SELECT analysis_id,
                    sample_id,
+                   analysis_type,
+                   status,
                    completed_at,
                    summary,
                    result_path,
