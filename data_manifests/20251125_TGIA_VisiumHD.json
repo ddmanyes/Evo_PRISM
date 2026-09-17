@@ -1,0 +1,224 @@
+{
+  "files": {
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "37c3ce9a87dcd59bcee2555289e78935b3bbfea20c5a5917519579e5303971a5",
+      "size": 11867652
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "b6f6a11b407be375af1306cfb6f2189d75aac52b26a19810a1186a6d6aed2adf",
+      "size": 161688
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 160611834
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "a133ba465b01345b193932f0aaac67f7520cdab5980bbd2ca325567444b9b2d8",
+      "size": 14959135
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "6952d207e62e9577b18e2754554c4f291adfafab4b6a8d9581e2fdd1309892b8",
+      "size": 290896
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 185689428
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "7ec549ead0b9484b526b178a5115c77c9fe928c80a9c8be8a5c772e8b0a98f9c",
+      "size": 274
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 168789164
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 44561767
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "a268ffdfabb1ca69e0f9f16846b212b8ef0c13a853beacb1d76252e84f488071",
+      "size": 865735
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "ef41def28a9a962724a10958e740c3baf93421a8e89594d9789f21644d6af8e1",
+      "size": 161688
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 115552122
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 59822944
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b390d90f487e0fda6f93aed6fc096253b65f87a3f303f07af15ff67a73f33dda",
+      "size": 1627304
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "09e0abc735579ee12d5b0785bcf8ad245366de1f1bed463860db0e4d92a61e2f",
+      "size": 290896
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 136164474
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "ac57dff7400faa7dd95c77f92c6d2ca4464745c72322ca4b71f4164f87871af7",
+      "size": 274
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "c64a20297c2632144c73fe8b7fba9f2ca42493ad71ea1da9c21b2106bc80f990",
+      "size": 11202337
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 35361765
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c1eceffcdc19b6b8075082470763b1e13d06a72fadb220bb4d87d03982a24208",
+      "size": 210113
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "4a5d8ded6360eedb0b7733f1b874a8e2e9c1fb63e2157fb022821751ef61c3fc",
+      "size": 161688
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 92733700
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 46899041
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "fffb551cc63699899128a478288e25cea1d69adaa3863dd0d0ba8d79be517a3e",
+      "size": 462249
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "e3e08e53e242972d3e2402910d91dfed8851b92baa87b51622cdabcb37ba75c1",
+      "size": 290896
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 110702038
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "9733b90733bca7fd4075d2093f13855d4048b0b82ea748f4342f2e78799023f4",
+      "size": 274
+    },
+    "20250612_MQ250428/MQ250428-A1-D1/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "7d1bd98a8437911dc3e0b564c9f7e9dd8dcd8acf9a0edbb4188da86668a8582a",
+      "size": 3322996
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 54807288
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "f78bb8623e50453337d5045a1f6790f73a03203bef27a9ce6610a12ad475e100",
+      "size": 12423108
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "344c774d9aeb2040c21189bea343a64540e48e9ef2527d6ccb7ff6da6780f835",
+      "size": 161688
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 106779391
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 70294766
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "f83c9c45b8e13619f7d7c1b8d50a3059401649d5e8cc83619200324ef71730a8",
+      "size": 12398046
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "d30c2aedaa9217de3b4ba776871fe0aef35840a59db6a9d9410744a3ae31c0b3",
+      "size": 290896
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 133317247
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 75227027
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "3083fbe173ffefd303e5ac67f3715c239d2cec3946752c27d8623c1c4a6bd05d",
+      "size": 276
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 165630556
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "sha256": "b2e51cba45be4e3cd8c9dcbe4e3cdd7cb4648e518f0be48eee066c71e75252d7",
+      "size": 31410131
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "f4cccf8da8ba0b6c91ca3a45647ccdb6fa8a3cb12af4395687613a69087e4d77",
+      "size": 680109
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "c8af4bffa252e244761debd17990183fb8b94678b190c8bc8f43901b9479a62d",
+      "size": 161688
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 80805923
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 45142102
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b00a6be9223bfb44c26c8f722bdf99b78566631a19ac7c29a5cb655c69a324aa",
+      "size": 1568330
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "1064c384740d615a7a7bdb687bbf1861666dea979fdd1c0571b9580671a170fe",
+      "size": 290896
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 101847312
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "fd7afc75c37ab22c286889f025f3fedeb2ca3ebbcf65fa4d37ea36ade65751ff",
+      "size": 276
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "0254a03223ee868302c3d39999b743ef3f8274052c65811ab160092b7de01368",
+      "size": 11182696
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "sha256": "0546a56f8941aef974ba79d52db928114df39353e4df955d6a4f6133ed631b93",
+      "size": 25266834
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "51fd01901d681090d6b3a43dcbbbea77073fb09fdda7022c16e1296ded5e25ae",
+      "size": 166063
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "cb775d9eb4464070f11b7f5c2d7edbf9d6f2e8750de5016f4bd37acd9bfb0df8",
+      "size": 161688
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 66239751
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 35940448
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "fb56ca1a005e360739cffd3d1192979659de88f4a255d4d3c4bb8365b70c2c0d",
+      "size": 468764
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "c4487f944efc7ec545b1f9416b77accc1df61ea630db09edc775821c4e49a37c",
+      "size": 290896
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 83849238
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "f33c3c05b7eb726c53828f74c8a1fa6877ed9becc24488ee14b7751e273122aa",
+      "size": 277
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "94c05cdde11b9c53d981dd7ad4706588ca1a6fbd1bf92da713a3d658cd40708c",
+      "size": 3319024
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/feature_slice.h5": {
+      "size": 288103875
+    },
+    "20250612_MQ250428/MQ250428-D1-D2/outs/molecule_info.h5": {
+      "size": 215600860
+    }
+  },
+  "root": "/Volumes/KINGSTON/Bioinfo_Projects/01_Spatial_Transcriptomics/20251125_TGIA_VisiumHD"
+}
