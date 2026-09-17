@@ -129,6 +129,37 @@ def classify(area_um2, bins_all, umi_all, has, ids):
     return cls
 
 
+def label_edges(cur, up=None, down=None, left=None, right=None):
+    """label 圖的邊界，**標在 label 自己的像素上**（四個方向都比）。
+
+    早期版本只比下鄰居與右鄰居：
+        e = (blk[1:] != cur) | (blk[:, 1:] != cur)
+    那樣上緣與左緣會落在【背景】像素上，而上色是用 `cls[cur]` 查類別，
+    背景的類別是 0、不在配色表裡就被跳過。密集排列的細胞靠鄰居的下/右緣
+    補上缺口，看起來完整；**孤立的細胞只會畫出半圈弧線**（角膜基質的
+    keratocyte 就是這樣被誤判成「沒有完整輪廓」）。
+
+    up/down/left/right 是 cur 之外相鄰的一列/一行，用來補 box 邊界；
+    None 表示該側就是影像邊緣，不做比較。
+    """
+    e = np.zeros(cur.shape, bool)
+    d = cur[1:, :] != cur[:-1, :]
+    e[1:, :] |= d
+    e[:-1, :] |= d
+    d = cur[:, 1:] != cur[:, :-1]
+    e[:, 1:] |= d
+    e[:, :-1] |= d
+    if up is not None:
+        e[0, :] |= cur[0, :] != up
+    if down is not None:
+        e[-1, :] |= cur[-1, :] != down
+    if left is not None:
+        e[:, 0] |= cur[:, 0] != left
+    if right is not None:
+        e[:, -1] |= cur[:, -1] != right
+    return e
+
+
 def edge_maps(m, cls, shape):
     """邊界圖依類別分開後各自 max-pool 降採樣。max-pool 而非取樣：DS=4 下
     細胞只有 5 px 寬，取樣會讓整條邊界消失。"""
@@ -136,11 +167,13 @@ def edge_maps(m, cls, shape):
     out = {k: np.zeros((Hs, Ws), bool) for k in CLASSES}
     for r0 in range(0, HR, CHUNK):
         r1 = min(r0 + CHUNK, HR)
-        blk = np.asarray(m[MASK_Y_OFF + r0: MASK_Y_OFF + r1 + 1, :WR])
-        cur = blk[: r1 - r0]
-        e = np.zeros(cur.shape, bool)
-        e |= (blk[1: r1 - r0 + 1] != cur)
-        e[:, :-1] |= (cur[:, 1:] != cur[:, :-1])
+        # 多讀上下各一列，讓分塊邊界不會製造假邊界
+        a0, a1 = max(0, r0 - 1), min(HR, r1 + 1)
+        blk = np.asarray(m[MASK_Y_OFF + a0: MASK_Y_OFF + a1, :WR])
+        cur = blk[r0 - a0: r0 - a0 + (r1 - r0)]
+        e = label_edges(cur,
+                        up=blk[r0 - a0 - 1] if a0 < r0 else None,
+                        down=blk[r1 - a0] if a1 > r1 else None)
         h, kc = (r1 - r0) // DS, cls[cur]
         for k, tgt in out.items():
             tgt[r0 // DS: r0 // DS + h] = (e & (kc == k)).reshape(
@@ -170,10 +203,17 @@ def legend(img, counts, keys):
 def crop_panel(reader, m, cls, px, py, box, title):
     he = cv2.flip(reader.read_region(int(SLIDE_W - (X0 + px + box)),
                                      int(Y0 + py), box, box, level=0), 1)
-    blk = np.asarray(m[MASK_Y_OFF + py: MASK_Y_OFF + py + box + 1,
-                       px: px + box + 1]).astype(np.int64)
-    cur = blk[:box, :box]
-    e = (blk[1:box + 1, :box] != cur) | (blk[:box, 1:box + 1] != cur)
+    # 四周各多讀一圈，邊界才能標在 label 自己的像素上（見 label_edges）
+    y0, y1 = max(0, py - 1), min(HR, py + box + 1)
+    x0, x1 = max(0, px - 1), min(WR, px + box + 1)
+    blk = np.asarray(m[MASK_Y_OFF + y0: MASK_Y_OFF + y1, x0: x1]).astype(np.int64)
+    oy, ox = py - y0, px - x0
+    cur = blk[oy: oy + box, ox: ox + box]
+    e = label_edges(cur,
+                    up=blk[oy - 1, ox: ox + box] if oy else None,
+                    down=blk[oy + box, ox: ox + box] if y1 > py + box else None,
+                    left=blk[oy: oy + box, ox - 1] if ox else None,
+                    right=blk[oy: oy + box, ox + box] if x1 > px + box else None)
     kc = cls[cur]
     ov = he.astype(np.float32)
     for k in DRAW_ORDER:
