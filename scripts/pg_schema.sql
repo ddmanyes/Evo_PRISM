@@ -295,3 +295,27 @@ CREATE INDEX IF NOT EXISTS idx_analysis_jobs_claim
     ON analysis_jobs (resource_class, status, priority DESC, created_at);
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_owner
     ON analysis_jobs (requested_by, created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- figure_index  (v30 — content-addressed figure_id lookup index)
+-- ---------------------------------------------------------------------------
+-- 與計畫文件的複合 PK 不同：DuckDB 側改用 surrogate UUID PK（見
+-- scripts/31_migrate_schema_v30_figure_index.py 開頭註解——複合 PK 每欄隱性 NOT NULL，
+-- 而 requested_by 在 admin 呼叫時本來就是 NULL）。Postgres 同理保持兩後端 schema 對齊。
+CREATE TABLE IF NOT EXISTS figure_index (
+    id            UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    figure_id     TEXT        NOT NULL,
+    alt           TEXT,
+    tool_name     TEXT,
+    sample_id     TEXT,
+    analysis_id   TEXT,       -- best-effort，可為 NULL
+    requested_by  TEXT,       -- NULL = admin/global（與 visible_requested_by 同慣例）
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_figure_index_sample
+    ON figure_index (sample_id);
+CREATE INDEX IF NOT EXISTS idx_figure_index_created
+    ON figure_index (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_figure_index_figure_id
+    ON figure_index (figure_id);

@@ -241,6 +241,42 @@ class RegistryStore(Protocol):
         ...
 
     # ------------------------------------------------------------------
+    # figure_index (v30) —— figure_cache 的 content-addressed figure_id
+    # 反查索引：讓「用描述找圖」不必重讀整份報告全文。
+    # ------------------------------------------------------------------
+
+    def record_figure(
+        self,
+        figure_id: str,
+        *,
+        alt: str | None = None,
+        tool_name: str | None = None,
+        sample_id: str | None = None,
+        analysis_id: str | None = None,
+        requested_by: str | None = None,
+    ) -> None:
+        """INSERT into figure_index (best-effort, non-blocking — same convention as record_metric)."""
+        ...
+
+    def find_figures(
+        self,
+        *,
+        figure_id: str | None = None,
+        sample_id: str | None = None,
+        tool_name: str | None = None,
+        query: str | None = None,
+        requested_by: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Query figure_index by exact/partial filters, newest first.
+
+        ``query`` matches ``alt`` via ILIKE substring — no embedding involved
+        (0 token, no dependency on the embedding server). ``requested_by=None``
+        means unfiltered (admin/global view), matching ``visible_requested_by``.
+        """
+        ...
+
+    # ------------------------------------------------------------------
     # Utils
     # ------------------------------------------------------------------
 

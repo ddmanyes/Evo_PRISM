@@ -989,6 +989,50 @@ def _embedded_resource(
     )
 
 
+async def _handle_bio_find_figure(args: dict) -> str:
+    """依 sample_id / tool_name / alt 關鍵字查 figure_index —— 0 token 純 SQL，不打 embedding server。
+
+    看圖前先用這個拿 figure_id，不要為了找一張圖重新盤點／重讀整份報告全文
+    （bio_sample_list → bio_history_lookup → bio_artifact_summary → bio_read_report）。
+    """
+    from server.auth import visible_requested_by
+    from store.factory import get_store
+
+    sample_id = args.get("sample_id")
+    tool_name = args.get("tool_name")
+    query = args.get("query")
+    limit = int(args.get("limit", 20))
+    owner = visible_requested_by()
+
+    rows = get_store().find_figures(
+        sample_id=sample_id,
+        tool_name=tool_name,
+        query=query,
+        requested_by=owner,
+        limit=limit,
+    )
+    if not rows:
+        return (
+            f"沒有符合條件的圖（sample_id={sample_id!r}, tool_name={tool_name!r}, "
+            f"query={query!r}）。可能尚未產生過圖，或已超過 TTL（14 天）被清理。"
+        )
+
+    table_rows = [
+        {
+            "figure_id": r["figure_id"],
+            "alt": r.get("alt") or "",
+            "tool_name": r.get("tool_name") or "",
+            "sample_id": r.get("sample_id") or "",
+            "created_at": str(r.get("created_at"))[:16],
+        }
+        for r in rows
+    ]
+    return (
+        f"找到 {len(rows)} 張圖（用 bio_get_figure(figure_id) 索取單張）：\n\n"
+        + _fmt_table(table_rows)
+    )
+
+
 async def _handle_bio_get_figure(args: dict) -> list[types.ContentBlock]:
     """Return a caller-visible cached figure plus its resource link."""
     from analysis.figure_cache import load_figure
@@ -1616,6 +1660,7 @@ _HANDLERS.update(
         "bio_compare_versions": _handle_bio_compare_versions,
         "bio_failure_summary": _handle_bio_failure_summary,
         "bio_read_report": _handle_bio_read_report,
+        "bio_find_figure": _handle_bio_find_figure,
         "bio_get_figure": _handle_bio_get_figure,
         "bio_get_artifact": _handle_bio_get_artifact,
         "bio_deliver_results": _handle_bio_deliver_results,
@@ -1809,11 +1854,19 @@ async def call_tool(name: str, arguments: dict) -> list[types.ContentBlock]:
     if isinstance(result, list):
         return list(result)  # type: ignore[return-value]
     # 文字結果統一出口：剝除 inline base64 圖片，避免爆 LLM context（換成 bio_get_figure 佔位符）
+    # 同時把每張圖的 figure_id 寫進 figure_index（best-effort），讓 bio_find_figure 可以
+    # 依 sample_id/tool_name/alt 描述反查，不必重讀整份報告全文。
     return [
         types.TextContent(
             type="text",
             text=strip_base64_for_llm(
-                result, requested_by=visible_requested_by(identity)
+                result,
+                requested_by=visible_requested_by(identity),
+                context={
+                    "tool_name": name,
+                    "sample_id": (arguments or {}).get("sample_id"),
+                    "analysis_id": (arguments or {}).get("analysis_id"),
+                },
             ),
         )
     ]

@@ -577,6 +577,38 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                     },
         mcp_handler="_handle_bio_failure_summary",
     ),
+    "bio_find_figure": ToolSpec(
+        description="依 sample_id / tool_name / alt 關鍵字查已索引的 figure_id。"
+                "0 token，純 SQL（不打 embedding server）。要看某張圖前先呼叫這個工具拿 "
+                "figure_id，再用 bio_get_figure 索取——不要為了找一張圖重新盤點或重讀整份報告全文 "
+                "（bio_sample_list → bio_history_lookup → bio_artifact_summary → bio_read_report 那一串）。"
+                "只涵蓋已經產生過、走過 MCP 文字出口的圖；查無結果代表尚未產生過該圖，或已超過 "
+                "TTL（14 天）被清理。",
+        json_schema={
+                        "type": "object",
+                        "properties": {
+                            "sample_id": {
+                                "type": "string",
+                                "description": "限定特定樣本，留空則不限。",
+                            },
+                            "tool_name": {
+                                "type": "string",
+                                "description": "限定產生該圖的工具名稱（如 bio_run_spatial_eda），留空則不限。",
+                            },
+                            "query": {
+                                "type": "string",
+                                "description": "在圖片 alt 文字中做子字串比對（大小寫不敏感），留空則不限。",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "回傳筆數上限（預設 20）。",
+                                "default": 20,
+                            },
+                        },
+                        "required": [],
+                    },
+        mcp_handler="_handle_bio_find_figure",
+    ),
     "bio_find_tool": ToolSpec(
         description="語意搜尋既有可重用的分析函數（tool discovery）。"
                 "寫 bio_execute_code 前務必先呼叫：描述分析意圖，回傳最相關的既有函數 "

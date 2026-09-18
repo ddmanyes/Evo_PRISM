@@ -501,6 +501,75 @@ class PostgresStore:
             logger.debug("metric write failed (%s): %s", tool_name, exc)
 
     # ------------------------------------------------------------------
+    # figure_index (v30)
+    # ------------------------------------------------------------------
+
+    def record_figure(
+        self,
+        figure_id: str,
+        *,
+        alt: str | None = None,
+        tool_name: str | None = None,
+        sample_id: str | None = None,
+        analysis_id: str | None = None,
+        requested_by: str | None = None,
+    ) -> None:
+        try:
+            with self.write_conn() as con:
+                con.execute(
+                    """
+                    INSERT INTO figure_index
+                        (figure_id, alt, tool_name, sample_id, analysis_id, requested_by)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    [figure_id, alt, tool_name, sample_id, analysis_id, requested_by],
+                )
+        except Exception as exc:
+            logger.debug("figure_index write failed (%s): %s", figure_id, exc)
+
+    def find_figures(
+        self,
+        *,
+        figure_id: str | None = None,
+        sample_id: str | None = None,
+        tool_name: str | None = None,
+        query: str | None = None,
+        requested_by: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list = []
+        if figure_id:
+            clauses.append("figure_id = %s")
+            params.append(figure_id)
+        if sample_id:
+            clauses.append("sample_id = %s")
+            params.append(sample_id)
+        if tool_name:
+            clauses.append("tool_name = %s")
+            params.append(tool_name)
+        if query:
+            clauses.append("alt ILIKE %s")
+            params.append(f"%{query}%")
+        if requested_by is not None:
+            clauses.append("requested_by = %s")
+            params.append(requested_by)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self.read_conn() as con:
+            rows = con.execute(
+                f"""
+                SELECT figure_id, alt, tool_name, sample_id, analysis_id, requested_by, created_at
+                FROM figure_index
+                {where}
+                ORDER BY created_at DESC
+                LIMIT {int(limit)}
+                """,
+                params,
+            ).fetchall()
+            cols = [d[0] for d in con.description]
+        return [dict(zip(cols, r)) for r in rows]
+
+    # ------------------------------------------------------------------
     # API-key identity lifecycle
     # ------------------------------------------------------------------
 
