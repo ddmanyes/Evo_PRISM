@@ -1034,8 +1034,14 @@ async def _handle_bio_find_figure(args: dict) -> str:
 
 
 async def _handle_bio_get_figure(args: dict) -> list[types.ContentBlock]:
-    """Return a caller-visible cached figure plus its resource link."""
+    """Return a caller-visible cached figure plus its resource link.
+
+    超過 ARTIFACT_RESOURCE_MAX_MB 時不 inline：base64 會再膨脹約 4/3，硬塞只會灌爆
+    transport/context。改回傳 ResourceLink 與明確訊息，與 bio_deliver_results 吃同一把
+    尺（`inline_limit`）——這支原本完全沒有大小閘門，是四個交付點裡唯一的破口。
+    """
     from analysis.figure_cache import load_figure
+    from config.settings import ARTIFACT_RESOURCE_MAX_MB
     from server.auth import visible_requested_by
 
     figure_id = args["figure_id"]
@@ -1045,23 +1051,48 @@ async def _handle_bio_get_figure(args: dict) -> list[types.ContentBlock]:
         try:
             return load_figure(figure_id, requested_by=owner)
         except (FileNotFoundError, ValueError) as exc:
-            raise ValueError("figure not found or not accessible") from exc
+            # 保留 figure_cache 的三分支訊息（不是你的／已過 TTL／從未存在）。
+            # 原本一律替換成 "figure not found or not accessible"，等於在 MCP 邊界
+            # 把 load_figure 好不容易分流出來的原因丟掉，使用者永遠只看到同一句。
+            raise ValueError(str(exc)) from exc
 
     raw, mime = await asyncio.to_thread(_sync)
     filename = f"figure-{figure_id}{_extension_for_mime(mime)}"
     annotations = _user_annotations()
-    return [
-        types.TextContent(
-            type="text",
-            text=f"圖片已交付：{filename} | {mime} | {len(raw)} bytes",
-            annotations=annotations,
-        ),
-        types.ImageContent(
-            type="image",
-            data=base64.b64encode(raw).decode("ascii"),
-            mimeType=mime,
-            annotations=annotations,
-        ),
+    inline_limit = int(ARTIFACT_RESOURCE_MAX_MB * 1_048_576)
+
+    content: list[types.ContentBlock] = []
+    if len(raw) <= inline_limit:
+        content.append(
+            types.TextContent(
+                type="text",
+                text=f"圖片已交付：{filename} | {mime} | {len(raw)} bytes",
+                annotations=annotations,
+            )
+        )
+        content.append(
+            types.ImageContent(
+                type="image",
+                data=base64.b64encode(raw).decode("ascii"),
+                mimeType=mime,
+                annotations=annotations,
+            )
+        )
+    else:
+        content.append(
+            types.TextContent(
+                type="text",
+                text=(
+                    f"{filename} 為 {len(raw) / 1_048_576:.1f} MB，超過 inline 上限 "
+                    f"{ARTIFACT_RESOURCE_MAX_MB:.0f} MB，未內嵌"
+                    "（base64 會再膨脹約 4/3，硬塞會灌爆 transport）。"
+                    "請改用下方 resource link 下載，或改以原生解析度 ROI 切塊索取。"
+                    "注意：把整張縮小交付對細線疊圖無效——縮放會讓每顆細胞的輪廓消失。"
+                ),
+                annotations=annotations,
+            )
+        )
+    content.append(
         types.ResourceLink(
             type="resource_link",
             uri=f"figure://{figure_id}",
@@ -1070,8 +1101,9 @@ async def _handle_bio_get_figure(args: dict) -> list[types.ContentBlock]:
             mimeType=mime,
             size=len(raw),
             annotations=annotations,
-        ),
-    ]
+        )
+    )
+    return content
 
 
 async def _handle_bio_get_artifact(args: dict) -> list[types.ContentBlock]:
