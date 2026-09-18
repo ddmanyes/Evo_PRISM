@@ -374,6 +374,13 @@ def main():
                    "inline 上限，且送進對話會被客戶端降採樣到長邊 ~1568 使細線消失。"
                    "這裡另外產一組專供交付：總覽降到 DS=16（邊界仍走 max-pool，"
                    "區室呈色帶）、inset 逐塊不拼圖（單塊即可內嵌）。",
+            "path_note": "下方各項的 path 是【本次產出當下】的位置。一旦用 "
+                         "register_artifact 登記，analysis/artifact_registry.py 對 base64 "
+                         "超過 512,000 bytes（原檔約 384 KB）的檔案會複製到 "
+                         "results/overflow/overflow_<artifact_id>.<ext> 並【刪除原檔】，"
+                         "屆時這裡記的 path 會變成死路徑，overflow 路徑才是正式位置。"
+                         "登記後請改以 artifact_id 取用，並把 artifact_id / canonical_path "
+                         "回填到本區塊（腳本產出當下還拿不到 artifact_id）。",
             **delivery_paths,
         },
         "insets": {
