@@ -29,7 +29,7 @@ from typing import Optional
 import mistune
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -1444,8 +1444,21 @@ async def engram_artifacts(
 
 
 @app.get("/api/engram/artifact/{artifact_id}/inline")
-async def engram_artifact_inline(artifact_id: str):
-    """取得單一 artifact 的 inline_data（base64）。"""
+async def engram_artifact_inline(artifact_id: str, download: bool = False):
+    """取得單一 artifact：有 blob 回 base64，沒有 blob（或 download=1）直接串出原檔。
+
+    修掉兩個既有缺陷：
+
+    1. 這支一直在查 ``aa.inline_data``，但 migration v14 已把該欄搬到
+       ``analysis_artifact_blobs``，所以自 v14 起對【每一筆】artifact 都回 500
+       （DuckDB Binder Error），不是偶發——等於整條下載路徑長期是死的。
+    2. 即使修好 JOIN，1092 筆 artifact 裡有 350 筆沒有 blob（含 36 MB 的
+       compartment / QC 疊圖，正是最需要下載的那些），回 ``inline_data=null``
+       仍然拿不到檔案。故無 blob 時改以 FileResponse 從磁碟串出原檔。
+
+    路徑安全沿用 ``artifact_resources._resolve_artifact_file``（拒符號連結、
+    強制落在 BIO_DB_ROOT 內、須為一般檔），不另外自己寫一套檢查。
+    """
     _require_analysis_id(artifact_id)
     from store.factory import get_store
     from server.auth import visible_requested_by
@@ -1456,20 +1469,41 @@ async def engram_artifact_inline(artifact_id: str):
 
     with get_store().read_conn() as con:
         row = con.execute(
-            f"""SELECT aa.artifact_id::VARCHAR, aa.label, aa.mime_type, aa.inline_data
+            f"""SELECT aa.artifact_id::VARCHAR, aa.label, aa.mime_type,
+                      ab.inline_data, aa.file_path
                FROM analysis_artifacts aa
                JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id
+               LEFT JOIN analysis_artifact_blobs ab
+                      ON ab.artifact_id = aa.artifact_id
                WHERE aa.artifact_id = ?{owner_clause}""",
             params,
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Artifact 不存在")
-    return {
-        "artifact_id": row[0],
-        "label": row[1],
-        "mime_type": row[2],
-        "inline_data": row[3],
-    }
+
+    row_id, label, mime_type, inline_data, file_path = row
+    if inline_data is not None and not download:
+        return {
+            "artifact_id": row_id,
+            "label": label,
+            "mime_type": mime_type,
+            "inline_data": inline_data,
+        }
+
+    from analysis.artifact_resources import (
+        ArtifactResourceError,
+        _resolve_artifact_file,
+    )
+
+    try:
+        abs_path = _resolve_artifact_file(file_path or "")
+    except ArtifactResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        abs_path,
+        media_type=mime_type or "application/octet-stream",
+        filename=abs_path.name,
+    )
 
 
 @app.get("/api/engram/compare")
