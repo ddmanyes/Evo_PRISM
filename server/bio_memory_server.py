@@ -1033,6 +1033,140 @@ async def _handle_bio_find_figure(args: dict) -> str:
     )
 
 
+async def _handle_bio_crop_figure_roi(args: dict) -> list[types.ContentBlock]:
+    """對超過 inline 上限的大圖切原生解析度 ROI。
+
+    為什麼不是「把整張縮小交付」：客戶端會把長邊降到約 1568 px，對「H&E 底圖 +
+    1 px 標註細線」這類圖，任何整張縮放都會讓線消失（實測 16 倍縮小後 max-pool
+    保留 40.1% 的邊界格子，直接取樣只剩 0.2%）。唯一有效的槓桿是最終畫面裡的
+    每單位面積像素數，所以要切塊而不是縮圖。
+    """
+    from analysis.artifact_resources import (
+        ArtifactResourceError,
+        _resolve_artifact_file,
+        get_artifact_handle,
+    )
+    from analysis.figure_roi import (
+        CLIENT_MAX_EDGE,
+        FigureROIError,
+        annotation_hotspots,
+        crop_png,
+        grid_geometry,
+        load_image,
+        parse_tile_label,
+        render_overview,
+        tile_box,
+    )
+    from config.settings import ARTIFACT_RESOURCE_MAX_MB
+    from server.auth import visible_requested_by
+    from store.factory import get_store
+
+    artifact_id = args["artifact_id"]
+    mode = str(args.get("mode", "overview")).lower()
+    if mode not in {"overview", "tile", "auto"}:
+        raise ValueError(f"mode 只接受 overview / tile / auto，收到 {mode!r}")
+    tile = int(args.get("tile", CLIENT_MAX_EDGE))
+    owner = visible_requested_by()
+
+    def _sync() -> dict:
+        with get_store().read_conn() as con:
+            h = get_artifact_handle(con, artifact_id, preview_lines=0, requested_by=owner)
+        if not h.get("found"):
+            raise ValueError(f"artifact_id={artifact_id!r} 不存在或無權存取。")
+        path = _resolve_artifact_file(h["local_path"])
+        arr = load_image(path)
+        geo = grid_geometry(int(arr.shape[1]), int(arr.shape[0]), tile)
+        return {"handle": h, "arr": arr, "geo": geo}
+
+    try:
+        ctx = await asyncio.to_thread(_sync)
+    except (ArtifactResourceError, FigureROIError) as exc:
+        raise ValueError(str(exc)) from exc
+
+    h, arr, geo = ctx["handle"], ctx["arr"], ctx["geo"]
+    annotations = _user_annotations()
+    inline_limit = int(ARTIFACT_RESOURCE_MAX_MB * 1_048_576)
+
+    def _hot() -> list[dict]:
+        return annotation_hotspots(arr, geo, top_n=int(args.get("top_n", 5)))
+
+    if mode == "overview":
+        png = await asyncio.to_thread(render_overview, arr, geo)
+        hot = await asyncio.to_thread(_hot)
+        lines = [
+            f"{h['label']}：{geo['image_size'][0]}x{geo['image_size'][1]}，"
+            f"切成 {geo['cols']} 欄 × {geo['rows']} 列（每格 {tile} px，共 {geo['n_tiles']} 格）。",
+            "下圖是【導航用】的降採樣總覽，疊了標號格線——它跟原圖一樣看不清細線，",
+            "要判讀請用 mode='tile' + tile_label 取該格的原生解析度影像。",
+            "",
+            "標註墨水最密的格（依飽和度，H&E 與空白背景飽和度低）：",
+        ]
+        lines += [f"  {d['tile']}  ink={d['ink_fraction']:.3f}  box={d['box']}" for d in hot]
+        content: list[types.ContentBlock] = [
+            types.TextContent(type="text", text="\n".join(lines), annotations=annotations)
+        ]
+    else:
+        if mode == "auto":
+            hot = await asyncio.to_thread(_hot)
+            if not hot:
+                raise ValueError("找不到任何含標註的格子。")
+            label = hot[0]["tile"]
+            note = f"auto 模式選了墨水最密的格 {label}（ink={hot[0]['ink_fraction']:.3f}）。"
+        else:
+            label = args.get("tile_label")
+            if not label:
+                raise ValueError("mode='tile' 需要 tile_label（例如 C4），可先用 mode='overview' 看格號。")
+            note = f"格 {label} 的原生解析度影像（未縮放）。"
+        try:
+            col, row = parse_tile_label(label, geo)
+        except FigureROIError as exc:
+            raise ValueError(str(exc)) from exc
+        box = tile_box(col, row, geo)
+        png = await asyncio.to_thread(crop_png, arr, box)
+        content = [
+            types.TextContent(
+                type="text",
+                text=(
+                    f"{note} 來源 {h['label']}（{geo['image_size'][0]}x{geo['image_size'][1]}）"
+                    f"，box={list(box)}，{len(png) / 1048576:.2f} MB。"
+                ),
+                annotations=annotations,
+            )
+        ]
+
+    if len(png) <= inline_limit:
+        content.append(
+            types.ImageContent(
+                type="image",
+                data=base64.b64encode(png).decode("ascii"),
+                mimeType="image/png",
+                annotations=annotations,
+            )
+        )
+    else:
+        content.append(
+            types.TextContent(
+                type="text",
+                text=(
+                    f"[裁切結果 {len(png) / 1048576:.1f} MB 仍超過 inline 上限 "
+                    f"{ARTIFACT_RESOURCE_MAX_MB:.0f} MB，請改用較小的 tile。]"
+                ),
+                annotations=annotations,
+            )
+        )
+    content.append(
+        types.ResourceLink(
+            type="resource_link",
+            uri=h["resource_uri"],
+            name=str(h["label"]),
+            description="來源 artifact（完整解析度原圖）",
+            mimeType=h.get("mime_type") or "image/png",
+            annotations=annotations,
+        )
+    )
+    return content
+
+
 async def _handle_bio_get_figure(args: dict) -> list[types.ContentBlock]:
     """Return a caller-visible cached figure plus its resource link.
 
@@ -1693,6 +1827,7 @@ _HANDLERS.update(
         "bio_failure_summary": _handle_bio_failure_summary,
         "bio_read_report": _handle_bio_read_report,
         "bio_find_figure": _handle_bio_find_figure,
+        "bio_crop_figure_roi": _handle_bio_crop_figure_roi,
         "bio_get_figure": _handle_bio_get_figure,
         "bio_get_artifact": _handle_bio_get_artifact,
         "bio_deliver_results": _handle_bio_deliver_results,

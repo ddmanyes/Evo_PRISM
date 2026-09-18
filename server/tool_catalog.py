@@ -577,6 +577,46 @@ TOOL_CATALOG: dict[str, "ToolSpec"] = {
                     },
         mcp_handler="_handle_bio_failure_summary",
     ),
+    "bio_crop_figure_roi": ToolSpec(
+        description="對超過 inline 上限的大圖切【原生解析度】ROI。"
+                "把整張縮小交付沒有用——客戶端會把長邊降到約 1568 px，"
+                "1 px 的標註細線（細胞輪廓等）會整條消失，看起來只剩底圖。"
+                "用法兩步：先 mode='overview' 取導航總覽（疊標號格線，並列出標註墨水最密的格），"
+                "再 mode='tile' + tile_label（如 C4）取該格原生影像判讀；"
+                "mode='auto' 則直接給墨水最密的那格。"
+                "本工具只看像素、不懂解剖學——要依生物身分選 ROI 請用產圖層的對應腳本。",
+        json_schema={
+                        "type": "object",
+                        "properties": {
+                            "artifact_id": {
+                                "type": "string",
+                                "description": "目標圖的 artifact UUID（由 bio_artifact_search 或 bio_deliver_results 取得）。",
+                            },
+                            "mode": {
+                                "type": "string",
+                                "enum": ["overview", "tile", "auto"],
+                                "default": "overview",
+                                "description": "overview=導航總覽；tile=取指定格；auto=取墨水最密的格。",
+                            },
+                            "tile_label": {
+                                "type": "string",
+                                "description": "mode='tile' 時指定格號，例如 C4（欄用字母、列用數字）。",
+                            },
+                            "tile": {
+                                "type": "integer",
+                                "default": 1568,
+                                "description": "格子邊長（原圖像素）。預設 1568 對齊客戶端長邊上限，該格幾乎 1:1 呈現。",
+                            },
+                            "top_n": {
+                                "type": "integer",
+                                "default": 5,
+                                "description": "overview 模式列出幾個墨水最密的格（預設 5）。",
+                            },
+                        },
+                        "required": ["artifact_id"],
+                    },
+        mcp_handler="_handle_bio_crop_figure_roi",
+    ),
     "bio_find_figure": ToolSpec(
         description="依 sample_id / tool_name / alt 關鍵字查已索引的 figure_id。"
                 "0 token，純 SQL（不打 embedding server）。要看某張圖前先呼叫這個工具拿 "
