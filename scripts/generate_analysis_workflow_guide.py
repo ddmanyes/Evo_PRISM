@@ -62,7 +62,7 @@ class ResultSample:
 
     @property
     def href(self) -> str:
-        return self.path.as_posix()
+        return "https://github.com/ddmanyes/Evo_PRISM/blob/master/docs/guides/WORKFLOW_STATUS.md"
 
 
 @dataclass(frozen=True)
@@ -427,7 +427,7 @@ def build_svg() -> str:
 
     # Link to real result files without copying research images into Git.
     out.append(svg_text(90, 548, ["真實結果圖檔（連結）"], size=30, weight=700, family="serif"))
-    out.append(svg_text(90, 582, ["點擊卡片開啟 EP 主機上的原始圖檔；研究影像不會被複製進本文件。"], size=17, color=MUTED))
+    out.append(svg_text(90, 582, ["點擊卡片查看結果取用說明；研究影像不會被複製進本文件。"], size=17, color=MUTED))
     sx, sy, sw, sh, gap = 90, 620, 342, 198, 48
     for index, sample in enumerate(SAMPLES):
         x = sx + index * (sw + gap)
@@ -592,6 +592,7 @@ def build_html(svg: str) -> str:
 </head>
 <body>
 <main>
+<aside style="padding:16px;background:#fff7ed;border-left:5px solid #eb6c36"><strong>2026-10-12 · Historical schematic / 歷史流程示意</strong> — <a href="https://github.com/ddmanyes/Evo_PRISM/blob/master/docs/guides/WORKFLOW_STATUS.md">Current input contract and result access / 最新輸入與結果取用說明</a>。原圖不代表全部方法已驗收；研究結果需透過自己的 EP 權限取用。</aside>
   <div class="hero">{svg}</div>
   <div class="notice"><strong>SCHEMATIC / 示意：</strong>流程關係是導覽示意；結果範例改為 EP 主機上的真實圖檔連結，沒有把研究影像複製進 Git。連結只適用於可存取該主機與檔案的使用者。</div>
   <section class="real-links" aria-labelledby="real-links-title"><div class="section-head"><p class="eyebrow" style="color:var(--blue)">REAL FILES</p><h2 id="real-links-title">真實圖檔連結</h2><p>開啟 PCA、Volcano、Heatmap、UMAP、Spatial QC 與 Segmentation overlay 原始結果。</p></div><ul>{sample_links}</ul></section>
@@ -614,7 +615,7 @@ def build_markdown() -> str:
         "",
         "## 真實圖檔連結",
         "",
-        "這些本機連結只適用於可存取 EP 主機與原始結果目錄的使用者。",
+        "歷史範例連結指向 WORKFLOW_STATUS.md 的結果取用與最新輸入說明。",
         "",
         *(
             f"- [{sample.label} — {sample.caption}]({sample.href})"

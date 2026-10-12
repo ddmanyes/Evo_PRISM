@@ -870,10 +870,10 @@ def build_method_svg(
 
     if detail.real_result and detail.real_result.is_file():
         out.append(
-            f'<a href="{_esc(detail.real_result.as_posix())}" target="_blank" rel="noopener" '
-            f'aria-label="{("Open real result for " if english else "開啟 ")}{_esc(step.tool)}{("" if english else " 真實結果圖檔")}"><rect x="850" y="1650" width="640" height="48" rx="24" fill="#dcfce7" stroke="#86efac"/>'
+            f'<a href="../../guides/WORKFLOW_STATUS.md" target="_blank" rel="noopener" '
+            f'aria-label="{("Result access guide for " if english else "開啟 ")}{_esc(step.tool)}{("" if english else " 真實結果圖檔")}"><rect x="850" y="1650" width="640" height="48" rx="24" fill="#dcfce7" stroke="#86efac"/>'
         )
-        out.append(_svg_text(1170, 1681, ["Open the real EP result ↗" if english else "開啟 EP 真實結果圖檔 ↗"], size=14, color=GREEN, weight=700, family="mono", anchor="middle"))
+        out.append(_svg_text(1170, 1681, ["Open the real EP result ↗" if english else "查看結果取用說明 ↗"], size=14, color=GREEN, weight=700, family="mono", anchor="middle"))
         out.append("</a>")
 
     legend = "Orange = preflight / quality warning   Blue = analysis / persistence   Green = real result link" if english else "橘色＝前置控制／品質警示   藍色＝分析／保存   綠色＝真實結果連結"
@@ -896,8 +896,8 @@ def build_method_html(
     real_link = ""
     if detail.real_result and detail.real_result.is_file():
         real_link = (
-            f'<a class="real" href="{_esc(detail.real_result.as_posix())}" target="_blank" rel="noopener">'
-            f'{"Open real result" if english else "開啟真實結果"}：<code>{_esc(detail.real_result.name)}</code> ↗</a>'
+            f'<a class="real" href="../../guides/WORKFLOW_STATUS.md" target="_blank" rel="noopener">'
+            f'{"Result access guide" if english else "結果取用說明"}：<code>{_esc(detail.real_result.name)}</code> ↗</a>'
         )
     lang_link = '<a href="index.html">繁體中文</a>' if english else '<a href="index.en.html">English</a>'
     back_label = "Back to EP analysis overview" if english else "返回 EP 分析總覽"
@@ -930,6 +930,7 @@ def build_method_html(
 <body>
 <main>
   <nav><a href="../../analysis_workflows.html">← {back_label}</a><code>{_esc(step.tool)}</code>{lang_link}</nav>
+  <aside style="padding:16px;background:#fff7ed;border-left:5px solid #eb6c36"><strong>2026-10-12 · Historical schematic / 歷史流程示意</strong> — <a href="../../guides/WORKFLOW_STATUS.md">Current input contract and result access / 最新輸入與結果取用說明</a>。原圖不代表全部方法已驗收；研究結果需透過自己的 EP 權限取用。</aside>
   <div class="sheet">{svg}</div>
   <div class="note"><strong>{"SCHEMATIC:" if english else "SCHEMATIC / 示意："}</strong>{note}</div>
 {f"  {real_link}" if real_link else ""}
