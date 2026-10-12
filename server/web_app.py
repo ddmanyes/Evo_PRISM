@@ -1119,6 +1119,8 @@ async def result_images(analysis_id: str):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     from server.agent import handle_message
+    from contextvars import copy_context
+    request_context = copy_context()  # Preserve authenticated actor across streaming/executor boundaries.
 
     try:
         history_deque, lock = _get_session(req.session_id)
@@ -1134,7 +1136,8 @@ async def chat(req: ChatRequest):
         history_snapshot = list(history_deque)
         future = loop.run_in_executor(
             None,
-            lambda: handle_message(
+            lambda: request_context.copy().run(
+                handle_message,
                 req.message,
                 history_snapshot,
                 backend=req.backend,
@@ -1173,7 +1176,7 @@ async def chat(req: ChatRequest):
 
             report_link = _extract_report_link(result.tool_calls)
             images = await loop.run_in_executor(
-                None, _extract_images_from_tool_calls, result.tool_calls
+                None, request_context.copy().run, _extract_images_from_tool_calls, result.tool_calls
             )
             yield _sse(
                 "message", {"text": result.text, "report_link": report_link, "images": images}

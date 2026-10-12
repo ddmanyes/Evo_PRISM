@@ -24,6 +24,12 @@ ENV_HASH: str | None = _compute_env_hash()
 # ── 根目錄 ────────────────────────────────────────────────
 BIO_DB_ROOT = Path(os.getenv("BIO_DB_ROOT", Path(__file__).parent.parent))
 
+# Isolated operational ledger; the existing Linux lock volume is preferred in Docker.
+EP_DECISION_STATE_PATH = Path(os.getenv(
+    "EP_DECISION_STATE_PATH",
+    str(Path(os.getenv("DUCKDB_APP_LOCK_PATH", str(BIO_DB_ROOT / ".locks" / "bio_memory.app.lock"))).parent / "ep_decision.sqlite3"),
+))
+
 # ── 資料層路徑 ─────────────────────────────────────────────
 L3_ROOT = Path(os.getenv("L3_DATA_ROOT", BIO_DB_ROOT / "crc_visium_data"))
 BULK_RNA_ROOT = Path(os.getenv("BULK_RNA_ROOT", BIO_DB_ROOT / "bulk_rna_data"))
@@ -221,3 +227,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
 SUMMARY_MAX_CHARS: int = 50
+
+# Clef host bridge: authenticated local shadow inference only.
+EP_CLEF_BRIDGE_URL = os.environ.get("EP_CLEF_BRIDGE_URL", "http://host.docker.internal:18764")
+EP_CLEF_TOKEN_PATH = Path(os.environ.get("EP_CLEF_TOKEN_PATH", "/data/locks/clef_shadow_token"))

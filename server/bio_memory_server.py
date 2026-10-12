@@ -1867,6 +1867,11 @@ async def dispatch_queued_tool(name: str, arguments: dict, identity) -> Any:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.ContentBlock]:
+    from server.tool_observation import invoke_async
+    return await invoke_async(_call_tool_impl, name, arguments, channel="mcp")
+
+
+async def _call_tool_impl(name: str, arguments: dict) -> list[types.ContentBlock]:
     from server.auth import (
         authorize_tool,
         current_identity,

@@ -45,6 +45,27 @@ class ToolSpec:
 
 
 TOOL_CATALOG: dict[str, "ToolSpec"] = {
+    'bio_decision_status': ToolSpec(
+        description='查詢已上線 EP 決策入口、規則模式、已選模型 identity 與自己的技術記錄數。native_model_enabled=false 代表尚未啟動模型推論。',
+        json_schema={'type': 'object', 'additionalProperties': False, 'properties': {}, 'required': []},
+        module="server.decision_advisor", func='status',
+    ),
+    'bio_decision_assess': ToolSpec(
+        description='開始分析或重用前，根據目前使用者可讀的 EP 完成歷史取得有來源 hash 的決策建議與下一個查證工具；缺少 producer/version/parent 時不宣稱可重用。只讀 metadata，不執行分析；shadow 模式會由本機 Clef 評分並保存比較，規則仍為主要建議。decision_id 可交給 bio_decision_feedback 記錄採用結果。',
+        json_schema={'type': 'object', 'additionalProperties': False, 'properties': {'sample_id': {'type': 'string', 'minLength': 1, 'maxLength': 128}, 'analysis_type': {'type': 'string', 'minLength': 1, 'maxLength': 128}, 'goal': {'type': 'string', 'maxLength': 2048}, 'task_id': {'type': 'string', 'maxLength': 128}, 'artifact_kind': {'type': 'string', 'enum': ['excel', 'figure', 'text', 'code_selection']}, 'task_mode': {'type': 'string', 'enum': ['retrieve', 'create', 'modify']}, 'output_format': {'type': 'string', 'enum': ['xlsx', 'svg', 'png', 'pdf', 'md', 'txt', 'json']}}, 'required': ['sample_id', 'analysis_type']},
+        module="server.decision_advisor", func='assess',
+    ),
+    'bio_decision_feedback': ToolSpec(
+        description='記錄自己一筆 decision_id 的實際採用與驗收結果。receipt_ref 僅保存 hash；不視為獨立 gold，不自動授予訓練權，同筆結果不可覆寫。',
+        json_schema={'type': 'object', 'additionalProperties': False, 'properties': {'decision_id': {'type': 'string', 'maxLength': 128}, 'adoption': {'type': 'string', 'enum': ['ADOPTED', 'REJECTED', 'MODIFIED', 'NEEDS_EVIDENCE']}, 'acceptance': {'type': ['boolean', 'null']}, 'receipt_ref': {'type': 'string', 'maxLength': 512}}, 'required': ['decision_id', 'adoption', 'receipt_ref']},
+        module="server.decision_advisor", func='feedback',
+    ),
+    'bio_decision_control': ToolSpec(
+        description='Admin 決策入口控制：off 停用建議、rules 啟用規則建議、select 登記替換模型 identity。expected_revision 必須符合目前版本。模型替換需新 epoch／新任務；登記本身不載入或推論模型。',
+        json_schema={'type': 'object', 'additionalProperties': False, 'properties': {'action': {'type': 'string', 'enum': ['off', 'rules', 'shadow', 'select']}, 'expected_revision': {'type': 'integer', 'minimum': 0}, 'selection': {'type': 'object', 'additionalProperties': False, 'properties': {'epoch': {'type': 'string', 'maxLength': 128}, 'identity': {'type': 'object', 'additionalProperties': False, 'properties': {'model': {'type': 'string', 'maxLength': 128}, 'revision': {'type': 'string', 'maxLength': 128}, 'checkpoint': {'type': 'string', 'maxLength': 128}, 'template': {'type': 'string', 'maxLength': 128}, 'runtime': {'type': 'string', 'maxLength': 128}, 'adapter_version': {'type': 'string', 'maxLength': 128}}, 'required': ['model', 'revision', 'checkpoint', 'template', 'runtime', 'adapter_version']}}, 'required': ['epoch', 'identity']}}, 'required': ['action', 'expected_revision']},
+        module="server.decision_advisor", func='control',
+        required_role=Role.ADMIN,
+    ),
     "bio_get_analysis_workflow": ToolSpec(
         description=(
             "取得 Evo-PRISM 主要分析流程圖與輸出檔案指南。"

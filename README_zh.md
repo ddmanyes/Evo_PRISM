@@ -326,7 +326,7 @@ bio_run_deg counts_path=tests/fixtures/bulk_rna/deseq2_counts_top1000.csv
 
 ## LLM + MCP Server 整合
 
-Evo_PRISM 以 **MCP（Model Context Protocol）** 作為 LLM 與工具箱之間的標準橋樑。任何支援 MCP 的 AI 客戶端（Claude Code、Antigravity IDE、Web UI）都能直接呼叫 25 個工具（啟用沙盒後共 26 個），讓 LLM 自主決定何時查詢歷史、何時觸發分析、何時讀回報告——無需人工介入。
+Evo_PRISM 以 **MCP（Model Context Protocol）** 作為 LLM 與工具箱之間的標準橋樑。任何支援 MCP 的 AI 客戶端（Claude Code、Antigravity IDE、Web UI）都能從共用工具目錄取得可用工具，讓 LLM 自主決定何時查詢歷史、何時觸發分析、何時讀回報告——無需人工介入。
 
 同時提供 **stdio** 與 **HTTP** 兩種 transport。
 
@@ -335,7 +335,24 @@ Evo_PRISM 以 **MCP（Model Context Protocol）** 作為 LLM 與工具箱之間�
 .venv/bin/python server/bio_memory_server.py --transport http --port 8082
 ```
 
-### 可用工具（預設 25 個）
+### 決策建議與可選的 Clef shadow
+
+EP 可在重用或開始工作前，查詢目前使用者有權讀取的分析歷史 metadata，回傳經 guard 檢查的建議，並保存明確採用回饋。MCP 與 Web Agent 共用四個工具：
+
+| 工具 | 用途 |
+| :--- | :--- |
+| `bio_decision_status` | 查看模式、模型 identity、bridge 就緒狀態與自己的事件數 |
+| `bio_decision_assess` | 讀取允許的 metadata，回傳附來源 hash 的建議 |
+| `bio_decision_feedback` | 記錄明確採用與驗收；不自動產生訓練標籤 |
+| `bio_decision_control` | Admin 以 revision 檢查控制模式及模型選擇 |
+
+全新 ledger 預設 **off**；`rules` 使用固定規則；可選的 **shadow** 會請另外配置的本機 Clef bridge 對同一份 metadata 評分，規則仍為主要建議。兩者都不直接執行分析，也不代表科學正確性已驗證。登記模型 identity 不會載入權重。
+
+工具 handler 的觀測紀錄包含呼叫 ID、耗時、結果狀態與有上限的內容指紋，**不是完整聊天或研究資料封存**。進入 handler 前的認證／schema 拒絕、worker 內部步驟及完整內容不在此 ledger 範圍；採用結果須明確回饋，紀錄不自動成為訓練資料。
+
+本倉庫包含 advisor 與 bridge **客戶端**，不包含模型權重或自動部署的 MLX 主機服務。既有部署更新程式後須重建／重啟 API；MCP 客戶端重連以更新工具目錄。配置、限制與回退詳見[決策建議操作指南](docs/guides/DECISION_ADVISOR.md)。shadow 運作成功不等於獨立模型品質或自主採用驗收通過。
+
+### 部分可用工具
 
 | 工具 | 說明 |
 | :--- | :--- |

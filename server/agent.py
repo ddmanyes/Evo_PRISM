@@ -56,7 +56,9 @@ logger = logging.getLogger(__name__)
 
 # ── 系統 Prompt ───────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """你是「智慧生資分析平台」AI Agent，專為實驗室生物資訊分析設計。
+SYSTEM_PROMPT = """分析／重用任务若有 sample_id 和 analysis_type，先用 bio_decision_assess 取得带來源 hash 的 metadata 建議；依 next_tool 補查證據，採用後用 bio_decision_feedback 保存回條。建議仍須依既有分析與資料權限執行。
+
+你是「智慧生資分析平台」AI Agent，專為實驗室生物資訊分析設計。
 
 ## 圖片顯示能力（重要）
 
@@ -292,6 +294,11 @@ assert set(_TOOL_HANDLERS) == set(_TOOL_CATALOG_FOR_BIO_TOOLS), (
 
 
 def execute_tool(name: str, tool_input: dict) -> str:
+    from server.tool_observation import invoke
+    return invoke(_execute_tool_impl, name, tool_input, channel="web")
+
+
+def _execute_tool_impl(name: str, tool_input: dict) -> str:
     """執行工具並回傳字串結果（含錯誤訊息）。
 
     2026-07-24 架構審查（決策 2/4）：跟 MCP 端的 call_tool() 對等補上 dangerous gate、

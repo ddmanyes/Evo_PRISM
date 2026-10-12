@@ -356,7 +356,7 @@ bio_run_deg counts_path=tests/fixtures/bulk_rna/deseq2_counts_top1000.csv
 
 ## LLM + MCP Integration
 
-Evo_PRISM uses **MCP (Model Context Protocol)** as the standard bridge between LLMs and tools. Any MCP-compatible client (Claude Code, Antigravity IDE, Web UI) can invoke 36 built-in tools directly (37 with sandbox enabled) — the LLM autonomously decides when to query history, trigger analysis, or retrieve reports, with no manual intervention required.
+Evo_PRISM uses **MCP (Model Context Protocol)** as the standard bridge between LLMs and tools. Any MCP-compatible client (Claude Code, Antigravity IDE, Web UI) can discover the available tools from the shared catalog — the LLM autonomously decides when to query history, trigger analysis, or retrieve reports, with no manual intervention required.
 
 Both **stdio** and **HTTP** transports are supported for external AI client integration.
 
@@ -365,7 +365,24 @@ Both **stdio** and **HTTP** transports are supported for external AI client inte
 .venv/bin/python server/bio_memory_server.py --transport http --port 8082
 ```
 
-### Available Tools (36 by default)
+### Decision advisor and optional Clef shadow
+
+EP can inspect the current user's analysis-history metadata before reuse or new work, return a guarded suggestion, and record explicit adoption feedback. MCP and the Web Agent share four tools:
+
+| Tool | Purpose |
+| :--- | :--- |
+| `bio_decision_status` | Inspect mode, model identity, bridge readiness and your event counts |
+| `bio_decision_assess` | Read permitted metadata and return a suggestion with source hashes |
+| `bio_decision_feedback` | Record explicit adoption and acceptance; no automatic training labels |
+| `bio_decision_control` | Admin-only mode and model selection, using a revision check |
+
+A fresh ledger starts **off**. `rules` uses deterministic suggestions; optional **shadow** asks a separately configured local Clef bridge to score the same metadata while rules remain the primary suggestion. Neither mode executes analysis tools or verifies scientific correctness. Selecting a model identity does not load its weights.
+
+Tool-handler observations record call IDs, duration, outcome and bounded content fingerprints. They are **not a complete conversation or research-data archive**: authentication/schema rejections before the handler, worker internals and complete payloads are outside this ledger. Adoption requires explicit feedback; observations do not automatically become training data.
+
+The repository includes the advisor and bridge **client**, not model weights or an automatically provisioned MLX host service. Existing deployments need an API rebuild/restart after updating code; MCP clients should reconnect to refresh the tool catalog. See the [decision advisor guide](docs/guides/DECISION_ADVISOR.md) for configuration, bounds and fallback behavior. Shadow operation is not evidence of independent model quality or readiness for autonomous adoption.
+
+### Selected tools
 
 | Tool | Description |
 | :--- | :--- |
