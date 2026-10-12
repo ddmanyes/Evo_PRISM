@@ -197,7 +197,9 @@ def migrate(db_path: Path = DUCKDB_PATH) -> None:
 
         tables = {t for t, _ in _TARGETS}
         views = _dependent_views(con, tables)
-        indexes = {t: _index_sql(con, t) for t, _ in _TARGETS}
+        # Only rebuilt tables lose their indexes. Fresh installs can already
+        # have soft references on analysis_history, whose indexes remain live.
+        indexes = {t: _index_sql(con, t) for t, _ in todo}
         fts_before = _fts_present(con)
         print(f"相依 view：{[v for v, _ in views]}")
         print(f"待重建索引：{ {t: len(v) for t, v in indexes.items()} }")

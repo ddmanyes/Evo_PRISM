@@ -373,8 +373,17 @@ def verify(con: duckdb.DuckDBPyConnection):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Initialize the EP database")
+    parser.add_argument(
+        "--no-samples", action="store_true",
+        help="Create schema without the legacy lab sample registry entries",
+    )
+    args = parser.parse_args()
     con = init_db()
-    populate_registry(con)
+    if not args.no_samples:
+        populate_registry(con)
     verify(con)
     con.close()
     print("\nDone. bio_memory.duckdb initialized.")
