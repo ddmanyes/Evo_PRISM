@@ -43,6 +43,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from analysis.path_utils import read_back_bytes  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 INLINE_SIZE_LIMIT_KB = 500
@@ -120,7 +122,7 @@ def _read_inline(path: Path) -> Optional[str]:
     try:
         if path.stat().st_size > INLINE_SIZE_LIMIT_KB * 1024:
             return None
-        return base64.b64encode(path.read_bytes()).decode()
+        return base64.b64encode(read_back_bytes(path)).decode()
     except OSError:
         return None
 
@@ -425,7 +427,7 @@ def register_artifact(
 
     if path.exists():
         try:
-            raw_bytes = path.read_bytes()
+            raw_bytes = read_back_bytes(path)
             size_kb = len(raw_bytes) // 1024
 
             # Check if base64 encoded size exceeds DuckDB constraint (500KB / 512,000 bytes)
@@ -492,11 +494,16 @@ def register_artifact(
             code_hash = _hash_function_source(producing_fn)
         env_hash = _hash_env()
 
-    # Matryoshka 256-dim sub-vector (migration v17, 9D-1)
+    # Matryoshka 256-dim sub-vector (migration v17, 9D-1) — DISABLED 2026-09-03.
+    # bge-m3 is not MRL-trained, so embedding[:256] is not a valid coarse
+    # sub-embedding (three primary sources cross-checked in second-brain's
+    # chunking/embedding plan, Phase A — this is not PCA and we're not doing that
+    # either). The read side already defaults MATRYOSHKA_ENABLED=false
+    # (config/settings.py); this stops the write side from computing and storing
+    # the invalid truncated vector too, so nothing in analysis_artifacts implies
+    # this data is usable. Do not re-enable without a Matryoshka-trained model.
     embedding_256: Optional[list[float]] = None
-    use_matryoshka = _matryoshka_col_exists(con)
-    if use_matryoshka and embedding is not None:
-        embedding_256 = embedding[:256]
+    use_matryoshka = False
 
     use_provenance = _provenance_col_exists(con)
 
@@ -562,6 +569,7 @@ def get_artifacts(
     artifact_type: Optional[str] = None,
     artifact_subtype: Optional[str] = None,
     include_inline: bool = True,
+    requested_by: Optional[str] = None,
 ) -> list[dict]:
     """Return all artifacts for one analysis run.
 
@@ -578,6 +586,11 @@ def get_artifacts(
     if artifact_subtype:
         where.append("aa.artifact_subtype = ?")
         params.append(artifact_subtype)
+    owner_join = ""
+    if requested_by is not None:
+        owner_join = "JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id"
+        where.append("ah.requested_by = ?")
+        params.append(requested_by)
 
     use_blob_table = include_inline and _blob_table_exists(con)
     inline_col = "b.inline_data" if use_blob_table else "NULL AS inline_data"
@@ -593,6 +606,7 @@ def get_artifacts(
                aa.label, aa.file_path, {inline_col}, aa.file_size_kb,
                aa.mime_type, aa.created_at
         FROM   analysis_artifacts aa
+        {owner_join}
         {blob_join}
         WHERE  {" AND ".join(where)}
         ORDER  BY aa.created_at
@@ -621,6 +635,7 @@ def compare_analyses(
     *,
     artifact_subtype: Optional[str] = None,
     include_inline: bool = True,
+    requested_by: Optional[str] = None,
 ) -> dict[str, list[dict]]:
     """Return artifacts grouped by analysis_id for side-by-side comparison."""
     if not analysis_ids:
@@ -641,6 +656,10 @@ def compare_analyses(
     if artifact_subtype:
         subtype_clause = "AND aa.artifact_subtype = ?"
         params.append(artifact_subtype)
+    owner_clause = ""
+    if requested_by is not None:
+        owner_clause = "AND ah.requested_by = ?"
+        params.append(requested_by)
 
     rows = con.execute(
         f"""
@@ -655,6 +674,7 @@ def compare_analyses(
         {blob_join}
         WHERE  aa.analysis_id IN ({placeholders})
                {subtype_clause}
+               {owner_clause}
         ORDER  BY aa.analysis_id, aa.created_at
         """,
         params,
@@ -688,10 +708,14 @@ def compare_analyses(
 def artifact_summary(
     con: duckdb.DuckDBPyConnection,
     sample_id: str,
+    *,
+    requested_by: Optional[str] = None,
 ) -> dict:
     """Return a 0-token metadata overview for all analyses of a sample."""
+    owner_clause = " AND ah.requested_by = ?" if requested_by is not None else ""
+    params = [sample_id] + ([requested_by] if requested_by is not None else [])
     rows = con.execute(
-        """
+        f"""
         SELECT
             ah.analysis_id,
             ah.analysis_type,
@@ -702,10 +726,11 @@ def artifact_summary(
         LEFT   JOIN analysis_artifacts aa ON ah.analysis_id = aa.analysis_id
         WHERE  ah.sample_id = ?
           AND  ah.status    = 'completed'
+          {owner_clause}
         GROUP  BY ah.analysis_id, ah.analysis_type, ah.completed_at
         ORDER  BY ah.completed_at DESC NULLS LAST
         """,
-        [sample_id],
+        params,
     ).fetchall()
 
     if not rows:
@@ -757,14 +782,19 @@ _ARTIFACT_COLS = [
 ]
 
 
-def _build_sample_filter(sample_id: Optional[str]) -> tuple[str, str, list]:
+def _build_sample_filter(
+    sample_id: Optional[str], requested_by: Optional[str]
+) -> tuple[str, str, list]:
+    conditions: list[str] = []
+    params: list = []
     if sample_id:
-        return (
-            "JOIN analysis_history ah ON aa.analysis_id = ah.analysis_id",
-            "AND ah.sample_id = ?",
-            [sample_id],
-        )
-    return "", "", []
+        conditions.append("AND ah.sample_id = ?")
+        params.append(sample_id)
+    if requested_by is not None:
+        conditions.append("AND ah.requested_by = ?")
+        params.append(requested_by)
+    join = "JOIN analysis_history ah ON aa.analysis_id = ah.analysis_id" if conditions else ""
+    return join, " ".join(conditions), params
 
 
 def _layer1_exact_search(
@@ -994,6 +1024,7 @@ def search_artifacts(
     threshold: float = 0.01,
     artifact_subtype: Optional[str] = None,
     sample_id: Optional[str] = None,
+    requested_by: Optional[str] = None,
 ) -> list[dict]:
     """Hybrid RRF search across artifact embeddings (9A-2 + P0-B FTS).
 
@@ -1021,7 +1052,7 @@ def search_artifacts(
         List of artifact dicts with 'score' (RRF) and 'search_layer' fields.
     """
     t_start = time.monotonic()
-    sample_join, sample_where, sample_params = _build_sample_filter(sample_id)
+    sample_join, sample_where, sample_params = _build_sample_filter(sample_id, requested_by)
 
     exact_ranked, exact_rows_map = _layer1_exact_search(
         con, artifact_subtype, sample_join, sample_where, sample_params, n

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd 排程：每週日 04:00 驗證原始 pipeline 輸出的完整性
+
+  背景見 CLAUDE.md §6「原始 pipeline 輸出不可修改」。2026-09-16 外部工具重寫
+  Space Ranger 的 barcodes.tsv.gz，把矩陣每一欄錯貼 bin —— 該損壞不拋任何錯誤，
+  數字全部看似正常，數小時分析都建立在假訊號上。這支是靜態偵測層。
+
+  安裝：
+    cp docs/launchd/launchd_verify_manifests.plist.example \
+       ~/Library/LaunchAgents/com.evoprism.verifymanifests.plist
+    launchctl load ~/Library/LaunchAgents/com.evoprism.verifymanifests.plist
+
+  手動觸發：  launchctl start com.evoprism.verifymanifests
+  查看結果：  tail -40 /Volumes/KINGSTON/Evo_PRISM/logs/manifest_verify.log
+  移除：      launchctl unload ~/Library/LaunchAgents/com.evoprism.verifymanifests.plist
+
+  ⚠️ launchd 的 stdout/stderr 不可寫在 KINGSTON（exFAT）—— launchd 在啟動前要先建立
+     這兩個檔，在 exFAT 上會失敗並以 EX_CONFIG(78) 拒絕整個 job，連程序都不會啟動。
+     一律指向家目錄（APFS）。既有的 com.evoprism.dbbackup 也是這樣。
+
+  注意：KINGSTON 未掛載時腳本會標記 ⊘ 並略過，不會誤報為資料變動。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.evoprism.verifymanifests</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/lab_center/.venvs/hermes-bio-memory/bin/python</string>
+        <string>/Volumes/KINGSTON/Evo_PRISM/scheduler/verify_manifests.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Volumes/KINGSTON/Evo_PRISM</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/lab_center/evoprism_logs/manifest_verify.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/lab_center/evoprism_logs/manifest_verify.stderr.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

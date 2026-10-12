@@ -81,6 +81,7 @@ class ImpactReport:
     affected_artifact_ids: list[str] = field(default_factory=list)
     affected_samples: list[str] = field(default_factory=list)
     untracked_note: str = ""  # tool_id 覆蓋缺口提示
+    param_filter_note: str = ""  # diff-level tagging 縮窄說明（P3）
 
     @property
     def n_analyses(self) -> int:
@@ -101,11 +102,64 @@ def _resolve_tool_ids(con: duckdb.DuckDBPyConnection, tool_name: str) -> list[st
     return [str(r[0]) for r in rows]
 
 
-def tool_impact(con: duckdb.DuckDBPyConnection, tool_name: str) -> ImpactReport:
+def _get_active_affected_params(con: duckdb.DuckDBPyConnection, tool_name: str) -> list[str] | None:
+    """取 active 版本的 affected_params（v25+ schema）；欄位不存在時回 None。"""
+    try:
+        row = con.execute(
+            """
+            SELECT affected_params FROM tools
+            WHERE tool_name = ? AND status = 'active'
+            LIMIT 1
+            """,
+            [tool_name],
+        ).fetchone()
+        if row and row[0] is not None:
+            val = row[0]
+            if isinstance(val, str):
+                import json as _json
+
+                val = _json.loads(val)
+            if isinstance(val, list) and val:
+                return [str(p) for p in val]
+    except Exception:
+        pass
+    return None
+
+
+def _analysis_uses_affected_params(
+    parameters_json: str | dict | None,
+    affected_params: list[str],
+) -> bool:
+    """回傳 True 如果 parameters 中包含任何 affected_params 的 key。"""
+    if not parameters_json:
+        return False
+    if isinstance(parameters_json, str):
+        import json as _json
+
+        try:
+            params = _json.loads(parameters_json)
+        except Exception:
+            return False
+    else:
+        params = parameters_json
+    if not isinstance(params, dict):
+        return False
+    return bool(set(affected_params) & set(params.keys()))
+
+
+def tool_impact(
+    con: duckdb.DuckDBPyConnection,
+    tool_name: str,
+    *,
+    requested_by: str | None = None,
+) -> ImpactReport:
     """改版 / deprecate 某工具的爆炸範圍。
 
-    兩條影響邊：
+    三條影響邊：
       1. analysis_history.tool_id ∈ 該工具所有版本 → confidence 1.0（tool_id-exact）
+         若 active 版本有 affected_params（P3）：
+           - parameters 含 affected_params key → confidence 1.0（param-affected）
+           - 否則 → confidence 0.3（param-unaffected，降低但不移除）
       2. analysis_type 對應到 tool_name 但 tool_id 為 NULL → confidence 0.6（heuristic）
     再往下展開受影響的 artifacts 與 samples。
     """
@@ -115,45 +169,75 @@ def tool_impact(con: duckdb.DuckDBPyConnection, tool_name: str) -> ImpactReport:
     report = ImpactReport(target_kind="tool", target=tool_name)
     seen: set[str] = set()
 
+    # diff-level tagging（P3）：取 active 版本 affected_params
+    affected_params = _get_active_affected_params(con, tool_name)
+
     # 邊 1：tool_id 精確
     tool_ids = _resolve_tool_ids(con, tool_name)
     if tool_ids:
         placeholders = ", ".join("?" * len(tool_ids))
+        owner_clause = " AND requested_by = ?" if requested_by is not None else ""
+        query_params = tool_ids + ([requested_by] if requested_by is not None else [])
         rows = con.execute(
             f"""
-            SELECT analysis_id, analysis_type, sample_id, status
+            SELECT analysis_id, analysis_type, sample_id, status, parameters
             FROM   analysis_history
             WHERE  tool_id IN ({placeholders})
+                   {owner_clause}
             ORDER  BY started_at DESC
             """,
-            tool_ids,
+            query_params,
         ).fetchall()
-        for aid, atype, sid, status in rows:
+        n_narrowed = 0
+        for aid, atype, sid, status, params_raw in rows:
+            if affected_params is not None:
+                uses = _analysis_uses_affected_params(params_raw, affected_params)
+                if uses:
+                    conf = CONF_TOOL_ID_EXACT
+                    reason = "tool_id-exact|param-affected"
+                else:
+                    conf = 0.3
+                    reason = "tool_id-exact|param-unaffected"
+                    n_narrowed += 1
+            else:
+                conf = CONF_TOOL_ID_EXACT
+                reason = "tool_id-exact"
             report.affected_analyses.append(
                 AffectedAnalysis(
                     analysis_id=str(aid),
                     analysis_type=atype,
                     sample_id=sid,
                     status=status,
-                    confidence=CONF_TOOL_ID_EXACT,
-                    reason="tool_id-exact",
+                    confidence=conf,
+                    reason=reason,
                 )
             )
             seen.add(str(aid))
+
+        if affected_params is not None:
+            n_high = sum(1 for a in report.affected_analyses if a.confidence >= CONF_TOOL_ID_EXACT)
+            report.param_filter_note = (
+                f"diff-level tagging 啟用（affected_params={affected_params}）："
+                f"{n_high} 筆確定受影響（confidence 1.0），"
+                f"{n_narrowed} 筆降為 0.3（未使用受影響參數，可能毋需重跑）。"
+            )
 
     # 邊 2：analysis_type 啟發式（補 tool_id 稀疏）
     heuristic_types = [t for t, name in ANALYSIS_TYPE_TO_TOOL.items() if name == tool_name]
     n_heuristic = 0
     if heuristic_types:
         tph = ", ".join("?" * len(heuristic_types))
+        owner_clause = " AND requested_by = ?" if requested_by is not None else ""
+        query_params = heuristic_types + ([requested_by] if requested_by is not None else [])
         rows = con.execute(
             f"""
             SELECT analysis_id, analysis_type, sample_id, status
             FROM   analysis_history
             WHERE  analysis_type IN ({tph}) AND tool_id IS NULL
+                   {owner_clause}
             ORDER  BY started_at DESC
             """,
-            heuristic_types,
+            query_params,
         ).fetchall()
         for aid, atype, sid, status in rows:
             if str(aid) in seen:
@@ -181,7 +265,12 @@ def tool_impact(con: duckdb.DuckDBPyConnection, tool_name: str) -> ImpactReport:
     return report
 
 
-def artifact_impact(con: duckdb.DuckDBPyConnection, artifact_id: str) -> ImpactReport:
+def artifact_impact(
+    con: duckdb.DuckDBPyConnection,
+    artifact_id: str,
+    *,
+    requested_by: str | None = None,
+) -> ImpactReport:
     """某 artifact 的下游影響。
 
     邊：
@@ -194,9 +283,16 @@ def artifact_impact(con: duckdb.DuckDBPyConnection, artifact_id: str) -> ImpactR
     report = ImpactReport(target_kind="artifact", target=artifact_id)
 
     # 找這個 artifact 的母 analysis
+    owner_clause = " AND ah.requested_by = ?" if requested_by is not None else ""
+    owner_params = [requested_by] if requested_by is not None else []
     parent = con.execute(
-        "SELECT analysis_id FROM analysis_artifacts WHERE artifact_id = ?",
-        [artifact_id],
+        f"""
+        SELECT aa.analysis_id
+        FROM analysis_artifacts aa
+        JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id
+        WHERE aa.artifact_id = ?{owner_clause}
+        """,
+        [artifact_id] + owner_params,
     ).fetchone()
     if not parent:
         return report
@@ -212,11 +308,14 @@ def artifact_impact(con: duckdb.DuckDBPyConnection, artifact_id: str) -> ImpactR
     # 邊 1：顯式 lineage（若 artifact_relations 存在且有資料）
     try:
         downstream = con.execute(
-            """
-            SELECT dst_artifact_id FROM artifact_relations
-            WHERE  src_artifact_id = ?
+            f"""
+            SELECT r.dst_artifact_id
+            FROM artifact_relations r
+            JOIN analysis_artifacts aa ON aa.artifact_id = r.dst_artifact_id
+            JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id
+            WHERE r.src_artifact_id = ?{owner_clause}
             """,
-            [artifact_id],
+            [artifact_id] + owner_params,
         ).fetchall()
         for r in downstream:
             did = str(r[0])
@@ -226,9 +325,11 @@ def artifact_impact(con: duckdb.DuckDBPyConnection, artifact_id: str) -> ImpactR
         logger.debug("artifact_impact: artifact_relations 不可查（可能未 migrate）")
 
     # 受影響分析 = 母 analysis
+    history_owner_clause = " AND requested_by = ?" if requested_by is not None else ""
     arow = con.execute(
-        "SELECT analysis_type, sample_id, status FROM analysis_history WHERE analysis_id = ?",
-        [parent_analysis],
+        f"SELECT analysis_type, sample_id, status FROM analysis_history "
+        f"WHERE analysis_id = ?{history_owner_clause}",
+        [parent_analysis] + owner_params,
     ).fetchone()
     if arow:
         report.affected_analyses.append(
@@ -246,7 +347,12 @@ def artifact_impact(con: duckdb.DuckDBPyConnection, artifact_id: str) -> ImpactR
     return report
 
 
-def sample_impact(con: duckdb.DuckDBPyConnection, sample_id: str) -> ImpactReport:
+def sample_impact(
+    con: duckdb.DuckDBPyConnection,
+    sample_id: str,
+    *,
+    requested_by: str | None = None,
+) -> ImpactReport:
     """某樣本的所有分析與產物（重跑 / 撤回樣本時的範圍）。"""
     validate_sample_id(sample_id)
 
@@ -254,14 +360,17 @@ def sample_impact(con: duckdb.DuckDBPyConnection, sample_id: str) -> ImpactRepor
     report.affected_samples = [sample_id]
     seen: set[str] = set()
 
+    owner_clause = " AND requested_by = ?" if requested_by is not None else ""
+    params = [sample_id] + ([requested_by] if requested_by is not None else [])
     rows = con.execute(
-        """
+        f"""
         SELECT analysis_id, analysis_type, sample_id, status
         FROM   analysis_history
         WHERE  sample_id = ?
+               {owner_clause}
         ORDER  BY started_at DESC
         """,
-        [sample_id],
+        params,
     ).fetchall()
     for aid, atype, sid, status in rows:
         report.affected_analyses.append(
@@ -306,6 +415,145 @@ def _expand_artifacts_and_samples(
         report.affected_samples = sorted(samples)
 
 
+# ── cascade_impact：反向依賴鏈走訪（P3.5）─────────────────────────────────
+
+_CASCADE_MAX_DEPTH = 20  # 防環深度上限
+
+
+def cascade_impact(
+    con: duckdb.DuckDBPyConnection,
+    analysis_id: str,
+    max_depth: int = _CASCADE_MAX_DEPTH,
+    *,
+    requested_by: str | None = None,
+) -> ImpactReport:
+    """從某個分析出發，找出所有依賴它的下游分析（artifact lineage 反向走訪）。
+
+    適用場景：
+      某分析的結果被下游使用（如 bulk_eda 的 counts 被 bulk_deg 消費），
+      升版或重跑後想知道「哪些下游分析需要跟著重跑」。
+
+    原理：
+      1. 取該 analysis_id 的所有產物 artifact_id（analysis_artifacts 表）。
+      2. 以 WITH RECURSIVE 從這些 artifact 出發，順著 artifact_relations
+         （src → dst，relation_type='derived_from'）正向走訪。
+      3. 收集所有下游 artifact_id → 查出所屬 analysis_id。
+      4. 排除起始 analysis_id 本身。
+
+    備注：
+      - `artifact_relations` 目前已有真實邊（bulk_eda→bulk_deg→bulk_enrichment）。
+      - UNION（非 UNION ALL）去重，搭配 depth < max_depth 防環。
+      - 若 artifact_relations 為空或無邊，回傳空 ImpactReport（不 raise）。
+
+    Args:
+        con:          DuckDB 連線（read_only 可用）。
+        analysis_id:  起始分析 UUID。
+        max_depth:    遞迴最大深度（預設 20）。
+
+    Returns:
+        ImpactReport（target_kind='analysis'，target=analysis_id）。
+    """
+    if not _ARTIFACT_ID_RE.match(analysis_id):
+        raise ValueError(f"無效的 analysis_id：{analysis_id!r}")
+
+    report = ImpactReport(target_kind="analysis", target=analysis_id)
+
+    owner_clause = " AND ah.requested_by = ?" if requested_by is not None else ""
+    owner_params = [requested_by] if requested_by is not None else []
+
+    # Step 1：取起始分析的所有產物
+    try:
+        start_artifacts = con.execute(
+            f"""
+            SELECT aa.artifact_id
+            FROM analysis_artifacts aa
+            JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id
+            WHERE aa.analysis_id = ?{owner_clause}
+            """,
+            [analysis_id] + owner_params,
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("cascade_impact: 無法讀取 analysis_artifacts: %s", exc)
+        return report
+
+    if not start_artifacts:
+        return report
+
+    start_ids = [str(r[0]) for r in start_artifacts]
+
+    # Step 2：遞迴走訪 artifact_relations（正向：src→dst）
+    try:
+        placeholders = ", ".join("?" * len(start_ids))
+        rows = con.execute(
+            f"""
+            WITH RECURSIVE downstream(artifact_id, depth) AS (
+                SELECT CAST(dst_artifact_id AS VARCHAR), 1
+                FROM   artifact_relations
+                WHERE  src_artifact_id IN ({placeholders})
+                  AND  relation_type = 'derived_from'
+              UNION
+                SELECT CAST(r.dst_artifact_id AS VARCHAR), d.depth + 1
+                FROM   artifact_relations r
+                JOIN   downstream d ON CAST(r.src_artifact_id AS VARCHAR) = d.artifact_id
+                WHERE  d.depth < ?
+                  AND  r.relation_type = 'derived_from'
+            )
+            SELECT DISTINCT artifact_id FROM downstream
+            """,
+            start_ids + [max_depth],
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("cascade_impact: WITH RECURSIVE 失敗: %s", exc)
+        return report
+
+    if not rows:
+        return report
+
+    downstream_artifact_ids = [r[0] for r in rows]
+
+    # Step 3：找下游 artifact 對應的 analysis_id
+    try:
+        ph2 = ", ".join("?" * len(downstream_artifact_ids))
+        analysis_rows = con.execute(
+            f"""
+            SELECT DISTINCT aa.analysis_id, ah.analysis_type, ah.sample_id,
+                            ah.status, aa.artifact_id
+            FROM   analysis_artifacts aa
+            JOIN   analysis_history ah ON ah.analysis_id = aa.analysis_id
+            WHERE  CAST(aa.artifact_id AS VARCHAR) IN ({ph2})
+              AND  CAST(aa.analysis_id AS VARCHAR) != ?
+              {owner_clause}
+            """,
+            downstream_artifact_ids + [analysis_id] + owner_params,
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("cascade_impact: 下游 analysis 查詢失敗: %s", exc)
+        return report
+
+    seen: set[str] = set()
+    visible_artifacts: set[str] = set()
+    for aid, atype, sid, status, artifact_id in analysis_rows:
+        visible_artifacts.add(str(artifact_id))
+        aid_str = str(aid)
+        if aid_str in seen or aid_str == analysis_id:
+            continue
+        report.affected_analyses.append(
+            AffectedAnalysis(
+                analysis_id=aid_str,
+                analysis_type=atype,
+                sample_id=sid,
+                status=status,
+                confidence=CONF_SAME_ANALYSIS,
+                reason="cascade-derived_from",
+            )
+        )
+        seen.add(aid_str)
+
+    report.affected_artifact_ids = sorted(visible_artifacts)
+    report.affected_samples = sorted({a.sample_id for a in report.affected_analyses if a.sample_id})
+    return report
+
+
 # ── Markdown 渲染（給 MCP tool 回傳）───────────────────────────────────────
 
 
@@ -325,6 +573,8 @@ def render_impact_md(report: ImpactReport) -> str:
     ]
     if report.affected_analyses:
         lines.append(f"- 最高信心：{report.max_confidence:.1f}")
+    if report.param_filter_note:
+        lines += ["", f"> 🔍 {report.param_filter_note}"]
     if report.untracked_note:
         lines += ["", f"> ⚠️ {report.untracked_note}"]
 
@@ -353,6 +603,7 @@ def compute_impact(
     artifact_id: Optional[str] = None,
     sample_id: Optional[str] = None,
     con: Optional[duckdb.DuckDBPyConnection] = None,
+    requested_by: Optional[str] = None,
 ) -> ImpactReport:
     """統一入口：依傳入參數選擇 tool / artifact / sample 影響分析。
 
@@ -367,10 +618,10 @@ def compute_impact(
         con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
     try:
         if tool_name:
-            return tool_impact(con, tool_name)
+            return tool_impact(con, tool_name, requested_by=requested_by)
         if artifact_id:
-            return artifact_impact(con, artifact_id)
-        return sample_impact(con, sample_id)  # type: ignore[arg-type]
+            return artifact_impact(con, artifact_id, requested_by=requested_by)
+        return sample_impact(con, sample_id, requested_by=requested_by)  # type: ignore[arg-type]
     finally:
         if _own:
             con.close()

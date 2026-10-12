@@ -19,25 +19,16 @@ import re
 from datetime import datetime, timezone
 from typing import Iterator
 
+from server.identity import Identity, KeyState, Role
+from store.base import (
+    _HISTORY_MUTABLE_COLS,
+    _JOB_COLUMNS,
+    _SAMPLE_MUTABLE_COLS,
+    _job_row_to_dict,
+    _validate_cols,
+)
+
 logger = logging.getLogger(__name__)
-
-# Whitelist of mutable columns for dynamic UPDATE queries (H1 fix)
-_HISTORY_MUTABLE_COLS = frozenset({
-    "status", "result_path", "completed_at", "summary", "tool_id",
-    "failure_diagnosis", "tags", "parameter_hash", "summary_metrics",
-    "analysis_version", "tool_version", "user_approval", "parent_analysis_id",
-})
-_SAMPLE_MUTABLE_COLS = frozenset({
-    "project", "data_type", "platform", "species", "tissue", "l3_path",
-    "l2_ready", "analysis_done", "added_by", "notes", "last_updated",
-    "condition", "time_point", "batch", "donor_id", "tags", "alias",
-})
-
-
-def _validate_cols(cols: set[str], allowed: frozenset[str], ctx: str) -> None:
-    unknown = cols - allowed
-    if unknown:
-        raise ValueError(f"{ctx}: unknown or immutable columns {sorted(unknown)}")
 
 
 # ---------------------------------------------------------------------------
@@ -242,16 +233,23 @@ class PostgresStore:
         sample_id: str,
         analysis_type: str,
         status: str = "completed",
+        *,
+        requested_by: str | None = None,
     ) -> dict | None:
+        owner_clause = " AND requested_by = %s" if requested_by is not None else ""
+        params = [sample_id, analysis_type, status]
+        if requested_by is not None:
+            params.append(requested_by)
         with self.read_conn() as con:
             row = con.execute(
-                """
+                f"""
                 SELECT analysis_id, completed_at, result_path, summary, parameters
                 FROM   analysis_history
                 WHERE  sample_id = %s AND analysis_type = %s AND status = %s
+                       {owner_clause}
                 ORDER  BY completed_at DESC LIMIT 1
                 """,
-                [sample_id, analysis_type, status],
+                params,
             ).fetchone()
         if not row:
             return None
@@ -270,6 +268,7 @@ class PostgresStore:
         analysis_type: str | None = None,
         n_days: int | None = None,
         status: str | None = None,
+        requested_by: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         clauses: list[str] = []
@@ -283,6 +282,9 @@ class PostgresStore:
         if status:
             clauses.append("status = %s")
             params.append(status)
+        if requested_by is not None:
+            clauses.append("requested_by = %s")
+            params.append(requested_by)
         if n_days:
             clauses.append("completed_at >= now() - %s * INTERVAL '1 day'")
             params.append(int(n_days))
@@ -339,6 +341,16 @@ class PostgresStore:
             ).fetchone()
         return str(row[0]) if row else None
 
+    # 一列同時只帶一個 canonical/superseded 標記：先移除舊的再 append 新的
+    _RETAG_ROW = """
+        UPDATE analysis_history
+        SET tags = array_append(
+            array_remove(array_remove(COALESCE(tags, '{}'), 'canonical'), 'superseded'),
+            %s
+        )
+        WHERE analysis_id = %s
+    """
+
     def mark_canonical(
         self, analysis_id: str, sample_id: str, analysis_type: str
     ) -> None:
@@ -359,17 +371,14 @@ class PostgresStore:
                 [sample_id, analysis_type, analysis_id],
             )
             # Promote the target row to canonical
-            con.execute(
-                """
-                UPDATE analysis_history
-                SET tags = array_append(
-                    array_remove(array_remove(COALESCE(tags, '{}'), 'canonical'), 'superseded'),
-                    'canonical'
-                )
-                WHERE analysis_id = %s
-                """,
-                [analysis_id],
-            )
+            con.execute(self._RETAG_ROW, ["canonical", analysis_id])
+
+    def supersede_by_id(
+        self, analysis_id: str, superseded_analysis_id: str
+    ) -> None:
+        with self.write_conn() as con:
+            con.execute(self._RETAG_ROW, ["superseded", superseded_analysis_id])
+            con.execute(self._RETAG_ROW, ["canonical", analysis_id])
 
     # ------------------------------------------------------------------
     # sample_registry
@@ -387,13 +396,13 @@ class PostgresStore:
         added_by: str,
         notes: str,
         **kwargs,
-    ) -> None:
+    ) -> bool:
         with self.write_conn() as con:
             existing = con.execute(
                 "SELECT 1 FROM sample_registry WHERE sample_id = %s", [sample_id]
             ).fetchone()
             if existing:
-                return
+                return False
             last_updated = kwargs.get("last_updated", datetime.now(timezone.utc))
             con.execute(
                 """
@@ -407,6 +416,7 @@ class PostgresStore:
                     l3_path, added_by, notes, last_updated,
                 ],
             )
+        return True
 
     def get_sample(self, sample_id: str) -> dict | None:
         with self.read_conn() as con:
@@ -489,6 +499,376 @@ class PostgresStore:
                 )
         except Exception as exc:
             logger.debug("metric write failed (%s): %s", tool_name, exc)
+
+    # ------------------------------------------------------------------
+    # figure_index (v30)
+    # ------------------------------------------------------------------
+
+    def record_figure(
+        self,
+        figure_id: str,
+        *,
+        alt: str | None = None,
+        tool_name: str | None = None,
+        sample_id: str | None = None,
+        analysis_id: str | None = None,
+        requested_by: str | None = None,
+    ) -> None:
+        try:
+            with self.write_conn() as con:
+                con.execute(
+                    """
+                    INSERT INTO figure_index
+                        (figure_id, alt, tool_name, sample_id, analysis_id, requested_by)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    [figure_id, alt, tool_name, sample_id, analysis_id, requested_by],
+                )
+        except Exception as exc:
+            logger.debug("figure_index write failed (%s): %s", figure_id, exc)
+
+    def find_figures(
+        self,
+        *,
+        figure_id: str | None = None,
+        sample_id: str | None = None,
+        tool_name: str | None = None,
+        query: str | None = None,
+        requested_by: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list = []
+        if figure_id:
+            clauses.append("figure_id = %s")
+            params.append(figure_id)
+        if sample_id:
+            clauses.append("sample_id = %s")
+            params.append(sample_id)
+        if tool_name:
+            clauses.append("tool_name = %s")
+            params.append(tool_name)
+        if query:
+            clauses.append("alt ILIKE %s")
+            params.append(f"%{query}%")
+        if requested_by is not None:
+            clauses.append("requested_by = %s")
+            params.append(requested_by)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self.read_conn() as con:
+            rows = con.execute(
+                f"""
+                SELECT figure_id, alt, tool_name, sample_id, analysis_id, requested_by, created_at
+                FROM figure_index
+                {where}
+                ORDER BY created_at DESC
+                LIMIT {int(limit)}
+                """,
+                params,
+            ).fetchall()
+            cols = [d[0] for d in con.description]
+        return [dict(zip(cols, r)) for r in rows]
+
+    # ------------------------------------------------------------------
+    # API-key identity lifecycle
+    # ------------------------------------------------------------------
+
+    def register_api_key(
+        self,
+        *,
+        key_hash: str,
+        key_prefix: str,
+        user_id: str,
+        role: str,
+        created_by: str,
+    ) -> None:
+        normalized_role = Role(role).value
+        with self.write_conn() as con:
+            con.execute(
+                """
+                INSERT INTO api_keys
+                    (key_hash, key_prefix, user_id, role, created_by)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                [key_hash, key_prefix, user_id, normalized_role, created_by],
+            )
+
+    def get_identity_for_key_hash(self, key_hash: str) -> Identity | KeyState | None:
+        with self.read_conn() as con:
+            row = con.execute(
+                "SELECT user_id, role, revoked_at FROM api_keys WHERE key_hash = %s",
+                [key_hash],
+            ).fetchone()
+        if row is None:
+            return None
+        if row[2] is not None:
+            return KeyState.REVOKED
+        return Identity(user_id=row[0], role=Role(row[1]))
+
+    def revoke_api_key(self, key_hash: str) -> bool:
+        with self.write_conn() as con:
+            rows = con.execute(
+                """
+                UPDATE api_keys
+                SET revoked_at = now()
+                WHERE key_hash = %s AND revoked_at IS NULL
+                RETURNING key_hash
+                """,
+                [key_hash],
+            ).fetchall()
+        return bool(rows)
+
+    def revoke_api_key_by_prefix(self, key_prefix: str) -> bool:
+        with self.write_conn() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    "SELECT key_hash FROM api_keys "
+                    "WHERE key_prefix = %s AND revoked_at IS NULL FOR UPDATE",
+                    [key_prefix],
+                )
+                matches = cur.fetchall()
+                if len(matches) > 1:
+                    raise ValueError("key prefix is ambiguous")
+                if not matches:
+                    return False
+                cur.execute(
+                    "UPDATE api_keys SET revoked_at = now() "
+                    "WHERE key_hash = %s AND revoked_at IS NULL RETURNING key_hash",
+                    [matches[0][0]],
+                )
+                return cur.fetchone() is not None
+
+    def list_api_keys(self, user_id: str | None = None) -> list[dict]:
+        where = "WHERE user_id = %s" if user_id else ""
+        params = [user_id] if user_id else []
+        with self.read_conn() as con:
+            rows = con.execute(
+                f"""
+                SELECT key_prefix, user_id, role, created_at, created_by, revoked_at
+                FROM api_keys {where}
+                ORDER BY created_at
+                """,
+                params,
+            ).fetchall()
+        columns = ["key_prefix", "user_id", "role", "created_at", "created_by", "revoked_at"]
+        return [dict(zip(columns, row)) for row in rows]
+
+    def count_active_api_keys(self) -> int:
+        with self.read_conn() as con:
+            row = con.execute(
+                "SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL"
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def count_api_keys(self) -> int:
+        with self.read_conn() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM api_keys")
+                row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+    def record_access_audit(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        tool_name: str,
+        target: str | None,
+        outcome: str,
+        detail: str | None = None,
+    ) -> None:
+        with self.write_conn() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO access_audit_log
+                        (user_id, role, tool_name, target, outcome, detail)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    [user_id, Role(role).value, tool_name, target, outcome, detail],
+                )
+
+    # ------------------------------------------------------------------
+    # Durable analysis jobs
+    # ------------------------------------------------------------------
+
+    def enqueue_job(self, **job) -> None:
+        with self.write_conn() as con:
+            con.execute(
+                """
+                INSERT INTO analysis_jobs
+                    (job_id, tool_name, arguments, requested_by, resource_class,
+                     priority, max_retries, created_at)
+                VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s)
+                """,
+                [
+                    job["job_id"],
+                    job["tool_name"],
+                    job["arguments_json"],
+                    job["requested_by"],
+                    job["resource_class"],
+                    int(job.get("priority", 0)),
+                    int(job.get("max_retries", 1)),
+                    job["created_at"],
+                ],
+            )
+
+    def get_job(self, job_id: str) -> dict | None:
+        columns = ", ".join(_JOB_COLUMNS)
+        with self.read_conn() as con:
+            row = con.execute(
+                f"SELECT {columns} FROM analysis_jobs WHERE job_id = %s",
+                [job_id],
+            ).fetchone()
+        return _job_row_to_dict(row) if row else None
+
+    def list_jobs(
+        self,
+        *,
+        requested_by: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list = []
+        if requested_by:
+            clauses.append("requested_by = %s")
+            params.append(requested_by)
+        if status:
+            clauses.append("status = %s")
+            params.append(status)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        columns = ", ".join(_JOB_COLUMNS)
+        with self.read_conn() as con:
+            rows = con.execute(
+                f"SELECT {columns} FROM analysis_jobs {where} "
+                f"ORDER BY created_at DESC LIMIT {max(1, min(int(limit), 500))}",
+                params,
+            ).fetchall()
+        return [_job_row_to_dict(row) for row in rows]
+
+    def count_pending_jobs(self, requested_by: str) -> int:
+        with self.read_conn() as con:
+            row = con.execute(
+                """
+                SELECT COUNT(*) FROM analysis_jobs
+                WHERE requested_by = %s AND status IN ('queued', 'running')
+                """,
+                [requested_by],
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def claim_next_job(
+        self, worker_id: str, resource_class: str, lease_seconds: int
+    ) -> dict | None:
+        columns = ", ".join(f"j.{name}" for name in _JOB_COLUMNS)
+        with self.write_conn() as con:
+            con.execute(
+                """
+                UPDATE analysis_jobs
+                SET status = 'failed', completed_at = now(),
+                    error = 'worker lease expired after maximum retries'
+                WHERE status = 'running'
+                  AND lease_expires_at <= now()
+                  AND retry_count >= max_retries
+                """
+            )
+            row = con.execute(
+                f"""
+                WITH candidate AS (
+                    SELECT job_id, status
+                    FROM analysis_jobs
+                    WHERE resource_class = %s
+                      AND cancel_requested = FALSE
+                      AND (
+                        status = 'queued'
+                        OR (status = 'running' AND lease_expires_at <= now()
+                            AND retry_count < max_retries)
+                      )
+                    ORDER BY priority DESC, created_at
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                UPDATE analysis_jobs AS j
+                SET retry_count = CASE WHEN candidate.status = 'running'
+                                       THEN j.retry_count + 1 ELSE j.retry_count END,
+                    status = 'running',
+                    started_at = COALESCE(j.started_at, now()),
+                    lease_owner = %s,
+                    heartbeat_at = now(),
+                    lease_expires_at = now() + %s * INTERVAL '1 second'
+                FROM candidate
+                WHERE j.job_id = candidate.job_id
+                RETURNING {columns}
+                """,
+                [resource_class, worker_id, max(1, int(lease_seconds))],
+            ).fetchone()
+        return _job_row_to_dict(row) if row else None
+
+    def heartbeat_job(self, job_id: str, worker_id: str, lease_seconds: int) -> bool:
+        with self.write_conn() as con:
+            rows = con.execute(
+                """
+                UPDATE analysis_jobs
+                SET heartbeat_at = now(),
+                    lease_expires_at = now() + %s * INTERVAL '1 second'
+                WHERE job_id = %s AND status = 'running' AND lease_owner = %s
+                  AND cancel_requested = FALSE
+                RETURNING job_id
+                """,
+                [max(1, int(lease_seconds)), job_id, worker_id],
+            ).fetchall()
+        return bool(rows)
+
+    def finish_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        *,
+        status: str,
+        result_json: str | None,
+        error: str | None,
+    ) -> bool:
+        if status not in {"succeeded", "failed", "canceled"}:
+            raise ValueError(f"invalid terminal job status: {status}")
+        with self.write_conn() as con:
+            rows = con.execute(
+                """
+                UPDATE analysis_jobs
+                SET status = %s, result = %s::jsonb, error = %s, completed_at = now(),
+                    lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = now()
+                WHERE job_id = %s AND status = 'running' AND lease_owner = %s
+                RETURNING job_id
+                """,
+                [status, result_json, error, job_id, worker_id],
+            ).fetchall()
+        return bool(rows)
+
+    def request_cancel_job(self, job_id: str, requested_by: str | None) -> str | None:
+        owner_clause = " AND requested_by = %s" if requested_by else ""
+        owner_params = [requested_by] if requested_by else []
+        with self.write_conn() as con:
+            rows = con.execute(
+                f"""
+                UPDATE analysis_jobs
+                SET status = 'canceled', cancel_requested = TRUE, completed_at = now()
+                WHERE job_id = %s AND status = 'queued'{owner_clause}
+                RETURNING job_id
+                """,
+                [job_id, *owner_params],
+            ).fetchall()
+            if rows:
+                return "canceled"
+            rows = con.execute(
+                f"""
+                UPDATE analysis_jobs
+                SET cancel_requested = TRUE
+                WHERE job_id = %s AND status = 'running'{owner_clause}
+                RETURNING job_id
+                """,
+                [job_id, *owner_params],
+            ).fetchall()
+        return "cancel_requested" if rows else None
 
     # ------------------------------------------------------------------
     # Utils

@@ -1,0 +1,367 @@
+{
+  "files": {
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 85261533
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "77b70cb77d5c43644c5a5e14b3653cbd8873877d408e88b5780095ba3578486f",
+      "size": 24791618
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "18eca98c8660183c58b0ce2f572934569778031dcf377d50dcd721afdec2e939",
+      "size": 161688
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 153515819
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 114817214
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "7463e8593ecf5eab6ef5977b90dcfcce43e5261402ef9a26b0cc854f9428ce24",
+      "size": 24517998
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "6b11277a7c3ef6bf2d595ca5a3a31b76c141354da1fae2df572dffc7db4e0d53",
+      "size": 290896
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 212163606
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 121180945
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "03d043d17632fa58abfbcfe2d7257c076e6cba891c8b4dce605705419a49027a",
+      "size": 276
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 167924549
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 47011431
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "db7172817242b9f461b0613ef3f8b8661072cd3b390d133257e56130201f3fff",
+      "size": 1325090
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "734924cc27de5fa70385b79eae3ef5035e74c28e8b3254c08fbbb7ab272f84a2",
+      "size": 161688
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 119865930
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 71697476
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "8bdfde6c9439d795826baee140e2d3cf00a92104ca85d63dd3e36e3214909ee4",
+      "size": 1909557
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "18b545ae7350ceb3ada81ec69d2469ff2b0acf2a3a1eafe9f4917e7c63574534",
+      "size": 290896
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 165856502
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "44336f80da917ebe4624393a144252d2363e9f5bd247ba348f24131832c7d685",
+      "size": 276
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "299db383f40739881ae52de0f87ef4d094346e9680ddceeb2e5040980ceff82e",
+      "size": 11200421
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 38451029
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "2f58d33febef1ab3028f22d6797ad0ade4523fe2f55573a83b95bf3f8c15305c",
+      "size": 313513
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "9dfa94c24a32ed6a828e16548a0a2a4c1826524cf54911c93fd4f875f544233c",
+      "size": 161688
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 101995040
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 59523843
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "0ffa4349538af40891825ef22718d36a21fb5500e937a180db756b50c99aa60e",
+      "size": 462427
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "79d67effb13ef9b0528b64d90845c70162a838e987be38d0d79360318be9c74b",
+      "size": 290896
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 141513358
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "84ceec9bd2d227741923ff76344716eb4d550d93b475b0183715ea6fefec7a03",
+      "size": 277
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "e4b9311451cade675144d7ff75eea8199c1cbc2a63e54770fc43cbb9b4f6e054",
+      "size": 3322707
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/feature_slice.h5": {
+      "size": 342323541
+    },
+    "spaceranger_and_cloud_results/V11312-01/outs/molecule_info.h5": {
+      "size": 330959476
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 46715401
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c8477e50eebf20c38b0d4fc2e7beebeb1a70a0460b2131d553c7dbfdb2ad699a",
+      "size": 18659048
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "302888ea90dabe151ee7daec9dcdab67e33175fbffe8aac8bf5cef6a1f0610e3",
+      "size": 161688
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 69434866
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 55418664
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "7a6c0e6b69705d1ae88bbb2301032328df7b4de0009d34ae036ae9b450555fea",
+      "size": 16720839
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "dca6da4e0f973fe33d99dbf05187e00de4e45a92560467f465bce64b9a52eba6",
+      "size": 290896
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 87464071
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 58704680
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "52165cc29f0ae23e5fa4e8d5fdfaee3a9bb08ae88e2993c52d5457efc2184035",
+      "size": 275
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 167933997
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "sha256": "559e83ce509213383829dfdd624dff779513f14c31ceadab370c7c713cd4d87b",
+      "size": 21704340
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c6f331914daf2eb0f990c040cdc542bd825f8083d38d58c2aab34d2cbd519cfa",
+      "size": 997577
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "d0efc1679f9ee2a32eb8efcd7b6926813fa3acebf176da0e2ea69492f11d3db3",
+      "size": 161688
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 53174548
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "sha256": "233721819809bdd28e33553b121acd66ad52ae1073a87334988df6cc0118e058",
+      "size": 31122276
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "e1f2ae5db3f2c5ccc258ddf449d3db4b38a79068dac517a7a5976e924dc5cdb6",
+      "size": 1826048
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "102aea999b4feb8edd3797cdffedfb1faf0b2b42f9479d1f9cfddac6fd2fff6d",
+      "size": 290896
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 68068809
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "c724e34e8d8ba5320e93df99d34a3407a42b21f5ccec02621b3d5d581afdbc1a",
+      "size": 275
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "03e619918df2bb11e42035c6a6dcf1ec5972e36e01dd6bcf09f7a439d9186e11",
+      "size": 11193692
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "sha256": "2b116e4249113e0cb21f17dc413dcb72f4872a4cbb9752d81d62d892f3dab066",
+      "size": 17218850
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "a8a2d06b20a168e24a163e40fb4a8279eea2e4dd950ff1d3259d6ad195a992ea",
+      "size": 233601
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "9c2d55f47c459008b7e9c6ce7677b56fcaaa711ff9486defc64ae386623b6b1a",
+      "size": 161688
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 44582570
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "sha256": "795a1dbd7289aa4f550e37dfa52e5380997dd2e2f0b717d5fc0387609a8b0ddf",
+      "size": 24891316
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "58d00813d648dbab2fd82f3a75e595d24df93a079c750a997094d6c84ca01c8d",
+      "size": 464708
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "9a1c8c62ee70349ac3b3a5e02db1f05b8ef67c252a38c51f3c9c50d87ef41e59",
+      "size": 290896
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 57054677
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "da96b95d8eb4f34dc1b1506992191bc7ed5dd28c7ffaf643ceb47f2e5fd2c935",
+      "size": 276
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "a83edfddd8abe7cde31b506099ffacb8592335b99e489b51c66ca1453dca5852",
+      "size": 3327317
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/feature_slice.h5": {
+      "size": 244701012
+    },
+    "spaceranger_and_cloud_results/V11312-02/outs/molecule_info.h5": {
+      "size": 144534961
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-01_noIF/feature_slice.h5": {
+      "size": 342301863
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-01_noIF/molecule_info.h5": {
+      "size": 330475615
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/feature_slice.h5": {
+      "size": 244700244
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/molecule_info.h5": {
+      "size": 144239459
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 46753230
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "bfb9685d475c5d3d4e14ed25098d3c2f8506dc8f2275df9642cf466fa4b6a74e",
+      "size": 18659048
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "01512b365291429ef84c92235c88376b4bf6a8e27ae96b2cb80fbf9860c0aa54",
+      "size": 161494
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 69514043
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 42249936
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "a4fdf65a756add764761eaa8e520309b7f8c66ebaac662ec9220ecd10759558d",
+      "size": 31267988
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "560efd9d9d531216b8400852cf5d133e026e49b9f2bcec0a25deab68cb1510fe",
+      "size": 304537
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 88213341
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 45375235
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "b5ac6944373b784d8cd40f4f72ebcc68c72b44766931fdf08123eb070a9a93ea",
+      "size": 277
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_002um/spatial/tissue_positions.parquet": {
+      "size": 170905549
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/filtered_feature_bc_matrix.h5": {
+      "sha256": "a35b81274cbb7617459d3204c05d55fe6b6cf113d2a4f9a9923e3123d2cae1df",
+      "size": 21731598
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "62f2bf24732784bf1da80a1ea840797949a5cd549aa6029534ba4daa1dd2664f",
+      "size": 997577
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "15eb88f6da080e2dba3e344da2f2f2037f540cf98a718ff6c2c7414fee824ece",
+      "size": 161494
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 53219318
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/raw_feature_bc_matrix.h5": {
+      "sha256": "dd8216e7c4f65ee52950b6b9ab8d7e16929b8658c52c7c11287a15b205aed5ac",
+      "size": 29559114
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c891888238f092e23a2bc2707c29b972d2d5ac21b451937477decc70a20ad54d",
+      "size": 1883171
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "24a6df6b502ee4bae14ce2287d4ef671bb9002bb38ad4c4257546a97f5b630a9",
+      "size": 304537
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 68173122
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "0e6f8d2ddd238f8c2da59410e118c0a14ac31a1483282aa401d87940fd64ea88",
+      "size": 276
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "c4e76161fdaceefc6ce3c2d23a57aab119711bf40bf1124a57ac383276cfb3a9",
+      "size": 11318295
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/filtered_feature_bc_matrix.h5": {
+      "sha256": "06d1b141304146e05622667fea0e2804f823c8c96c9ecae5daf1a514e2611662",
+      "size": 17244311
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "9e8e9607b9d64bfc9a1679da6e65a265da39004ceb1030c94a60c176cf76e8b6",
+      "size": 233601
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "89a40822187bd32880e4b8c8c6349de48424a64b48d65134f29d9e8929658145",
+      "size": 161494
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 44624317
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/raw_feature_bc_matrix.h5": {
+      "sha256": "6fdb414fba9d2c84b4fcc381646434cd585f6a81504a3f535409ceb93d9a098b",
+      "size": 24542314
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "ef5ebef0e9701d43926548095639a90d970243ceafdeb6136dea21733fc4cc3c",
+      "size": 462477
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f1e14022fe51da78d1476d0f16847566ded8cdcfd284b4b1a499088736c54eb7",
+      "size": 304537
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 57157954
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "707c82f9b45c95982461fe96c9bcf64cdf079719ddbdaaade7955908bee84925",
+      "size": 277
+    },
+    "spaceranger_and_cloud_results/cloud_V11312-02_noIF/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "83b62f16aa7afbd5d3b2daecc68c2d0c6f1f9a39f1845fed43a89d2fed8f109d",
+      "size": 3321853
+    }
+  },
+  "root": "/Volumes/KINGSTON/Bioinfo_Projects/01_Spatial_Transcriptomics/V113-12 (VC 6.5 HD) \u6797\u980c\u7136 (\u4f59\u6709\u52dd) mouse skin"
+}

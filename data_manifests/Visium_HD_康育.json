@@ -1,0 +1,620 @@
+{
+  "files": {
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 90341351
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "45f60e0da9eb63ff773b2d514d95150242cbfec2912727529bd107c248906e88",
+      "size": 11018243
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "11ae45f82ce766c6f1572adc6d6156be8108045fc23faf415664e99160489461",
+      "size": 161688
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 201177539
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 133861659
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b290cab2d9d80d897cd91a5f3f63857ff5237479064316ac5c0ad9e302b17f36",
+      "size": 18273171
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "8f5346e3d1b01c801168328acbe73a81e50da45a4546b48b47d9a371c66fb96b",
+      "size": 290896
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 268118586
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 144099096
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "90b69eb16093b878597b27f115daba14e26eabca1fe255d3da6775ac3fd9f385",
+      "size": 289
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 170504818
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 53307171
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "2276aa9c408abe06f011b18ce36d7065c3fbab6c658bba7db08caf4b04623b05",
+      "size": 575926
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "aa9e7d0296deb727f0ae79757e27b2c2aad2088294a307df3d7c2451595f16c3",
+      "size": 161688
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 138951511
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 82988594
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "09c1692ce3db7f34dfb043d07e6c68d5ebe32fa87804e044a088bd6e0a18dd5c",
+      "size": 1904450
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "ca0ebfdac704c642dae150f35ea425140012df6c105b90445fed6ceb84b7d81f",
+      "size": 290896
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 193155490
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "c41ea5dc16723a2e6ba1fa34a81a909ad93cf713bd8fca946bc834f8478403b8",
+      "size": 290
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "f7d695009d44293d053a0f218e41aa5714e901db03c564b8e8aeee40c382b78d",
+      "size": 11272722
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 39156142
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "6e093cfa47ae3721f2a3444f943ee746d07b2c66f069542eac9d496fc3b2df0d",
+      "size": 140096
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "cc59ed770729ae72f69eb0cac3047d036f972671adf6c504d36015b1028d5822",
+      "size": 161688
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 104409366
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 61845876
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c7ef5960d1334c9a706d107d6035617bb66afb446c5ab03b38d1e89f81a94d90",
+      "size": 467008
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "7f4c4791b64acf63c299013594ebda5968d47359981b6dc6f50f995533916ee9",
+      "size": 290896
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 149304703
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "dfe95ac30510794f95ba6bbbbbd707593a71333e912708e9bf784b01cb9b11f2",
+      "size": 290
+    },
+    "visium HD/SDS-D0D1D2/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "03b292348b1004ece445e48d210d265b4de5a0ed8dd32ebe8fda803a7e69cf0f",
+      "size": 3333967
+    },
+    "visium HD/SDS-D0D1D2/outs/feature_slice.h5": {
+      "size": 348224246
+    },
+    "visium HD/SDS-D0D1D2/outs/molecule_info.h5": {
+      "size": 447506471
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 108850354
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "44bc0e1bc9b9185918b7ba0b4a9724a010e0b0cb9b9e65de7f29c64353f00f1b",
+      "size": 11576941
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "7ba30e78a436a419a5c8e9c4af51ff8713b9e4c4dc8673aac745a368e255340a",
+      "size": 161688
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 248817456
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 138423287
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "221cac090aeb3a2c406527bfdbed139f91bec682d1f08dcfafeebf2dd4cc321e",
+      "size": 14517856
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "4d1c688cac1cdb25ab8028e34d64edc493bd007fa8062973a3b27e3ab511609d",
+      "size": 290896
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 287935126
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 150794632
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "91a73e49bb1d7ed31ba5908c1b588ceb45ac2ef3380a3c8356b79b0f4cfdd38a",
+      "size": 289
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 167550334
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 63295074
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "ea8f87481f95160a1c1bfd43caa7510d3650d97d9e2dffd993fe5def0b9ebb83",
+      "size": 604597
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "8de82cf88ca97174376395020868058541604d23f9a0affb5b6a9a4d1b57c717",
+      "size": 161688
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 164509959
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 84033000
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "86110b698c72750344aca3c9accdd7cdf755d8780bdc2c819cf12f7e6e2f2c10",
+      "size": 1868892
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "49db64b4ff8a1e0db74e15537cc02be6540ee66efb6b68532569f1c16410db9e",
+      "size": 290896
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 196812716
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "60e45737e1d46291c62bcf77760d50f56c78a1666a44c2c48adf01029b8a4fe5",
+      "size": 289
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "0b82ce91f0a7e0dec7a94e276304e16a2b2e27067fda22ad16b7b1d7d81f943c",
+      "size": 11238885
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 44883412
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "7cbb5117bb5aefb6cbeffd3715b77fd63f7c6ea4677930abbcf4d48baada7ae7",
+      "size": 145717
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "61bcbc2f452960a4f3dc02595694f2a74c6c026ac3497d89cba49334d683303c",
+      "size": 161688
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 119499830
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 59821926
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b9c12338857b4e93ca3ba3696c1e3c185f1691c3f832f9490d5554716dd0334d",
+      "size": 464179
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "ec6077699b83bc7ba4233beafac48fa92563a156cd73fc65878ac5398df02c40",
+      "size": 290896
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 145333454
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "c47eeae284e36c22ad8f1a711d05fd093c12013980eec3395e5fcae158f681c3",
+      "size": 290
+    },
+    "visium HD/SDS-D3D4D5/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "0fba431668604ac8425ba63af61184b7194be8755632c3cae64d6d84858e0b99",
+      "size": 3332204
+    },
+    "visium HD/SDS-D3D4D5/outs/feature_slice.h5": {
+      "size": 353415417
+    },
+    "visium HD/SDS-D3D4D5/outs/molecule_info.h5": {
+      "size": 504173947
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 103183034
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "37332dd871bd406f6ee2058a7c42369ecf9d39936fe954814433438665a2952a",
+      "size": 15895914
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f406a5cdb11cb3cab8f57a3a1499c2c3fba583866479d22114556dd75e5e3572",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 221689359
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 134871970
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "616efed1090159691fa167d075878e726a7d5a07e2afeb28824ada6de8fddf2f",
+      "size": 18923498
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "e05966e2613cd117789e406fcb7ead7958db5f003f6793e0f45e963e9f39c23d",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 268900074
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 145197723
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "f0f87c2fc550da40ec86a15e9e5c738436d67d41af3e7bffd14f85b635ee5a45",
+      "size": 276
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 168310739
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/filtered_feature_bc_matrix.h5": {
+      "size": 77412790
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "af806446feae30d19ee96935c8266d4dbc95ce582465464a62afe3a31987461e",
+      "size": 3737991
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "97727296cc348f60161cb2fc32f73bf71f7821ea6c6fcaf50449af2b50697421",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 189702331
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/raw_feature_bc_matrix.h5": {
+      "size": 106404492
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "f40f0dd00c410242c40ff672446e12ef077664c94a446e1662f438e5e07dfe7d",
+      "size": 6782494
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "e820a3d3138b8828d8c1ff04bbf1b285e8a282351fc0239e30785463caf3a130",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 234629534
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/spatial/scalefactors_json.json": {
+      "sha256": "1eb648180093c68a6836e180b34363ae582aa31accbab25326aca4e29d2bc238",
+      "size": 276
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_004um/spatial/tissue_positions.parquet": {
+      "size": 42631304
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 60027730
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "a7d00c629c0e87731b1379bc17a9411b7c74369e7b6b55f6a2168805cf63b5a9",
+      "size": 871765
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f160cfb4a7ba03c95f612ab6bca925b9999562edac7c96676eb85bdcf49d91bf",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 155536000
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 83166709
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "0d3b85cc1e060f3823138dc00ca50cf8bd6ce738318cb5fac46c46ad304609cf",
+      "size": 1909139
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "ced3ccdce8d1f80234da4eb5a46dfa864464e7a400f04dadec566deb799e1b3e",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 193644999
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "cc584c0f3e84108caac05525d49f8c1954ec33e54f1484301c51f3a1b88b698e",
+      "size": 276
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "eaf4384cc4a30ccaebafbcd8d7982d13ddcd8e685b038e8d559e4d8b0c588e9f",
+      "size": 11201998
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 44375461
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "7719afa867f4c121cf866b82084ad8f0debccccd878fede2ab27b14917470c43",
+      "size": 213171
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "ac36ed3c2fd7268cc6d3c45150150886bec6d5474299a3872263e74d735f0f3e",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 117439081
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 61976330
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "acc95bb93bf17ce9c18b7766c89b115fde19d4660fc05832c8978044e4d41695",
+      "size": 467179
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f72040681ad56d26581d2d0ae6d1f2a0a5a1e9ffdf033dc17cc4e2445ffb515f",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 149653674
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "589c9498bd49fce850276b7acf9d6212cddf71a40d3fa1f3be2c32f4d4b839f1",
+      "size": 277
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "7d3a39e22b6a179c565469b72491a1fbc6f78931453161a0e880e1b1361ae128",
+      "size": 3320138
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/feature_slice.h5": {
+      "size": 357181522
+    },
+    "visium HD/SDS_D0-D5/A_20240909_4um/A_20240909_4um/outs/molecule_info.h5": {
+      "size": 449917240
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 102961650
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "dd85895dfc6ba8e6e6b2984099994f80077f22f90169bd08e7671508f8192320",
+      "size": 15895770
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "4e9a0dedadab27e69ff853ff9271489556d9f86d1c30f8480d91ea85aedcc8b1",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 221107777
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 134554005
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "4383894d1a3a65213fc3660555122304d84dc561da6098ccb10821cc804bc632",
+      "size": 18903557
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "07b404bf9ce2c4ead343d6b6689eabc8f5894c405b4b2e3c2129e784be00c570",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 268192204
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 144841979
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "893b3ae47c60ebeb482a43f248bdca48f40952b0e8ed864bb0f9dc350dedc7f9",
+      "size": 277
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 168461724
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 59895490
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "99eda3b0ac890d982edec97e8d971518f9d336b1ffb1704fcb159fd67ffd42c5",
+      "size": 871961
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "957233fe8d15cb2cb37d211bc603c2cf1cd7a2f63e99ed5701b0accbe7bdf03d",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 155173247
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 82990697
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "97c918f13566b66b561e3086ce508439038bd34662a487dc15e1fdfeafbec686",
+      "size": 1908474
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "167e07cf9d7c4dfe07eab066e0032cb96ad46fc27ad30fa37cb7e293ca061077",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 193164192
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "6023887a9ce1470f75d5073b4dc4262103d3fcf8c70f50d24dd4c2038530b852",
+      "size": 276
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "50979febdd14ba3fa75465fcd0b1dde9fdff1b012882bdd76151f23f90aeab9c",
+      "size": 11210839
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 44279504
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c997af940814bff474ab20215f8a1433c876b46ac561de1e6a5560a46a490102",
+      "size": 213141
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "286073a36ae07695deacc427ecf37805e26b76aa7ee2a79ea99870f279775375",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 117197773
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 61846704
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "3d51dc763787e96ce87a646f15a1c90f7fb27c75de887567224d94180942cd84",
+      "size": 467708
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "07c9f1ec5db2140d28b5101717edad827c3c971fe985d8c168fb103870259d94",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 149304739
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "d9c11afe8eaa921db0102c7ba2e8ae413c517fe93d2270be3b651695f54ae369",
+      "size": 276
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "9dadf272e5c6df835716cf9e77fe95f4549ffba7a4ffdb51f8fd9873408832c8",
+      "size": 3324894
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/feature_slice.h5": {
+      "size": 355180857
+    },
+    "visium HD/SDS_D0-D5/TS240808006/A_20240816/outs/molecule_info.h5": {
+      "size": 448721001
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 119285786
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "3ff48b1b866a56c040a4c8e21654f9c537040963ff3ec790f4e80c3a762c30f9",
+      "size": 15914108
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "ff193b025a071b0bfd13dbbd6ded884a9224804a97e21cf1e63240d7b28d31ab",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 264591006
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 139079170
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "09216a86a0886694a810ed329290be458f26ab18ce9ead04283a676fd6826eb4",
+      "size": 15119391
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "d18cc85b8bbcfbd29e0bd11dafc5126ff67519333eb4ad0282322c93d9758483",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 288079674
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 151470211
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "85b5e45ca5ba465e228c9a8208f8e13edc8e30678b40b51e2e35772c780c3ad4",
+      "size": 276
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 167576313
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 68180357
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b0343726520294661998112b7b5172aae97a560446311c34a5258c37a781c013",
+      "size": 865775
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "27b85e2f5f9d1db19efe25a00ea3694557485f3f5c79a3246faf3af9cfaf0c41",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 176654759
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 84034655
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b251d7be09e30e1d4c4e42ce7a77dc70a495ca413dcb350501877619bf8e1cb4",
+      "size": 1868945
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f25a99179e42552ba6a39eb00d95a0bfef51e75531092e1f8111d8a851728d87",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 196810892
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "b1448f5832ff586d18893f5effc945cb92258d43011f4884408d5f00d3b83260",
+      "size": 276
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "61e2089c4ccdf9ec66a136e50a1299b6380bd781d5d1aae90d1e91476732fb47",
+      "size": 11206786
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 48408387
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "f2dbcfc9b02dad2abe05f443e7a41304952ee3cb2aa2a95b03909135182d09a9",
+      "size": 208583
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "8b336d6bed7b20f8ed5b5970a8ada9e24c9d1920c51d9f839970c2664c167c8c",
+      "size": 161688
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 128238863
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 59821962
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "ccbe3a3c639b605a7c9124ac11695b306d7c0f701a95ed5575a76e0c5d13224e",
+      "size": 464258
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "288a72e1326b1680266491df752ce66742bc45a3867110e888c172974440c869",
+      "size": 290896
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 145333329
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "8b8e82100c704947565fe6eec40c94e1e1b9720fe23333248d0666e19bbda75b",
+      "size": 277
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "8f2daccae9dffe35467125150cc4deff332b976996b0334cb8bfdb4c2eccecba",
+      "size": 3325511
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/feature_slice.h5": {
+      "size": 359570632
+    },
+    "visium HD/SDS_D0-D5/TS240808006/D_20240816/outs/molecule_info.h5": {
+      "size": 505809013
+    }
+  },
+  "root": "/Volumes/KINGSTON/Bioinfo_Projects/01_Spatial_Transcriptomics/Visium_HD \u5eb7\u80b2"
+}

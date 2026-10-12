@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -31,3 +32,30 @@ def results_dir(sample_id: str, analysis_type: str) -> Path:
         raise ValueError(f"Path traversal detected for sample_id={sample_id!r}")
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+# results/ 是 Docker bind mount（host 端在 exFAT 外接碟上）。實測 2026-09-10：剛寫完的
+# 檔案 stat() 立刻看得到、open() 卻要等約 0.1–0.5 秒才成功，中間一律 FileNotFoundError
+# （fsync 無效，純 mount 端 dentry 快取延遲；容器本地 /tmp 沒有此現象）。
+# 症狀是「圖畫好了、檔案在硬碟上，報告卻寫著『生成失敗』」——bulk_eda 的 QC/dist/PCA
+# 三張圖從此靜默掉了好幾輪（見 fix note 2026-09-10）。凡是「剛寫完馬上回讀」的路徑
+# 都要走這裡。
+_READBACK_ATTEMPTS = 6
+_READBACK_BACKOFF_SEC = 0.1
+
+
+def read_back_bytes(path: "Path | str") -> bytes:
+    """讀取剛寫入的檔案；遇 FileNotFoundError 短暫重試（bind mount 可見性延遲）。
+
+    重試上限約 2.1 秒（0.1+0.2+…+0.5）。超過仍讀不到就照常拋 FileNotFoundError——
+    那已經不是可見性延遲，而是檔案真的不在。
+    """
+    p = Path(path)
+    for attempt in range(_READBACK_ATTEMPTS):
+        try:
+            return p.read_bytes()
+        except FileNotFoundError:
+            if attempt == _READBACK_ATTEMPTS - 1:
+                raise
+            time.sleep(_READBACK_BACKOFF_SEC * (attempt + 1))
+    raise AssertionError("unreachable")

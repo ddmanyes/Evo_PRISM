@@ -29,7 +29,7 @@ from typing import Optional
 import mistune
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -40,7 +40,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from config.settings import BIO_DB_ROOT
+from config.settings import BIO_DB_ROOT, LLAMACPP_BASE_URL
 from config.db_utils import db_health_check
 
 logger = logging.getLogger(__name__)
@@ -148,6 +148,75 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _authenticate_record_api(request: Request, call_next):
+    """Apply the MCP key identity to Tailscale-exposed record endpoints.
+
+    Static entry pages and health/backend discovery stay public.  Once any auth
+    source exists (or fail-closed mode is enabled), analysis APIs require the
+    same Bearer key as ``/mcp``.  The Web chat and operational dashboard remain
+    admin-only because their legacy agent/action dispatch is broader than the
+    member MCP catalog.
+    """
+    path = request.url.path
+    protected = (path.startswith("/api/") and path != "/api/backend") or path.startswith(
+        "/results/"
+    )
+    if not protected or path.startswith("/mcp"):
+        return await call_next(request)
+
+    from server.auth import authenticate_token, identity_scope
+    from server.bio_memory_server import _configured_owner_tokens
+    from server.identity import Identity, Role
+    from store.factory import get_store
+
+    store = get_store()
+    owner_tokens = _configured_owner_tokens()
+    auth_required = os.environ.get("MCP_AUTH_REQUIRED", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    try:
+        registered_key_count = store.count_api_keys()
+    except Exception as exc:
+        registered_key_count = 0
+        logger.warning("Web API key registry unavailable: %s", exc)
+
+    if owner_tokens or registered_key_count or auth_required:
+        auth_header = request.headers.get("authorization", "").strip()
+        presented = (
+            auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else auth_header
+        )
+
+        def _lookup(digest: str):
+            try:
+                return store.get_identity_for_key_hash(digest)
+            except Exception as exc:
+                logger.warning("Web API key lookup failed: %s", exc)
+                return None
+
+        decision = authenticate_token(
+            presented or None,
+            lookup_fn=_lookup,
+            owner_tokens=owner_tokens,
+        )
+        if not decision.accepted or decision.identity is None:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        identity = decision.identity
+    else:
+        identity = Identity("local:http", Role.ADMIN)
+
+    admin_only = path == "/api/chat" or path.startswith("/api/dashboard")
+    if admin_only and identity.role is not Role.ADMIN:
+        return JSONResponse({"detail": "Admin access required"}, status_code=403)
+
+    request.state.identity = identity
+    with identity_scope(identity):
+        return await call_next(request)
+
 
 # MCP HTTP transport — 掛載於 /mcp，供外部客戶端直接呼叫 MCP 工具
 # handler 與 lifespan 在檔案上方已建立，這裡只做 mount
@@ -712,12 +781,18 @@ async def api_graduation_plan(analysis_id: str):
 @app.get("/results/{analysis_id}", response_class=HTMLResponse)
 async def report_page(analysis_id: str):
     _require_analysis_id(analysis_id)
+    from server.auth import visible_requested_by
     from store.factory import get_store
+
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
+    params = [analysis_id] + ([owner] if owner is not None else [])
 
     with get_store().read_conn() as con:
         row = con.execute(
-            "SELECT sample_id, result_path, completed_at, summary FROM analysis_history WHERE analysis_id=?",
-            [analysis_id],
+            "SELECT sample_id, result_path, completed_at, summary "
+            f"FROM analysis_history WHERE analysis_id=?{owner_clause}",
+            params,
         ).fetchone()
 
     if not row:
@@ -755,20 +830,36 @@ async def report_page(analysis_id: str):
 # ── 路由：API ─────────────────────────────────────────────────────────────────
 
 
-def _check_llama_server(port: int, timeout: float = 1.5) -> bool:
-    """探活 llama-server，回 True 表示 /health 200。"""
+def _check_llama_server(base_url: str, timeout: float = 1.5) -> bool:
+    """探活 llama-server，回 True 表示 /health 200。
+
+    base_url 是實際呼叫用的 OpenAI-compatible 端點（如
+    http://host.docker.internal:8081/v1）—— 必須跟真實呼叫路徑同一個
+    host，容器內 127.0.0.1 是自己的 loopback，打不到宿主機上的
+    llama-server（曾經因此讓 /health 永遠回報 embedding/multimodal
+    離線，但實際查詢其實正常）。llama-server 的 /health 掛在 root，
+    要剝掉 /v1 只留 scheme+host+port。
+    """
     try:
         import httpx
+        from urllib.parse import urlsplit
 
-        r = httpx.get(f"http://127.0.0.1:{port}/health", timeout=timeout)
+        parts = urlsplit(base_url)
+        root = f"{parts.scheme}://{parts.netloc}"
+        r = httpx.get(f"{root}/health", timeout=timeout)
         return r.status_code == 200
     except Exception:
         return False
 
 
 def _read_backup_status() -> dict:
-    """讀 logs/backup_status.json；若不存在/壞檔回 {}。"""
-    p = Path(__file__).parent.parent / "logs" / "backup_status.json"
+    """讀 logs/backup_status.json；若不存在/壞檔回 {}。
+
+    路徑要相對 BIO_DB_ROOT（資料掛載點），不是 __file__ 所在的 repo/image root——
+    容器內兩者不同（/data/bio_db vs /app），backup_db.py 在 host 上寫的檔案落在
+    BIO_DB_ROOT/logs/，之前這裡用 __file__ 反推出 /app/logs/，永遠讀不到。
+    """
+    p = BIO_DB_ROOT / "logs" / "backup_status.json"
     if not p.exists():
         return {}
     try:
@@ -799,8 +890,11 @@ def _disk_free_gb(path: Path) -> float | None:
 @app.get("/health")
 async def health():
     backup = _read_backup_status()
-    embedding_ok = _check_llama_server(8081)
-    multimodal_ok = _check_llama_server(8080)
+    # multimodal 端點跟 server/agent.py:LLAMA_BASE_URL 用同一個 env var/預設值，
+    # 維持跟真實呼叫路徑一致（不在這裡另外寫死一組會漂移的 host/port）。
+    llama_base_url = os.getenv("LLAMA_BASE_URL", "http://localhost:8080/v1")
+    embedding_ok = _check_llama_server(LLAMACPP_BASE_URL)
+    multimodal_ok = _check_llama_server(llama_base_url)
     disk_free = _disk_free_gb(BIO_DB_ROOT)
     age_h = backup.get("last_success_age_hours")
     # 健康準則：DB OK + embedding OK + 最近 36 小時內有成功備份
@@ -817,7 +911,8 @@ async def health():
     try:
         import json as _json
 
-        _wp = Path(__file__).parent.parent / "logs" / "wal_preflight_status.json"
+        # 同上：相對 BIO_DB_ROOT，不是 __file__（見 _read_backup_status 註解）。
+        _wp = BIO_DB_ROOT / "logs" / "wal_preflight_status.json"
         if _wp.exists():
             wal_status = _json.loads(_wp.read_text())
     except Exception:
@@ -871,25 +966,31 @@ async def get_backend():
 
 @app.get("/api/history")
 async def api_history(sample_id: Optional[str] = None, limit: int = 50):
+    from server.auth import visible_requested_by
     from store.factory import get_store
+
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
 
     with get_store().read_conn() as con:
         if sample_id:
             rows = con.execute(
-                """SELECT analysis_id, sample_id, analysis_type, status,
+                f"""SELECT analysis_id, sample_id, analysis_type, status,
                           completed_at, summary, result_path
                    FROM analysis_history
                    WHERE sample_id = ?
+                   {owner_clause}
                    ORDER BY completed_at DESC NULLS LAST LIMIT ?""",
-                [sample_id, limit],
+                [sample_id] + ([owner] if owner is not None else []) + [limit],
             ).fetchall()
         else:
             rows = con.execute(
-                """SELECT analysis_id, sample_id, analysis_type, status,
+                f"""SELECT analysis_id, sample_id, analysis_type, status,
                           completed_at, summary, result_path
                    FROM analysis_history
+                   {"WHERE requested_by = ?" if owner is not None else ""}
                    ORDER BY completed_at DESC NULLS LAST LIMIT ?""",
-                [limit],
+                ([owner] if owner is not None else []) + [limit],
             ).fetchall()
 
     return [
@@ -912,14 +1013,18 @@ async def download_csv(analysis_id: str):
 
     import duckdb
     from config.settings import L2_ROOT
+    from server.auth import visible_requested_by
     from store.factory import get_store
 
     _require_analysis_id(analysis_id)
 
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
+    params = [analysis_id] + ([owner] if owner is not None else [])
     with get_store().read_conn() as con:
         row = con.execute(
-            "SELECT sample_id FROM analysis_history WHERE analysis_id=?",
-            [analysis_id],
+            f"SELECT sample_id FROM analysis_history WHERE analysis_id=?{owner_clause}",
+            params,
         ).fetchone()
 
     if not row:
@@ -970,12 +1075,17 @@ async def result_images(analysis_id: str):
     _require_analysis_id(analysis_id)
     import re
 
+    from server.auth import visible_requested_by
     from store.factory import get_store
+
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
+    params = [analysis_id] + ([owner] if owner is not None else [])
 
     with get_store().read_conn() as con:
         row = con.execute(
-            "SELECT result_path FROM analysis_history WHERE analysis_id=?",
-            [analysis_id],
+            f"SELECT result_path FROM analysis_history WHERE analysis_id=?{owner_clause}",
+            params,
         ).fetchone()
     if not row or not row[0]:
         return []
@@ -1007,6 +1117,11 @@ async def result_images(analysis_id: str):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     from server.agent import handle_message
+    from contextvars import copy_context
+
+    request_context = (
+        copy_context()
+    )  # Preserve authenticated actor across streaming/executor boundaries.
 
     try:
         history_deque, lock = _get_session(req.session_id)
@@ -1022,7 +1137,8 @@ async def chat(req: ChatRequest):
         history_snapshot = list(history_deque)
         future = loop.run_in_executor(
             None,
-            lambda: handle_message(
+            lambda: request_context.copy().run(
+                handle_message,
                 req.message,
                 history_snapshot,
                 backend=req.backend,
@@ -1061,7 +1177,7 @@ async def chat(req: ChatRequest):
 
             report_link = _extract_report_link(result.tool_calls)
             images = await loop.run_in_executor(
-                None, _extract_images_from_tool_calls, result.tool_calls
+                None, request_context.copy().run, _extract_images_from_tool_calls, result.tool_calls
             )
             yield _sse(
                 "message", {"text": result.text, "report_link": report_link, "images": images}
@@ -1179,15 +1295,20 @@ async def analysis_feedback(analysis_id: str, body: FeedbackRequest):
     寫入 analysis_history.user_approval，供 HELIX Eq.(1) f_promote 計算使用。
     """
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     _require_analysis_id(analysis_id)
     if body.approval not in (1, -1):
         raise HTTPException(status_code=422, detail="approval 必須為 1 或 -1")
 
+    owner = visible_requested_by()
+    owner_clause = " AND requested_by = ?" if owner is not None else ""
+    select_params = [analysis_id] + ([owner] if owner is not None else [])
+
     with get_store().write_conn() as con:
         row = con.execute(
-            "SELECT analysis_id FROM analysis_history WHERE analysis_id=?",
-            [analysis_id],
+            f"SELECT analysis_id FROM analysis_history WHERE analysis_id=?{owner_clause}",
+            select_params,
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="分析記錄不存在")
@@ -1215,10 +1336,15 @@ async def engram_page():
 async def engram_samples():
     """列出所有有 artifact 記錄的樣本及統計。"""
     from store.factory import get_store
+    from server.auth import visible_requested_by
+
+    owner = visible_requested_by()
+    owner_clause = " AND ah.requested_by = ?" if owner is not None else ""
+    params = [owner] if owner is not None else []
 
     with get_store().read_conn() as con:
         rows = con.execute(
-            """
+            f"""
             SELECT ah.sample_id,
                    COUNT(DISTINCT ah.analysis_id) AS run_count,
                    COUNT(aa.artifact_id)          AS artifact_count,
@@ -1226,9 +1352,11 @@ async def engram_samples():
             FROM   analysis_history   ah
             JOIN   analysis_artifacts aa ON ah.analysis_id = aa.analysis_id
             WHERE  ah.status = 'completed'
+                   {owner_clause}
             GROUP  BY ah.sample_id
             ORDER  BY last_run_at DESC NULLS LAST
-            """
+            """,
+            params,
         ).fetchall()
     return [
         {
@@ -1247,9 +1375,10 @@ async def engram_summary(sample_id: str):
     _require_sample_id(sample_id)
     from analysis.artifact_registry import artifact_summary
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     with get_store().read_conn() as con:
-        return artifact_summary(con, sample_id)
+        return artifact_summary(con, sample_id, requested_by=visible_requested_by())
 
 
 @app.get("/api/engram/analyses/{sample_id}")
@@ -1257,10 +1386,15 @@ async def engram_analyses(sample_id: str):
     """列出某樣本下所有已完成分析，附帶 artifact 數量。"""
     _require_sample_id(sample_id)
     from store.factory import get_store
+    from server.auth import visible_requested_by
+
+    owner = visible_requested_by()
+    owner_clause = " AND ah.requested_by = ?" if owner is not None else ""
+    params = [sample_id] + ([owner] if owner is not None else [])
 
     with get_store().read_conn() as con:
         rows = con.execute(
-            """
+            f"""
             SELECT ah.analysis_id::VARCHAR, ah.analysis_type, ah.status,
                    ah.completed_at, ah.summary,
                    COUNT(aa.artifact_id) AS artifact_count
@@ -1268,10 +1402,11 @@ async def engram_analyses(sample_id: str):
             LEFT   JOIN analysis_artifacts aa ON ah.analysis_id = aa.analysis_id
             WHERE  ah.sample_id = ?
               AND  ah.status    = 'completed'
+              {owner_clause}
             GROUP  BY ah.analysis_id, ah.analysis_type, ah.status, ah.completed_at, ah.summary
             ORDER  BY ah.completed_at DESC NULLS LAST
             """,
-            [sample_id],
+            params,
         ).fetchall()
     return [
         {
@@ -1297,6 +1432,7 @@ async def engram_artifacts(
     _require_analysis_id(analysis_id)
     from analysis.artifact_registry import get_artifacts
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     with get_store().read_conn() as con:
         return get_artifacts(
@@ -1305,29 +1441,71 @@ async def engram_artifacts(
             artifact_type=artifact_type,
             artifact_subtype=artifact_subtype,
             include_inline=include_inline,
+            requested_by=visible_requested_by(),
         )
 
 
 @app.get("/api/engram/artifact/{artifact_id}/inline")
-async def engram_artifact_inline(artifact_id: str):
-    """取得單一 artifact 的 inline_data（base64）。"""
+async def engram_artifact_inline(artifact_id: str, download: bool = False):
+    """取得單一 artifact：有 blob 回 base64，沒有 blob（或 download=1）直接串出原檔。
+
+    修掉兩個既有缺陷：
+
+    1. 這支一直在查 ``aa.inline_data``，但 migration v14 已把該欄搬到
+       ``analysis_artifact_blobs``，所以自 v14 起對【每一筆】artifact 都回 500
+       （DuckDB Binder Error），不是偶發——等於整條下載路徑長期是死的。
+    2. 即使修好 JOIN，1092 筆 artifact 裡有 350 筆沒有 blob（含 36 MB 的
+       compartment / QC 疊圖，正是最需要下載的那些），回 ``inline_data=null``
+       仍然拿不到檔案。故無 blob 時改以 FileResponse 從磁碟串出原檔。
+
+    路徑安全沿用 ``artifact_resources._resolve_artifact_file``（拒符號連結、
+    強制落在 BIO_DB_ROOT 內、須為一般檔），不另外自己寫一套檢查。
+    """
     _require_analysis_id(artifact_id)
     from store.factory import get_store
+    from server.auth import visible_requested_by
+
+    owner = visible_requested_by()
+    owner_clause = " AND ah.requested_by = ?" if owner is not None else ""
+    params = [artifact_id] + ([owner] if owner is not None else [])
 
     with get_store().read_conn() as con:
         row = con.execute(
-            """SELECT artifact_id::VARCHAR, label, mime_type, inline_data
-               FROM analysis_artifacts WHERE artifact_id = ?""",
-            [artifact_id],
+            f"""SELECT aa.artifact_id::VARCHAR, aa.label, aa.mime_type,
+                      ab.inline_data, aa.file_path
+               FROM analysis_artifacts aa
+               JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id
+               LEFT JOIN analysis_artifact_blobs ab
+                      ON ab.artifact_id = aa.artifact_id
+               WHERE aa.artifact_id = ?{owner_clause}""",
+            params,
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Artifact 不存在")
-    return {
-        "artifact_id": row[0],
-        "label": row[1],
-        "mime_type": row[2],
-        "inline_data": row[3],
-    }
+
+    row_id, label, mime_type, inline_data, file_path = row
+    if inline_data is not None and not download:
+        return {
+            "artifact_id": row_id,
+            "label": label,
+            "mime_type": mime_type,
+            "inline_data": inline_data,
+        }
+
+    from analysis.artifact_resources import (
+        ArtifactResourceError,
+        _resolve_artifact_file,
+    )
+
+    try:
+        abs_path = _resolve_artifact_file(file_path or "")
+    except ArtifactResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        abs_path,
+        media_type=mime_type or "application/octet-stream",
+        filename=abs_path.name,
+    )
 
 
 @app.get("/api/engram/compare")
@@ -1338,6 +1516,7 @@ async def engram_compare(
     """並排比較多個分析的 artifact。ids 以逗號分隔。"""
     from analysis.artifact_registry import compare_analyses
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     analysis_ids = [i.strip() for i in ids.split(",") if i.strip()]
     if not analysis_ids:
@@ -1346,7 +1525,11 @@ async def engram_compare(
         _require_analysis_id(aid)
     with get_store().read_conn() as con:
         return compare_analyses(
-            con, analysis_ids, artifact_subtype=artifact_subtype, include_inline=False
+            con,
+            analysis_ids,
+            artifact_subtype=artifact_subtype,
+            include_inline=False,
+            requested_by=visible_requested_by(),
         )
 
 
@@ -1360,6 +1543,7 @@ async def engram_search(
     """語意搜尋 artifact（Layer 1: 精確 subtype；Layer 2: HNSW）。"""
     from analysis.artifact_registry import search_artifacts
     from store.factory import get_store
+    from server.auth import visible_requested_by
 
     with get_store().read_conn() as con:
         return search_artifacts(
@@ -1368,6 +1552,7 @@ async def engram_search(
             n=n,
             artifact_subtype=artifact_subtype,
             sample_id=sample_id,
+            requested_by=visible_requested_by(),
         )
 
 

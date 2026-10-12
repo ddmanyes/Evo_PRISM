@@ -235,3 +235,87 @@ CREATE TABLE IF NOT EXISTS engram_search_metrics (
     duration_ms  INTEGER,
     recorded_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- api_keys + access_audit_log  (v27 multi-user authentication)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_keys (
+    key_hash    TEXT PRIMARY KEY,
+    key_prefix  TEXT        NOT NULL,
+    user_id     TEXT        NOT NULL,
+    role        TEXT        NOT NULL CHECK (role IN ('viewer', 'analyst', 'admin')),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by  TEXT        NOT NULL,
+    revoked_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_active
+    ON api_keys (user_id, revoked_at);
+
+CREATE TABLE IF NOT EXISTS access_audit_log (
+    audit_id     UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_id      TEXT        NOT NULL,
+    role         TEXT        NOT NULL,
+    tool_name    TEXT        NOT NULL,
+    target       TEXT,
+    outcome      TEXT        NOT NULL,
+    detail       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_access_audit_user_time
+    ON access_audit_log (user_id, occurred_at);
+
+-- ---------------------------------------------------------------------------
+-- analysis_jobs  (v28 durable analysis queue)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS analysis_jobs (
+    job_id            TEXT PRIMARY KEY,
+    tool_name         TEXT        NOT NULL,
+    arguments         JSONB       NOT NULL,
+    requested_by      TEXT        NOT NULL,
+    resource_class    TEXT        NOT NULL CHECK (resource_class IN ('cpu', 'gpu')),
+    priority          INTEGER     NOT NULL DEFAULT 0,
+    status            TEXT        NOT NULL DEFAULT 'queued'
+                      CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at        TIMESTAMPTZ,
+    completed_at      TIMESTAMPTZ,
+    lease_owner       TEXT,
+    lease_expires_at  TIMESTAMPTZ,
+    heartbeat_at      TIMESTAMPTZ,
+    retry_count       INTEGER     NOT NULL DEFAULT 0,
+    max_retries       INTEGER     NOT NULL DEFAULT 1,
+    cancel_requested  BOOLEAN     NOT NULL DEFAULT FALSE,
+    result            JSONB,
+    error             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_claim
+    ON analysis_jobs (resource_class, status, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_owner
+    ON analysis_jobs (requested_by, created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- figure_index  (v30 — content-addressed figure_id lookup index)
+-- ---------------------------------------------------------------------------
+-- 與計畫文件的複合 PK 不同：DuckDB 側改用 surrogate UUID PK（見
+-- scripts/31_migrate_schema_v30_figure_index.py 開頭註解——複合 PK 每欄隱性 NOT NULL，
+-- 而 requested_by 在 admin 呼叫時本來就是 NULL）。Postgres 同理保持兩後端 schema 對齊。
+CREATE TABLE IF NOT EXISTS figure_index (
+    id            UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    figure_id     TEXT        NOT NULL,
+    alt           TEXT,
+    tool_name     TEXT,
+    sample_id     TEXT,
+    analysis_id   TEXT,       -- best-effort，可為 NULL
+    requested_by  TEXT,       -- NULL = admin/global（與 visible_requested_by 同慣例）
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_figure_index_sample
+    ON figure_index (sample_id);
+CREATE INDEX IF NOT EXISTS idx_figure_index_created
+    ON figure_index (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_figure_index_figure_id
+    ON figure_index (figure_id);

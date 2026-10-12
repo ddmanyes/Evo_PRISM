@@ -24,6 +24,21 @@ ENV_HASH: str | None = _compute_env_hash()
 # ── 根目錄 ────────────────────────────────────────────────
 BIO_DB_ROOT = Path(os.getenv("BIO_DB_ROOT", Path(__file__).parent.parent))
 
+# Isolated operational ledger; the existing Linux lock volume is preferred in Docker.
+EP_DECISION_STATE_PATH = Path(
+    os.getenv(
+        "EP_DECISION_STATE_PATH",
+        str(
+            Path(
+                os.getenv(
+                    "DUCKDB_APP_LOCK_PATH", str(BIO_DB_ROOT / ".locks" / "bio_memory.app.lock")
+                )
+            ).parent
+            / "ep_decision.sqlite3"
+        ),
+    )
+)
+
 # ── 資料層路徑 ─────────────────────────────────────────────
 L3_ROOT = Path(os.getenv("L3_DATA_ROOT", BIO_DB_ROOT / "crc_visium_data"))
 BULK_RNA_ROOT = Path(os.getenv("BULK_RNA_ROOT", BIO_DB_ROOT / "bulk_rna_data"))
@@ -31,6 +46,18 @@ L2_ROOT = BIO_DB_ROOT / "silver"
 L1_ROOT = BIO_DB_ROOT / "gold"
 RESULTS_ROOT = BIO_DB_ROOT / "results_ana"
 DATA_ROOT = BIO_DB_ROOT / "data_ana"
+
+# ── 分析佇列 ───────────────────────────────────────────
+ANALYSIS_JOB_MAX_PENDING = int(os.getenv("ANALYSIS_JOB_MAX_PENDING", "3"))
+ANALYSIS_JOB_LEASE_SECONDS = int(os.getenv("ANALYSIS_JOB_LEASE_SECONDS", "300"))
+ANALYSIS_JOB_POLL_SECONDS = float(os.getenv("ANALYSIS_JOB_POLL_SECONDS", "2"))
+LAB_EXCHANGE_ROOT = Path(os.getenv("LAB_EXCHANGE_ROOT", BIO_DB_ROOT / "lab_exchange"))
+STAGING_ROOT = Path(os.getenv("STAGING_ROOT", LAB_EXCHANGE_ROOT / "staging"))
+INGESTED_L3_ROOT = Path(os.getenv("INGESTED_L3_ROOT", LAB_EXCHANGE_ROOT / "l3_ingested"))
+
+# ── 外部轉檔工具 ───────────────────────────────────────────
+# Bio-Formats bfconvert：libvips 不可用時的 NDPI→BigTIFF 降級工具（見 analysis/image_conversion.py）
+BFTOOLS_PATH = Path(os.getenv("BFTOOLS_PATH", BIO_DB_ROOT / "tools" / "bftools" / "bfconvert"))
 DYNAMIC_CODE_DIR = BIO_DB_ROOT / "results" / "dynamic_code"
 MCSEG_RESULTS_ROOT = Path(os.getenv("MCSEG_RESULTS_ROOT", BIO_DB_ROOT / "results" / "mcseg"))
 
@@ -48,8 +75,13 @@ LLAMACPP_MODEL_PATH = os.path.expanduser(
     os.getenv("LLAMACPP_MODEL_PATH", "~/llama.cpp/models/bge-m3-Q8_0.gguf")
 )
 
-# Matryoshka dual-layer index (9D): coarse index uses first MATRYOSHKA_DIM dims
-# bge-m3 supports Matryoshka — truncating to 256 dims retains ~95% recall
+# Matryoshka dual-layer index (9D): coarse index uses first MATRYOSHKA_DIM dims.
+# ⚠️ 2026-09-03: the claim below ("bge-m3 supports Matryoshka") is wrong — bge-m3
+# is not MRL-trained, so embedding[:256] is not a valid coarse sub-embedding
+# (three primary sources cross-checked in second-brain's chunking/embedding plan,
+# Phase A). Defaults to disabled below; analysis/artifact_registry.py's write
+# path no longer populates embedding_256 either. Do not re-enable without
+# switching to a genuinely Matryoshka-trained embedding model.
 MATRYOSHKA_DIM = int(os.getenv("MATRYOSHKA_DIM", "256"))
 MATRYOSHKA_ENABLED = os.getenv("MATRYOSHKA_ENABLED", "false").lower() == "true"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -105,8 +137,7 @@ FIGURE_CACHE_TTL_DAYS = int(os.getenv("FIGURE_CACHE_TTL_DAYS", "14"))
 # 引導改用 web_app 下載端點（避免大型 parquet base64 灌爆傳輸/context）。
 ARTIFACT_RESOURCE_MAX_MB = float(os.getenv("ARTIFACT_RESOURCE_MAX_MB", "25"))
 
-# MCP 明確交付：只在使用者要求查看／下載結果時，由 bio_deliver_results 使用。
-# bundle 是 server 端的暫存交付物，不寫入 analysis_artifacts，也不改動原始分析結果。
+# MCP explicit delivery: used only after the user asks to view/download/package results.
 DELIVERY_BUNDLE_ROOT = BIO_DB_ROOT / "results" / "delivery"
 DELIVERY_MAX_ITEMS = int(os.getenv("DELIVERY_MAX_ITEMS", "50"))
 DELIVERY_MAX_TOTAL_MB = float(os.getenv("DELIVERY_MAX_TOTAL_MB", "1024"))
@@ -205,3 +236,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
 SUMMARY_MAX_CHARS: int = 50
+
+# Clef host bridge: authenticated local shadow inference only.
+EP_CLEF_BRIDGE_URL = os.environ.get("EP_CLEF_BRIDGE_URL", "http://host.docker.internal:18764")
+EP_CLEF_TOKEN_PATH = Path(os.environ.get("EP_CLEF_TOKEN_PATH", "/data/locks/clef_shadow_token"))

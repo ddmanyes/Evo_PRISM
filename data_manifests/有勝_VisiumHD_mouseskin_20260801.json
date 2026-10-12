@@ -1,0 +1,257 @@
+{
+  "files": {
+    "02_8um_bin/MQ260302-A1-no_5/filtered_feature_bc_matrix.h5": {
+      "sha256": "4fb559585484a30806730965b7cd7d2dd5d45e66f921af2ac19d406cc3b9e6e8",
+      "size": 29485610
+    },
+    "02_8um_bin/MQ260302-A1-no_5/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "1f17e196796ce6f3e65a481925e6ff07d214eebe644981aa496fb0cc15c2e60d",
+      "size": 716411
+    },
+    "02_8um_bin/MQ260302-A1-no_5/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "a40ce5ca8b39ac6e3bcbed74736be27d71d6c2fce256716f3f04978fdd58a4c2",
+      "size": 161494
+    },
+    "02_8um_bin/MQ260302-A1-no_5/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 74155767
+    },
+    "02_8um_bin/MQ260302-A1-no_5/raw_feature_bc_matrix.h5": {
+      "size": 38241022
+    },
+    "02_8um_bin/MQ260302-A1-no_5/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "8a413d5366257accbbc52e2ee9c88d5aa94d0c292e43d0404bd273ffa8f96f68",
+      "size": 1883171
+    },
+    "02_8um_bin/MQ260302-A1-no_5/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "c12c5d3e841acf433466ad58a4f3d851b3ae4f536197279c6435df5e0cea0d0d",
+      "size": 304537
+    },
+    "02_8um_bin/MQ260302-A1-no_5/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 88383479
+    },
+    "02_8um_bin/MQ260302-A1-no_5/spatial/scalefactors_json.json": {
+      "sha256": "d62a82b5e993d55731a4996f6c5c70a3857e2192036876c400df2b76d41a39fe",
+      "size": 276
+    },
+    "02_8um_bin/MQ260302-A1-no_5/spatial/tissue_positions.parquet": {
+      "sha256": "6b80dcbd795099d7d9bd6967af0044fe6ebc9a0b7d1773ffd91c62fdd7172538",
+      "size": 11311024
+    },
+    "02_8um_bin/MQ260302-D1-no_8/filtered_feature_bc_matrix.h5": {
+      "sha256": "53415f67483662d2abc1fdefad46d4ea8a739139fe09aba804d843f3ba5b5815",
+      "size": 8818891
+    },
+    "02_8um_bin/MQ260302-D1-no_8/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "401d9cc4ca5531f109a6f296dd390abfa0b6e453e4834d700bdd8520c78e1e85",
+      "size": 648946
+    },
+    "02_8um_bin/MQ260302-D1-no_8/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f13d232ef49de14eab1e63d5e56ec419dfd98637415ee1885ef59d4977456396",
+      "size": 161494
+    },
+    "02_8um_bin/MQ260302-D1-no_8/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "sha256": "3935bbcf5368cfe6dd6d5b76eac8277b0cf6ced49c499e39a39b74fab2b17912",
+      "size": 19916849
+    },
+    "02_8um_bin/MQ260302-D1-no_8/raw_feature_bc_matrix.h5": {
+      "sha256": "4252512d4f97a7683b24bae683deddc3c4187db6ec5fcf8d667ae136eb64f7c0",
+      "size": 12452061
+    },
+    "02_8um_bin/MQ260302-D1-no_8/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c1c3a952a706b10bf4ba5281aaf393b5d178bbaa2946b7ac8f178da982677bfb",
+      "size": 1883171
+    },
+    "02_8um_bin/MQ260302-D1-no_8/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "9cfb8433dbfc841db60be4d2292aeaaaafab483848e73c9031024f3dc802035c",
+      "size": 304537
+    },
+    "02_8um_bin/MQ260302-D1-no_8/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "sha256": "f7a57b9c9a2ee13d81f0d582019592eea0eac026f6a7b3170c56ab926e85c43c",
+      "size": 26996912
+    },
+    "02_8um_bin/MQ260302-D1-no_8/spatial/scalefactors_json.json": {
+      "sha256": "e67aa2771dcef1cf91f0fcbceab558e7892d26efed45436b58f9c38f62d3116d",
+      "size": 276
+    },
+    "02_8um_bin/MQ260302-D1-no_8/spatial/tissue_positions.parquet": {
+      "sha256": "e159a991b7d3b0d52f4e1a81472c4ff5bb7e822640774874aded1a4f28f7b2c7",
+      "size": 11296416
+    },
+    "02_8um_bin/MQ260309-A1-no_12/filtered_feature_bc_matrix.h5": {
+      "sha256": "9acaacc098b3d21cae65d225ac197c0e57804f91101f853072ee06b2a1d877ac",
+      "size": 12367314
+    },
+    "02_8um_bin/MQ260309-A1-no_12/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "c59ae686a301643cfd3d7900148a174f839c2b0e46daafa8ed2689c7c740891d",
+      "size": 761705
+    },
+    "02_8um_bin/MQ260309-A1-no_12/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "7375160547f07be25e1b227d6e5244caaa200be894923d4d3497f15907b40d5b",
+      "size": 161494
+    },
+    "02_8um_bin/MQ260309-A1-no_12/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "sha256": "d9327b11cf757174adb14da5e3e92e79412f079aeb1d93c8094761b005a9be77",
+      "size": 28730859
+    },
+    "02_8um_bin/MQ260309-A1-no_12/raw_feature_bc_matrix.h5": {
+      "sha256": "edf1b20a91cd07787940502e223822f7dfb1057d99401b7d65d7a3b1d65dce86",
+      "size": 16830517
+    },
+    "02_8um_bin/MQ260309-A1-no_12/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "35778cbed19107c5a11316396207eaa51e176bb585f74240b7acd5442522d824",
+      "size": 1883171
+    },
+    "02_8um_bin/MQ260309-A1-no_12/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "299b95e07da1abeb332c030009496d45d00826e8f8c4459fb64947e8d4cca615",
+      "size": 304537
+    },
+    "02_8um_bin/MQ260309-A1-no_12/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 37247031
+    },
+    "02_8um_bin/MQ260309-A1-no_12/spatial/scalefactors_json.json": {
+      "sha256": "ac93e13ab0059937269e295e903ae44a00fd9d0aa3bf97000810d7615d03ab05",
+      "size": 275
+    },
+    "02_8um_bin/MQ260309-A1-no_12/spatial/tissue_positions.parquet": {
+      "sha256": "9e37e8030a49b15c01b8e19330da72b47bc53f43d99918907cf81f19dec78e5a",
+      "size": 11303383
+    },
+    "02_8um_bin/MQ260309-D1-no_14/filtered_feature_bc_matrix.h5": {
+      "sha256": "17e273c665324fbcd808b2f961ec55e1d21417bbb77031b1e1039d4d69a44bdd",
+      "size": 10312759
+    },
+    "02_8um_bin/MQ260309-D1-no_14/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "475802094bb31e11af1ca9e38902d309cf0428891b9e83495101ff182ea1c3d7",
+      "size": 1007681
+    },
+    "02_8um_bin/MQ260309-D1-no_14/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "e0fe70c21e485c4879d81341a763cf1a2e34d21b88a2bfdedded78f0964cb841",
+      "size": 161494
+    },
+    "02_8um_bin/MQ260309-D1-no_14/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "sha256": "198abc478fcf24cba221fcdaffeaab91103778bb37c2c2eb2ce35eda99d5c5ec",
+      "size": 22679633
+    },
+    "02_8um_bin/MQ260309-D1-no_14/raw_feature_bc_matrix.h5": {
+      "sha256": "2b61a5c915070b7013a03c5d5eb6ab8df9ee1cbd6cdfbb48ee00f722ee5d66d0",
+      "size": 13081288
+    },
+    "02_8um_bin/MQ260309-D1-no_14/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "e7659099e8c604bea0ae9ead007bdaa54944af815f1565ece991fefbca7b5f94",
+      "size": 1883171
+    },
+    "02_8um_bin/MQ260309-D1-no_14/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "19f76e9bd5c1001b7f2176e08fec7ef3555c299a5f37cb7f47239e42cb879e6c",
+      "size": 304537
+    },
+    "02_8um_bin/MQ260309-D1-no_14/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "sha256": "f1dfcde5d1d708626bb54725d3d553ca5c93d499f53fe664b14497f6f18ab32d",
+      "size": 28467687
+    },
+    "02_8um_bin/MQ260309-D1-no_14/spatial/scalefactors_json.json": {
+      "sha256": "60777f39386e1cf522cd552a76f928e9cad7351e877f8c52dde4ba82b8fc0992",
+      "size": 275
+    },
+    "02_8um_bin/MQ260309-D1-no_14/spatial/tissue_positions.parquet": {
+      "sha256": "3d499dbee1aa010810e8fd4f6755a53acc2699d632433debc61eed128dfcd975",
+      "size": 11306432
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/feature_slice.h5": {
+      "size": 252115837
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/filtered_feature_cell_matrix.h5": {
+      "sha256": "d65a593d2062acfcca85a80001a8cbfb6c5deb49378dccd2375a05cf8025b1bc",
+      "size": 7770102
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/filtered_feature_cell_matrix/barcodes.tsv.gz": {
+      "sha256": "5c285e70e946293d9875c08c8f723db7a4577adfd2d728d5599d8e9aeb16b49e",
+      "size": 113418
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/filtered_feature_cell_matrix/features.tsv.gz": {
+      "sha256": "e9835ac8118d3f94c594d3f94efd86dff1f7ec612f6fad4b89aa6e615289191b",
+      "size": 161494
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/filtered_feature_cell_matrix/matrix.mtx.gz": {
+      "sha256": "81e4c66d3f443981b7951cc179a9c539dd90ad3a581491e0b507862660e7b2bb",
+      "size": 19186779
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/molecule_info.h5": {
+      "size": 81904045
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/raw_feature_cell_matrix.h5": {
+      "sha256": "ef58d505501f0a72fd614fe2571765e3e1e78c10b17a3282860bf01fc3bea259",
+      "size": 9002137
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/raw_feature_cell_matrix/barcodes.tsv.gz": {
+      "sha256": "f116aca250cf239fd13e04aa03e92227e08848ca9888f0046b3d34f1722f0fb0",
+      "size": 113946
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/raw_feature_cell_matrix/features.tsv.gz": {
+      "sha256": "2d69843fc1949e0c21844d6604748a539fd0ef7539530458ec6140a6e73659a7",
+      "size": 304537
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/raw_feature_cell_matrix/matrix.mtx.gz": {
+      "sha256": "b9fb2c14f23e7a7c02c3850b1ba68ac12d2a9cdb2e319003c9d028b9f6435fc5",
+      "size": 19805649
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No12_outputs/spatial/scalefactors_json.json": {
+      "sha256": "eec1dadd9d311fd74b09fb8c1aff27122860cad09de4ada6cea5ca5fc43e4d84",
+      "size": 224
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/feature_slice.h5": {
+      "size": 258141165
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/filtered_feature_cell_matrix.h5": {
+      "sha256": "be9cd7e652abfd571ed9c5d9882c8f8c6c83d5a28e05883fa9dec565e42220bc",
+      "size": 6452469
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/filtered_feature_cell_matrix/barcodes.tsv.gz": {
+      "sha256": "e5c71232f4a9d19b567ad6a9e61aa0cd973487503cecce31773aa780335561f7",
+      "size": 157811
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/filtered_feature_cell_matrix/features.tsv.gz": {
+      "sha256": "eca4df88f3759c97c426333cd420adc69a77e1dbb2697f55ab099ca9fbc4bc93",
+      "size": 161494
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/filtered_feature_cell_matrix/matrix.mtx.gz": {
+      "sha256": "28bc0aff2f978b8a37384adec6990e9eb3ba0ddbf7f47c203a5a6d46e3a330da",
+      "size": 15433928
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/molecule_info.h5": {
+      "size": 64539512
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/raw_feature_cell_matrix.h5": {
+      "sha256": "b168a0a6ce051944f49698ecd95133fad3a9121903855a7e7ceb7fba753eded2",
+      "size": 7414122
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/raw_feature_cell_matrix/barcodes.tsv.gz": {
+      "sha256": "c7d1a606345280b41c05ba2a8267b7893e343d0f18676b6083e9bd9ad4d1fa95",
+      "size": 158876
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/raw_feature_cell_matrix/features.tsv.gz": {
+      "sha256": "3d2aff64ef2a93187d628672dc70adf288ca4800a313dbd0c1531cf5fa169ed6",
+      "size": 304537
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/raw_feature_cell_matrix/matrix.mtx.gz": {
+      "sha256": "02129b3adc6bcc9c505fd5805962c2256857cd43c13792f46b41073ed7441d65",
+      "size": 15927407
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No14_outputs/spatial/scalefactors_json.json": {
+      "sha256": "cc4ce268fada8d6dacf409700422ab9b1140ec7a73cef0020dc720d74b78e74d",
+      "size": 227
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No5_outputs/feature_slice.h5": {
+      "size": 286149086
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No5_outputs/molecule_info.h5": {
+      "size": 196886516
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No8_outputs/feature_slice.h5": {
+      "size": 232649506
+    },
+    "08_SpaceRanger\u91cd\u65b0\u5206\u6790_\u542b\u7d30\u80de\u5206\u5272/No8_outputs/molecule_info.h5": {
+      "size": 62338620
+    }
+  },
+  "root": "/Volumes/KINGSTON/Bioinfo_Projects/01_Spatial_Transcriptomics/\u6709\u52dd_VisiumHD_mouseskin_20260801"
+}

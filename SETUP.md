@@ -35,7 +35,10 @@ Evo_PRISM 採用 **MCP-First（MCP 伺服器優先）** 的設計。若您主要
 
 ### 前置
 - Docker Engine ≥ 24 + Docker Compose v2
-- `bge-m3-Q8_0.gguf`（605 MB）放入 `./models/`
+- **`scikit-misc`（omicverse 依賴，裝 `bulk-analysis`/`mcseg` extras 才會用到）在 PyPI 上沒有 Linux arm64 wheel**，只有 macOS arm64 + Linux x86_64。Apple Silicon 上原生 arm64 build 會落到編源碼、且該套件的 meson 建置腳本本身有 bug 會失敗。若要用這兩個 extras，`docker-compose.yml`／`docker build` 需加 `--platform linux/amd64`（Rosetta 模擬跑，較慢但正確）。
+- Embedding 後端二選一：
+  - **自帶 sidecar**：`bge-m3-Q8_0.gguf`（605 MB）放入 `./models/`，`docker-compose.yml` 加回 `embedding` service（見該檔案內註解的還原方式）
+  - **接現有的 OpenAI 相容 embedding endpoint**（如另一台機器已在跑的 llama-server）：跳過 sidecar，直接把 `LLAMACPP_BASE_URL`／`EMBEDDING_MODEL`／`EMBEDDING_DIM` 設成該服務的實際值即可（見本專案 `docker-compose.yml` 目前的設定，是接一個外部 nomic-embed-text 服務的實例）
 
 ### 步驟
 
@@ -44,25 +47,21 @@ Evo_PRISM 採用 **MCP-First（MCP 伺服器優先）** 的設計。若您主要
 cp .env.example .env
 # 填入至少 ANTHROPIC_API_KEY=sk-ant-...
 
-# 2. 啟動服務（首次會拉取映像 ~343 MB）
+# 2. 啟動服務（首次會拉取映像 ~343 MB；若跨平台建置見上方 --platform 提醒）
 docker compose up -d
 
-# 3. 初始化 DB（首次，一次性）
-docker compose exec evo-prism python scripts/00_init_db.py
-for s in $(docker compose exec evo-prism ls scripts/ | grep '^[0-9][0-9]_migrate' | sort -V); do
-    docker compose exec evo-prism python "scripts/$s"
-done
-
-# 4. 驗證
-docker compose exec evo-prism python config/db_utils.py
-# 預期：{'sample_count': 0, 'history_count': 0, 'stale_count': 0, 'l2_ready_count': 0}
+# 3. 驗證（DB schema 初始化 + migration 是 entrypoint.sh 自動處理的，不需手動跑）
+curl -s http://localhost:8000/health
 ```
+
+> ⚠️ **不要手動迴圈執行所有 `scripts/[0-9][0-9]_migrate_*.py`**——`entrypoint.sh` 已經會在容器啟動時透過 `scripts/run_pending_migrations.py` 只跑「真正還沒套用」的 migration（依 `schema_migrations` 表目前最高版本判斷）。對一個已經 migrate 過的既有資料庫，重跑全部腳本會壞：後期的 migration 常會改掉早期腳本建立的欄位／結構（例如 v14 把 v9 建的 `inline_data` 欄位搬到別的表），早期腳本自己的驗證邏輯遇到已演化過的 schema 會直接噴錯、讓容器 crash loop。
 
 | 服務 | Port | 說明 |
 |------|------|------|
-| Web UI | 8000 | FastAPI 對話介面 |
-| MCP HTTP | 8080 | 外部 AI 客戶端接入 |
-| Embedding | 8081 | bge-m3 sidecar（docker compose 內部）|
+| Web UI + MCP | 8000 | FastAPI 對話介面（`/`）與 MCP session manager（掛載於 `/mcp`）**在同一個 port**——`entrypoint.sh web` 模式下兩者由同一個 `server/web_app.py` 提供 |
+| Embedding sidecar | 8081 | 僅當你選擇「自帶 sidecar」時才會用到；接外部 embedding 服務則不需要 |
+
+> `docker-compose.yml` 裡另有 `8080` 的殘留設定，對應 `server/bio_memory_server.py --transport http` 的獨立啟動模式（debug 用），**預設的 `web` 模式不會監聽這個 port**，不要預期 MCP 在 `:8080` 上。
 
 或自行 build：`docker build -t evo-prism .`
 

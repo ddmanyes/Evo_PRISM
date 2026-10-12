@@ -9,9 +9,13 @@ import duckdb
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import L3_ROOT
+from config.settings import DUCKDB_PATH, L3_ROOT
 
-DB_PATH = Path(__file__).parent.parent / "bio_memory.duckdb"
+# Was hardcoded to Path(__file__).parent.parent / "bio_memory.duckdb", ignoring
+# BIO_DB_ROOT/DUCKDB_PATH entirely (every other NN_migrate_schema_*.py script uses
+# settings.DUCKDB_PATH as its default) — broke BIO_DB_ROOT-based deployments (e.g.
+# Docker, where the db is meant to live on a mounted volume, not inside the image).
+DB_PATH = DUCKDB_PATH
 
 
 def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.DuckDBPyConnection:
@@ -63,7 +67,7 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     con.execute("""
         CREATE TABLE IF NOT EXISTS analysis_history (
             analysis_id      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            sample_id        VARCHAR REFERENCES sample_registry(sample_id),
+            sample_id        VARCHAR,    -- 軟引用：刻意不加 REFERENCES sample_registry(sample_id)，見 migration v29
             analysis_type    VARCHAR,    -- 'qc', 'spatial_gene', 'clustering', 'diff_expr'
             parameters       JSON,
             status           VARCHAR,    -- 'running', 'completed', 'failed'
@@ -205,6 +209,75 @@ def init_db(db_path: "Path | duckdb.DuckDBPyConnection" = DB_PATH) -> duckdb.Duc
     """)
     print("View:  analysis_index — OK")
 
+    # v27 multi-user authentication: raw keys are never stored.
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            key_hash     VARCHAR PRIMARY KEY,
+            key_prefix   VARCHAR NOT NULL,
+            user_id      VARCHAR NOT NULL,
+            role         VARCHAR NOT NULL CHECK (role IN ('viewer', 'analyst', 'admin')),
+            created_at   TIMESTAMP NOT NULL DEFAULT now(),
+            created_by   VARCHAR NOT NULL,
+            revoked_at   TIMESTAMP
+        )
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_api_keys_user_active
+        ON api_keys(user_id, revoked_at)
+    """)
+    print("Table: api_keys — OK")
+
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS access_audit_log (
+            audit_id     UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            occurred_at  TIMESTAMP NOT NULL DEFAULT now(),
+            user_id      VARCHAR NOT NULL,
+            role         VARCHAR NOT NULL,
+            tool_name    VARCHAR NOT NULL,
+            target       VARCHAR,
+            outcome      VARCHAR NOT NULL,
+            detail       VARCHAR
+        )
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_access_audit_user_time
+        ON access_audit_log(user_id, occurred_at)
+    """)
+    print("Table: access_audit_log — OK")
+
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS analysis_jobs (
+            job_id            VARCHAR PRIMARY KEY,
+            tool_name         VARCHAR NOT NULL,
+            arguments         JSON NOT NULL,
+            requested_by      VARCHAR NOT NULL,
+            resource_class    VARCHAR NOT NULL CHECK (resource_class IN ('cpu', 'gpu')),
+            priority          INTEGER NOT NULL DEFAULT 0,
+            status            VARCHAR NOT NULL DEFAULT 'queued'
+                              CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+            created_at        TIMESTAMP NOT NULL DEFAULT now(),
+            started_at        TIMESTAMP,
+            completed_at      TIMESTAMP,
+            lease_owner       VARCHAR,
+            lease_expires_at  TIMESTAMP,
+            heartbeat_at      TIMESTAMP,
+            retry_count       INTEGER NOT NULL DEFAULT 0,
+            max_retries       INTEGER NOT NULL DEFAULT 1,
+            cancel_requested  BOOLEAN NOT NULL DEFAULT FALSE,
+            result             JSON,
+            error              VARCHAR
+        )
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_analysis_jobs_claim
+        ON analysis_jobs(resource_class, status, priority, created_at)
+    """)
+    con.execute("""
+        CREATE INDEX IF NOT EXISTS idx_analysis_jobs_owner
+        ON analysis_jobs(requested_by, created_at)
+    """)
+    print("Table: analysis_jobs — OK")
+
     return con
 
 
@@ -300,8 +373,17 @@ def verify(con: duckdb.DuckDBPyConnection):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Initialize the EP database")
+    parser.add_argument(
+        "--no-samples", action="store_true",
+        help="Create schema without the legacy lab sample registry entries",
+    )
+    args = parser.parse_args()
     con = init_db()
-    populate_registry(con)
+    if not args.no_samples:
+        populate_registry(con)
     verify(con)
     con.close()
     print("\nDone. bio_memory.duckdb initialized.")

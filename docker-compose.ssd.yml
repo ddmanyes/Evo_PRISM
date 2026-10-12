@@ -1,0 +1,12 @@
+# Optional Evo_PRISM SSD access for MCseg raw L3 inputs.
+#
+# Use only while /Volumes/SSD is mounted:
+#   docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d
+#
+# Return to the KINGSTON-only core service before unplugging the SSD:
+#   docker compose up -d --force-recreate
+services:
+  evo-prism:
+    volumes:
+      # Read-only: Evo_PRISM never writes back to the external raw-data drive.
+      - /Volumes/SSD:/data/external_ssd:ro

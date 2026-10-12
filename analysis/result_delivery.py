@@ -146,9 +146,9 @@ def _row_to_artifact(row: Sequence[Any]) -> DeliveryArtifact:
 
 
 _ARTIFACT_SELECT = """
-    SELECT artifact_id::VARCHAR, analysis_id::VARCHAR, artifact_type,
-           artifact_subtype, label, file_path, file_size_kb, mime_type
-    FROM analysis_artifacts
+    SELECT aa.artifact_id::VARCHAR, aa.analysis_id::VARCHAR, aa.artifact_type,
+           aa.artifact_subtype, aa.label, aa.file_path, aa.file_size_kb, aa.mime_type
+    FROM analysis_artifacts aa
 """
 
 
@@ -158,8 +158,9 @@ def select_delivery_artifacts(
     analysis_id: str | None = None,
     artifact_ids: Iterable[str] | None = None,
     max_items: int = DELIVERY_MAX_ITEMS,
+    requested_by: str | None = None,
 ) -> list[DeliveryArtifact]:
-    """Resolve a bounded, de-duplicated artifact selection from the registry."""
+    """Resolve a bounded artifact selection inside the caller's owner scope."""
     normalized_ids: list[str] = []
     seen_requested: set[str] = set()
     for raw_id in artifact_ids or []:
@@ -177,13 +178,23 @@ def select_delivery_artifacts(
     if len(normalized_ids) > max_items:
         raise ResultDeliveryError(f"artifact_ids 超過上限 {max_items} 筆")
 
+    owner_join = (
+        " JOIN analysis_history ah ON ah.analysis_id = aa.analysis_id"
+        if requested_by is not None
+        else ""
+    )
+    owner_clause = " AND ah.requested_by = ?" if requested_by is not None else ""
+    owner_params = [requested_by] if requested_by is not None else []
+
     rows: list[Sequence[Any]] = []
     if normalized_analysis_id:
         rows.extend(
             con.execute(
                 _ARTIFACT_SELECT
-                + " WHERE analysis_id = ? ORDER BY created_at, artifact_id LIMIT ?",
-                [normalized_analysis_id, max_items + 1],
+                + owner_join
+                + f" WHERE aa.analysis_id = ?{owner_clause}"
+                + " ORDER BY aa.created_at, aa.artifact_id LIMIT ?",
+                [normalized_analysis_id, *owner_params, max_items + 1],
             ).fetchall()
         )
         if len(rows) > max_items:
@@ -194,8 +205,8 @@ def select_delivery_artifacts(
 
     for artifact_id in normalized_ids:
         row = con.execute(
-            _ARTIFACT_SELECT + " WHERE artifact_id = ?",
-            [artifact_id],
+            _ARTIFACT_SELECT + owner_join + f" WHERE aa.artifact_id = ?{owner_clause}",
+            [artifact_id, *owner_params],
         ).fetchone()
         if row is None:
             raise ResultDeliveryError(f"artifact_id={artifact_id!r} 不存在")
@@ -282,6 +293,7 @@ def create_delivery_bundle(
     *,
     max_items: int = DELIVERY_MAX_ITEMS,
     max_total_mb: float = DELIVERY_MAX_TOTAL_MB,
+    requested_by: str | None = None,
 ) -> DeliveryBundle:
     """Create an idempotent ZIP plus manifest for explicitly selected results."""
     if not artifacts and not figures:
@@ -299,7 +311,7 @@ def create_delivery_bundle(
 
     canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     bundle_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    bundle_root = DELIVERY_BUNDLE_ROOT.resolve()
+    bundle_root = _bundle_root(requested_by)
     bundle_root.mkdir(parents=True, exist_ok=True)
     output_path = bundle_root / f"{bundle_id}.zip"
 
@@ -346,10 +358,19 @@ def parse_delivery_uri(uri: str) -> str:
     return bundle_id
 
 
-def read_delivery_resource(uri: str) -> tuple[bytes, str, Path]:
+def _bundle_root(requested_by: str | None) -> Path:
+    """Keep bundles in an owner-scoped directory without exposing user IDs."""
+    base = DELIVERY_BUNDLE_ROOT.resolve()
+    if requested_by is None:
+        return base / "admin"
+    owner_hash = hashlib.sha256(requested_by.encode("utf-8")).hexdigest()[:24]
+    return base / f"owner-{owner_hash}"
+
+
+def read_delivery_resource(uri: str, *, requested_by: str | None = None) -> tuple[bytes, str, Path]:
     """Read a previously generated bundle after re-validating its sandbox path."""
     bundle_id = parse_delivery_uri(uri)
-    root = DELIVERY_BUNDLE_ROOT.resolve()
+    root = _bundle_root(requested_by)
     path = root / f"{bundle_id}.zip"
     if path.is_symlink():
         raise ResultDeliveryError("拒絕讀取符號連結 delivery bundle")

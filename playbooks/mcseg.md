@@ -154,16 +154,28 @@ mask 輸出後再 nearest-neighbor downscale 回 virtual_fullres（供 bin attri
 
 ---
 
-## 工具 B：bio_run_mcseg_fullslide（全片分割）
+## 工具 B：bio_run_mcseg_fullslide（全片分割 + RNA counting）
 
-**耗時**：數小時（GPU）  
+**耗時**：數小時至半天以上（GPU，7-pass）。實測參考：一次相近規模全片跑（6228 tiles）光分割階段就約 12 小時；程式碼會跳過純背景 tile 以節省時間。  
 **必要參數**：`sample_id`  
-**選填**：`tile_size`（預設 1024）、`overlap`（預設 128）、`use_cpsam`
+**選填**：`tile_size`（預設 1024）、`overlap`（預設 128）、`use_cpsam`（預設 `true`，7-pass）、`btf_image_path`、`binned_dir`（省略則從 `sample_registry.l3_path` 解析——**若 l3_path 是舊路徑/不同作業系統路徑，請務必明確傳入**）
 
-- 呼叫 `run_tiled_mcseg_v2` 對全片執行 tiled 分割
-- 輸出：`fullslide/segmentation_masks_fullslide.npy`
-- ⚠️ 全片細胞數可能超過 10 萬，downstream Scanpy 需另行分批執行
-- ⚠️ 全片 BTF 可達 10–80 GB，確認磁碟空間
+### Stage 0–1 — 全片 tiled 分割
+
+- 呼叫 `run_tiled_mcseg_v2` 對全片（記憶體映射讀取原始 BTF）執行 tiled 分割
+- 輸出：`fullslide/segmentation_masks_fullslide.npy`（**原始 TIFF 解析度**）
+- 執行期間會在 `fullslide/tile_cache/` 寫入逐 tile 快取（`tile_<n>.npy`），供中斷後續跑；**跑完成功後可安全刪除**以回收磁碟空間（實測曾佔到 40+ GB）
+
+### Stage 2 — 座標降採樣 + RNA counting
+
+- 全片分割的 mask 在原始 TIFF 解析度，但 RNA counting（`count_rna_per_cell`）要求 mask 與 2µm bin 座標在同一空間（virtual_fullres，僅做位移對齊、不做縮放換算）
+- 自動計算 `tiff_scale`（`analysis.mcseg_wrapper._compute_tiff_scale`）並將 mask 做 nearest-neighbor 降採樣回 virtual_fullres（`downscale_mask_to_vfr`），輸出 `fullslide/segmentation_masks_fullslide_vfr.npy`
+- 載入**全部**在組織內的 2µm bins（無裁切，`load_visium_adata(binned_dir, bin_size="002")`），呼叫既有 `run_rna_counting`（ROI 偏移設為 (0,0)，等同「ROI 就是整片組織」）
+- 輸出：`fullslide/cellpose_cells_fullslide.h5ad`（cell × gene AnnData）
+
+⚠️ **僅執行到此為止**（不含 Stage 3+ Scanpy QC/clustering/空間生態指標）——全片細胞數可能超過 10 萬甚至上百萬，Stage 5 空間生態指標目前是 O(n²) 距離運算，全片規模下需另行改寫才能安全執行，暫不在此工具範圍內。若需 downstream 分析，可對 `cellpose_cells_fullslide.h5ad` 另行分批處理。
+
+⚠️ 全片 BTF 可達 10–80 GB，確認磁碟空間；mask 本身（TIFF解析度 + vfr 降採樣版）加上 AnnData 通常還需要額外 10+ GB/樣本。
 
 ---
 
@@ -204,6 +216,12 @@ results/mcseg/<sample_id>/
 │   ├── skin_markers_dotplot.png
 │   ├── mask_he_overlay.png     ← 細胞類型著色疊圖
 │   └── mask_he_boundary.png    ← 純邊界版
+├── fullslide/
+│   ├── segmentation_masks_fullslide.npy      ← mask（原始 TIFF 解析度）
+│   ├── segmentation_masks_fullslide_vfr.npy  ← mask（降採樣至 virtual_fullres）
+│   ├── adata_002um_fullslide.h5ad            ← 全片 bin AnnData（未裁切）
+│   ├── cellpose_cells_fullslide.h5ad         ← 全片細胞計數 AnnData（cell × gene）
+│   └── tile_cache/                           ← 逐 tile 快取（跑完後可刪除回收空間）
 └── export/xenium/<roi_name>/
     ├── experiment.xenium       ← Xenium Explorer 入口
     ├── morphology.ome.tif

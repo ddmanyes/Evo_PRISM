@@ -1,0 +1,383 @@
+{
+  "files": {
+    "DPCP.current/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 147419924
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "fcb9d28fe909b886d8dec78bd74cb5654a3c70f38a4ecc0d5a18deeb643a91aa",
+      "size": 25434970
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f4ee19b2eea7e3c7d17a1007f7ccbffc0a65ce29daefe619d59336c0a250793f",
+      "size": 161688
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 311507536
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 182441025
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "4a1f6130c193dd4228c3894e6cfc76f6141786c23f0fe2018966341ace6468be",
+      "size": 23367192
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "72e76554ef9c00685b04abd22afb31d894e221112a052db5cbd6393ba2085bb2",
+      "size": 290896
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 374682968
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 194978825
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "06a0b08ef14db2c8bc9619d7a01f48e6d57ae6cd7101c083c86fb48594ff8b63",
+      "size": 294
+    },
+    "DPCP.current/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 168753960
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 86212134
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "d38256896930ef2439f7159fb10f47d213a1792c67a667aa06552936ee42a587",
+      "size": 1329618
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f42a89175daec0c1788e151764b6f3d1e1919c3aa6b943a1e971dba29fdcc05a",
+      "size": 161688
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 223091912
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 117089978
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "5906540f480536d8b0efa4b23397cd28a95e24269186b383f7f857a038504813",
+      "size": 1899585
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "66622b0fbfbc6fa3cdfc72f70733662e740d003822f360a71c2c9d80ef6c87e5",
+      "size": 290896
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 275282883
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "7a26c05c3e98894ee52d5d8e4bc1c790fb55beb4776c1708f4eb1e53f05efdab",
+      "size": 295
+    },
+    "DPCP.current/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "f6afc2a8816caca1e7e166b80872d755101466e8593c5a5efc85802b04caedc9",
+      "size": 11247268
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 65299468
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "ce0263c0cb1cc8b20b2328490e5a3c3122f1ac4921af230aac573ba3aae48f2d",
+      "size": 311427
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "738f1ef75a04c410913cb350d12d35fe6bdc76865751f48b1b6fd2462bac8b9a",
+      "size": 161688
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 172370298
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 89850876
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "e0a7b6af81ed6506cdabe9f6070f2fc1f1d28d6e3fe8957b08b17dfa87ef9a5d",
+      "size": 464186
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "c6a7966426c1a01b5a7726c4f4d943abccd10f5270b4937fa9d42c9ee935422e",
+      "size": 290896
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 217030019
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "dc0f89e50885a93541dbce685dd305877432e1c32caf47775df1cf080c114702",
+      "size": 296
+    },
+    "DPCP.current/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "62d598209df87ccda1544d68731a89dab655d44ca38d8cb59d595a68a24a6385",
+      "size": 3336081
+    },
+    "DPCP.current/outs/feature_slice.h5": {
+      "size": 423237550
+    },
+    "DPCP.current/outs/molecule_info.h5": {
+      "size": 600632889
+    },
+    "DPCP/outs/binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 143341051
+    },
+    "DPCP/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "08b0b3ca37cc3ac910153cf7b1c60dd45fefabab76c1dcaf98b16091cc51df94",
+      "size": 22647030
+    },
+    "DPCP/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f63e59ed9b076f1b37b813104907b8703802082091b5902f673f3ddb3cc69da1",
+      "size": 161688
+    },
+    "DPCP/outs/binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 307601649
+    },
+    "DPCP/outs/binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 182311118
+    },
+    "DPCP/outs/binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "cbe3a43ace34fd9442e3a8724c7c5afd2a7794a1c82b15a450de109e71d151f8",
+      "size": 23274462
+    },
+    "DPCP/outs/binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "2048c5e2e3133ca8898277ff0440e321993a160105189dc63efd1f7919d3b51a",
+      "size": 290896
+    },
+    "DPCP/outs/binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 374653350
+    },
+    "DPCP/outs/binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 194878812
+    },
+    "DPCP/outs/binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "0201e8834b7b7b159beefe3fa843934515cf5240a8b300ba1bd7298168fc1282",
+      "size": 276
+    },
+    "DPCP/outs/binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 167816544
+    },
+    "DPCP/outs/binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 85086253
+    },
+    "DPCP/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "0bec2802227dcc03d05e13b4ee612c1dc663ee7f0cbc6c4dde4213bbb6d0c8ed",
+      "size": 1207095
+    },
+    "DPCP/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "cb32d84d2626ef16322b5940770c5b6f1773af4197b8e91248f5dcc6e925b4c7",
+      "size": 161688
+    },
+    "DPCP/outs/binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 220928483
+    },
+    "DPCP/outs/binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 117092307
+    },
+    "DPCP/outs/binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "dd09fc14645546d64086ddee26547b3ae2849c7951e8a1845c030d33197888f6",
+      "size": 1897157
+    },
+    "DPCP/outs/binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "e019c786e1ea791667da90bb210e79b52159aa32188c4992ecf0c311c96ba84c",
+      "size": 290896
+    },
+    "DPCP/outs/binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 275287269
+    },
+    "DPCP/outs/binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "af9c98b84c545e6f2620cbb3644701705493447edad9158195f7abf9b260e437",
+      "size": 276
+    },
+    "DPCP/outs/binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "e40078ec4fe9b2863d68d9287706acfc6c8fff7475bf45bc3cd7ca98569fbac8",
+      "size": 11192105
+    },
+    "DPCP/outs/binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 64544305
+    },
+    "DPCP/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b37cc55af7d8c5fed89267ef469d1f25d3898352d2d88966f38ca201be445637",
+      "size": 287630
+    },
+    "DPCP/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "4d44324bef51490d2f5318d3d918b2ae1feccfecfdced6a1b1e349665b2e8537",
+      "size": 161688
+    },
+    "DPCP/outs/binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 170875923
+    },
+    "DPCP/outs/binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 89850822
+    },
+    "DPCP/outs/binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "db453b423117ec00dd66ba4b6c095906d29d0623b3bdeac9c7445f12992e9ce6",
+      "size": 464162
+    },
+    "DPCP/outs/binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "6b8c04451b750b73e81687e2f8c34e71731e4a9266967df798f268f4da6fbf45",
+      "size": 290896
+    },
+    "DPCP/outs/binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 217029402
+    },
+    "DPCP/outs/binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "8bc482343e6559629cc668ddf368e027b5b85fac65c3b3d1647b59da25405560",
+      "size": 276
+    },
+    "DPCP/outs/binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "5ceee302090c5a66cd5c841638686e55f7d0b14eda150075775fc00b1823130e",
+      "size": 3326057
+    },
+    "DPCP/outs/feature_slice.h5": {
+      "size": 414333697
+    },
+    "DPCP/outs/molecule_info.h5": {
+      "size": 599202606
+    },
+    "binned_outputs/square_002um/filtered_feature_bc_matrix.h5": {
+      "size": 143341051
+    },
+    "binned_outputs/square_002um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "08b0b3ca37cc3ac910153cf7b1c60dd45fefabab76c1dcaf98b16091cc51df94",
+      "size": 22647030
+    },
+    "binned_outputs/square_002um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "f63e59ed9b076f1b37b813104907b8703802082091b5902f673f3ddb3cc69da1",
+      "size": 161688
+    },
+    "binned_outputs/square_002um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 307601649
+    },
+    "binned_outputs/square_002um/raw_feature_bc_matrix.h5": {
+      "size": 182311118
+    },
+    "binned_outputs/square_002um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "cbe3a43ace34fd9442e3a8724c7c5afd2a7794a1c82b15a450de109e71d151f8",
+      "size": 23274462
+    },
+    "binned_outputs/square_002um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "2048c5e2e3133ca8898277ff0440e321993a160105189dc63efd1f7919d3b51a",
+      "size": 290896
+    },
+    "binned_outputs/square_002um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 374653350
+    },
+    "binned_outputs/square_002um/raw_probe_bc_matrix.h5": {
+      "size": 194878812
+    },
+    "binned_outputs/square_002um/spatial/scalefactors_json.json": {
+      "sha256": "0201e8834b7b7b159beefe3fa843934515cf5240a8b300ba1bd7298168fc1282",
+      "size": 276
+    },
+    "binned_outputs/square_002um/spatial/tissue_positions.parquet": {
+      "size": 167816544
+    },
+    "binned_outputs/square_008um/filtered_feature_bc_matrix.h5": {
+      "size": 85086253
+    },
+    "binned_outputs/square_008um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "0bec2802227dcc03d05e13b4ee612c1dc663ee7f0cbc6c4dde4213bbb6d0c8ed",
+      "size": 1207095
+    },
+    "binned_outputs/square_008um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "cb32d84d2626ef16322b5940770c5b6f1773af4197b8e91248f5dcc6e925b4c7",
+      "size": 161688
+    },
+    "binned_outputs/square_008um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 220928483
+    },
+    "binned_outputs/square_008um/raw_feature_bc_matrix.h5": {
+      "size": 117092307
+    },
+    "binned_outputs/square_008um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "dd09fc14645546d64086ddee26547b3ae2849c7951e8a1845c030d33197888f6",
+      "size": 1897157
+    },
+    "binned_outputs/square_008um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "e019c786e1ea791667da90bb210e79b52159aa32188c4992ecf0c311c96ba84c",
+      "size": 290896
+    },
+    "binned_outputs/square_008um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 275287269
+    },
+    "binned_outputs/square_008um/spatial/scalefactors_json.json": {
+      "sha256": "af9c98b84c545e6f2620cbb3644701705493447edad9158195f7abf9b260e437",
+      "size": 276
+    },
+    "binned_outputs/square_008um/spatial/tissue_positions.parquet": {
+      "sha256": "e40078ec4fe9b2863d68d9287706acfc6c8fff7475bf45bc3cd7ca98569fbac8",
+      "size": 11192105
+    },
+    "binned_outputs/square_016um/filtered_feature_bc_matrix.h5": {
+      "size": 64544305
+    },
+    "binned_outputs/square_016um/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "b37cc55af7d8c5fed89267ef469d1f25d3898352d2d88966f38ca201be445637",
+      "size": 287630
+    },
+    "binned_outputs/square_016um/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "4d44324bef51490d2f5318d3d918b2ae1feccfecfdced6a1b1e349665b2e8537",
+      "size": 161688
+    },
+    "binned_outputs/square_016um/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 170875923
+    },
+    "binned_outputs/square_016um/raw_feature_bc_matrix.h5": {
+      "size": 89850822
+    },
+    "binned_outputs/square_016um/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "db453b423117ec00dd66ba4b6c095906d29d0623b3bdeac9c7445f12992e9ce6",
+      "size": 464162
+    },
+    "binned_outputs/square_016um/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "6b8c04451b750b73e81687e2f8c34e71731e4a9266967df798f268f4da6fbf45",
+      "size": 290896
+    },
+    "binned_outputs/square_016um/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 217029402
+    },
+    "binned_outputs/square_016um/spatial/scalefactors_json.json": {
+      "sha256": "8bc482343e6559629cc668ddf368e027b5b85fac65c3b3d1647b59da25405560",
+      "size": 276
+    },
+    "binned_outputs/square_016um/spatial/tissue_positions.parquet": {
+      "sha256": "5ceee302090c5a66cd5c841638686e55f7d0b14eda150075775fc00b1823130e",
+      "size": 3326057
+    },
+    "square_008um \u4f4e\u756b\u8cea/filtered_feature_bc_matrix.h5": {
+      "size": 85086253
+    },
+    "square_008um \u4f4e\u756b\u8cea/filtered_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "0bec2802227dcc03d05e13b4ee612c1dc663ee7f0cbc6c4dde4213bbb6d0c8ed",
+      "size": 1207095
+    },
+    "square_008um \u4f4e\u756b\u8cea/filtered_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "cb32d84d2626ef16322b5940770c5b6f1773af4197b8e91248f5dcc6e925b4c7",
+      "size": 161688
+    },
+    "square_008um \u4f4e\u756b\u8cea/filtered_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 220928483
+    },
+    "square_008um \u4f4e\u756b\u8cea/raw_feature_bc_matrix.h5": {
+      "size": 117092307
+    },
+    "square_008um \u4f4e\u756b\u8cea/raw_feature_bc_matrix/barcodes.tsv.gz": {
+      "sha256": "dd09fc14645546d64086ddee26547b3ae2849c7951e8a1845c030d33197888f6",
+      "size": 1897157
+    },
+    "square_008um \u4f4e\u756b\u8cea/raw_feature_bc_matrix/features.tsv.gz": {
+      "sha256": "e019c786e1ea791667da90bb210e79b52159aa32188c4992ecf0c311c96ba84c",
+      "size": 290896
+    },
+    "square_008um \u4f4e\u756b\u8cea/raw_feature_bc_matrix/matrix.mtx.gz": {
+      "size": 275287269
+    },
+    "square_008um \u4f4e\u756b\u8cea/spatial/scalefactors_json.json": {
+      "sha256": "af9c98b84c545e6f2620cbb3644701705493447edad9158195f7abf9b260e437",
+      "size": 276
+    },
+    "square_008um \u4f4e\u756b\u8cea/spatial/tissue_positions.parquet": {
+      "sha256": "e40078ec4fe9b2863d68d9287706acfc6c8fff7475bf45bc3cd7ca98569fbac8",
+      "size": 11192105
+    }
+  },
+  "root": "/Volumes/KINGSTON/Bioinfo_Projects/01_Spatial_Transcriptomics/visium_\u6977\u69ae"
+}
