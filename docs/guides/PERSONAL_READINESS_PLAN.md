@@ -14,8 +14,8 @@
 | P2 | scripts/ep_local.py 初始化與診斷 | 單一命令建立空資料庫/L1、pending migrations、絕對路徑 MCP JSON；重跑安全；診斷提供可操作修復 | 完成 |
 | P3 | 合成 demo、scripts/check_single_user.py | MCP 登記→真實 CPU EDA→產物/來源保存→讀回報告→再次查詢重用；斷言不增加 run 數 | 完成 |
 | P4 | 單機中英文指南、README | 實測命令一致；個人與多人入口分開；必要/可選能力分明 | 完成 |
-| P5 | CI 與迴歸 | 乾淨 runner 安裝、初始化重入、MCP/EDA/reuse、診斷失敗路徑；既有 CI 問題分類处理 | 本機通過，CI 待驗證 |
-| P6 | origin/master 整合與 GitHub | 保留遠端既有變更，整合衝突、推送、PR 檢查通過後合併，回讀 default branch SHA | 整合中 |
+| P5 | CI 與迴歸 | 乾淨 runner 安裝、初始化重入、MCP/EDA/reuse、診斷失敗路徑；既有 CI 問題分類处理 | 完成 |
+| P6 | origin/master 整合與 GitHub | 保留遠端既有變更，整合衝突、推送、PR 檢查通過後合併，回讀 default branch SHA | 完成 |
 
 ## 驗證與失敗處理
 
@@ -38,3 +38,11 @@
 - 範圍：不宣稱 embedding 搜尋、生成模型、Clef 品質、MCseg/GPU、Web 或多人並行已在本次驗收。
 
 - 乾淨依賴環境完整驗證 PASS：schema v30、59 tools、5 artifacts（4 figures）、跨連線重用後 1 run；report SHA256 d13db0f8055945e76d5d6d1518fe8784d01e360cd725079d303a9831e28fc6fb。
+
+## 最終發布驗收
+
+- GitHub CI [38196844701](https://github.com/ddmanyes/Evo_PRISM/actions/runs/38196844701)：Lint、Ubuntu/Python 3.11、macOS/Python 3.12 三項全部 SUCCESS。兩個乾淨 runner 均完成安裝、setup 案例與完整 MCP/CPU EDA/跨連線重用。
+- [PR #1](https://github.com/ddmanyes/Evo_PRISM/pull/1) 已於 2026-10-12 10:44:57（Asia/Taipei）合併至預設分支 master；merge commit d22a4f85831206602a9739e913b5507e1b04db8a。
+- 乾淨本機 venv 再跑既有生命週期／安全交付／工具目錄迴歸：27 passed；setup/error/isolation：6 passed。科學方法、模型品質與可選能力仍依前述驗收邊界。
+- 正式服務未重啟、未更換映像、未執行研究資料分析；正式 checkout 的未提交 mcseg／compose 與研究檔案保留。
+- 本計畫 P1–P6 全部完成。後續只需依需求啟用可選能力，不是本次未完成項目。
