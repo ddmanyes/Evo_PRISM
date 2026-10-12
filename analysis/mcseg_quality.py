@@ -176,7 +176,7 @@ def celltype_overlay_plot(
 
     def _hex_to_rgb(hexcolor: str) -> tuple[float, float, float]:
         h = hexcolor.lstrip("#")
-        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+        r, g, b = (int(h[i : i + 2], 16) / 255 for i in (0, 2, 4))
         return (r, g, b)
 
     # 只統計/著色「這個mask裡實際存在」的細胞ID——cell_id_to_label是全片的全域字典，
@@ -230,9 +230,12 @@ def celltype_overlay_plot(
     ax.set_title(f"{title}  (cells in view={n_cells_in_view})", fontsize=11)
 
     import matplotlib.patches as mpatches
+
     handles = [
-        mpatches.Patch(color=palette.get(lbl.replace("(unlabeled)", ""), default_color)[0],
-                       label=f"{lbl} (n={n})")
+        mpatches.Patch(
+            color=palette.get(lbl.replace("(unlabeled)", ""), default_color)[0],
+            label=f"{lbl} (n={n})",
+        )
         for lbl, n in sorted(label_counts.items(), key=lambda kv: -kv[1])
     ]
     ax.legend(handles=handles, fontsize=7, loc="lower right", framealpha=0.85)
@@ -245,11 +248,25 @@ def celltype_overlay_plot(
         bar_y = h_px - margin_y
         bar_x0 = margin_x
         bar_x1 = bar_x0 + scale_px
-        ax.plot([bar_x0, bar_x1], [bar_y, bar_y], color="white", linewidth=3,
-                solid_capstyle="butt", zorder=10)
-        ax.text((bar_x0 + bar_x1) / 2, bar_y - h_px * 0.02, f"{scale_bar_um} µm",
-                color="white", ha="center", va="bottom", fontsize=8,
-                fontweight="bold", zorder=10)
+        ax.plot(
+            [bar_x0, bar_x1],
+            [bar_y, bar_y],
+            color="white",
+            linewidth=3,
+            solid_capstyle="butt",
+            zorder=10,
+        )
+        ax.text(
+            (bar_x0 + bar_x1) / 2,
+            bar_y - h_px * 0.02,
+            f"{scale_bar_um} µm",
+            color="white",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            fontweight="bold",
+            zorder=10,
+        )
 
     _save(fig, output_path)
     return {"output_path": str(output_path), "label_counts": label_counts}
@@ -318,7 +335,8 @@ def generate_mcseg_qc_report(
         raise FileNotFoundError(f"{qc_dir} 下找不到成對的 *_nuc.npy / *_mcseg.npy")
 
     with analysis_run(
-        sample_id, "mcseg_qc",
+        sample_id,
+        "mcseg_qc",
         params={"qc_dir": str(qc_dir)},
         requested_by=requested_by,
         tool_name="bio_run_mcseg_qc",

@@ -20,23 +20,18 @@ EP 讓 AI Agent 透過 MCP 查找工具、執行分析、檢索既有成果，�
 在本機原生檔案系統的 checkout 中，先安裝 Python 3.11 與 uv，再執行：
 
 ```bash
-uv sync --no-install-project
-cp .env.example .env
-# 依單機指南設定資料位置與 embedding；不使用的 API Key 留空
-.venv/bin/python scripts/00_init_db.py --no-samples
-.venv/bin/python scripts/03_init_l1_cache.py
-.venv/bin/python scripts/run_pending_migrations.py
-.venv/bin/python scripts/04_migrate_l1_rrf.py
+uv sync --locked --no-install-project --python 3.12
+.venv/bin/python scripts/ep_local.py init --data-dir "$PWD/local-data"
+.venv/bin/python scripts/ep_local.py doctor --data-dir "$PWD/local-data"
 ```
 
-在 MCP 客戶端設定 Python 與 server 的絕對路徑，使用 stdio 啟動：
+把產生的 `local-data/mcp.json` 中 `mcpServers.ep` 設定加入 MCP 客戶端，先呼叫 `bio_sample_list`。想實際跑完整示範，可執行：
 
-```text
-<checkout>/.venv/bin/python <checkout>/server/bio_memory_server.py
+```bash
+.venv/bin/python scripts/check_single_user.py
 ```
 
-先呼叫 `bio_sample_list` 與 `bio_decision_status` 確認可連線，再登記資料或執行分析。完整設定、限制與驗證範圍見 [單機指南](docs/guides/SINGLE_USER_zh.md)。
-
+[單機設定、診斷與驗證範圍](docs/guides/SINGLE_USER_zh.md)。
 ## 系統架構
 
 ![EP 現況總覽](docs/images/ep_overview_zh.svg)
@@ -65,7 +60,7 @@ cp .env.example .env
 
 ## 驗證與限制
 
-單機初始化與 MCP 基本操作的實測範圍記錄於 [單機指南](docs/guides/SINGLE_USER_zh.md)。歷史效能數據與分析測試請見 [測試指南](docs/guides/TESTING.md)；它們不是本次版本所有分析功能或科學正確性的保證。
+乾淨環境安裝、MCP、合成 CPU EDA 與跨連線成果重用的實測範圍記錄於 [單機指南](docs/guides/SINGLE_USER_zh.md)。歷史效能數據與分析測試請見 [測試指南](docs/guides/TESTING.md)；它們不是本次版本所有分析功能或科學正確性的保證。
 
 新建決策 ledger 預設 off。Clef shadow 需要另外配置 bridge 與模型；公開程式包含 client，不包含模型權重或自動啟動的 MLX 服務。shadow 成功不代表已通過獨立品質驗收。
 

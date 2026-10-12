@@ -10,7 +10,10 @@ barcodes.tsv.gz 造成數小時分析建立在假訊號上，且完全無聲。�
 在【主機】執行（非容器），故寫 logs/ 無 virtiofs 覆寫問題。
 任一 manifest 出現變動即 exit 1，方便 launchd 或人工查覺。
 """
-import json, subprocess, sys
+
+import json
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -22,7 +25,7 @@ TOOL = EP / "scripts" / "verify_raw_integrity.py"
 
 def main() -> int:
     ts = datetime.now().isoformat(timespec="seconds")
-    lines = [f"\n{'='*70}\n[{ts}] 原始資料完整性驗證"]
+    lines = [f"\n{'=' * 70}\n[{ts}] 原始資料完整性驗證"]
     manifests = sorted(MF_DIR.glob("*.json"))
     if not manifests:
         lines.append("  ✗ data_manifests/ 內沒有任何 manifest")
@@ -40,8 +43,9 @@ def main() -> int:
         if not Path(root).exists():
             lines.append(f"  ⊘ {mf.name}: 資料根目錄不存在（卷宗未掛載？）{root}")
             continue
-        r = subprocess.run([sys.executable, str(TOOL), root, "--manifest", str(mf)],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            [sys.executable, str(TOOL), root, "--manifest", str(mf)], capture_output=True, text=True
+        )
         head = (r.stdout or "").strip().splitlines()
         if r.returncode == 0:
             lines.append(f"  ✓ {mf.name}")
@@ -61,7 +65,7 @@ def main() -> int:
 
 def _write(lines):
     LOG.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG, "a") as f:            # 用 append，不覆寫
+    with open(LOG, "a") as f:  # 用 append，不覆寫
         f.write("\n".join(lines) + "\n")
 
 

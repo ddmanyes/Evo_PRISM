@@ -49,8 +49,7 @@ def run_relabel_clusters(
 
     if not h5ad_path.exists():
         raise FileNotFoundError(
-            f"找不到 umap_computed.h5ad：{h5ad_path}\n"
-            "請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
+            f"找不到 umap_computed.h5ad：{h5ad_path}\n請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
         )
     if not label_map:
         raise ValueError("label_map 不得為空。")
@@ -61,15 +60,16 @@ def run_relabel_clusters(
     _params = {"roi_name": roi_name, "groupby": groupby, "label_map": label_map}
 
     with analysis_run(
-        sample_id, "relabel_clusters",
+        sample_id,
+        "relabel_clusters",
         params=_params,
         requested_by=requested_by,
         tool_name="bio_relabel_clusters",
     ) as run:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        import pandas as pd
         import scanpy as sc
 
         adata = sc.read_h5ad(str(h5ad_path))
@@ -88,13 +88,10 @@ def run_relabel_clusters(
             )
 
         adata.obs["cell_type_manual"] = (
-            adata.obs[groupby].astype(str)
-            .map(lambda v: label_map.get(v, v))
-            .astype("category")
+            adata.obs[groupby].astype(str).map(lambda v: label_map.get(v, v)).astype("category")
         )
 
         # Write back h5ad (additive column only) — atomic rename to survive crashes
-        import shutil
         tmp_path = h5ad_path.with_suffix(".h5ad.tmp")
         adata.write_h5ad(str(tmp_path))
         tmp_path.replace(h5ad_path)  # POSIX atomic rename
@@ -126,8 +123,7 @@ def run_relabel_clusters(
         report_path.write_text(report_text, encoding="utf-8")
 
         summary = (
-            f"{sample_id}/{roi_name} relabel：{len(label_map)} 個 label，"
-            f"共 {adata.n_obs} 細胞"
+            f"{sample_id}/{roi_name} relabel：{len(label_map)} 個 label，共 {adata.n_obs} 細胞"
         )[:50]
         run.artifact(umap_path, "figure", "UMAP（cell_type_manual）", "umap_manual")
         run.artifact(h5ad_path, "data", "umap_computed.h5ad（含 cell_type_manual）", "h5ad")

@@ -198,9 +198,15 @@ def bar_plot_from_enrichr(
 
 
 def _version_block() -> str:
-    import importlib as _il, sys as _sys
-    pkgs = [("pandas", "pandas"), ("numpy", "numpy"), ("gseapy", "gseapy"),
-            ("matplotlib", "matplotlib")]
+    import importlib as _il
+    import sys as _sys
+
+    pkgs = [
+        ("pandas", "pandas"),
+        ("numpy", "numpy"),
+        ("gseapy", "gseapy"),
+        ("matplotlib", "matplotlib"),
+    ]
     rows = [f"| Python | {_sys.version.split()[0]} |"]
     for label, pkg in pkgs:
         try:
@@ -300,7 +306,8 @@ def run_ora(
     }
 
     with analysis_run(
-        sample_id, "bulk_enrichment",
+        sample_id,
+        "bulk_enrichment",
         params=_params,
         requested_by=requested_by,
         parent_analysis_id=parent_analysis_id,
@@ -339,7 +346,9 @@ def run_ora(
                         (csv_path, "csv", f"ORA {direction} / {lib}", "enrichment_table")
                     )
                     # 共用 pval 欄與 caption（bar + dot plot 都用）
-                    _pval_col = "Adjusted P-value" if "Adjusted P-value" in res.columns else "P-value"
+                    _pval_col = (
+                        "Adjusted P-value" if "Adjusted P-value" in res.columns else "P-value"
+                    )
                     _term_col = "Term" if "Term" in res.columns else res.columns[0]
                     n_sig = int((res[_pval_col] < pval_threshold).sum())
                     _top_row = res.nsmallest(1, _pval_col)
@@ -349,27 +358,32 @@ def run_ora(
                     # bar plot
                     bar_path = out_dir / f"{tag}_bar_{ts}.png"
                     bar_file = bar_plot_from_enrichr(
-                        res, output_path=bar_path, top_term=top_term,
-                        title=f"{direction} / {lib}"
+                        res, output_path=bar_path, top_term=top_term, title=f"{direction} / {lib}"
                     )
                     if bar_file:
                         barplot_md_parts.append(_file_to_b64_md(bar_path, f"Bar {direction}/{lib}"))
-                        artifact_files.append((
-                            bar_path, "figure",
-                            f"ORA bar plot {direction} / {lib} — {_caption}",
-                            "enrichment_barplot",
-                        ))
+                        artifact_files.append(
+                            (
+                                bar_path,
+                                "figure",
+                                f"ORA bar plot {direction} / {lib} — {_caption}",
+                                "enrichment_barplot",
+                            )
+                        )
                     # dot plot
                     png_path = out_dir / f"{tag}_{ts}.png"
                     if dotplot_from_enrichr(
                         res, output_path=png_path, top_term=top_term, title=tag
                     ):
                         dotplot_md_parts.append(_file_to_b64_md(png_path, tag))
-                        artifact_files.append((
-                            png_path, "figure",
-                            f"ORA dot plot {direction} / {lib} — {_caption}",
-                            "enrichment_dotplot",
-                        ))
+                        artifact_files.append(
+                            (
+                                png_path,
+                                "figure",
+                                f"ORA dot plot {direction} / {lib} — {_caption}",
+                                "enrichment_dotplot",
+                            )
+                        )
                 else:
                     n_sig = 0
 
@@ -410,17 +424,20 @@ def run_ora(
             f"Bulk ORA {sample_id}：{n_lib} library × up/down，共 {total_sig} 顯著通路。"
         )[:80]
         n_directions = int(summary_df["direction"].nunique())
-        summary_metrics = json.dumps({
-            "n_directions": n_directions,
-            "n_libraries": n_lib,
-            "n_sig_pathways": total_sig,
-        })
+        summary_metrics = json.dumps(
+            {
+                "n_directions": n_directions,
+                "n_libraries": n_lib,
+                "n_sig_pathways": total_sig,
+            }
+        )
 
         # 生命週期收尾（complete/canonical/diagnosis/artifact flush/snapshot）由 seam 統一處理。
         for path, atype, label, subtype in artifact_files:
             run.artifact(path, atype, label, subtype)
         run.complete(
-            report_path, summary,
+            report_path,
+            summary,
             summary_metrics=json.loads(summary_metrics),
         )
 

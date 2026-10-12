@@ -109,7 +109,48 @@ with httpx.Client(timeout=30) as client:
 
 ## 5. 工具清單
 
-工具以 `server/tool_catalog.py::TOOL_CATALOG` 為單一來源，MCP 與 Web UI 共用同一份 schema/dispatch。當前包含 52 個查詢、記憶、artifact、分析、佇列、key 與 staging 工具。工具的 `required_role`、`queueable`、`resource_class` 也在同一 catalog 管理；實驗室成員流程見 [LAB_MEMBER_ANALYSIS.md](LAB_MEMBER_ANALYSIS.md)。
+工具以 `server/tool_catalog.py::TOOL_CATALOG` 為單一來源，MCP 與 Web UI 共用同一份 schema/dispatch。可用工具包含查詢、記憶、artifact、分析、佇列、key 與 staging，以 tools/list 回應為準。工具的 `required_role`、`queueable`、`resource_class` 也在同一 catalog 管理；實驗室成員流程見 [LAB_MEMBER_ANALYSIS.md](LAB_MEMBER_ANALYSIS.md)。
+
+### 5.1 遠端圖片與數據交付
+
+| 工具 | 用途 |
+|------|------|
+| `bio_get_figure` | 依 `figure_id` 回傳 `ImageContent`，並附 `figure://` ResourceLink |
+| `bio_get_artifact` | 依 `artifact_id` 回傳 metadata、預覽與 `artifact://` ResourceLink |
+| `bio_deliver_results` | 依 analysis/artifact/figure selector 交付圖片與數據；小檔可 embedded，多檔可建立 ZIP |
+
+MCP server initialization 會把下列契約交給客戶端 Agent：
+
+- 只有使用者明確要求「查看、給我、附上、下載、全部或打包」時才呼叫
+  `bio_deliver_results`；一般分析與摘要不夾帶二進位內容。
+- `server_local_path` 是 MCP 主機上的診斷資訊，不代表遠端使用者已取得附件。
+- selector 無法唯一判定時必須先澄清，不可跨樣本猜測。
+- 只要求數據時使用 `include=data`；只要求圖片時使用 `include=images`；明確要求全部才用
+  `include=all`。
+- 單一數據檔用 `package=never`；多個數據檔可用 `package=auto`；明確要求打包則用
+  `package=zip`。
+- 圖片預設直接顯示且附下載 ResourceLink；只有使用者要求圖片也進壓縮檔時，才設
+  `include_images_in_zip=true`。
+
+範例：交付一次分析的所有已登記數據；若超過一個數據檔，自動建立 ZIP：
+
+```json
+{
+  "name": "bio_deliver_results",
+  "arguments": {
+    "analysis_id": "<analysis UUID>",
+    "include": "data",
+    "package": "auto",
+    "include_images_in_zip": false
+  }
+}
+```
+
+ZIP 使用 content-addressed `delivery://<sha256>` URI，可透過 `resources/read` 取得；ZIP
+內含 `manifest.json`，記錄來源 ID、檔名、MIME、大小與 SHA-256。相同內容與選取集合會
+重用同一個 bundle。`artifact://`、`figure://`、`delivery://` 都由 MCP server 驗證路徑後
+讀取，不接受客戶端提供任意主機路徑。未超過 `ARTIFACT_RESOURCE_MAX_MB` 的數據或 ZIP
+也會附 `EmbeddedResource`，供尚未顯示 ResourceLink 的客戶端相容使用。
 
 ## 6. 常見錯誤排查
 

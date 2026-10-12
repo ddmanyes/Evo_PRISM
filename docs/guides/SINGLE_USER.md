@@ -4,95 +4,69 @@
 
 ## Minimal setup
 
-Use local Python, DuckDB and MCP over stdio, with your existing AI client handling conversation. This path needs no network listener, Postgres, Tailscale or multiuser workers. Metadata tools can be used first; semantic search needs embeddings and individual analyses have additional requirements. Single-user does not imply CPU-only or low-memory analysis.
+Local Python, DuckDB and MCP over stdio, with your existing AI client handling conversation. Basic metadata and CPU EDA require no Tailscale, Postgres, multiuser worker or Clef. Semantic search needs embeddings; MCseg and other analyses have additional model, GPU and dependency requirements.
 
-## Install and initialize
+## Install, initialize and connect
 
-Use Python 3.11 or newer and uv. Keep the checkout on a native filesystem such as APFS/ext4; avoid virtual environments on ExFAT or cloud-synced storage. Run these commands from the checkout root.
-
-```bash
-uv sync --no-install-project
-cp .env.example .env
-```
-
-Edit .env: leave unused API keys empty and create your data directory first. Replace the example absolute path below:
-
-```dotenv
-BIO_DB_ROOT=/absolute/path/to/ep-data
-MCP_AUTH_REQUIRED=false
-MCP_ENABLE_DANGEROUS_TOOLS=false
-EMBEDDING_PROVIDER=llamacpp
-LLAMACPP_BASE_URL=http://127.0.0.1:8081/v1
-EMBEDDING_MODEL=bge-m3-Q8_0
-EMBEDDING_DIM=1024
-ANTHROPIC_API_KEY=
-```
-
-The unauthenticated configuration here is for local stdio only. Remote/shared HTTP services require the lab authentication setup. Without BIO_DB_ROOT, data defaults to the checkout root. Use a new directory when trying EP rather than an existing research database.
+Install uv and place the checkout on a native filesystem such as APFS/ext4, avoiding ExFAT or cloud-synced folders. Run from the checkout root. uv creates the locked dependency environment; network access is needed for packages and DuckDB extensions.
 
 ```bash
-mkdir -p /absolute/path/to/ep-data
-.venv/bin/python scripts/00_init_db.py --no-samples
-.venv/bin/python scripts/03_init_l1_cache.py
-.venv/bin/python scripts/run_pending_migrations.py
-.venv/bin/python scripts/04_migrate_l1_rrf.py
+uv sync --locked --no-install-project --python 3.12
+.venv/bin/python scripts/ep_local.py init --data-dir "$PWD/local-data"
+.venv/bin/python scripts/ep_local.py doctor --data-dir "$PWD/local-data"
 ```
 
---no-samples creates the schema without legacy lab sample entries; omitting it preserves the legacy seeding behavior. L1 initialization requires the DuckDB VSS extension and network access to download it if not cached. Use the pending runner instead of manually rerunning old migrations.
+Initialization creates an empty main database, L1 cache and lock directory, applies pending migrations and writes local-data/mcp.json with absolute paths. Add its mcpServers.ep entry to your client configuration and connect. No HTTP service or model is started.
 
-## Connect an MCP client
+Rerunning init preserves existing samples and analyses. A differing existing MCP JSON is never overwritten; choose another file with --config. The generated configuration pins data paths, disables sandbox execution and remote-auth requirements, and ignores .env. This is for local stdio only; use the lab guide for shared/remote deployment.
 
-Let your MCP client launch the server with the following configuration, replacing all absolute paths. An external client provides its own conversational model; EP does not need another generative model for this path.
+Initially bio_sample_list is empty and bio_decision_status reports off. Register your own data before analysis.
 
-```json
-{
-  "mcpServers": {
-    "ep": {
-      "command": "/absolute/path/to/Evo_PRISM/.venv/bin/python",
-      "args": ["/absolute/path/to/Evo_PRISM/server/bio_memory_server.py"],
-      "env": {
-        "PYTHONPATH": "/absolute/path/to/Evo_PRISM",
-        "BIO_DB_ROOT": "/absolute/path/to/ep-data",
-        "MCP_AUTH_REQUIRED": "false"
-      }
-    }
-  }
-}
+## Diagnostics and repair
+
+```bash
+.venv/bin/python scripts/ep_local.py doctor --data-dir "$PWD/local-data" --check-services
 ```
 
-On first connection, bio_sample_list should be empty and bio_decision_status should report off. Register your raw inputs with bio_register_sample and follow the relevant playbook. Discover the actual catalog through MCP tools/list.
+doctor reports dependencies, main DB, L1 and optional embedding/Clef status with repair guidance as JSON. Missing required items return exit code 1; an unavailable optional embedding service does not fail metadata readiness. --check-services only performs GET /health, never inference. Clef reads the ledger mode (off/rules/shadow) without writing; use bio_decision_status for live bridge readiness. Health reachability is not semantic-retrieval validation.
 
-## Add capabilities as needed
-
-| Capability | Additional requirements |
+| Condition | Action |
 | --- | --- |
-| Semantic search / tool vector index | A compatible embedding service; dimensions must match the L1 schema |
-| Built-in Web chat | A configured generative model/API backend; see advanced installation |
-| Bulk RNA / MCseg | Relevant pyproject.toml extras; MCseg also needs MSseg, data and compute resources |
-| Clef shadow | Separate bridge and weights; not required for basic MCP use |
+| Missing packages | `uv sync --locked --no-install-project` |
+| Missing DB/L1 or old schema | Stop writers, back up and rerun init; do not delete the DB |
+| DB locked | Stop another writer and retry; a personal setup needs one server |
+| Embedding offline | Metadata remains available; start the matching model for semantic search |
 
-Embedding example: obtain bge-m3 GGUF and llama.cpp, then start the following service. This is outside the no-model smoke test.
-
-```bash
-llama-server -m /absolute/path/to/bge-m3-Q8_0.gguf \
-  --embedding --host 127.0.0.1 --port 8081 --ctx-size 8192
-```
-
-[Advanced installation](INSTALLATION.md) · [Decision advisor](DECISION_ADVISOR.md)
-
-## Repeatable basic verification
+## Complete reproducible demo
 
 ```bash
 .venv/bin/python scripts/check_single_user.py
 ```
 
-This check uses a fresh temporary data directory, ignores .env and does not connect to models. It preserves logs and result.json and verifies:
+Creates independent temporary data and deterministic synthetic counts (40 genes × 6 samples), then runs a real MCP workflow:
 
-- Empty main/L1 initialization, pending migrations and a repeat migration run
-- Index/view preservation for the mixed FK/soft-reference schema at v29
-- Real MCP stdio handshake/catalog, with sandbox tools hidden by default
-- Sample registration/readback, missing-history lookup and advisor-off status
+1. Initialize empty DB/L1, connect MCP and list tools
+2. Register a sample; reject input outside its registered directory
+3. Call bio_run_bulk_eda to generate four figures and one report
+4. Verify tool_id, artifact files, count statistics and unchanged input hash
+5. Disconnect, rerun init and reconnect to retrieve history/report; analysis count stays at one
 
-Verified on 2026-10-12 with macOS Apple Silicon, Python 3.12.13 and DuckDB 1.5.3 in an existing dependency environment, using fresh databases and no production research data. The first attempt exposed duplicate index recreation in v29; after correction, verification restarted from a fresh database.
+The printed temporary directory retains result.json, setup/server logs, reports and figures. The demo uses the normal analysis_run/ENGRAM path without research data or generative/embedding model calls. It verifies explicit lookup and reuse, not autonomous model decision quality.
 
-Limits: this does not verify dependency installation on a clean OS, embedding search, Web UI, GPU/MCseg, every scientific analysis or multiuser deployment. Passing establishes basic local MCP/database operation. Without embeddings, tool indexing may log warnings while metadata tools remain usable.
+## Analyze your own counts
+
+Register sample_id, data_type=bulk_rnaseq and l3_path (a directory) with bio_register_sample. Use a gene-by-sample TSV with gene IDs in the first column. Optional coldata has sample IDs in the first column and a group column. Then call:
+
+```json
+{"sample_id":"my_bulk","counts_path":"counts.tsv","coldata_path":"coldata.tsv"}
+```
+
+Call bio_run_bulk_eda with those arguments. Paths are relative to the registered L3 directory, or absolute within it. Omitting counts_path retains the legacy lab default; new users should pass it explicitly.
+
+## Optional capabilities and validation boundaries
+
+Semantic search needs an embedding service such as bge-m3 with matching dimensions (default 1024). Set the endpoint with init --embedding-url or edit the generated MCP JSON. Web chat needs a generative model/API, and Clef shadow needs a bridge and weights. Bulk DEG/MCseg extras and external MSseg are outside the basic EDA validation.
+
+Verification evidence and platform results are recorded in [readiness report](PERSONAL_READINESS_PLAN.md) and GitHub Actions.
+
+[Lab deployment](LAB_DEPLOYMENT.md) · [Advanced installation](INSTALLATION.md) · [Decision advisor](DECISION_ADVISOR.md)

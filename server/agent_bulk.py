@@ -12,22 +12,46 @@ import logging
 from pathlib import Path as _Path
 
 import sys as _sys
+
 _sys.path.insert(0, str(_Path(__file__).parent.parent))
-from config.settings import MSSEG_PATH as _MSSEG_PATH, EVO_PRISM_LEGACY_ROOT as _EVO_PRISM_LEGACY_ROOT  # noqa: E402
+from config.settings import (
+    MSSEG_PATH as _MSSEG_PATH,
+    EVO_PRISM_LEGACY_ROOT as _EVO_PRISM_LEGACY_ROOT,
+)  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
 def _exec_bio_run_bulk_eda(args: dict) -> str:
-    from pathlib import Path as _Path2
     from analysis.bulk_eda import generate_bulk_report
 
     sample_id = args["sample_id"]
     requested_by = args.get("requested_by", "agent")
-    coldata_path = _Path2(args["coldata_path"]) if args.get("coldata_path") else None
     try:
+        from store.factory import get_store
+
+        def input_path(key):
+            if not args.get(key):
+                return None
+            sample = get_store().get_sample(sample_id)
+            if not sample or not sample.get("l3_path"):
+                raise ValueError(
+                    "Register this sample with an L3 directory before passing input paths"
+                )
+            root = _Path(sample["l3_path"]).resolve()
+            path = _Path(args[key])
+            path = (path if path.is_absolute() else root / path).resolve()
+            if not path.is_relative_to(root) or not path.is_file():
+                raise ValueError(
+                    f"{key} must be an existing file within the sample's registered L3 directory"
+                )
+            return path
+
         analysis_id, report_path = generate_bulk_report(
-            sample_id, coldata_path=coldata_path, requested_by=requested_by
+            sample_id,
+            counts_path=input_path("counts_path"),
+            coldata_path=input_path("coldata_path"),
+            requested_by=requested_by,
         )
         # 讀取完整報告（含 inline base64 圖片），讓 web_app 解析並顯示
         report_text = ""
@@ -338,7 +362,9 @@ def _exec_bio_run_mcseg_fullslide(args: dict) -> str:
                 f"{n_bins_assigned:,}/{n_bins_total:,} bins assigned ({assign_rate:.1f}%)"
             )
             run.artifact(mask_path, "data", "全片分割 mask", "mcseg_mask")
-            run.artifact(mask_vfr_path, "data", "全片分割 mask（virtual fullres）", "mcseg_mask_vfr")
+            run.artifact(
+                mask_vfr_path, "data", "全片分割 mask（virtual fullres）", "mcseg_mask_vfr"
+            )
             run.artifact(cells_path, "data", "cell×gene AnnData", "mcseg_cells")
             run.complete(cells_path, summary)
 
@@ -497,7 +523,11 @@ def _exec_bio_run_sc_clustering(args: dict) -> str:
         )
         cluster_lines = "\n".join(
             f"  cluster {cl}: {n:,} cells"
-            + (f" → {result['cell_type_assignment'][cl]}" if result.get("cell_type_assignment") else "")
+            + (
+                f" → {result['cell_type_assignment'][cl]}"
+                if result.get("cell_type_assignment")
+                else ""
+            )
             for cl, n in result["cluster_sizes"].items()
         )
         return (
@@ -770,6 +800,7 @@ def _exec_bio_compute_crc_metrics(args: dict) -> str:
 def _exec_bio_get_marker_genes(args: dict) -> str:
     """Rank marker genes for an existing MCseg ROI umap_computed.h5ad."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     roi_dir = args.get("roi_dir")
@@ -780,10 +811,14 @@ def _exec_bio_get_marker_genes(args: dict) -> str:
 
     try:
         from analysis.marker_genes import run_marker_genes
+
         analysis_id, report_path = run_marker_genes(
-            sample_id=sample_id, roi_name=roi_name,
+            sample_id=sample_id,
+            roi_name=roi_name,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            groupby=groupby, n_genes=n_genes, method=method,
+            groupby=groupby,
+            n_genes=n_genes,
+            method=method,
             requested_by=requested_by,
         )
         try:
@@ -799,6 +834,7 @@ def _exec_bio_get_marker_genes(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_get_marker_genes 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
@@ -814,9 +850,14 @@ def _exec_bio_convert_ndpi_to_tiff(args: dict) -> str:
 
     try:
         from analysis.image_conversion import convert_ndpi_to_tiff
+
         analysis_id, out_path = convert_ndpi_to_tiff(
-            sample_id=sample_id, input_ndpi=input_ndpi, output_tiff=output_tiff,
-            compression=compression, quality=quality, tile_size=tile_size,
+            sample_id=sample_id,
+            input_ndpi=input_ndpi,
+            output_tiff=output_tiff,
+            compression=compression,
+            quality=quality,
+            tile_size=tile_size,
             requested_by=requested_by,
         )
         # 注意：out_path 是 GB 級二進位 TIFF，不可像其他 handler 那樣 read_text() 內嵌預覽。
@@ -829,12 +870,14 @@ def _exec_bio_convert_ndpi_to_tiff(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_convert_ndpi_to_tiff 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_relabel_clusters(args: dict) -> str:
     """Apply manual label_map to cluster column, regenerate UMAP."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     label_map = args.get("label_map") or {}
@@ -847,10 +890,14 @@ def _exec_bio_relabel_clusters(args: dict) -> str:
 
     try:
         from analysis.relabel_clusters import run_relabel_clusters
+
         analysis_id, report_path = run_relabel_clusters(
-            sample_id=sample_id, roi_name=roi_name, label_map=label_map,
+            sample_id=sample_id,
+            roi_name=roi_name,
+            label_map=label_map,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            groupby=groupby, requested_by=requested_by,
+            groupby=groupby,
+            requested_by=requested_by,
         )
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
@@ -865,12 +912,14 @@ def _exec_bio_relabel_clusters(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_relabel_clusters 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_run_celltypist(args: dict) -> str:
     """CellTypist automated cell type annotation on existing umap_computed.h5ad."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     roi_dir = args.get("roi_dir")
@@ -880,10 +929,13 @@ def _exec_bio_run_celltypist(args: dict) -> str:
 
     try:
         from analysis.celltypist_annotate import run_celltypist
+
         analysis_id, report_path = run_celltypist(
-            sample_id=sample_id, roi_name=roi_name,
+            sample_id=sample_id,
+            roi_name=roi_name,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            model=model, majority_voting=majority_voting,
+            model=model,
+            majority_voting=majority_voting,
             requested_by=requested_by,
         )
         try:
@@ -899,12 +951,14 @@ def _exec_bio_run_celltypist(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_run_celltypist 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_run_mcseg_merge(args: dict) -> str:
     """Merge multiple MCseg ROI cellpose_cells.h5ad and run integrated Scanpy pipeline."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_names = args.get("roi_names") or []
     merged_name = args.get("merged_name", "merged")
@@ -917,10 +971,14 @@ def _exec_bio_run_mcseg_merge(args: dict) -> str:
 
     try:
         from analysis.mcseg_merge import run_mcseg_merge
+
         analysis_id, report_path = run_mcseg_merge(
-            sample_id=sample_id, roi_names=roi_names, merged_name=merged_name,
+            sample_id=sample_id,
+            roi_names=roi_names,
+            merged_name=merged_name,
             output_base=_Path(output_base) if output_base else None,
-            integrate=integrate, requested_by=requested_by,
+            integrate=integrate,
+            requested_by=requested_by,
         )
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
@@ -936,12 +994,14 @@ def _exec_bio_run_mcseg_merge(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_run_mcseg_merge 失敗：{e}\n{traceback.format_exc()[-2000:]}"
 
 
 def _exec_bio_export_loupe(args: dict) -> str:
     """Export MCseg ROI to Loupe Browser GeoJSON + cell_metadata.csv (+ optional .cloupe)."""
     from pathlib import Path as _Path
+
     sample_id = args["sample_id"]
     roi_name = args["roi_name"]
     roi_dir = args.get("roi_dir")
@@ -950,10 +1010,13 @@ def _exec_bio_export_loupe(args: dict) -> str:
 
     try:
         from analysis.loupe_export import run_loupe_export
+
         analysis_id, report_path = run_loupe_export(
-            sample_id=sample_id, roi_name=roi_name,
+            sample_id=sample_id,
+            roi_name=roi_name,
             roi_dir=_Path(roi_dir) if roi_dir else None,
-            pixel_size_um=pixel_size_um, requested_by=requested_by,
+            pixel_size_um=pixel_size_um,
+            requested_by=requested_by,
         )
         try:
             report_text = _Path(report_path).read_text(encoding="utf-8")
@@ -968,4 +1031,5 @@ def _exec_bio_export_loupe(args: dict) -> str:
         )
     except Exception as e:
         import traceback
+
         return f"bio_export_loupe 失敗：{e}\n{traceback.format_exc()[-2000:]}"

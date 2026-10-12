@@ -25,10 +25,19 @@ ENV_HASH: str | None = _compute_env_hash()
 BIO_DB_ROOT = Path(os.getenv("BIO_DB_ROOT", Path(__file__).parent.parent))
 
 # Isolated operational ledger; the existing Linux lock volume is preferred in Docker.
-EP_DECISION_STATE_PATH = Path(os.getenv(
-    "EP_DECISION_STATE_PATH",
-    str(Path(os.getenv("DUCKDB_APP_LOCK_PATH", str(BIO_DB_ROOT / ".locks" / "bio_memory.app.lock"))).parent / "ep_decision.sqlite3"),
-))
+EP_DECISION_STATE_PATH = Path(
+    os.getenv(
+        "EP_DECISION_STATE_PATH",
+        str(
+            Path(
+                os.getenv(
+                    "DUCKDB_APP_LOCK_PATH", str(BIO_DB_ROOT / ".locks" / "bio_memory.app.lock")
+                )
+            ).parent
+            / "ep_decision.sqlite3"
+        ),
+    )
+)
 
 # ── 資料層路徑 ─────────────────────────────────────────────
 L3_ROOT = Path(os.getenv("L3_DATA_ROOT", BIO_DB_ROOT / "crc_visium_data"))

@@ -295,6 +295,7 @@ assert set(_TOOL_HANDLERS) == set(_TOOL_CATALOG_FOR_BIO_TOOLS), (
 
 def execute_tool(name: str, tool_input: dict) -> str:
     from server.tool_observation import invoke
+
     return invoke(_execute_tool_impl, name, tool_input, channel="web")
 
 

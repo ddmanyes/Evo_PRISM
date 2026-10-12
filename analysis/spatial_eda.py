@@ -146,13 +146,22 @@ def gene_spatial_map(
         n_expr = int((df["expr"] > 0).sum())
         summary = f"{gene_name} 空間圖：{n_expr:,} bins 有表達，vmax={vmax:.1f}"
         record_completed_run(
-            sample_id, "spatial_gene_map",
+            sample_id,
+            "spatial_gene_map",
             params={"gene": gene_name, "vmax_pct": vmax_pct},
-            result_path=out_path, summary=summary, requested_by=requested_by,
-            tool_name=_TOOL_NAME, producing_fn=gene_spatial_map,
-            artifacts=[(out_path, "figure",
-                        f"{gene_name} 空間表達圖 — {n_expr:,} bins 有表達",
-                        "spatial_gene_map")],
+            result_path=out_path,
+            summary=summary,
+            requested_by=requested_by,
+            tool_name=_TOOL_NAME,
+            producing_fn=gene_spatial_map,
+            artifacts=[
+                (
+                    out_path,
+                    "figure",
+                    f"{gene_name} 空間表達圖 — {n_expr:,} bins 有表達",
+                    "spatial_gene_map",
+                )
+            ],
         )
     else:
         plt.close(fig)
@@ -220,14 +229,22 @@ def qc_stats(
         summary = f"QC：中位 genes/bin={median_genes:.0f}，中位 UMI/bin={median_umi:.0f}，共 {len(df):,} bins"
 
         record_completed_run(
-            sample_id, "qc_stats",
-            params={}, result_path=parquet_path, summary=summary,
-            requested_by=requested_by, tool_name=_TOOL_NAME, producing_fn=qc_stats,
+            sample_id,
+            "qc_stats",
+            params={},
+            result_path=parquet_path,
+            summary=summary,
+            requested_by=requested_by,
+            tool_name=_TOOL_NAME,
+            producing_fn=qc_stats,
             artifacts=[
                 (parquet_path, "csv", f"QC stats parquet — {len(df):,} bins", "qc_stats"),
-                (fig_path, "figure",
-                 f"QC 分布圖（n_genes + total_counts）— 中位 genes={median_genes:.0f}，UMI={median_umi:.0f}",
-                 "qc_distributions"),
+                (
+                    fig_path,
+                    "figure",
+                    f"QC 分布圖（n_genes + total_counts）— 中位 genes={median_genes:.0f}，UMI={median_umi:.0f}",
+                    "qc_distributions",
+                ),
             ],
         )
 
@@ -271,10 +288,13 @@ def top_genes(
         df.to_csv(csv_path, index=False)
         top3 = ", ".join(df["gene_name"].head(3).tolist())
         record_completed_run(
-            sample_id, "top_genes",
-            params={"n": n}, result_path=csv_path,
+            sample_id,
+            "top_genes",
+            params={"n": n},
+            result_path=csv_path,
             summary=f"Top {n} genes：{top3}…",
-            requested_by=requested_by, tool_name=_TOOL_NAME,
+            requested_by=requested_by,
+            tool_name=_TOOL_NAME,
         )
 
     return df
@@ -324,9 +344,7 @@ def gene_coexpression(
     if df.empty:
         raise ValueError(f"No spatial data found for sample '{sample_id}'")
     if df["gene_a"].max() == 0 and df["gene_b"].max() == 0:
-        raise ValueError(
-            f"基因 {gene_a!r} 與 {gene_b!r} 在樣本 {sample_id!r} 中均未偵測到"
-        )
+        raise ValueError(f"基因 {gene_a!r} 與 {gene_b!r} 在樣本 {sample_id!r} 中均未偵測到")
 
     row_min, row_max = int(df["row"].min()), int(df["row"].max())
     col_min, col_max = int(df["col"].min()), int(df["col"].max())
@@ -341,8 +359,12 @@ def gene_coexpression(
 
     # Panel 1: gene_a spatial
     im_a = axes[0].imshow(
-        pivot_a.values, cmap="Blues", vmin=0, vmax=vmax_a,
-        aspect="auto", extent=extent,
+        pivot_a.values,
+        cmap="Blues",
+        vmin=0,
+        vmax=vmax_a,
+        aspect="auto",
+        extent=extent,
     )
     plt.colorbar(im_a, ax=axes[0], label="UMI")
     axes[0].set_title(f"{gene_a}", fontsize=12)
@@ -351,8 +373,12 @@ def gene_coexpression(
 
     # Panel 2: gene_b spatial
     im_b = axes[1].imshow(
-        pivot_b.values, cmap="Reds", vmin=0, vmax=vmax_b,
-        aspect="auto", extent=extent,
+        pivot_b.values,
+        cmap="Reds",
+        vmin=0,
+        vmax=vmax_b,
+        aspect="auto",
+        extent=extent,
     )
     plt.colorbar(im_b, ax=axes[1], label="UMI")
     axes[1].set_title(f"{gene_b}", fontsize=12)
@@ -380,13 +406,22 @@ def gene_coexpression(
         n_both = int(((df["gene_a"] > 0) & (df["gene_b"] > 0)).sum())
         summary = f"{gene_a}×{gene_b} 共表達：{n_both:,} bins 同時有表達"
         record_completed_run(
-            sample_id, "gene_coexpression",
+            sample_id,
+            "gene_coexpression",
             params={"gene_a": gene_a, "gene_b": gene_b},
-            result_path=out_path, summary=summary, requested_by=requested_by,
-            tool_name=_TOOL_NAME, producing_fn=gene_coexpression,
-            artifacts=[(out_path, "figure",
-                        f"{gene_a}×{gene_b} 空間共表達圖 — {n_both:,} bins 同時有表達",
-                        "gene_coexpression")],
+            result_path=out_path,
+            summary=summary,
+            requested_by=requested_by,
+            tool_name=_TOOL_NAME,
+            producing_fn=gene_coexpression,
+            artifacts=[
+                (
+                    out_path,
+                    "figure",
+                    f"{gene_a}×{gene_b} 空間共表達圖 — {n_both:,} bins 同時有表達",
+                    "gene_coexpression",
+                )
+            ],
         )
     else:
         plt.close(fig)

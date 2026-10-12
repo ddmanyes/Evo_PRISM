@@ -256,7 +256,8 @@ def run_bulk_heatmaps(
     }
 
     with analysis_run(
-        sample_id, "bulk_heatmap",
+        sample_id,
+        "bulk_heatmap",
         params=_params,
         requested_by=requested_by,
         tool_name="bio_run_heatmaps",
@@ -287,7 +288,11 @@ def run_bulk_heatmaps(
         sig_png = out_dir / f"Heatmap_Significant_Genes_{ts}.png"
         var_png = out_dir / f"Heatmap_Top{top_n}_Variable_Genes_{ts}.png"
 
-        sig_file = deg_heatmap(counts, sig_genes, output_path=sig_png, col_colors=col_colors) if sig_genes else None
+        sig_file = (
+            deg_heatmap(counts, sig_genes, output_path=sig_png, col_colors=col_colors)
+            if sig_genes
+            else None
+        )
         var_file = top_var_heatmap(counts, output_path=var_png, top_n=top_n, col_colors=col_colors)
 
         sig_fig_md = (
@@ -325,9 +330,7 @@ def run_bulk_heatmaps(
         if sig_file:
             artifact_files.append((sig_file, "figure", "顯著基因熱圖", "heatmap_sig"))
         if var_file:
-            artifact_files.append(
-                (var_file, "figure", f"Top {top_n} 變異基因熱圖", "heatmap_var")
-            )
+            artifact_files.append((var_file, "figure", f"Top {top_n} 變異基因熱圖", "heatmap_var"))
         artifact_files.append((report_path, "report", "Bulk Heatmap 報告", "heatmap_report"))
         for path, atype, label, subtype in artifact_files:
             run.artifact(path, atype, label, subtype)

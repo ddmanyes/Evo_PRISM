@@ -26,7 +26,6 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BIO_DB_ROOT, MCSEG_RESULTS_ROOT, MSSEG_PATH  # noqa: E402
-from analysis.path_utils import results_dir  # noqa: E402
 from analysis.validators import validate_sample_id  # noqa: E402
 from analysis.tool_registry import register_tool_on_import  # noqa: E402
 from analysis.run_context import analysis_run  # noqa: E402
@@ -56,6 +55,7 @@ def _import_mask_to_geojson():
     # Try direct import first (if already on sys.path)
     try:
         from backend_msseg.src.api.export import _mask_to_geojson  # type: ignore
+
         return _mask_to_geojson
     except ImportError:
         pass
@@ -67,6 +67,7 @@ def _import_mask_to_geojson():
             sys.path.insert(0, str(root))
         try:
             from backend_msseg.src.api.export import _mask_to_geojson  # type: ignore
+
             return _mask_to_geojson
         except ImportError:
             continue
@@ -94,17 +95,21 @@ def _mask_to_geojson_fallback(mask_path: Path, pixel_size_um: float, min_area_px
         if not contours:
             continue
         contour = max(contours, key=len)
-        xy_um = np.column_stack([
-            (contour[:, 1] - 1 + c0) * pixel_size_um,
-            (contour[:, 0] - 1 + r0) * pixel_size_um,
-        ])
+        xy_um = np.column_stack(
+            [
+                (contour[:, 1] - 1 + c0) * pixel_size_um,
+                (contour[:, 0] - 1 + r0) * pixel_size_um,
+            ]
+        )
         if not np.allclose(xy_um[0], xy_um[-1]):
             xy_um = np.vstack([xy_um, xy_um[0]])
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Polygon", "coordinates": [xy_um.tolist()]},
-            "properties": {"full_id": str(int(cid)), "cell_id": int(cid)},
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": [xy_um.tolist()]},
+                "properties": {"full_id": str(int(cid)), "cell_id": int(cid)},
+            }
+        )
     return {"type": "FeatureCollection", "features": features}
 
 
@@ -138,8 +143,7 @@ def run_loupe_export(
 
     if not h5ad_path.exists():
         raise FileNotFoundError(
-            f"找不到 umap_computed.h5ad：{h5ad_path}\n"
-            "請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
+            f"找不到 umap_computed.h5ad：{h5ad_path}\n請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
         )
     if not mask_path.exists():
         raise FileNotFoundError(f"找不到 segmentation_masks.npy：{mask_path}")
@@ -147,13 +151,13 @@ def run_loupe_export(
     _params = {"roi_name": roi_name, "pixel_size_um": pixel_size_um}
 
     with analysis_run(
-        sample_id, "loupe_export",
+        sample_id,
+        "loupe_export",
         params=_params,
         requested_by=requested_by,
         tool_name="bio_export_loupe",
     ) as run:
         import scanpy as sc
-        import pandas as pd
 
         adata = sc.read_h5ad(str(h5ad_path))
 
@@ -167,8 +171,11 @@ def run_loupe_export(
         obs_df["mask_id"] = [_obs_to_mask_id(n) for n in adata.obs_names]
 
         # Extract available annotation columns
-        annot_cols = [c for c in ("cell_type", "leiden", "celltypist_cell_type", "cell_type_manual")
-                      if c in obs_df.columns]
+        annot_cols = [
+            c
+            for c in ("cell_type", "leiden", "celltypist_cell_type", "cell_type_manual")
+            if c in obs_df.columns
+        ]
         if "obsm" in dir(adata) and "spatial" in adata.obsm:
             obs_df["spatial_x"] = adata.obsm["spatial"][:, 0]
             obs_df["spatial_y"] = adata.obsm["spatial"][:, 1]
@@ -218,6 +225,7 @@ def run_loupe_export(
         try:
             _add_msseg_to_path()
             from backend_msseg.src.export.loupe_exporter import LoupeExporter  # type: ignore
+
             exporter = LoupeExporter(poly_json_path=geojson_path)
             cloupe_path = exporter.export(h5ad_path, out_dir)
             cloupe_note = f"\n- `.cloupe`：`{cloupe_path}`"
@@ -259,5 +267,3 @@ def run_loupe_export(
 
     logger.info("loupe_export 完成  analysis_id=%s", run.analysis_id)
     return run.analysis_id, str(report_path)
-
-

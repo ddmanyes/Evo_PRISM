@@ -125,10 +125,7 @@ class Playbook:
                         f"可用 sections：{available}\n"
                         f"省略 section 參數可取完整說明書。"
                     )
-                return (
-                    f"{head}\n---\n\n"
-                    f"此說明書尚未劃分 sections，請省略 section 參數取完整內容。"
-                )
+                return f"{head}\n---\n\n此說明書尚未劃分 sections，請省略 section 參數取完整內容。"
             return head + f"\n---\n\n*（section: {section}）*\n\n{content}\n"
 
         # 完整內容：剝除 section 標記，保留內容

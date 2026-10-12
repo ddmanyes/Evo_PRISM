@@ -63,9 +63,7 @@ ENGLISH_METHOD_TITLES = {
 
 def _require_assets() -> None:
     missing = [
-        str(path)
-        for path in (HTML_PATH, SVG_PATH, PNG_PATH, GUIDE_PATH)
-        if not path.is_file()
+        str(path) for path in (HTML_PATH, SVG_PATH, PNG_PATH, GUIDE_PATH) if not path.is_file()
     ]
     if missing:
         raise FileNotFoundError("EP workflow guide assets missing: " + ", ".join(missing))
@@ -84,9 +82,7 @@ def _require_method_assets(method: str, language: str) -> tuple[Path, Path, Path
     paths = _method_paths(method, language)
     missing = [str(path) for path in (*paths, GUIDE_PATH) if not path.is_file()]
     if missing:
-        raise FileNotFoundError(
-            "EP method workflow assets missing: " + ", ".join(missing)
-        )
+        raise FileNotFoundError("EP method workflow assets missing: " + ", ".join(missing))
     return paths
 
 
@@ -94,9 +90,7 @@ def _markdown_section(markdown: str, domain: str) -> str:
     if domain == "overview":
         stop = markdown.find("\n## Bulk RNA-seq")
         lead = markdown[:stop] if stop >= 0 else markdown
-        index = "\n".join(
-            f"- `{key}` — {title}" for key, title in DOMAIN_TITLES.items()
-        )
+        index = "\n".join(f"- `{key}` — {title}" for key, title in DOMAIN_TITLES.items())
         return f"{lead.strip()}\n\n## 可查詢領域\n\n{index}"
 
     heading = f"## {DOMAIN_TITLES[domain]}"

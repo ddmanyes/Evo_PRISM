@@ -167,7 +167,9 @@ def pca_plot(
 
     samples = counts.columns.tolist()
     if coldata is not None and color_by in coldata.columns:
-        groups = [str(coldata.loc[s, color_by]) if s in coldata.index else "unknown" for s in samples]
+        groups = [
+            str(coldata.loc[s, color_by]) if s in coldata.index else "unknown" for s in samples
+        ]
         legend_title = color_by
     else:
         groups = [s.split("_")[0] for s in samples]
@@ -293,6 +295,7 @@ def _caption_pca(counts: pd.DataFrame) -> str:
     try:
         from sklearn.decomposition import PCA
         from sklearn.preprocessing import StandardScaler
+
         top_idx = counts.var(axis=1).sort_values(ascending=False).head(2000).index
         mat = StandardScaler().fit_transform(np.log1p(counts.loc[top_idx].T.values))
         ev = PCA(n_components=min(2, mat.shape[1])).fit(mat).explained_variance_ratio_ * 100
@@ -305,8 +308,15 @@ def _version_block() -> str:
     """Markdown table of key package versions for reproducibility."""
     import importlib as _il
     import sys as _sys
-    pkgs = [("pandas", "pandas"), ("numpy", "numpy"), ("scipy", "scipy"),
-            ("omicverse", "omicverse"), ("seaborn", "seaborn"), ("sklearn", "sklearn")]
+
+    pkgs = [
+        ("pandas", "pandas"),
+        ("numpy", "numpy"),
+        ("scipy", "scipy"),
+        ("omicverse", "omicverse"),
+        ("seaborn", "seaborn"),
+        ("sklearn", "sklearn"),
+    ]
     rows = [f"| Python | {_sys.version.split()[0]} |"]
     for label, pkg in pkgs:
         try:
@@ -430,7 +440,6 @@ def generate_bulk_report(
 
     回傳 (analysis_id, report_path)。
     """
-    from config.db_utils import param_hash
 
     validate_sample_id(sample_id)
 
@@ -446,7 +455,8 @@ def generate_bulk_report(
     report_path: Optional[Path] = None
 
     with analysis_run(
-        sample_id, "bulk_eda",
+        sample_id,
+        "bulk_eda",
         params=_params,
         requested_by=requested_by,
         parent_analysis_id=parent_analysis_id,
@@ -504,9 +514,7 @@ def generate_bulk_report(
 
         if quality_flags:
             warnings_md = (
-                "## ⚠️ 品質警告\n\n"
-                + "\n".join(f"- `{f}`" for f in quality_flags)
-                + "\n\n---\n"
+                "## ⚠️ 品質警告\n\n" + "\n".join(f"- `{f}`" for f in quality_flags) + "\n\n---\n"
             )
         else:
             warnings_md = ""
@@ -553,30 +561,41 @@ def generate_bulk_report(
             f"平均每樣本偵測 {avg_genes:,}，avg_total={avg_total:,.0f}。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
-        summary_metrics = json.dumps({
-            "n_samples": n_samples,
-            "avg_detected_genes": avg_genes,
-            "n_genes_matrix": n_genes_matrix,
-            "avg_total_counts": int(avg_total),
-            "quality_flags": quality_flags,
-        })
+        summary_metrics = json.dumps(
+            {
+                "n_samples": n_samples,
+                "avg_detected_genes": avg_genes,
+                "n_genes_matrix": n_genes_matrix,
+                "avg_total_counts": int(avg_total),
+                "quality_flags": quality_flags,
+            }
+        )
 
         # 生命週期收尾（complete/canonical/diagnosis/artifact flush/snapshot）由 seam 統一處理。
         if qc_file:
-            run.artifact(qc_file, "figure",
-                         f"QC barplot（library size + 偵測基因數）— {_caption_qc(qc)}", "qc")
+            run.artifact(
+                qc_file,
+                "figure",
+                f"QC barplot（library size + 偵測基因數）— {_caption_qc(qc)}",
+                "qc",
+            )
         if dist_file:
-            run.artifact(dist_file, "figure",
-                         f"Count 分布 boxplot（log1p）— {_caption_dist(counts)}", "count_dist")
+            run.artifact(
+                dist_file,
+                "figure",
+                f"Count 分布 boxplot（log1p）— {_caption_dist(counts)}",
+                "count_dist",
+            )
         if corr_file:
-            run.artifact(corr_file, "figure",
-                         f"樣本相關矩陣 heatmap — {_caption_corr(corr)}", "correlation")
+            run.artifact(
+                corr_file, "figure", f"樣本相關矩陣 heatmap — {_caption_corr(corr)}", "correlation"
+            )
         if pca_file:
-            run.artifact(pca_file, "figure",
-                         f"PCA 主成分分析圖 — {_caption_pca(counts)}", "pca")
+            run.artifact(pca_file, "figure", f"PCA 主成分分析圖 — {_caption_pca(counts)}", "pca")
         run.artifact(report_path, "report", "Bulk EDA 分析報告", "eda_report")
         run.complete(
-            report_path, summary,
+            report_path,
+            summary,
             summary_metrics=json.loads(summary_metrics),
         )
 

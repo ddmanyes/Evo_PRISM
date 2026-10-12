@@ -446,7 +446,9 @@ def register_artifact(
                 try:
                     Path(file_path).unlink(missing_ok=True)
                 except OSError as _unlink_exc:
-                    logger.warning("register_artifact: could not remove original after spill: %s", _unlink_exc)
+                    logger.warning(
+                        "register_artifact: could not remove original after spill: %s", _unlink_exc
+                    )
 
                 path = overflow_path
                 size_kb = int(overflow_path.stat().st_size / 1024)
@@ -1050,9 +1052,7 @@ def search_artifacts(
         List of artifact dicts with 'score' (RRF) and 'search_layer' fields.
     """
     t_start = time.monotonic()
-    sample_join, sample_where, sample_params = _build_sample_filter(
-        sample_id, requested_by
-    )
+    sample_join, sample_where, sample_params = _build_sample_filter(sample_id, requested_by)
 
     exact_ranked, exact_rows_map = _layer1_exact_search(
         con, artifact_subtype, sample_join, sample_where, sample_params, n

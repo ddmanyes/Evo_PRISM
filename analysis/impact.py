@@ -102,9 +102,7 @@ def _resolve_tool_ids(con: duckdb.DuckDBPyConnection, tool_name: str) -> list[st
     return [str(r[0]) for r in rows]
 
 
-def _get_active_affected_params(
-    con: duckdb.DuckDBPyConnection, tool_name: str
-) -> list[str] | None:
+def _get_active_affected_params(con: duckdb.DuckDBPyConnection, tool_name: str) -> list[str] | None:
     """取 active 版本的 affected_params（v25+ schema）；欄位不存在時回 None。"""
     try:
         row = con.execute(
@@ -119,6 +117,7 @@ def _get_active_affected_params(
             val = row[0]
             if isinstance(val, str):
                 import json as _json
+
                 val = _json.loads(val)
             if isinstance(val, list) and val:
                 return [str(p) for p in val]
@@ -136,6 +135,7 @@ def _analysis_uses_affected_params(
         return False
     if isinstance(parameters_json, str):
         import json as _json
+
         try:
             params = _json.loads(parameters_json)
         except Exception:

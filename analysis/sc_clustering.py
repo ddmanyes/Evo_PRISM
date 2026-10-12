@@ -24,7 +24,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BIO_DB_ROOT  # noqa: E402
-from analysis.path_utils import results_dir  # noqa: E402
 from analysis.viz_utils import fig_to_b64_md  # noqa: E402
 from analysis.tool_registry import register_tool_on_import  # noqa: E402
 from analysis.validators import validate_sample_id  # noqa: E402
@@ -100,14 +99,12 @@ def run_sc_clustering(
          "n_clusters", "cluster_sizes": {...}, "top_markers": {cluster: [genes...]},
          "cell_type_assignment": {cluster: label} | None}
     """
-    import json
-    import uuid
-    from datetime import datetime
 
     import anndata
     import numpy as np
     import pandas as pd
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import scanpy as sc
@@ -127,7 +124,9 @@ def run_sc_clustering(
 
     store = get_store()
     if not store.get_sample(sample_id):
-        raise ValueError(f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。")
+        raise ValueError(
+            f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。"
+        )
     if not h5ad_path.exists():
         raise FileNotFoundError(f"h5ad_path 不存在：{h5ad_path}")
     for label, p in [("h5ad_path", h5ad_path), ("out_dir", out_dir)]:
@@ -139,14 +138,22 @@ def run_sc_clustering(
         raise ValueError(f"qc_percentile 必須在 0-100 之間，收到 {qc_percentile}")
 
     params = {
-        "h5ad_path": str(h5ad_path), "min_counts": min_counts, "min_genes": min_genes,
-        "qc_percentile": qc_percentile, "min_bins": min_bins, "n_top_genes": n_top_genes,
-        "n_pcs": n_pcs, "n_neighbors": n_neighbors, "resolution": resolution,
-        "marker_gene_sets": marker_gene_sets, "score_threshold": score_threshold,
+        "h5ad_path": str(h5ad_path),
+        "min_counts": min_counts,
+        "min_genes": min_genes,
+        "qc_percentile": qc_percentile,
+        "min_bins": min_bins,
+        "n_top_genes": n_top_genes,
+        "n_pcs": n_pcs,
+        "n_neighbors": n_neighbors,
+        "resolution": resolution,
+        "marker_gene_sets": marker_gene_sets,
+        "score_threshold": score_threshold,
     }
 
     with analysis_run(
-        sample_id, "sc_clustering",
+        sample_id,
+        "sc_clustering",
         params=params,
         requested_by=requested_by,
         tool_name="run_sc_clustering",
@@ -164,13 +171,19 @@ def run_sc_clustering(
         sc.pp.calculate_qc_metrics(adata, inplace=True, percent_top=None)
         counts_arr = np.asarray(adata.obs["total_counts"], dtype=float)
         genes_arr = np.asarray(adata.obs["n_genes_by_counts"], dtype=float)
-        eff_min_counts = min_counts if min_counts is not None else max(
-            50, int(np.percentile(counts_arr, qc_percentile))
+        eff_min_counts = (
+            min_counts
+            if min_counts is not None
+            else max(50, int(np.percentile(counts_arr, qc_percentile)))
         )
-        eff_min_genes = min_genes if min_genes is not None else max(
-            20, int(np.percentile(genes_arr, qc_percentile))
+        eff_min_genes = (
+            min_genes
+            if min_genes is not None
+            else max(20, int(np.percentile(genes_arr, qc_percentile)))
         )
-        logger.info(f"run_sc_clustering: QC thresholds min_counts={eff_min_counts}, min_genes={eff_min_genes}")
+        logger.info(
+            f"run_sc_clustering: QC thresholds min_counts={eff_min_counts}, min_genes={eff_min_genes}"
+        )
 
         sc.pp.filter_cells(adata, min_counts=eff_min_counts)
         sc.pp.filter_cells(adata, min_genes=eff_min_genes)
@@ -224,7 +237,9 @@ def run_sc_clustering(
                     sc.tl.score_genes(adata, present, score_name=col)
                 else:
                     adata.obs[col] = 0.0
-                    logger.warning(f"run_sc_clustering: marker set '{name}' 沒有基因出現在 var_names")
+                    logger.warning(
+                        f"run_sc_clustering: marker set '{name}' 沒有基因出現在 var_names"
+                    )
                 score_cols.append(col)
 
             module_names = list(marker_gene_sets.keys())
@@ -236,7 +251,9 @@ def run_sc_clustering(
                 cell_type_assignment[str(cl)] = (
                     module_names[best_i] if best_score > score_threshold else unassigned_label
                 )
-            adata.obs["cell_type"] = adata.obs["leiden"].astype(str).map(cell_type_assignment).astype("category")
+            adata.obs["cell_type"] = (
+                adata.obs["leiden"].astype(str).map(cell_type_assignment).astype("category")
+            )
             adata.obs.drop(columns=score_cols, inplace=True)
 
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -291,14 +308,38 @@ def run_sc_clustering(
         _acon = connect_db(DUCKDB_PATH)
         try:
             artifact_ids = [
-                register_artifact(_acon, run.analysis_id, h5ad_out, "data",
-                                  "clustered.h5ad（含 leiden/UMAP）", artifact_subtype="h5ad_clustered"),
-                register_artifact(_acon, run.analysis_id, markers_csv, "table",
-                                  "Top marker genes per cluster", artifact_subtype="cluster_markers"),
-                register_artifact(_acon, run.analysis_id, umap_path, "figure",
-                                  f"UMAP（{color_key}）", artifact_subtype="umap_clustering"),
-                register_artifact(_acon, run.analysis_id, report_path, "report",
-                                  "Clustering 報告", artifact_subtype="clustering_report"),
+                register_artifact(
+                    _acon,
+                    run.analysis_id,
+                    h5ad_out,
+                    "data",
+                    "clustered.h5ad（含 leiden/UMAP）",
+                    artifact_subtype="h5ad_clustered",
+                ),
+                register_artifact(
+                    _acon,
+                    run.analysis_id,
+                    markers_csv,
+                    "table",
+                    "Top marker genes per cluster",
+                    artifact_subtype="cluster_markers",
+                ),
+                register_artifact(
+                    _acon,
+                    run.analysis_id,
+                    umap_path,
+                    "figure",
+                    f"UMAP（{color_key}）",
+                    artifact_subtype="umap_clustering",
+                ),
+                register_artifact(
+                    _acon,
+                    run.analysis_id,
+                    report_path,
+                    "report",
+                    "Clustering 報告",
+                    artifact_subtype="clustering_report",
+                ),
             ]
         finally:
             _acon.close()

@@ -26,22 +26,22 @@ import duckdb
 logger = logging.getLogger(__name__)
 
 # ── 固定閾值（verdict 決策用，集中成常數方便日後調整）─────────────────────────
-JACCARD_NO_DIFF = 0.90        # DEG Jaccard ≥ 此值 → 無顯著差異
-JACCARD_PARTIAL = 0.70        # DEG Jaccard ≥ 此值 → 偏移但結論大致一致
+JACCARD_NO_DIFF = 0.90  # DEG Jaccard ≥ 此值 → 無顯著差異
+JACCARD_PARTIAL = 0.70  # DEG Jaccard ≥ 此值 → 偏移但結論大致一致
 PATHWAY_JACCARD_NO_DIFF = 0.80
 QC_REL_CHANGE_THRESHOLD = 0.05  # QC 相對變化 < 5% 視為穩定
 PCA_PROCRUSTES_NO_DIFF = 0.05
-SPEARMAN_MIN_GENES = 10       # 交集基因 < 此值時 Spearman 回 None
+SPEARMAN_MIN_GENES = 10  # 交集基因 < 此值時 Spearman 回 None
 
 # ── 產物解析契約（analysis_type → parser config）──────────────────────────────
 PARSER_REGISTRY: dict[str, dict[str, Any]] = {
     "diff_expr": {
-        "artifact_label_pattern": "deg",     # artifact label 模糊比對
-        "gene_col": None,                     # gene 在 index
+        "artifact_label_pattern": "deg",  # artifact label 模糊比對
+        "gene_col": None,  # gene 在 index
         "fc_col": "log2FC",
         "pval_col": "qvalue",
     },
-    "bulk_deg": {                             # bio_memory 的 analysis_type
+    "bulk_deg": {  # bio_memory 的 analysis_type
         "artifact_label_pattern": "deg",
         "gene_col": None,
         "fc_col": "log2FC",
@@ -69,6 +69,7 @@ PARSER_REGISTRY: dict[str, dict[str, Any]] = {
 
 # ── Dataclasses ────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class CodeContext:
     tool_name: str
@@ -77,7 +78,7 @@ class CodeContext:
     content_hash_a: str | None
     content_hash_b: str | None
     source_hash_changed: bool
-    change_reason: str | None   # tool_change_log.reason；可能 None
+    change_reason: str | None  # tool_change_log.reason；可能 None
 
 
 @dataclass
@@ -147,6 +148,7 @@ class ComparisonReport:
 
 # ── Layer 0 ───────────────────────────────────────────────────────────────────
 
+
 def _build_code_context(
     con: duckdb.DuckDBPyConnection,
     tool_name: str,
@@ -209,6 +211,7 @@ def _build_code_context(
 
 
 # ── Layer 1 ───────────────────────────────────────────────────────────────────
+
 
 def _fetch_pairs(
     con: duckdb.DuckDBPyConnection,
@@ -294,9 +297,19 @@ def _fetch_pairs(
         logger.error("Layer 1 SQL 失敗：%s", exc)
         return [], []
 
-    cols = ["sample_id", "analysis_type", "aid_a", "aid_b",
-            "path_a", "path_b", "params_a", "params_b",
-            "metrics_a", "metrics_b", "params_identical"]
+    cols = [
+        "sample_id",
+        "analysis_type",
+        "aid_a",
+        "aid_b",
+        "path_a",
+        "path_b",
+        "params_a",
+        "params_b",
+        "metrics_a",
+        "metrics_b",
+        "params_identical",
+    ]
     pairs = [dict(zip(cols, r)) for r in rows]
 
     # 找 unmatched（只在一個版本有記錄的樣本）
@@ -319,7 +332,7 @@ def _fetch_pairs(
             )
             SELECT DISTINCT sample_id FROM ranked
             """,
-            params[:len(params) - 2],  # remove version_a, version_b at end
+            params[: len(params) - 2],  # remove version_a, version_b at end
         ).fetchall()
         all_sids = {r[0] for r in all_rows}
         unmatched = sorted(all_sids - matched_sids)
@@ -330,6 +343,7 @@ def _fetch_pairs(
 
 
 # ── Layer 2 helpers ───────────────────────────────────────────────────────────
+
 
 def _find_artifact_path(
     con: duckdb.DuckDBPyConnection,
@@ -369,6 +383,7 @@ def _load_deg_df(path: Path) -> Any | None:
     """讀 DEG CSV，回傳 DataFrame 或 None（降級）。"""
     try:
         import pandas as pd
+
         df = pd.read_csv(path, index_col=0)
         if "log2FC" not in df.columns or "qvalue" not in df.columns:
             logger.warning("DEG CSV 缺必要欄位（log2FC/qvalue）：%s", path)
@@ -427,6 +442,7 @@ def _compute_deg_metrics(path_a: Path, path_b: Path) -> tuple[float | None, floa
 def _compute_enrichment_jaccard(path_a: Path, path_b: Path) -> float | None:
     try:
         import pandas as pd
+
         df_a = pd.read_csv(path_a)
         df_b = pd.read_csv(path_b)
         if "Term" not in df_a.columns or "Adjusted P-value" not in df_a.columns:
@@ -445,6 +461,7 @@ def _parse_metrics(raw: Any) -> dict[str, float]:
         return {}
     if isinstance(raw, str):
         import json
+
         try:
             raw = json.loads(raw)
         except Exception:
@@ -458,7 +475,9 @@ def _parse_metrics(raw: Any) -> dict[str, float]:
     return result
 
 
-def _compute_metrics_diff(metrics_a: dict[str, float], metrics_b: dict[str, float]) -> dict[str, MetricsDelta]:
+def _compute_metrics_diff(
+    metrics_a: dict[str, float], metrics_b: dict[str, float]
+) -> dict[str, MetricsDelta]:
     all_keys = set(metrics_a) | set(metrics_b)
     result: dict[str, MetricsDelta] = {}
     for k in all_keys:
@@ -534,6 +553,7 @@ def _compute_pca_procrustes(
 
         def _pca_coords(counts: Any) -> Any:
             import numpy as np
+
             mat = np.log1p(counts.values.astype(float)).T  # samples × genes
             # top 500 high-variance genes
             var = mat.var(axis=0)
@@ -553,6 +573,7 @@ def _compute_pca_procrustes(
 
 
 # ── verdict ───────────────────────────────────────────────────────────────────
+
 
 def _decide_verdict(pr: PairResult, analysis_type: str) -> tuple[str, str]:
     """依固定決策表回傳 (verdict, reason)。先命中者勝。"""
@@ -578,7 +599,10 @@ def _decide_verdict(pr: PairResult, analysis_type: str) -> tuple[str, str]:
         if j >= JACCARD_NO_DIFF and _qc_stable(pr.qc_delta):
             return "無顯著差異", f"Jaccard={j:.3f}≥{JACCARD_NO_DIFF}"
         if j >= JACCARD_PARTIAL:
-            return "數值偏移但結論大致一致", f"Jaccard={j:.3f}∈[{JACCARD_PARTIAL},{JACCARD_NO_DIFF})"
+            return (
+                "數值偏移但結論大致一致",
+                f"Jaccard={j:.3f}∈[{JACCARD_PARTIAL},{JACCARD_NO_DIFF})",
+            )
         return "需重跑", f"Jaccard={j:.3f}<{JACCARD_PARTIAL}"
 
     # 4. Enrichment
@@ -605,6 +629,7 @@ def _decide_verdict(pr: PairResult, analysis_type: str) -> tuple[str, str]:
 
 
 # ── Layer 2 orchestrator ──────────────────────────────────────────────────────
+
 
 def _compare_pair(
     con: duckdb.DuckDBPyConnection,
@@ -636,30 +661,36 @@ def _compare_pair(
     # DEG 比較
     if is_deg:
         path_a = _find_artifact_path(
-            con, aid_a,
+            con,
+            aid_a,
             cfg.get("artifact_label_pattern", "deg"),
             pair.get("path_a"),
         )
         path_b = _find_artifact_path(
-            con, aid_b,
+            con,
+            aid_b,
             cfg.get("artifact_label_pattern", "deg"),
             pair.get("path_b"),
         )
         if path_a and path_b:
             pr.gene_list_jaccard, pr.fold_change_spearman = _compute_deg_metrics(path_a, path_b)
-        pr.qc_delta = {k: v for k, v in pr.metrics_diff.items()
-                       if k not in ("n_comparisons", "n_sig_total", "n_sig_up",
-                                    "n_sig_down", "quality_flags")}
+        pr.qc_delta = {
+            k: v
+            for k, v in pr.metrics_diff.items()
+            if k not in ("n_comparisons", "n_sig_total", "n_sig_up", "n_sig_down", "quality_flags")
+        }
 
     # Enrichment 比較
     elif is_enrich:
         path_a = _find_artifact_path(
-            con, aid_a,
+            con,
+            aid_a,
             cfg.get("artifact_label_pattern", "enrich"),
             pair.get("path_a"),
         )
         path_b = _find_artifact_path(
-            con, aid_b,
+            con,
+            aid_b,
             cfg.get("artifact_label_pattern", "enrich"),
             pair.get("path_b"),
         )
@@ -714,17 +745,21 @@ def _build_exploration_hints(
         key=lambda p: _VERDICT_SEVERITY.get(p.verdict, 99),
     )
     for p in sorted_pairs[:5]:
-        metric_name = "gene_list_jaccard" if p.gene_list_jaccard is not None else (
-            "pathway_jaccard" if p.pathway_jaccard is not None else "metrics_diff"
+        metric_name = (
+            "gene_list_jaccard"
+            if p.gene_list_jaccard is not None
+            else ("pathway_jaccard" if p.pathway_jaccard is not None else "metrics_diff")
         )
         metric_val = p.gene_list_jaccard if p.gene_list_jaccard is not None else p.pathway_jaccard
-        hints.high_delta_samples.append({
-            "sample_id": p.sample_id,
-            "analysis_type": p.analysis_type,
-            "metric": metric_name,
-            "val": round(metric_val, 4) if metric_val is not None else None,
-            "verdict": p.verdict,
-        })
+        hints.high_delta_samples.append(
+            {
+                "sample_id": p.sample_id,
+                "analysis_type": p.analysis_type,
+                "metric": metric_name,
+                "val": round(metric_val, 4) if metric_val is not None else None,
+                "verdict": p.verdict,
+            }
+        )
         tool = _ATYPE_TO_SUGGESTED_TOOL.get(p.analysis_type)
         if tool and tool not in hints.suggested_tools and p.verdict in ("需重跑", "部分欄位偏移"):
             hints.suggested_tools.append(tool)
@@ -734,12 +769,12 @@ def _build_exploration_hints(
     partial = [p for p in pairs if p.verdict in ("部分欄位偏移", "數值偏移但結論大致一致")]
     no_diff = [p for p in pairs if p.verdict == "無顯著差異"]
 
-    lines = [
-        f"工具 {tool_name} 從 {version_a} 升到 {version_b}，共比對 {len(pairs)} 筆分析。"
-    ]
+    lines = [f"工具 {tool_name} 從 {version_a} 升到 {version_b}，共比對 {len(pairs)} 筆分析。"]
     if need_rerun:
         sids = ", ".join(p.sample_id for p in need_rerun[:3])
-        lines.append(f"{len(need_rerun)} 筆建議重跑（{sids}{'...' if len(need_rerun) > 3 else ''}）。")
+        lines.append(
+            f"{len(need_rerun)} 筆建議重跑（{sids}{'...' if len(need_rerun) > 3 else ''}）。"
+        )
     if partial:
         lines.append(f"{len(partial)} 筆有部分偏移但結論大致一致。")
     if no_diff:
@@ -764,6 +799,7 @@ def _build_exploration_hints(
 
 
 # ── Report artifact landing ───────────────────────────────────────────────────
+
 
 def _land_report(
     con: duckdb.DuckDBPyConnection,
@@ -795,10 +831,12 @@ def _land_report(
             VALUES (?, NULL, 'report', 'version_compare',
                     ?, ?, now())
             """,
-            [artifact_id,
-             f"version_compare_{report.code_context.tool_name}_"
-             f"{report.code_context.version_a}_vs_{report.code_context.version_b}",
-             str(out_path)],
+            [
+                artifact_id,
+                f"version_compare_{report.code_context.tool_name}_"
+                f"{report.code_context.version_a}_vs_{report.code_context.version_b}",
+                str(out_path),
+            ],
         )
     except Exception as exc:
         logger.warning("artifact 寫入失敗（非致命）：%s", exc)
@@ -808,6 +846,7 @@ def _land_report(
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def bio_compare_versions(
     con: duckdb.DuckDBPyConnection,
@@ -855,20 +894,31 @@ def bio_compare_versions(
     param_detail: list[dict[str, Any]] = []
     for p in diff_pairs[:20]:  # 最多展示 20 筆
         import json
+
         try:
-            pa = json.loads(p["params_a"]) if isinstance(p["params_a"], str) else (p["params_a"] or {})
-            pb = json.loads(p["params_b"]) if isinstance(p["params_b"], str) else (p["params_b"] or {})
+            pa = (
+                json.loads(p["params_a"])
+                if isinstance(p["params_a"], str)
+                else (p["params_a"] or {})
+            )
+            pb = (
+                json.loads(p["params_b"])
+                if isinstance(p["params_b"], str)
+                else (p["params_b"] or {})
+            )
         except Exception:
             continue
         all_keys = set(pa) | set(pb)
         for k in all_keys:
             if pa.get(k) != pb.get(k):
-                param_detail.append({
-                    "sample_id": p["sample_id"],
-                    "key": k,
-                    "val_a": pa.get(k),
-                    "val_b": pb.get(k),
-                })
+                param_detail.append(
+                    {
+                        "sample_id": p["sample_id"],
+                        "key": k,
+                        "val_a": pa.get(k),
+                        "val_b": pb.get(k),
+                    }
+                )
 
     param_summary = ParamSummary(
         exact_match_count=exact,
@@ -884,15 +934,17 @@ def bio_compare_versions(
             per_pair.append(pr)
         except Exception as exc:
             logger.error("pair 比較失敗 %s/%s：%s", p["aid_a"], p["aid_b"], exc)
-            per_pair.append(PairResult(
-                sample_id=p["sample_id"],
-                analysis_type=p["analysis_type"],
-                aid_a=str(p["aid_a"]),
-                aid_b=str(p["aid_b"]),
-                params_identical=bool(p.get("params_identical")),
-                verdict="資料不足",
-                verdict_reason=f"比較過程例外：{exc}",
-            ))
+            per_pair.append(
+                PairResult(
+                    sample_id=p["sample_id"],
+                    analysis_type=p["analysis_type"],
+                    aid_a=str(p["aid_a"]),
+                    aid_b=str(p["aid_b"]),
+                    params_identical=bool(p.get("params_identical")),
+                    verdict="資料不足",
+                    verdict_reason=f"比較過程例外：{exc}",
+                )
+            )
 
     # Layer 3
     hints = _build_exploration_hints(

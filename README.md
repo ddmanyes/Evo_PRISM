@@ -20,23 +20,18 @@ EP lets AI agents discover tools, run analyses and retrieve previous results thr
 In a checkout on a native local filesystem, install Python 3.11 and uv, then run:
 
 ```bash
-uv sync --no-install-project
-cp .env.example .env
-# Configure data and embeddings per the guide; leave unused API keys empty
-.venv/bin/python scripts/00_init_db.py --no-samples
-.venv/bin/python scripts/03_init_l1_cache.py
-.venv/bin/python scripts/run_pending_migrations.py
-.venv/bin/python scripts/04_migrate_l1_rrf.py
+uv sync --locked --no-install-project --python 3.12
+.venv/bin/python scripts/ep_local.py init --data-dir "$PWD/local-data"
+.venv/bin/python scripts/ep_local.py doctor --data-dir "$PWD/local-data"
 ```
 
-Configure your MCP client with absolute paths to Python and the server, using stdio:
+Add `mcpServers.ep` from the generated `local-data/mcp.json` to your MCP client and call `bio_sample_list`. Run the complete isolated demo with:
 
-```text
-<checkout>/.venv/bin/python <checkout>/server/bio_memory_server.py
+```bash
+.venv/bin/python scripts/check_single_user.py
 ```
 
-Call `bio_sample_list` and `bio_decision_status` first, then register data or run an analysis. Configuration, limitations and verification scope: [single-user guide](docs/guides/SINGLE_USER.md).
-
+[Personal setup, diagnostics and validation scope](docs/guides/SINGLE_USER.md).
 ## Architecture
 
 ![EP architecture overview](docs/images/ep_overview.svg)
@@ -65,7 +60,7 @@ Use the live MCP catalog for available tools. Sandbox execution is disabled by d
 
 ## Validation and limits
 
-The [single-user guide](docs/guides/SINGLE_USER.md) records the tested initialization and MCP operations. See the [testing guide](docs/guides/TESTING.md) for analysis tests and historical validation; these do not guarantee every analysis capability or scientific correctness in this revision.
+The [single-user guide](docs/guides/SINGLE_USER.md) records clean-environment installation, MCP, synthetic CPU EDA and cross-session result reuse. See the [testing guide](docs/guides/TESTING.md) for analysis tests and historical validation; these do not guarantee every analysis capability or scientific correctness in this revision.
 
 A new decision ledger starts off. Clef shadow requires a separately configured bridge and model; the repository includes the client, not weights or an automatically started MLX service. Successful shadow operation is not independent quality acceptance.
 

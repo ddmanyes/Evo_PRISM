@@ -304,6 +304,7 @@ def db_health_check(con: duckdb.DuckDBPyConnection | None = None) -> dict:
 def get_store():
     """Return the process-level RegistryStore (shortcut for callers that already import db_utils)."""
     from store.factory import get_store as _get_store
+
     return _get_store()
 
 

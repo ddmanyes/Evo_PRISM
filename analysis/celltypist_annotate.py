@@ -56,29 +56,30 @@ def run_celltypist(
 
     if not h5ad_path.exists():
         raise FileNotFoundError(
-            f"找不到 umap_computed.h5ad：{h5ad_path}\n"
-            "請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
+            f"找不到 umap_computed.h5ad：{h5ad_path}\n請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
         )
 
     try:
         import celltypist  # noqa: F401
     except ImportError as exc:
-        raise ImportError(
-            "缺少 celltypist，請執行：uv add celltypist"
-        ) from exc
+        raise ImportError("缺少 celltypist，請執行：uv add celltypist") from exc
 
     _params = {
-        "roi_name": roi_name, "model": model, "majority_voting": majority_voting,
+        "roi_name": roi_name,
+        "model": model,
+        "majority_voting": majority_voting,
     }
 
     with analysis_run(
-        sample_id, "celltypist",
+        sample_id,
+        "celltypist",
         params=_params,
         requested_by=requested_by,
         tool_name="bio_run_celltypist",
     ) as run:
         import celltypist
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import scanpy as sc
@@ -96,8 +97,7 @@ def run_celltypist(
         n_overlap = len(adata_genes & model_features) if model_features else None
         n_model = len(model_features) if model_features else None
         overlap_msg = (
-            f"{n_overlap}/{n_model} 基因匹配" if n_overlap is not None
-            else "（無法計算基因匹配數）"
+            f"{n_overlap}/{n_model} 基因匹配" if n_overlap is not None else "（無法計算基因匹配數）"
         )
 
         logger.info("CellTypist: annotating %d cells, gene overlap=%s", adata.n_obs, overlap_msg)
@@ -111,7 +111,6 @@ def run_celltypist(
         adata.obs["celltypist_cell_type"] = pred_df[label_col].values
 
         # Write back h5ad (additive column) — atomic rename to survive crashes
-        import shutil
         tmp_path = h5ad_path.with_suffix(".h5ad.tmp")
         adata.write_h5ad(str(tmp_path))
         tmp_path.replace(h5ad_path)  # POSIX atomic rename

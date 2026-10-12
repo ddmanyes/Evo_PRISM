@@ -127,7 +127,9 @@ def register_external_analysis_result(
     store = get_store()
     sample = store.get_sample(sample_id)
     if not sample:
-        raise ValueError(f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。")
+        raise ValueError(
+            f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。"
+        )
 
     if supersedes_analysis_id:
         with store.read_conn() as con:
@@ -144,7 +146,9 @@ def register_external_analysis_result(
             )
 
     if not result_path.exists():
-        raise FileNotFoundError(f"result_path 不存在：{result_path}（外部結果要先複製進 BIO_DB_ROOT 底下）")
+        raise FileNotFoundError(
+            f"result_path 不存在：{result_path}（外部結果要先複製進 BIO_DB_ROOT 底下）"
+        )
     try:
         result_path.relative_to(BIO_DB_ROOT)
     except ValueError:

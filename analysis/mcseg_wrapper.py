@@ -107,7 +107,9 @@ def crop_visium_hd_roi(
     logger.info(f"Saved cropped AnnData: {adata_out_path} ({sub.n_obs:,} bins)")
 
     # Compute scale factor: virtual_fullres coords → raw TIFF pixel coords
-    tiff_scale, _vfr_w_full, _vfr_h_full = _compute_tiff_scale(Path(btf_image_path), Path(binned_dir))
+    tiff_scale, _vfr_w_full, _vfr_h_full = _compute_tiff_scale(
+        Path(btf_image_path), Path(binned_dir)
+    )
 
     logger.info(f"Cropping H&E BTF image from {btf_image_path}")
     x0_vfr, y0_vfr, w_vfr, h_vfr = roi_to_fullres_px(roi_dict)
@@ -553,7 +555,9 @@ def run_mcseg_fullslide(
     done_path.unlink(missing_ok=True)
 
     if not result.get("ok"):
-        raise RuntimeError(f"mcseg host watcher fullslide job {job_id} failed: {result.get('error')}")
+        raise RuntimeError(
+            f"mcseg host watcher fullslide job {job_id} failed: {result.get('error')}"
+        )
 
     logger.info(f"mcseg fullslide job {job_id} completed by host watcher (waited ~{waited}s)")
     return result
@@ -711,9 +715,6 @@ def register_external_mcseg_result(
     if they came from elsewhere (e.g. a CUDA machine). n_cells is cross-checked against
     mask_path's actual max label to catch stats/file mismatches early.
     """
-    import json
-    import uuid
-    from datetime import datetime
 
     from config.settings import BIO_DB_ROOT
     from store.factory import get_store
@@ -726,17 +727,22 @@ def register_external_mcseg_result(
     store = get_store()
     sample = store.get_sample(sample_id)
     if not sample:
-        raise ValueError(f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。")
+        raise ValueError(
+            f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。"
+        )
 
-    for label, p in [("mask_path", mask_path), ("mask_vfr_path", mask_vfr_path), ("cells_path", cells_path)]:
+    for label, p in [
+        ("mask_path", mask_path),
+        ("mask_vfr_path", mask_vfr_path),
+        ("cells_path", cells_path),
+    ]:
         if not p.exists():
             raise FileNotFoundError(f"{label} 不存在：{p}（外部結果要先複製進 BIO_DB_ROOT 底下）")
         try:
             p.relative_to(BIO_DB_ROOT)
         except ValueError:
             raise ValueError(
-                f"{label} 必須在 BIO_DB_ROOT（{BIO_DB_ROOT}）底下，容器/其他工具才讀得到；"
-                f"收到 {p}"
+                f"{label} 必須在 BIO_DB_ROOT（{BIO_DB_ROOT}）底下，容器/其他工具才讀得到；收到 {p}"
             )
 
     try:
@@ -764,7 +770,8 @@ def register_external_mcseg_result(
     from analysis.run_context import record_completed_run
 
     analysis_id = record_completed_run(
-        sample_id, "mcseg_fullslide",
+        sample_id,
+        "mcseg_fullslide",
         params=params,
         result_path=str(cells_path),
         summary=summary,
@@ -785,7 +792,10 @@ def register_external_mcseg_result(
                     logger.warning(f"register_external_mcseg_result: overlay 檔不存在，略過: {op}")
                     continue
                 aid = register_artifact(
-                    con, analysis_id, op, "figure",
+                    con,
+                    analysis_id,
+                    op,
+                    "figure",
                     f"Full-slide overlay ({op.stem})",
                     artifact_subtype="mcseg_overlay",
                 )

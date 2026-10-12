@@ -32,9 +32,7 @@ def _exec_bio_history_check(args: dict) -> str:
 
     sample_id = args["sample_id"]
     analysis_type = args["analysis_type"]
-    rec = get_store().get_history(
-        sample_id, analysis_type, requested_by=visible_requested_by()
-    )
+    rec = get_store().get_history(sample_id, analysis_type, requested_by=visible_requested_by())
     if rec:
         params_str = rec.get("parameters") or "{}"
         return (
@@ -56,9 +54,7 @@ def _exec_bio_history_lookup(args: dict) -> str:
     limit = int(args.get("limit", 20))
     owner = visible_requested_by()
     if analysis_type:
-        df = find_by_type(
-            analysis_type, sample_id=sample_id, limit=limit, requested_by=owner
-        )
+        df = find_by_type(analysis_type, sample_id=sample_id, limit=limit, requested_by=owner)
     else:
         df = recent_analyses(n=limit, sample_id=sample_id, requested_by=owner)
     if df.empty:
@@ -162,9 +158,7 @@ def _exec_bio_memory_query(args: dict) -> str:
     sample_id = args.get("sample_id")
     input_fingerprint = context_hash = None
     if sample_id:
-        input_fingerprint, context_hash = compute_current_context(
-            sample_id, SPATIAL_EDA_TOOL_NAME
-        )
+        input_fingerprint, context_hash = compute_current_context(sample_id, SPATIAL_EDA_TOOL_NAME)
 
     results = semantic_search(
         args["query"],
@@ -811,7 +805,9 @@ _plt_orig.show = _hermes_show
                 (archive_dir / "traceback.txt").write_text(tb_text, encoding="utf-8")
                 if result.output:
                     (archive_dir / "output.txt").write_text(result.output, encoding="utf-8")
-                error_summary = tb_text.splitlines()[-1][:200] if tb_text.strip() else "unknown error"
+                error_summary = (
+                    tb_text.splitlines()[-1][:200] if tb_text.strip() else "unknown error"
+                )
             else:
                 status = "completed"
                 (archive_dir / "output.txt").write_text(result.output or "", encoding="utf-8")
@@ -858,7 +854,9 @@ _plt_orig.show = _hermes_show
                 raise DynamicCodeFailure(error_summary or "dynamic code execution failed")
 
             out = output_text[:2000] if len(output_text) > 2000 else output_text
-            return_value = f"執行成功（{result.duration_sec}s）\n歸檔：{rel_archive}/\n{out}{fig_md}"
+            return_value = (
+                f"執行成功（{result.duration_sec}s）\n歸檔：{rel_archive}/\n{out}{fig_md}"
+            )
             run.complete(rel_archive, description[:50] or "dynamic code execution")
     except (SecurityError, DynamicCodeFailure):
         pass  # return_value 已在對應分支組好；例外只用來驅動 seam 的失敗分支

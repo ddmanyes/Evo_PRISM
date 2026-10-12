@@ -43,6 +43,7 @@ def lookup_sample(
     Returns:
         格式化文字結果
     """
+
     def _query(c: duckdb.DuckDBPyConnection) -> str:
         conditions = []
         params: list = []
@@ -65,7 +66,8 @@ def lookup_sample(
         # {where} contains only hardcoded condition strings (e.g. "project = ?").
         # All values are passed via `params` — no user input is interpolated.
         where = " AND ".join(conditions)
-        rows = c.execute(f"""
+        rows = c.execute(
+            f"""
             SELECT sample_id, alias, data_type, project,
                    condition, time_point, tissue, l2_ready,
                    notes,
@@ -76,7 +78,9 @@ def lookup_sample(
             FROM sample_registry
             WHERE {where}
             ORDER BY data_type, project, sample_id
-        """, params).fetchall()
+        """,
+            params,
+        ).fetchall()
 
         if not rows:
             hint = "（提示：使用 fuzzy=true 進行部分匹配）" if not fuzzy else ""
@@ -112,6 +116,7 @@ def list_samples(
     con: duckdb.DuckDBPyConnection | None = None,
 ) -> str:
     """列出指定 project / data_type 的所有樣本（摘要格式）。"""
+
     def _query(c: duckdb.DuckDBPyConnection) -> str:
         conditions = []
         params: list = []
@@ -125,13 +130,16 @@ def list_samples(
         # {where} contains only hardcoded condition strings; values via `params`.
         # No filter → returns all samples (intentional for list_all use case).
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        rows = c.execute(f"""
+        rows = c.execute(
+            f"""
             SELECT sample_id, alias, data_type, project,
                    condition, time_point, tissue, l2_ready
             FROM sample_registry
             {where}
             ORDER BY data_type, project, sample_id
-        """, params).fetchall()
+        """,
+            params,
+        ).fetchall()
 
         if not rows:
             return "找不到符合條件的樣本。"

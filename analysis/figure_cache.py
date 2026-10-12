@@ -59,9 +59,7 @@ def _owner_marker(figure_id: str, requested_by: str) -> Path:
     return Path(FIGURE_CACHE_DIR) / ".owners" / owner_hash / figure_id
 
 
-def cache_figure(
-    b64_payload: str, subtype: str = "png", *, requested_by: str | None = None
-) -> str:
+def cache_figure(b64_payload: str, subtype: str = "png", *, requested_by: str | None = None) -> str:
     """
     將單張 base64 圖片解碼快取到 FIGURE_CACHE_DIR，回傳 figure_id。
 
@@ -149,9 +147,7 @@ def _figure_was_indexed(figure_id: str) -> bool:
     return bool(rows)
 
 
-def load_figure(
-    figure_id: str, *, requested_by: str | None = None
-) -> tuple[bytes, str]:
+def load_figure(figure_id: str, *, requested_by: str | None = None) -> tuple[bytes, str]:
     """
     依 figure_id 讀回快取圖片，回傳 (raw_bytes, mime_type)。
 
@@ -186,9 +182,7 @@ def load_figure(
     )
 
 
-def load_figure_b64(
-    figure_id: str, *, requested_by: str | None = None
-) -> tuple[str, str]:
+def load_figure_b64(figure_id: str, *, requested_by: str | None = None) -> tuple[str, str]:
     """同 load_figure，但回傳 (base64_payload, mime_type)，供 MCP ImageContent 使用。"""
     import base64
 

@@ -311,7 +311,8 @@ def generate_crc_metrics_report(
     }
 
     with analysis_run(
-        sample_id, "crc_metrics",
+        sample_id,
+        "crc_metrics",
         params=params,
         requested_by=requested_by,
     ) as run:

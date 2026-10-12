@@ -37,11 +37,11 @@ SPATIAL_EDA_TOOL_NAME = "bio_run_spatial_eda"
 # 權重總和保持 1.0，確保 perfect score = 1/(_RRF_K+1) 不變（向後相容）。
 # BM25 解決基因別名漂移（PTPRC↔CD45、MS4A1↔CD20）；FTS 不可用時退化為 3-way。
 
-_RRF_K: int = 60       # 標準 RRF 平滑常數
-_W1: float = 0.4       # cosine similarity 權重（原 0.5）
-_W_BM25: float = 0.3   # BM25 全文搜尋權重（新增）
-_W2: float = 0.2       # input fingerprint 匹配權重（原 0.3）
-_W3: float = 0.1       # context hash 匹配權重（原 0.2）
+_RRF_K: int = 60  # 標準 RRF 平滑常數
+_W1: float = 0.4  # cosine similarity 權重（原 0.5）
+_W_BM25: float = 0.3  # BM25 全文搜尋權重（新增）
+_W2: float = 0.2  # input fingerprint 匹配權重（原 0.3）
+_W3: float = 0.1  # context hash 匹配權重（原 0.2）
 _MISMATCH_RANK: int = 9999  # 不匹配時的懲罰 rank
 
 # FTS sidecar schema name（PRAGMA create_fts_index 建立）
@@ -202,12 +202,16 @@ def compute_input_fingerprint(
         for fp in sorted(str(p) for p in file_paths):
             path = Path(fp)
             try:
-                if path.is_dir() or (path.is_file() and path.stat().st_size > _FINGERPRINT_MAX_READ_BYTES):
+                if path.is_dir() or (
+                    path.is_file() and path.stat().st_size > _FINGERPRINT_MAX_READ_BYTES
+                ):
                     _hash_path_metadata(h, path)
                 else:
                     h.update(path.read_bytes())
             except OSError as exc:
-                logger.warning("compute_input_fingerprint: skipping unreadable path %s (%s)", fp, exc)
+                logger.warning(
+                    "compute_input_fingerprint: skipping unreadable path %s (%s)", fp, exc
+                )
     return h.hexdigest()[:16]
 
 
@@ -348,13 +352,30 @@ def write_to_l1_cache(
                 "scripts/29_migrate_l1_cache_owner.py before member writes"
             )
         columns = [
-            "id", "sample_id", "query_text", "report_text", "summary",
-            "embedding", "analysis_id", "input_fingerprint", "context_hash",
-            "created_at", "expires_at",
+            "id",
+            "sample_id",
+            "query_text",
+            "report_text",
+            "summary",
+            "embedding",
+            "analysis_id",
+            "input_fingerprint",
+            "context_hash",
+            "created_at",
+            "expires_at",
         ]
         values = [
-            rec_id, sample_id, query_text, report_text, summary, embedding,
-            analysis_id, input_fingerprint, context_hash, now, expires_at,
+            rec_id,
+            sample_id,
+            query_text,
+            report_text,
+            summary,
+            embedding,
+            analysis_id,
+            input_fingerprint,
+            context_hash,
+            now,
+            expires_at,
         ]
         if has_owner:
             columns.append("requested_by")

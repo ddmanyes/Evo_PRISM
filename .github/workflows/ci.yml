@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "backup/local-code-2026-07-24"]
   pull_request:
     branches: ["main", "master"]
+
+permissions:
+  contents: read
 
 jobs:
   lint-only:
@@ -12,10 +15,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - run: uv python install 3.11
-      - run: uv sync --no-install-project --extra dev --python 3.11
-      - name: ruff check
-        run: uv run ruff check analysis/ server/ config/ scheduler/ --output-format=github
-      - name: ruff format check
-        run: uv run ruff format --check analysis/ server/ config/ scheduler/
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --no-install-project --python 3.12
+      - run: uv run --no-sync ruff check analysis/ server/ config/ scheduler/ scripts/ep_local.py scripts/check_single_user.py scripts/check_local_setup_cases.py --output-format=github
+      - run: uv run --no-sync ruff format --check analysis/ server/ config/ scheduler/ scripts/ep_local.py scripts/check_single_user.py scripts/check_local_setup_cases.py
+
+  single-user:
+    name: Single user (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: macos-latest
+            python: '3.12'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      TMPDIR: ${{ github.workspace }}/.ci-tmp
+      PYTHON_DOTENV_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: mkdir -p "$TMPDIR"
+      - run: uv sync --locked --no-install-project --python ${{ matrix.python }}
+      - name: Setup failure and isolation cases
+        run: uv run --no-sync python scripts/check_local_setup_cases.py
+      - name: Fresh database, MCP, CPU EDA and cross-session reuse
+        run: uv run --no-sync python scripts/check_single_user.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: single-user-evidence-${{ matrix.os }}
+          path: .ci-tmp/ep-single-user-*
+          include-hidden-files: true
+          retention-days: 7

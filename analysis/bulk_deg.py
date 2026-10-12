@@ -104,7 +104,11 @@ def filter_low_expression(
     n_after = len(filtered)
     logger.info(
         "低表達過濾：%d → %d 基因（移除 %d，min_cpm=%.1f, min_samples=%d）",
-        n_before, n_after, n_before - n_after, min_cpm, min_samples,
+        n_before,
+        n_after,
+        n_before - n_after,
+        min_cpm,
+        min_samples,
     )
     return filtered
 
@@ -223,9 +227,7 @@ def _caption_mv(counts: pd.DataFrame) -> str:
         return "Mean-Variance 不可用"
 
 
-def _caption_volcano(
-    deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float
-) -> str:
+def _caption_volcano(deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float) -> str:
     try:
         fc = deg.get("log2FC", pd.Series(dtype=float))
         q = deg.get("qvalue", pd.Series(dtype=float))
@@ -244,9 +246,7 @@ def _caption_volcano(
         return f"{comparison}：up/down 不可用"
 
 
-def _caption_ma(
-    deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float
-) -> str:
+def _caption_ma(deg: pd.DataFrame, comparison: str, fc_thr: float, pval_thr: float) -> str:
     try:
         fc = deg.get("log2FC", pd.Series(dtype=float))
         q = deg.get("qvalue", pd.Series(dtype=float))
@@ -265,9 +265,16 @@ def _caption_ma(
 
 
 def _version_block() -> str:
-    import importlib as _il, sys as _sys
-    pkgs = [("pandas", "pandas"), ("numpy", "numpy"), ("omicverse", "omicverse"),
-            ("scipy", "scipy"), ("matplotlib", "matplotlib")]
+    import importlib as _il
+    import sys as _sys
+
+    pkgs = [
+        ("pandas", "pandas"),
+        ("numpy", "numpy"),
+        ("omicverse", "omicverse"),
+        ("scipy", "scipy"),
+        ("matplotlib", "matplotlib"),
+    ]
     rows = [f"| Python | {_sys.version.split()[0]} |"]
     for label, pkg in pkgs:
         try:
@@ -354,14 +361,16 @@ def _deg_threshold_summary(deg: pd.DataFrame, comparison: str) -> pd.DataFrame:
     for lfc_thr, padj_thr in thresholds:
         up = int(((fc > lfc_thr) & (pv < padj_thr)).sum())
         dn = int(((fc < -lfc_thr) & (pv < padj_thr)).sum())
-        rows.append({
-            "comparison": comparison,
-            "|log2FC|>": lfc_thr,
-            "padj<": padj_thr,
-            "up": up,
-            "down": dn,
-            "total": up + dn,
-        })
+        rows.append(
+            {
+                "comparison": comparison,
+                "|log2FC|>": lfc_thr,
+                "padj<": padj_thr,
+                "up": up,
+                "down": dn,
+                "total": up + dn,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -492,7 +501,8 @@ def run_deg_analysis(
     }
 
     with analysis_run(
-        sample_id, "bulk_deg",
+        sample_id,
+        "bulk_deg",
         params=_params,
         requested_by=requested_by,
         parent_analysis_id=parent_analysis_id,
@@ -568,11 +578,14 @@ def run_deg_analysis(
                     pval_threshold=pval_threshold,
                 )
                 volcano_md_parts.append(_file_to_b64_md(volcano_png, f"Volcano {a} vs {b}"))
-                artifact_files.append((
-                    volcano_png, "figure",
-                    f"火山圖 {a} vs {b} — {_caption_volcano(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
-                    "volcano",
-                ))
+                artifact_files.append(
+                    (
+                        volcano_png,
+                        "figure",
+                        f"火山圖 {a} vs {b} — {_caption_volcano(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
+                        "volcano",
+                    )
+                )
             except Exception:
                 logger.warning("火山圖 %s_vs_%s 失敗，跳過", a, b, exc_info=True)
                 volcano_md_parts.append(f"\n（{a} vs {b} 火山圖生成失敗）\n")
@@ -589,11 +602,14 @@ def run_deg_analysis(
                 )
                 if ma_file:
                     ma_md_parts.append(_file_to_b64_md(ma_png, f"MA {a} vs {b}"))
-                    artifact_files.append((
-                        ma_png, "figure",
-                        f"MA 圖 {a} vs {b} — {_caption_ma(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
-                        "ma_plot",
-                    ))
+                    artifact_files.append(
+                        (
+                            ma_png,
+                            "figure",
+                            f"MA 圖 {a} vs {b} — {_caption_ma(deg, f'{a}_vs_{b}', fc_threshold, pval_threshold)}",
+                            "ma_plot",
+                        )
+                    )
                 else:
                     ma_md_parts.append(f"\n（{a} vs {b} MA 圖：缺 log2FC 欄）\n")
             except Exception:
@@ -632,9 +648,7 @@ def run_deg_analysis(
 
         if deg_quality_flags:
             warnings_md = (
-                "## ⚠️ 品質警告\n\n"
-                + "\n".join(f"- `{f}`" for f in deg_quality_flags)
-                + "\n\n"
+                "## ⚠️ 品質警告\n\n" + "\n".join(f"- `{f}`" for f in deg_quality_flags) + "\n\n"
             )
         else:
             warnings_md = ""
@@ -673,21 +687,24 @@ def run_deg_analysis(
             f"Bulk DEG {sample_id}：{n_cmp} 對照，共 {total_sig} 顯著基因。"
         )
         summary = full_summary[:SUMMARY_MAX_CHARS]
-        summary_metrics = json.dumps({
-            "n_comparisons": n_cmp,
-            "n_sig_total": total_sig,
-            "n_sig_up": int(summary_df["n_sig_up"].sum()),
-            "n_sig_down": int(summary_df["n_sig_down"].sum()),
-            "n_genes_before_filter": n_genes_before,
-            "n_genes_after_filter": n_genes_after,
-            "quality_flags": deg_quality_flags,
-        })
+        summary_metrics = json.dumps(
+            {
+                "n_comparisons": n_cmp,
+                "n_sig_total": total_sig,
+                "n_sig_up": int(summary_df["n_sig_up"].sum()),
+                "n_sig_down": int(summary_df["n_sig_down"].sum()),
+                "n_genes_before_filter": n_genes_before,
+                "n_genes_after_filter": n_genes_after,
+                "quality_flags": deg_quality_flags,
+            }
+        )
 
         # 生命週期收尾（complete/canonical/diagnosis/artifact flush/snapshot）由 seam 統一處理。
         for path, atype, label, subtype in artifact_files:
             run.artifact(path, atype, label, subtype)
         run.complete(
-            report_path, summary,
+            report_path,
+            summary,
             summary_metrics=json.loads(summary_metrics),
         )
 

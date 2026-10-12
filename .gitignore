@@ -150,3 +150,7 @@ docs/docs/
 
 # Windows 路徑產出物
 i:\\
+
+# Isolated personal setup and CI evidence
+/local-data/
+/.ci-tmp/

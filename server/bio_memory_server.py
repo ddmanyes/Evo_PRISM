@@ -144,7 +144,9 @@ def _record_metric(
         from store.factory import get_store
 
         get_store().record_metric(
-            tool_name, duration_ms, status,
+            tool_name,
+            duration_ms,
+            status,
             error_class=error_class,
             requested_by=requested_by,
         )
@@ -229,14 +231,18 @@ async def read_resource(uri):  # uri: pydantic AnyUrl
     if uri_str == "registry://snapshot":
         snapshot_path = Path(BIO_DB_ROOT) / "docs" / "registry_snapshot.md"
         if not snapshot_path.exists():
-            return [ReadResourceContents(
-                content="[ERROR] registry_snapshot.md 尚未產生，請先執行 scripts/export_registry.py",
-                mime_type="text/plain",
-            )]
-        return [ReadResourceContents(
-            content=snapshot_path.read_text(encoding="utf-8"),
-            mime_type="text/markdown",
-        )]
+            return [
+                ReadResourceContents(
+                    content="[ERROR] registry_snapshot.md 尚未產生，請先執行 scripts/export_registry.py",
+                    mime_type="text/plain",
+                )
+            ]
+        return [
+            ReadResourceContents(
+                content=snapshot_path.read_text(encoding="utf-8"),
+                mime_type="text/markdown",
+            )
+        ]
 
     # figure://<figure_id> — caller-scoped report image cache
     if uri_str.startswith("figure://"):
@@ -244,9 +250,7 @@ async def read_resource(uri):  # uri: pydantic AnyUrl
 
         figure_id = uri_str[len("figure://") :].strip("/")
         try:
-            content, mime = await asyncio.to_thread(
-                load_figure, figure_id, requested_by=owner
-            )
+            content, mime = await asyncio.to_thread(load_figure, figure_id, requested_by=owner)
         except (ValueError, FileNotFoundError) as exc:
             return [ReadResourceContents(content=f"[ERROR] {exc}", mime_type="text/plain")]
         return [ReadResourceContents(content=content, mime_type=mime)]
@@ -343,9 +347,7 @@ async def _handle_bio_history_lookup(args: dict) -> str:
     owner = visible_requested_by()
 
     if analysis_type:
-        rows = find_by_type(
-            analysis_type, sample_id=sample_id, limit=limit, requested_by=owner
-        )
+        rows = find_by_type(analysis_type, sample_id=sample_id, limit=limit, requested_by=owner)
     else:
         rows = recent_analyses(n=limit, sample_id=sample_id, requested_by=owner)
 
@@ -424,8 +426,7 @@ async def _handle_bio_history_timeline(args: dict) -> str:
         ).fetchall()
         cols = ["sample_id", "analysis_type", "status", "requested_by", "completed_at", "summary"]
         result_rows = [
-            {**dict(zip(cols, r)), "completed_at": str(r[4])[:16] if r[4] else ""}
-            for r in rows
+            {**dict(zip(cols, r)), "completed_at": str(r[4])[:16] if r[4] else ""} for r in rows
         ]
 
     if not result_rows:
@@ -564,9 +565,7 @@ async def _handle_bio_memory_query(args: dict) -> str:
 
     input_fingerprint = context_hash = None
     if sample_id:
-        input_fingerprint, context_hash = compute_current_context(
-            sample_id, SPATIAL_EDA_TOOL_NAME
-        )
+        input_fingerprint, context_hash = compute_current_context(sample_id, SPATIAL_EDA_TOOL_NAME)
 
     results = semantic_search(
         query,
@@ -698,9 +697,7 @@ async def _handle_bio_artifact_summary(args: dict) -> str:
 
     sample_id = args["sample_id"]
     with get_store().read_conn() as con:
-        summary = artifact_summary(
-            con, sample_id, requested_by=visible_requested_by()
-        )
+        summary = artifact_summary(con, sample_id, requested_by=visible_requested_by())
 
     if summary["total_runs"] == 0:
         return f"樣本 {sample_id!r} 尚無已完成分析或 artifact 記錄。"
@@ -768,9 +765,7 @@ async def _handle_bio_cascade_impact(args: dict) -> str:
         from analysis.impact import cascade_impact, render_impact_md
 
         with get_store().read_conn() as con:
-            report = cascade_impact(
-                con, analysis_id, requested_by=visible_requested_by()
-            )
+            report = cascade_impact(con, analysis_id, requested_by=visible_requested_by())
         return render_impact_md(report)
 
     return await asyncio.to_thread(_sync)
@@ -920,12 +915,8 @@ async def _handle_bio_read_report(args: dict) -> str:
 
     def _sync() -> str:
         with get_store().read_conn() as con:
-            if not can_read_analysis_path(
-                con, args["result_path"], requested_by=owner
-            ):
-                _audit_operation(
-                    "bio_read_report", None, "denied", "path_not_visible"
-                )
+            if not can_read_analysis_path(con, args["result_path"], requested_by=owner):
+                _audit_operation("bio_read_report", None, "denied", "path_not_visible")
                 return "[ERROR] bio_read_report: report not found or not accessible."
         try:
             r = read_report(
@@ -1027,9 +1018,8 @@ async def _handle_bio_find_figure(args: dict) -> str:
         }
         for r in rows
     ]
-    return (
-        f"找到 {len(rows)} 張圖（用 bio_get_figure(figure_id) 索取單張）：\n\n"
-        + _fmt_table(table_rows)
+    return f"找到 {len(rows)} 張圖（用 bio_get_figure(figure_id) 索取單張）：\n\n" + _fmt_table(
+        table_rows
     )
 
 
@@ -1115,7 +1105,9 @@ async def _handle_bio_crop_figure_roi(args: dict) -> list[types.ContentBlock]:
         else:
             label = args.get("tile_label")
             if not label:
-                raise ValueError("mode='tile' 需要 tile_label（例如 C4），可先用 mode='overview' 看格號。")
+                raise ValueError(
+                    "mode='tile' 需要 tile_label（例如 C4），可先用 mode='overview' 看格號。"
+                )
             note = f"格 {label} 的原生解析度影像（未縮放）。"
         try:
             col, row = parse_tile_label(label, geo)
@@ -1350,9 +1342,7 @@ async def _handle_bio_deliver_results(args: dict) -> list[types.ContentBlock]:
         if figure_id in seen_figures:
             continue
         seen_figures.add(figure_id)
-        raw, mime = await asyncio.to_thread(
-            load_figure, figure_id, requested_by=owner
-        )
+        raw, mime = await asyncio.to_thread(load_figure, figure_id, requested_by=owner)
         figures.append(
             DeliveryFigure(
                 figure_id=figure_id,
@@ -1383,9 +1373,7 @@ async def _handle_bio_deliver_results(args: dict) -> list[types.ContentBlock]:
         bundle_figures.extend(figures)
 
     bundle_item_count = len(bundle_artifacts) + len(bundle_figures)
-    should_bundle = package_mode == "zip" or (
-        package_mode == "auto" and bundle_item_count > 1
-    )
+    should_bundle = package_mode == "zip" or (package_mode == "auto" and bundle_item_count > 1)
     if should_bundle and bundle_item_count == 0:
         should_bundle = False
 
@@ -1558,9 +1546,7 @@ async def _handle_bio_submit_analysis(args: dict) -> str:
     if not decision.accepted:
         return f"[RBAC] {target_name} requires {target_spec.required_role.value} role"
 
-    queue = AnalysisJobQueue(
-        get_store(), max_pending_per_user=settings.ANALYSIS_JOB_MAX_PENDING
-    )
+    queue = AnalysisJobQueue(get_store(), max_pending_per_user=settings.ANALYSIS_JOB_MAX_PENDING)
     try:
         job = queue.submit(
             target_name,
@@ -1621,7 +1607,9 @@ async def _handle_bio_cancel_job(args: dict) -> str:
     return json.dumps({"job_id": job_id, "outcome": outcome}, ensure_ascii=False)
 
 
-def _audit_operation(tool_name: str, target: str | None, outcome: str, detail: str | None = None) -> None:
+def _audit_operation(
+    tool_name: str, target: str | None, outcome: str, detail: str | None = None
+) -> None:
     """Best-effort append-only audit; callers must never include raw keys or payloads."""
     try:
         from server.auth import current_identity
@@ -1679,7 +1667,9 @@ async def _handle_bio_manage_api_key(args: dict) -> str:
             role=role.value,
             created_by=actor.user_id,
         )
-        _audit_operation("bio_manage_api_key", user_id, "issued", f"role={role.value}; prefix={display_prefix}")
+        _audit_operation(
+            "bio_manage_api_key", user_id, "issued", f"role={role.value}; prefix={display_prefix}"
+        )
         return json.dumps(
             {
                 "user_id": user_id,
@@ -1843,8 +1833,7 @@ _HANDLERS.update(
 )
 
 assert set(_HANDLERS) == set(_TOOL_CATALOG), (
-    f"_HANDLERS/TOOL_CATALOG 工具集不一致：只在一邊的有 "
-    f"{set(_HANDLERS) ^ set(_TOOL_CATALOG)}"
+    f"_HANDLERS/TOOL_CATALOG 工具集不一致：只在一邊的有 {set(_HANDLERS) ^ set(_TOOL_CATALOG)}"
 )
 
 
@@ -1868,6 +1857,7 @@ async def dispatch_queued_tool(name: str, arguments: dict, identity) -> Any:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.ContentBlock]:
     from server.tool_observation import invoke_async
+
     return await invoke_async(_call_tool_impl, name, arguments, channel="mcp")
 
 
@@ -2078,9 +2068,7 @@ def _configured_owner_tokens() -> tuple[str, ...]:
     if single:
         values.append(single)
     values.extend(
-        token.strip()
-        for token in os.environ.get("MCP_AUTH_TOKENS", "").split(",")
-        if token.strip()
+        token.strip() for token in os.environ.get("MCP_AUTH_TOKENS", "").split(",") if token.strip()
     )
     return tuple(dict.fromkeys(values))
 
@@ -2206,6 +2194,7 @@ def _startup_cleanup_stale_runs() -> None:
         import analysis.sc_spatial_tools  # noqa: F401
         import analysis.sc_clustering  # noqa: F401
         import analysis.workflow_guide  # noqa: F401
+
         # 2026-07-24 架構審查（候選 5）：以下 6 個模組也有 @register_tool_on_import，
         # 但先前沒被列在這裡——裝飾器只在模組被 import 時執行，這 6 個工具因此從未真的
         # 寫進 tools 表。`tests/test_lazy_tool_registration_coverage.py` 守住不再漏。

@@ -150,9 +150,7 @@ def _collect_stats(sample_id: str, db_path: Path) -> dict:
             f"SELECT COUNT(DISTINCT gene_name) FROM read_parquet('{expr_glob}')"
         ).fetchone()
         n_genes: int = row[0] if row else 0
-        row = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')"
-        ).fetchone()
+        row = con.execute(f"SELECT COUNT(*) FROM read_parquet('{expr_glob}')").fetchone()
         n_nonzero: int = row[0] if row else 0
 
     n_bins = len(qc_df)
@@ -223,7 +221,10 @@ def _generate_spatial_figures_md(sample_id: str, top_genes_df, db_path: Path) ->
     for gene in genes:
         try:
             _, fig_md = gene_spatial_map(
-                sample_id, gene, save=True, db_path=db_path,
+                sample_id,
+                gene,
+                save=True,
+                db_path=db_path,
                 requested_by="report_generator",
             )
             if fig_md:
@@ -358,9 +359,11 @@ def write_report_to_history(
     if analysis_id is None:
         # 一次性記錄（無既有 running 列）→ 走 analysis_run seam 的 record_completed_run 統一出口。
         analysis_id = record_completed_run(
-            sample_id, "eda_report",
+            sample_id,
+            "eda_report",
             params={"format": "markdown"},
-            result_path=result_path, summary=summary,
+            result_path=result_path,
+            summary=summary,
             requested_by=requested_by,
         )
     else:
@@ -370,9 +373,7 @@ def write_report_to_history(
         store = get_store()
         store.complete_history(analysis_id, result_path, summary, datetime.now(timezone.utc))
         try:
-            store.update_history(
-                analysis_id, failure_diagnosis=json.dumps(success_diagnosis())
-            )
+            store.update_history(analysis_id, failure_diagnosis=json.dumps(success_diagnosis()))
         except Exception:
             logger.warning(
                 "write_report_to_history: success diagnosis 寫入失敗（非致命）", exc_info=True
@@ -409,9 +410,13 @@ def run_full_eda_report(
     started_at = datetime.now(timezone.utc)
     store = get_store()
     store.insert_history(
-        analysis_id, sample_id, "eda_report",
-        json.dumps({"format": "markdown"}), "running",
-        requested_by, started_at,
+        analysis_id,
+        sample_id,
+        "eda_report",
+        json.dumps({"format": "markdown"}),
+        "running",
+        requested_by,
+        started_at,
     )
 
     try:
@@ -434,7 +439,8 @@ def run_full_eda_report(
 
         try:
             store.fail_history(
-                analysis_id, datetime.now(timezone.utc),
+                analysis_id,
+                datetime.now(timezone.utc),
                 failure_diagnosis=json.dumps(classify_exception(_exc)),
             )
         except Exception:
@@ -464,7 +470,9 @@ def run_full_eda_report(
             context_hash=context_hash,
             requested_by=requested_by,
         )
-        logger.info("L1 cache written (fingerprint=%s, context=%s).", input_fingerprint, context_hash)
+        logger.info(
+            "L1 cache written (fingerprint=%s, context=%s).", input_fingerprint, context_hash
+        )
     except Exception as e:
         logger.warning("L1 cache write skipped (embedding server offline?): %s", e)
 

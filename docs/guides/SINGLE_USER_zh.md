@@ -4,95 +4,69 @@
 
 ## 最小配置
 
-使用本機 Python + DuckDB + stdio MCP，由現有 AI 客戶端負責對話。這條路徑不需要開啟網路服務、Postgres、Tailscale 或多人 worker。一般 metadata 工具可先使用；語意搜尋需要 embedding；實際分析依工具而有額外需求。單機並不代表所有分析都只需 CPU 或少量 RAM。
+本機 Python + DuckDB + stdio MCP，由現有 AI 客戶端負責對話。基本 metadata 與 CPU EDA 不需 Tailscale、Postgres、多人 worker 或 Clef。語意搜尋另需 embedding；MCseg 等分析仍有模型、GPU 與依賴需求。
 
-## 安裝與初始化
+## 安裝、初始化與連線
 
-準備 Python 3.11 以上及 uv，將 checkout 放在本機 APFS／ext4 等原生檔案系統。避免把虛擬環境建在 ExFAT 或雲端同步目錄。以下命令均在 checkout 根目錄執行。
-
-```bash
-uv sync --no-install-project
-cp .env.example .env
-```
-
-編輯 .env：不使用的 API Key 留空；使用新的資料目錄時先建立目錄。以下是單機設定範例，路徑需自行替換：
-
-```dotenv
-BIO_DB_ROOT=/absolute/path/to/ep-data
-MCP_AUTH_REQUIRED=false
-MCP_ENABLE_DANGEROUS_TOOLS=false
-EMBEDDING_PROVIDER=llamacpp
-LLAMACPP_BASE_URL=http://127.0.0.1:8081/v1
-EMBEDDING_MODEL=bge-m3-Q8_0
-EMBEDDING_DIM=1024
-ANTHROPIC_API_KEY=
-```
-
-此處無驗證設定僅適用本機 stdio。遠端或共用 HTTP 服務必須改用實驗室部署的驗證設定。若不設定 BIO_DB_ROOT，預設使用 checkout 根目錄。不要為了試用而指向既有研究資料庫。
+先安裝 uv，checkout 放在 APFS／ext4 等本機原生檔案系統；避免 ExFAT 或雲端同步目錄。以下在 checkout 根目錄執行。uv 會依鎖定檔建立依賴環境；需網路下載套件及 DuckDB 擴充。
 
 ```bash
-mkdir -p /absolute/path/to/ep-data
-.venv/bin/python scripts/00_init_db.py --no-samples
-.venv/bin/python scripts/03_init_l1_cache.py
-.venv/bin/python scripts/run_pending_migrations.py
-.venv/bin/python scripts/04_migrate_l1_rrf.py
+uv sync --locked --no-install-project --python 3.12
+.venv/bin/python scripts/ep_local.py init --data-dir "$PWD/local-data"
+.venv/bin/python scripts/ep_local.py doctor --data-dir "$PWD/local-data"
 ```
 
---no-samples 只建立 schema，不加入既有實驗室樣本。省略此參數會沿用舊版的樣本種子行為。L1 初始化需要 DuckDB VSS 擴充；未快取擴充時需可下載它的網路環境。遷移使用 pending runner，不逐一重跑舊 migration。
+初始化會建立空白主資料庫、L1、鎖定目錄、執行 pending migrations，並產生含絕對路徑的 local-data/mcp.json。把其中 mcpServers.ep 加入客戶端設定，再連接 EP。它不启动任何 HTTP 服務或模型。
 
-## 連接 MCP 客戶端
+重跑 init 保留既有樣本與分析；若 MCP JSON 已存在但內容不同，會停止而不覆寫。可用 --config 選擇新檔案。generated config 明確固定資料路徑、關閉遠端驗證需求／沙盒，並忽略 .env；這只適用本機 stdio。正式／遠端部署使用實驗室指南。
 
-以下設定交由客戶端啟動 server；所有路徑需替換成絕對路徑。MCP 客戶端自帶的模型不需在 EP 另啟一個生成模型。
+首次呼叫 bio_sample_list 應為空清單；bio_decision_status 為 off。登記自己的資料後才執行分析。
 
-```json
-{
-  "mcpServers": {
-    "ep": {
-      "command": "/absolute/path/to/Evo_PRISM/.venv/bin/python",
-      "args": ["/absolute/path/to/Evo_PRISM/server/bio_memory_server.py"],
-      "env": {
-        "PYTHONPATH": "/absolute/path/to/Evo_PRISM",
-        "BIO_DB_ROOT": "/absolute/path/to/ep-data",
-        "MCP_AUTH_REQUIRED": "false"
-      }
-    }
-  }
-}
+## 診斷與修復
+
+```bash
+.venv/bin/python scripts/ep_local.py doctor --data-dir "$PWD/local-data" --check-services
 ```
 
-初次連線先呼叫 bio_sample_list，應為空清單；bio_decision_status 應顯示 off。用 bio_register_sample 登記自己的原始資料，再依 playbook 使用合適的分析工具。實際工具清單由 MCP tools/list 取得。
+doctor 以 JSON 顯示依賴、主 DB、L1、可選 embedding/Clef 狀態與修復建議。必要項缺失時 exit code 為 1；可選 embedding 不在線不會把 metadata 模式判為失敗。--check-services 只 GET /health，不執行推理。Clef 以唯讀方式讀取 ledger 的 off/rules/shadow 狀態；bridge 即時狀態以 bio_decision_status 為準。健康端點可達不等於語意檢索已驗證。
 
-## 依需求加裝
-
-| 能力 | 額外條件 |
+| 情況 | 處理 |
 | --- | --- |
-| 語意搜尋／工具向量索引 | 啟動相容 embedding 服務；模型維度需和 L1 schema 相同 |
-| 內建 Web 對話 | 另選生成模型／API 後端，見進階安裝 |
-| Bulk RNA / MCseg | 依 pyproject.toml 安裝對應 extras；MCseg 另需 MSseg、資料與運算資源 |
-| Clef shadow | 另外配置 bridge 與權重；不影響基礎 MCP 使用 |
+| 缺套件 | `uv sync --locked --no-install-project` |
+| 缺 DB／L1／schema 過舊 | 停止寫入程序，備份後重跑 init；勿刪 DB |
+| DB 被鎖定 | 停止另一個寫入程序後重試；單機不需啟多個 server |
+| embedding 不在線 | 基礎 metadata 可用；啟動相符模型再用語意搜尋 |
 
-Embedding 範例：先取得 bge-m3 GGUF 與 llama.cpp，再啟動下列服務。此步驟不包含在無模型 smoke test 中。
-
-```bash
-llama-server -m /absolute/path/to/bge-m3-Q8_0.gguf \
-  --embedding --host 127.0.0.1 --port 8081 --ctx-size 8192
-```
-
-[Advanced installation](INSTALLATION_zh.md) · [Decision advisor](DECISION_ADVISOR.md)
-
-## 可重現的基本驗證
+## 完整可重現示範
 
 ```bash
 .venv/bin/python scripts/check_single_user.py
 ```
 
-此檢查使用新的暫存資料目錄、忽略 .env、不連接模型；保留 log 與 result.json 路徑。會驗證：
+自動建立獨立暫存資料與 40 genes × 6 samples 合成 counts，執行真正的 MCP 流程：
 
-- 空白主資料庫與 L1 初始化、全部 pending migrations、重跑 migrations
-- v29 混合 FK／軟引用 schema 的索引與 view 保留
-- 真實 MCP stdio 握手與工具列舉，沙盒工具預設不暴露
-- 樣本登記、清單回讀、無歷史查詢、決策 off 狀態
+1. 初始化空白 DB/L1，建立 MCP 連線與列舉工具
+2. 登記樣本；拒絕越出已登記資料目錄的輸入
+3. 呼叫 bio_run_bulk_eda，產生 4 張圖與 1 份報告
+4. 驗證 tool_id、產物檔案、counts 統計與原始檔 hash
+5. 關閉連線，重跑 init，再次連線查歷史與報告；分析筆數仍為 1
 
-2026-10-12 已在 macOS Apple Silicon、Python 3.12.13、DuckDB 1.5.3 的既有依賴環境中實測。使用空白資料庫，未使用正式研究資料。第一次驗證發現 v29 重建未刪索引的問題，修正後重新從空白庫驗證。
+結果保留於輸出的暫存路徑，含 result.json、初始化與 server logs、報告及圖片。示範使用正常的 analysis_run/ENGRAM 流程，不依賴真實研究資料，也不呼叫生成／embedding 模型。這證明明確查詢後重用既有成果；不是模型自動決策品質驗收。
 
-範圍限制：尚未證明全新作業系統的依賴安裝、embedding 搜尋、Web UI、GPU／MCseg、所有科學分析或多人部署。通過此檢查代表基礎本機 MCP 與資料庫操作可用。沒有 embedding 時工具索引可能記錄警告；不等於 metadata 工具不可用。
+## 分析自己的 counts
+
+先用 bio_register_sample 登記 sample_id、data_type=bulk_rnaseq 與 l3_path（目錄）。counts TSV 為 gene × sample，第一欄是 gene ID。coldata 可選，第一欄 sample ID、group 欄為分組。接著呼叫：
+
+```json
+{"sample_id":"my_bulk","counts_path":"counts.tsv","coldata_path":"coldata.tsv"}
+```
+
+工具為 bio_run_bulk_eda。路徑相對於該樣本已登記 L3 目錄，也可用目錄內的絕對路徑。省略 counts_path 仍沿用舊版實驗室預設，因此新使用者應明確傳入。
+
+## 可選能力與驗證界限
+
+語意搜尋需要 bge-m3 等 embedding 服務及相符維度（初始化預設 1024）；可用 init --embedding-url 設定端點，或修改產生的 MCP JSON。Web 對話另需生成模型/API；Clef shadow 另需 bridge 與權重。Bulk DEG/MCseg extras 和外部 MSseg 不屬本次基本 EDA 驗證。
+
+驗證證據與各平台結果記於 [readiness report](PERSONAL_READINESS_PLAN.md) 及 GitHub Actions。
+
+[Lab deployment](LAB_DEPLOYMENT_zh.md) · [Advanced installation](INSTALLATION_zh.md) · [Decision advisor](DECISION_ADVISOR.md)

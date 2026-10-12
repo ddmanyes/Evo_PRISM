@@ -49,17 +49,19 @@ def run_marker_genes(
 
     if not h5ad_path.exists():
         raise FileNotFoundError(
-            f"找不到 umap_computed.h5ad：{h5ad_path}\n"
-            "請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
+            f"找不到 umap_computed.h5ad：{h5ad_path}\n請先執行 bio_run_mcseg_roi 完成 Stage 3–6。"
         )
 
     _params = {
-        "roi_name": roi_name, "groupby": groupby,
-        "n_genes": n_genes, "method": method,
+        "roi_name": roi_name,
+        "groupby": groupby,
+        "n_genes": n_genes,
+        "method": method,
     }
 
     with analysis_run(
-        sample_id, "marker_genes",
+        sample_id,
+        "marker_genes",
         params=_params,
         requested_by=requested_by,
         tool_name="bio_get_marker_genes",
@@ -70,10 +72,7 @@ def run_marker_genes(
 
         if groupby not in adata.obs.columns:
             available = list(adata.obs.columns)
-            raise ValueError(
-                f"groupby='{groupby}' 不在 obs 欄位中。\n"
-                f"可用欄位：{available}"
-            )
+            raise ValueError(f"groupby='{groupby}' 不在 obs 欄位中。\n可用欄位：{available}")
         if adata.obs[groupby].nunique() < 2:
             raise ValueError(
                 f"'{groupby}' 只有 {adata.obs[groupby].nunique()} 個群組，"
@@ -82,13 +81,15 @@ def run_marker_genes(
 
         sc.tl.rank_genes_groups(adata, groupby=groupby, method=method, n_genes=n_genes)
         df = sc.get.rank_genes_groups_df(adata, group=None)
-        df = df.rename(columns={
-            "group": "cluster",
-            "names": "gene",
-            "scores": "score",
-            "logfoldchanges": "logfoldchange",
-            "pvals_adj": "pval_adj",
-        })[["cluster", "gene", "score", "logfoldchange", "pval_adj"]]
+        df = df.rename(
+            columns={
+                "group": "cluster",
+                "names": "gene",
+                "scores": "score",
+                "logfoldchanges": "logfoldchange",
+                "pvals_adj": "pval_adj",
+            }
+        )[["cluster", "gene", "score", "logfoldchange", "pval_adj"]]
 
         out_dir = results_dir(sample_id, "marker_genes")
         ts = run.started_at.strftime("%Y%m%d_%H%M%S")
@@ -113,7 +114,11 @@ def run_marker_genes(
         report_path = out_dir / f"marker_genes_{sample_id}_{roi_name}_{ts}.md"
         report_path.write_text(report_text, encoding="utf-8")
 
-        summary = f"{sample_id}/{roi_name} markers：{len(clusters)} 群，top gene={df['gene'].iloc[0]}"[:50]
+        summary = (
+            f"{sample_id}/{roi_name} markers：{len(clusters)} 群，top gene={df['gene'].iloc[0]}"[
+                :50
+            ]
+        )
         run.artifact(csv_path, "table", "Marker genes CSV", "marker_genes")
         run.artifact(report_path, "report", "Marker genes 報告", "marker_genes_report")
         run.complete(report_path, summary)

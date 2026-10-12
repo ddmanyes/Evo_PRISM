@@ -18,7 +18,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import BFTOOLS_PATH  # noqa: E402
@@ -59,9 +58,19 @@ def _run_conversion(
 
     if _check_vips():
         cmd = [
-            "vips", "tiffsave", str(input_path), str(output_path),
-            "--tile", "--tile-width", str(tile_size), "--tile-height", str(tile_size),
-            "--pyramid", "--compression", compression, "--bigtiff",
+            "vips",
+            "tiffsave",
+            str(input_path),
+            str(output_path),
+            "--tile",
+            "--tile-width",
+            str(tile_size),
+            "--tile-height",
+            str(tile_size),
+            "--pyramid",
+            "--compression",
+            compression,
+            "--bigtiff",
         ]
         if compression == "jpeg":
             cmd += ["--Q", str(quality)]
@@ -76,10 +85,18 @@ def _run_conversion(
             logger.warning("_run_conversion: 無法設置 bfconvert 執行權限：%s", e)
         bf_comp = {"jpeg": "JPEG", "lzw": "LZW", "deflate": "zlib"}.get(compression, "Uncompressed")
         cmd = [
-            str(BFTOOLS_PATH), "-bigtiff", "-compression", bf_comp,
-            "-tilex", str(tile_size), "-tiley", str(tile_size),
-            "-pyramid-resolutions", "6",
-            str(input_path), str(output_path),
+            str(BFTOOLS_PATH),
+            "-bigtiff",
+            "-compression",
+            bf_comp,
+            "-tilex",
+            str(tile_size),
+            "-tiley",
+            str(tile_size),
+            "-pyramid-resolutions",
+            "6",
+            str(input_path),
+            str(output_path),
         ]
         tool_used = "bfconvert"
         env = {**os.environ, "BF_MEM": "6g"}
@@ -130,12 +147,16 @@ def convert_ndpi_to_tiff(
     out_path = Path(output_tiff).resolve() if output_tiff else input_path.with_suffix(".tiff")
 
     _params = {
-        "input_ndpi": str(input_path), "output_tiff": str(out_path),
-        "compression": compression, "quality": quality, "tile_size": tile_size,
+        "input_ndpi": str(input_path),
+        "output_tiff": str(out_path),
+        "compression": compression,
+        "quality": quality,
+        "tile_size": tile_size,
     }
 
     with analysis_run(
-        sample_id, "image_format_conversion",
+        sample_id,
+        "image_format_conversion",
         params=_params,
         requested_by=requested_by,
         tool_name="bio_convert_ndpi_to_tiff",
@@ -144,7 +165,7 @@ def convert_ndpi_to_tiff(
             input_path, out_path, compression, quality, tile_size
         )
 
-        out_size_gb = out_path.stat().st_size / (1024 ** 3)
+        out_size_gb = out_path.stat().st_size / (1024**3)
         summary = (
             f"NDPI→Pyramidal BigTIFF via {tool_used}：{input_path.name} → "
             f"{out_path.name}（{out_size_gb:.1f}GB，{duration:.0f}s）"
@@ -155,7 +176,8 @@ def convert_ndpi_to_tiff(
         # 對 GB 級 TIFF 這樣做會爆記憶體；超過 512KB 門檻時它還會把檔案「搬」到
         # results/overflow/ 並刪除原檔，破壞 mcseg 等下游工具依賴的 L3 原地路徑慣例。
         run.complete(
-            out_path, summary,
+            out_path,
+            summary,
             summary_metrics={
                 "tool_used": tool_used,
                 "duration_seconds": round(duration, 2),
@@ -179,6 +201,8 @@ def convert_ndpi_to_tiff(
 
     logger.info(
         "convert_ndpi_to_tiff 完成  analysis_id=%s  tool=%s  duration=%.1fs",
-        run.analysis_id, tool_used, duration,
+        run.analysis_id,
+        tool_used,
+        duration,
     )
     return run.analysis_id, str(out_path)

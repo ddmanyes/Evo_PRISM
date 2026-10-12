@@ -161,9 +161,8 @@ async def _authenticate_record_api(request: Request, call_next):
     member MCP catalog.
     """
     path = request.url.path
-    protected = (
-        (path.startswith("/api/") and path != "/api/backend")
-        or path.startswith("/results/")
+    protected = (path.startswith("/api/") and path != "/api/backend") or path.startswith(
+        "/results/"
     )
     if not protected or path.startswith("/mcp"):
         return await call_next(request)
@@ -189,9 +188,7 @@ async def _authenticate_record_api(request: Request, call_next):
     if owner_tokens or registered_key_count or auth_required:
         auth_header = request.headers.get("authorization", "").strip()
         presented = (
-            auth_header[7:].strip()
-            if auth_header.lower().startswith("bearer ")
-            else auth_header
+            auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else auth_header
         )
 
         def _lookup(digest: str):
@@ -219,6 +216,7 @@ async def _authenticate_record_api(request: Request, call_next):
     request.state.identity = identity
     with identity_scope(identity):
         return await call_next(request)
+
 
 # MCP HTTP transport — 掛載於 /mcp，供外部客戶端直接呼叫 MCP 工具
 # handler 與 lifespan 在檔案上方已建立，這裡只做 mount
@@ -1120,7 +1118,10 @@ async def result_images(analysis_id: str):
 async def chat(req: ChatRequest):
     from server.agent import handle_message
     from contextvars import copy_context
-    request_context = copy_context()  # Preserve authenticated actor across streaming/executor boundaries.
+
+    request_context = (
+        copy_context()
+    )  # Preserve authenticated actor across streaming/executor boundaries.
 
     try:
         history_deque, lock = _get_session(req.session_id)
@@ -1377,9 +1378,7 @@ async def engram_summary(sample_id: str):
     from server.auth import visible_requested_by
 
     with get_store().read_conn() as con:
-        return artifact_summary(
-            con, sample_id, requested_by=visible_requested_by()
-        )
+        return artifact_summary(con, sample_id, requested_by=visible_requested_by())
 
 
 @app.get("/api/engram/analyses/{sample_id}")

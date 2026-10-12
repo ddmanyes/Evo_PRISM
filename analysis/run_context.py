@@ -21,6 +21,7 @@ artifact（analysis_artifacts）與 HELIX tools ledger 天生綁 DuckDB VSS/HNSW
 一個專用 DuckDB 連線，**絕不**用 store.write_conn() 去 flush artifact（Postgres 後端會 yield
 psycopg 連線而爆掉）。
 """
+
 from __future__ import annotations
 
 import json
@@ -201,9 +202,7 @@ class AnalysisRun:
     # ── 內部 helper ───────────────────────────────────────────────────────
     def _safe_fail(self, now: datetime, diagnosis: dict) -> None:
         try:
-            self._store.fail_history(
-                self.analysis_id, now, failure_diagnosis=json.dumps(diagnosis)
-            )
+            self._store.fail_history(self.analysis_id, now, failure_diagnosis=json.dumps(diagnosis))
         except Exception:
             logger.warning("run_context: fail_history 寫入失敗（非致命）", exc_info=True)
 
@@ -212,13 +211,16 @@ class AnalysisRun:
             try:
                 if path.exists():
                     register_artifact(
-                        self._duck, self.analysis_id, path, atype, label,
-                        artifact_subtype=subtype, producing_fn=producing_fn,
+                        self._duck,
+                        self.analysis_id,
+                        path,
+                        atype,
+                        label,
+                        artifact_subtype=subtype,
+                        producing_fn=producing_fn,
                     )
             except Exception as e:
-                logger.warning(
-                    "run_context: register_artifact 失敗（非致命）path=%s: %s", path, e
-                )
+                logger.warning("run_context: register_artifact 失敗（非致命）path=%s: %s", path, e)
 
 
 def analysis_run(

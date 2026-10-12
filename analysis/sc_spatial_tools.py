@@ -34,7 +34,9 @@ def _load_and_filter(h5ad_path: Path, cell_filter: dict | None):
         col = cell_filter["obs_column"]
         values = set(cell_filter["values"])
         if col not in adata.obs.columns:
-            raise ValueError(f"cell_filter.obs_column '{col}' 不在 adata.obs 裡（可用欄位：{list(adata.obs.columns)}）")
+            raise ValueError(
+                f"cell_filter.obs_column '{col}' 不在 adata.obs 裡（可用欄位：{list(adata.obs.columns)}）"
+            )
         mask = adata.obs[col].astype(str).isin(values)
         if not mask.any():
             raise ValueError(f"cell_filter {cell_filter} 篩不到任何細胞")
@@ -87,9 +89,6 @@ def run_geneset_score(
         {"analysis_id", "artifact_ids", "out_csv", "genes_used": {module: [...]},
          "n_cells_scored"}
     """
-    import json
-    import uuid
-    from datetime import datetime
 
     import scanpy as sc
 
@@ -101,7 +100,9 @@ def run_geneset_score(
 
     store = get_store()
     if not store.get_sample(sample_id):
-        raise ValueError(f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。")
+        raise ValueError(
+            f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。"
+        )
     if not h5ad_path.exists():
         raise FileNotFoundError(f"h5ad_path 不存在：{h5ad_path}")
     for label, p in [("h5ad_path", h5ad_path), ("out_dir", out_dir)]:
@@ -168,9 +169,13 @@ def run_geneset_score(
     from analysis.run_context import record_completed_run
 
     analysis_id = record_completed_run(
-        sample_id, "geneset_score",
-        params=params, result_path=str(out_csv), summary=summary,
-        requested_by=requested_by, tool_name="run_geneset_score",
+        sample_id,
+        "geneset_score",
+        params=params,
+        result_path=str(out_csv),
+        summary=summary,
+        requested_by=requested_by,
+        tool_name="run_geneset_score",
     )
 
     from analysis.artifact_registry import register_artifact
@@ -180,7 +185,11 @@ def run_geneset_score(
     _acon = connect_db(DUCKDB_PATH)
     try:
         aid = register_artifact(
-            _acon, analysis_id, out_csv, "table", "Gene-set module scores",
+            _acon,
+            analysis_id,
+            out_csv,
+            "table",
+            "Gene-set module scores",
             artifact_subtype="geneset_score",
         )
     finally:
@@ -242,9 +251,6 @@ def compute_spatial_nn_distance(
     Returns:
         {"analysis_id", "artifact_ids", "out_csv", "n_source_cells", "n_target_cells"}
     """
-    import json
-    import uuid
-    from datetime import datetime
 
     import numpy as np
     import scanpy as sc
@@ -258,7 +264,9 @@ def compute_spatial_nn_distance(
 
     store = get_store()
     if not store.get_sample(sample_id):
-        raise ValueError(f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。")
+        raise ValueError(
+            f"sample_id '{sample_id}' 不存在於 sample_registry，請先 bio_register_sample。"
+        )
     if not h5ad_path.exists():
         raise FileNotFoundError(f"h5ad_path 不存在：{h5ad_path}")
     for label, p in [("h5ad_path", h5ad_path), ("out_dir", out_dir)]:
@@ -292,7 +300,9 @@ def compute_spatial_nn_distance(
         g_tgt_mask = tgt_mask & (groups == g)
         g_src_mask = src_mask & (groups == g)
         if not g_tgt_mask.any():
-            logger.warning(f"compute_spatial_nn_distance: group '{g}' 沒有目標細胞，該組來源細胞距離留 NaN")
+            logger.warning(
+                f"compute_spatial_nn_distance: group '{g}' 沒有目標細胞，該組來源細胞距離留 NaN"
+            )
             continue
         tree = cKDTree(coords[g_tgt_mask])
         d, _ = tree.query(coords[g_src_mask], k=1)
@@ -307,25 +317,37 @@ def compute_spatial_nn_distance(
 
     n_source = int(src_mask.sum())
     n_target = int(tgt_mask.sum())
-    unit_label = distance_unit if distance_unit else f"座標單位同 obsm['{spatial_key}']（scale={distance_scale}）"
+    unit_label = (
+        distance_unit
+        if distance_unit
+        else f"座標單位同 obsm['{spatial_key}']（scale={distance_scale}）"
+    )
     summary = (
         f"空間最近鄰距離：{n_source:,} 個來源細胞 → 最近的目標細胞（{n_target:,} 個）"
         f"{'，依 ' + group_by + ' 分組計算' if group_by else ''}。"
         f"中位距離 {out_df['nn_distance'].median():.2f} {unit_label}。"
     )
     params = {
-        "h5ad_path": str(h5ad_path), "source_filter": source_filter,
-        "target_filter": target_filter, "group_by": group_by, "spatial_key": spatial_key,
-        "distance_scale": distance_scale, "distance_unit": distance_unit,
+        "h5ad_path": str(h5ad_path),
+        "source_filter": source_filter,
+        "target_filter": target_filter,
+        "group_by": group_by,
+        "spatial_key": spatial_key,
+        "distance_scale": distance_scale,
+        "distance_unit": distance_unit,
     }
 
     # 一次性記錄 → history 走 analysis_run seam；artifact 另走專用 DuckDB con 收集 aid 回傳。
     from analysis.run_context import record_completed_run
 
     analysis_id = record_completed_run(
-        sample_id, "spatial_nn_distance",
-        params=params, result_path=str(out_csv), summary=summary,
-        requested_by=requested_by, tool_name="compute_spatial_nn_distance",
+        sample_id,
+        "spatial_nn_distance",
+        params=params,
+        result_path=str(out_csv),
+        summary=summary,
+        requested_by=requested_by,
+        tool_name="compute_spatial_nn_distance",
     )
 
     from analysis.artifact_registry import register_artifact
@@ -335,7 +357,11 @@ def compute_spatial_nn_distance(
     _acon = connect_db(DUCKDB_PATH)
     try:
         aid = register_artifact(
-            _acon, analysis_id, out_csv, "table", "Spatial nearest-neighbor distances",
+            _acon,
+            analysis_id,
+            out_csv,
+            "table",
+            "Spatial nearest-neighbor distances",
             artifact_subtype="spatial_nn_distance",
         )
     finally:

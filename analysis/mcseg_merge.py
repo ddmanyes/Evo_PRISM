@@ -36,6 +36,7 @@ def _try_integrate(adata, batch_key: str, strategy: str) -> str:
     if strategy in ("auto", "harmony"):
         try:
             import scanpy as sc
+
             sc.external.pp.harmony_integrate(adata, key=batch_key)
             adata.obsm["X_pca_integrated"] = adata.obsm["X_pca_harmony"]
             sc.pp.neighbors(adata, use_rep="X_pca_harmony")
@@ -48,6 +49,7 @@ def _try_integrate(adata, batch_key: str, strategy: str) -> str:
     if strategy in ("auto", "bbknn"):
         try:
             import scanpy as sc
+
             sc.external.pp.bbknn(adata, batch_key=batch_key)
             return "bbknn"
         except Exception as exc:
@@ -56,6 +58,7 @@ def _try_integrate(adata, batch_key: str, strategy: str) -> str:
             logger.warning("bbknn 失敗，使用無 batch correction：%s", exc)
 
     import scanpy as sc
+
     sc.pp.neighbors(adata, use_rep="X_pca")
     return "none"
 
@@ -79,10 +82,9 @@ def run_mcseg_merge(
     """
     validate_sample_id(sample_id)
     import re as _re
-    if not _re.match(r'^[a-zA-Z0-9_\-]+$', merged_name):
-        raise ValueError(
-            f"merged_name 只允許英數字、底線、連字號，收到：{merged_name!r}"
-        )
+
+    if not _re.match(r"^[a-zA-Z0-9_\-]+$", merged_name):
+        raise ValueError(f"merged_name 只允許英數字、底線、連字號，收到：{merged_name!r}")
     if len(roi_names) < 2:
         raise ValueError("至少需要 2 個 ROI 才能執行合併分析。")
     if integrate not in ("auto", "harmony", "bbknn", "none"):
@@ -101,22 +103,25 @@ def run_mcseg_merge(
             missing.append(str(p))
     if missing:
         raise FileNotFoundError(
-            f"以下 cellpose_cells.h5ad 不存在（請先執行 bio_run_mcseg_roi）：\n"
-            + "\n".join(missing)
+            "以下 cellpose_cells.h5ad 不存在（請先執行 bio_run_mcseg_roi）：\n" + "\n".join(missing)
         )
 
     _params = {
-        "roi_names": roi_names, "merged_name": merged_name, "integrate": integrate,
+        "roi_names": roi_names,
+        "merged_name": merged_name,
+        "integrate": integrate,
     }
 
     with analysis_run(
-        sample_id, "mcseg_merge",
+        sample_id,
+        "mcseg_merge",
         params=_params,
         requested_by=requested_by,
         tool_name="bio_run_mcseg_merge",
     ) as run:
         import anndata
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import scanpy as sc

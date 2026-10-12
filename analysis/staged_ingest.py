@@ -27,11 +27,15 @@ _SUPPORTED_LAYOUTS: dict[tuple[str, str], tuple[frozenset[str], ...]] = {
     ("scrna", "cellranger"): (frozenset({"filtered_feature_bc_matrix.h5"}),),
     ("visium", "10x_visium"): (
         frozenset({"filtered_feature_bc_matrix.h5", "matrix.mtx.gz"}),
-        frozenset({"tissue_positions.csv", "tissue_positions_list.csv", "tissue_positions.parquet"}),
+        frozenset(
+            {"tissue_positions.csv", "tissue_positions_list.csv", "tissue_positions.parquet"}
+        ),
     ),
     ("visium_hd", "10x_visium_hd"): (
         frozenset({"filtered_feature_bc_matrix.h5", "matrix.mtx.gz"}),
-        frozenset({"tissue_positions.csv", "tissue_positions_list.csv", "tissue_positions.parquet"}),
+        frozenset(
+            {"tissue_positions.csv", "tissue_positions_list.csv", "tissue_positions.parquet"}
+        ),
     ),
     ("proteomics", "maxquant"): (frozenset({"proteinGroups.txt"}),),
 }
@@ -196,7 +200,9 @@ def validate_staged_upload(
     for alternatives in _SUPPORTED_LAYOUTS[(data_type, platform)]:
         if basenames.isdisjoint(alternatives):
             expected = ", ".join(sorted(alternatives))
-            raise StagedIngestError(f"required analysis-ready file missing; expected one of {expected}")
+            raise StagedIngestError(
+                f"required analysis-ready file missing; expected one of {expected}"
+            )
 
     return ValidatedUpload(source, target, manifest, len(declared), total_bytes)
 

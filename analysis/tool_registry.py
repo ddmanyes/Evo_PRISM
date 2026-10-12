@@ -38,23 +38,31 @@ from config.settings import (
 
 logger = logging.getLogger(__name__)
 
-_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
 
 
 def _check_env_hash_col(con: duckdb.DuckDBPyConnection) -> bool:
     """Return True if tools.env_hash column exists (queried per-connection, not cached)."""
-    return con.execute(
-        "SELECT 1 FROM information_schema.columns "
-        "WHERE table_name = 'tools' AND column_name = 'env_hash' LIMIT 1"
-    ).fetchone() is not None
+    return (
+        con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'tools' AND column_name = 'env_hash' LIMIT 1"
+        ).fetchone()
+        is not None
+    )
 
 
 def _check_affected_params_col(con: duckdb.DuckDBPyConnection) -> bool:
     """Return True if tools.affected_params column exists (v25+ schema)."""
-    return con.execute(
-        "SELECT 1 FROM information_schema.columns "
-        "WHERE table_name = 'tools' AND column_name = 'affected_params' LIMIT 1"
-    ).fetchone() is not None
+    return (
+        con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'tools' AND column_name = 'affected_params' LIMIT 1"
+        ).fetchone()
+        is not None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -291,9 +299,19 @@ def register_tool(
                  created_at, revision_count, env_hash, affected_params)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
             """,
-            [new_tool_id, tool_name, version, content_hash,
-             module_path, function_name, description, now, next_revision,
-             env_hash, affected_params_json],
+            [
+                new_tool_id,
+                tool_name,
+                version,
+                content_hash,
+                module_path,
+                function_name,
+                description,
+                now,
+                next_revision,
+                env_hash,
+                affected_params_json,
+            ],
         )
     elif has_env_hash:
         con.execute(
@@ -304,8 +322,18 @@ def register_tool(
                  created_at, revision_count, env_hash)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
             """,
-            [new_tool_id, tool_name, version, content_hash,
-             module_path, function_name, description, now, next_revision, env_hash],
+            [
+                new_tool_id,
+                tool_name,
+                version,
+                content_hash,
+                module_path,
+                function_name,
+                description,
+                now,
+                next_revision,
+                env_hash,
+            ],
         )
     elif has_affected_params:
         logger.warning("register_tool: env_hash column absent (run migration v27 to add it)")
@@ -317,8 +345,18 @@ def register_tool(
                  created_at, revision_count, affected_params)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
             """,
-            [new_tool_id, tool_name, version, content_hash,
-             module_path, function_name, description, now, next_revision, affected_params_json],
+            [
+                new_tool_id,
+                tool_name,
+                version,
+                content_hash,
+                module_path,
+                function_name,
+                description,
+                now,
+                next_revision,
+                affected_params_json,
+            ],
         )
     else:
         logger.warning("register_tool: env_hash column absent (run 00_init_db.py to migrate)")
@@ -330,8 +368,17 @@ def register_tool(
                  created_at, revision_count)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
             """,
-            [new_tool_id, tool_name, version, content_hash,
-             module_path, function_name, description, now, next_revision],
+            [
+                new_tool_id,
+                tool_name,
+                version,
+                content_hash,
+                module_path,
+                function_name,
+                description,
+                now,
+                next_revision,
+            ],
         )
 
     # --- compute line-level churn vs previous snapshot ---

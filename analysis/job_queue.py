@@ -65,9 +65,7 @@ class AnalysisJobQueue:
 
     def get(self, job_id: str, *, actor: Identity) -> dict:
         job = self.store.get_job(job_id)
-        if job is None or (
-            actor.role is not Role.ADMIN and job["requested_by"] != actor.user_id
-        ):
+        if job is None or (actor.role is not Role.ADMIN and job["requested_by"] != actor.user_id):
             raise JobQueueError("job not found")
         return job
 
